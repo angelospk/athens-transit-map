@@ -167,7 +167,7 @@
 
     map = m;
     app.fit = fitTo;
-    if (import.meta.env.DEV) Object.assign(window, { __map: m });
+    if (import.meta.env.DEV) Object.assign(window, { __map: m, __markers: markers });
     return () => {
       app.fit = () => {};
       for (const { glider, along } of markers.values()) { glider.cancel(); along.cancel(); }

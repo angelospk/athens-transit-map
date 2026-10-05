@@ -10,9 +10,10 @@ const AMBIGUOUS_M = 50;      // candidates farther apart than this along the sha
 const BACK_TOLERANCE_M = 30; // GPS noise backwards along the route
 const STANDING_M = 20;       // smaller moves count as standing
 const MAX_SPEED = 20;        // m/s (72 km/h)
-const MAX_GAP_S = 120;       // samples farther apart in time give no speed
-const MAX_LATE_S = 60;       // samples this old on arrival give no speed
-const MAX_AHEAD_S = 90;      // longest extrapolation
+// Real feeds: fixes arrive 20-50 s old, and a line may refresh only every 30-120 s.
+const MAX_GAP_S = 180;       // samples farther apart in time give no speed
+const MAX_LATE_S = 120;      // samples this old on arrival give no speed
+const MAX_AHEAD_S = 150;     // longest extrapolation (the next stop usually caps it first)
 
 export interface Route { shape: [number, number][]; stopIds: string[]; stopS: number[]; endS: number }
 export interface Sample { pos: LngLat; at: number; key: string; nextStop: string | null }   // key: variant + trip

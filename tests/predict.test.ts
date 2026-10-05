@@ -66,10 +66,12 @@ describe("updateTrack", () => {
     const t1 = updateTrack(null, sample(at(0.2), 1000), r, 1001)!;
     expect(updateTrack(t1, sample(at(0.5), 1030, { key: "v1/t2" }), r, 1031)!.speed).toBeNull();
     expect(updateTrack(t1, sample(at(1.9), 1010), r, 1011)!.speed).toBeNull();   // 1.5 km in 10 s
+    expect(updateTrack(t1, sample(at(0.6), 1181), r, 1182)!.speed).toBeNull();   // over 3 min apart
   });
-  it("gives no speed to a sample that is already a minute old", () => {
+  it("gives a speed to fixes that arrive 50 s old, none to ones over 2 minutes old", () => {
     const t1 = updateTrack(null, sample(at(0.2), 1000), r, 1001)!;
-    expect(updateTrack(t1, sample(at(0.5), 1030), r, 1100)!.speed).toBeNull();
+    expect(updateTrack(t1, sample(at(0.5), 1030), r, 1080)!.speed).toBeGreaterThan(5);
+    expect(updateTrack(t1, sample(at(0.5), 1030), r, 1151)!.speed).toBeNull();
   });
   it("holds a first sample on an out-and-back street, then follows the movement", () => {
     const ob = route(outBack);
@@ -99,8 +101,8 @@ describe("predictS", () => {
     expect(predictS(track, 1010)).toBe(600);
     expect(predictS(track, 1050)).toBe(900);
   });
-  it("extrapolates at most 90 s and never past the shape end", () => {
-    expect(predictS({ ...track, capS: Infinity, endS: 1e6 }, 1200)).toBe(500 + 900);
+  it("extrapolates at most 150 s and never past the shape end", () => {
+    expect(predictS({ ...track, capS: Infinity, endS: 1e6 }, 1200)).toBe(500 + 1500);
     expect(predictS({ ...track, capS: Infinity }, 1200)).toBeLessThanOrEqual(2 * M);
   });
   it("does not move for a future timestamp or without a speed", () => {

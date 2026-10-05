@@ -66,3 +66,9 @@ All sample rules live in one pure reducer, `updateTrack(prev, sample, route, now
   through the same scalar glider; each call replaces the previous animation.
 - **Heading** while predicted: the shape bearing at the shown `s` (`headingAt`).
 - **Mock:** vehicles advance by elapsed time at ~8 m/s along the shape, with `next_stop_id` updated.
+
+## Limits tuned on real data (2026-10-05)
+
+On prod, fixes arrive 20-50 s old and a line may refresh only every 30-120 s, so the first limits
+gave almost no vehicle a speed. Now: samples up to 180 s apart, up to 120 s old on arrival, and
+extrapolation up to 150 s (the next stop usually caps it first).
