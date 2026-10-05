@@ -1,0 +1,111 @@
+{
+ "line": "2",
+ "updated_at": 1791188027,
+ "next_update_at": 1791188057,
+ "vehicles": [
+  {
+   "id": "07019",
+   "lat": 37.9976,
+   "lon": 23.73716,
+   "bearing": null,
+   "position_at": 1791188006,
+   "route_code": "5196",
+   "variant": "5196",
+   "trip_id": "5196-0-WINTER",
+   "trip_label": "06:00 ΑΝΩ ΚΥΨΕΛΗ → ΚΑΙΣΑΡΙΑΝΗ ",
+   "delay_s": 40,
+   "next_stop_id": "61064"
+  },
+  {
+   "id": "07027",
+   "lat": 38.00061,
+   "lon": 23.74008,
+   "bearing": null,
+   "position_at": 1791188002,
+   "route_code": "5196",
+   "variant": "5196",
+   "trip_id": "5196-1-WINTER",
+   "trip_label": "07:07 ΑΝΩ ΚΥΨΕΛΗ → ΚΑΙΣΑΡΙΑΝΗ ",
+   "delay_s": 190,
+   "next_stop_id": "60883"
+  },
+  {
+   "id": "07092",
+   "lat": 37.96774,
+   "lon": 23.74738,
+   "bearing": null,
+   "position_at": 1791188000,
+   "route_code": "5196",
+   "variant": "5196",
+   "trip_id": "5196-2-WINTER",
+   "trip_label": "08:14 ΑΝΩ ΚΥΨΕΛΗ → ΚΑΙΣΑΡΙΑΝΗ ",
+   "delay_s": 420,
+   "next_stop_id": "60884"
+  },
+  {
+   "id": "07100",
+   "lat": 37.98104,
+   "lon": 23.73066,
+   "bearing": null,
+   "position_at": 1791188022,
+   "route_code": "5196",
+   "variant": "5196",
+   "trip_id": null,
+   "trip_label": null,
+   "delay_s": null,
+   "next_stop_id": null
+  },
+  {
+   "id": "06111",
+   "lat": 38.00596,
+   "lon": 23.74726,
+   "bearing": null,
+   "position_at": 1791187995,
+   "route_code": "4914",
+   "variant": "4914",
+   "trip_id": "4914-0-WINTER",
+   "trip_label": "06:00 ΚΑΙΣΑΡΙΑΝΗ  → ΑΝΩ ΚΥΨΕΛΗ",
+   "delay_s": 40,
+   "next_stop_id": "60858"
+  },
+  {
+   "id": "07007",
+   "lat": 37.97149,
+   "lon": 23.75548,
+   "bearing": null,
+   "position_at": 1791188002,
+   "route_code": "4914",
+   "variant": "4914",
+   "trip_id": "4914-1-WINTER",
+   "trip_label": "07:07 ΚΑΙΣΑΡΙΑΝΗ  → ΑΝΩ ΚΥΨΕΛΗ",
+   "delay_s": 190,
+   "next_stop_id": "60856"
+  },
+  {
+   "id": "07025",
+   "lat": 37.9715,
+   "lon": 23.7554,
+   "bearing": null,
+   "position_at": 1791187996,
+   "route_code": "4914",
+   "variant": "4914",
+   "trip_id": "4914-2-WINTER",
+   "trip_label": "08:14 ΚΑΙΣΑΡΙΑΝΗ  → ΑΝΩ ΚΥΨΕΛΗ",
+   "delay_s": 420,
+   "next_stop_id": "60998"
+  },
+  {
+   "id": "07053",
+   "lat": 37.97198,
+   "lon": 23.73403,
+   "bearing": null,
+   "position_at": 1791187994,
+   "route_code": "4914",
+   "variant": "4914",
+   "trip_id": null,
+   "trip_label": null,
+   "delay_s": null,
+   "next_stop_id": null
+  }
+ ]
+}
