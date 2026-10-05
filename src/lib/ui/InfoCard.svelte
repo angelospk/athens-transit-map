@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { directionGroups } from "../directions";
   import { ago, clock, delayClass, delayText } from "../format";
   import type { AppState } from "../state.svelte";
 
@@ -29,6 +30,8 @@
       from: name(0),
       to: name(variant.stops.length - 1),
       running: (app.live[s.line]?.vehicles ?? []).filter(v => v.variant === s.variant).length,
+      groups: directionGroups(st),
+      focus: app.focus[s.line],
     };
   });
 </script>
@@ -75,6 +78,15 @@
           <tr><th>Οχήματα τώρα</th><td>{route.running}</td></tr>
         </tbody>
       </table>
+      {#if route.groups.length > 1}
+        <div class="dirs" role="group" aria-label="Κατεύθυνση στον χάρτη">
+          <button type="button" aria-pressed={!route.focus} onclick={() => app.setFocus(route.line, null)}>Όλες</button>
+          {#each route.groups as g (g.variants.join())}
+            <button type="button" aria-pressed={route.focus?.join() === g.variants.join()}
+              onclick={() => app.setFocus(route.line, g.variants)}>→ {g.to}</button>
+          {/each}
+        </div>
+      {/if}
     {/if}
   </section>
 {/if}
@@ -94,6 +106,10 @@
   th { padding: 2px 10px 2px 0; color: var(--muted); font-weight: 400; text-align: left; vertical-align: top; white-space: nowrap; }
   td { padding: 2px 0; font-variant-numeric: tabular-nums; }
   .muted { color: var(--muted); font-size: 12px; }
+  .dirs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .dirs button { min-height: 36px; padding: 4px 12px; border: 1px solid var(--border); border-radius: 18px;
+    background: var(--control); cursor: pointer; font-size: 13px; }
+  .dirs button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
   @media (max-width: 719px) {
     .card { left: 0; right: 0; bottom: 0; width: auto; border-radius: 16px 16px 0 0; border-width: 1px 0 0;

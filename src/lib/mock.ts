@@ -34,7 +34,7 @@ export function mockLineAt(line: string, nowSec: number): FetchResult {
     if (!shape.length) return { ...v, position_at: updated - 3 - (i % 20) };
     const at = (nearest(shape, v) + cycle) % shape.length;
     const [lat, lon] = shape[at];
-    return { ...v, lat, lon, position_at: updated - 3 - (i % 20) };
+    return { ...v, lat, lon, bearing: null, position_at: updated - 3 - (i % 20) };   // moved: old bearing is wrong
   });
   return { status: 200, body: { line, updated_at: updated, next_update_at: updated + CYCLE_S, vehicles } };
 }

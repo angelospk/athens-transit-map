@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ago, delayClass, delayText, duration, fmtDelay } from "../src/lib/format";
+import { ageLabel, ago, isStalePos, delayClass, delayText, duration, fmtDelay } from "../src/lib/format";
 
 describe("duration", () => {
   it("speaks Greek minutes and seconds", () => {
@@ -44,5 +44,19 @@ describe("delayText", () => {
     expect(delayText(null)).toBe("χωρίς αντιστοίχιση σε δρομολόγιο");
     expect(delayText(0)).toBe("καμία");
     expect(delayText(144)).toBe("2 λεπτά και 24 δευτερόλεπτα");
+  });
+});
+
+describe("ageLabel", () => {
+  it("is short: seconds under a minute, then minutes", () => {
+    expect(ageLabel(0)).toBe("0″");
+    expect(ageLabel(24.6)).toBe("24″");
+    expect(ageLabel(59.9)).toBe("59″");
+    expect(ageLabel(60)).toBe("1′");
+    expect(ageLabel(150)).toBe("2′");
+    expect(ageLabel(-5)).toBe("0″");
+    expect(ageLabel(59.999)).toBe("59″");
+    expect(isStalePos(90)).toBe(false);
+    expect(isStalePos(90.5)).toBe(true);
   });
 });

@@ -13,6 +13,11 @@ describe("layers", () => {
     expect(f.geometry.coordinates[0]).toEqual([lon, lat]);
     expect(routesFC([line]).features).toHaveLength(Object.keys(line.data.variants).length);
   });
+  it("draws only the focused variants of a line", () => {
+    const keep = new Set(["5513"]);
+    const fc = routesFC([{ ...line, visible: keep }]);
+    expect(fc.features.map(f => f.properties!.variant)).toEqual(["5513"]);
+  });
   it("builds the stops of one variant in order", () => {
     const fc = stopsFC(line, variant);
     expect(fc.features.map(f => f.properties!.id)).toEqual(line.data.variants[variant].stops);

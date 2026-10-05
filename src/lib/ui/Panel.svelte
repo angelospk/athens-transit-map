@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { directionGroups } from "../directions";
   import { clock, duration, fmtMinutes } from "../format";
   import { STALE_S, type AppState } from "../state.svelte";
   import LinePicker from "./LinePicker.svelte";
@@ -8,6 +9,12 @@
 
   // Phones start compact: the map matters more than the stats at a bus stop.
   let collapsed = $state(matchMedia("(max-width: 719px)").matches);
+
+  // "040: μόνο → ΣΥΝΤΑΓΜΑ" for every line shown in one direction.
+  const focused = $derived(Object.entries(app.focus).map(([line, variants]) => {
+    const g = app.statics[line] && directionGroups(app.statics[line]).find(x => x.variants.join() === variants.join());
+    return { line, to: g?.to ?? "μία κατεύθυνση" };
+  }));
 
   const badge = $derived.by(() => {
     if (!app.selected.length) return { cls: "", text: "Διάλεξε γραμμή" };
@@ -64,10 +71,16 @@
       <span><i class="ontime"></i>έως 2′</span><span><i class="late1"></i>2–5′</span>
       <span><i class="late2"></i>5–10′</span><span><i class="late3"></i>πάνω από 10′</span>
       <span><i class="none"></i>χωρίς δρομολόγιο</span>
+      <span><b class="age">24″</b>ηλικία θέσης GPS</span>
     </div>
   </div>
 
   <LinePicker {app} />
+  {#each focused as f (f.line)}
+    <button type="button" class="focus" onclick={() => app.setFocus(f.line, null)} aria-label="Δείξε όλες τις κατευθύνσεις της {f.line}">
+      {f.line}: μόνο → {f.to} <span aria-hidden="true">×</span>
+    </button>
+  {/each}
   <StatusBanner {app} />
 
   <div class="foot" hidden={collapsed}>
@@ -100,6 +113,9 @@
   .stats b { display: block; font-size: 18px; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .stats small { font-size: 13px; }
   .stats span { color: var(--muted); font-size: 11px; }
+  .legend .age { margin-right: 4px; font-size: 10px; font-variant-numeric: tabular-nums; }
+  .focus { display: block; min-height: 32px; margin: 6px 0 0; padding: 4px 10px; border: 1px solid var(--accent);
+    border-radius: 16px; background: none; color: var(--accent); font-size: 12px; cursor: pointer; text-align: left; }
   .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 8px 0 0; font-size: 12px; }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
   .foot { margin-top: 10px; font-size: 11px; color: var(--muted); }

@@ -1,5 +1,6 @@
 // The one store: chosen lines, live/static data, selection. Components read it; pollers write it.
 
+import { isHidden } from "./directions";
 import { fetchLine, fetchLines, fetchLineStatic, fetchStatus } from "./api";
 import { LinePoller, type PollState } from "./poller";
 import { ClockOffset } from "./schedule";
@@ -13,7 +14,7 @@ export type Selection =
   | { kind: "vehicle"; line: string; id: string }
   | { kind: "route"; line: string; variant: string };
 
-export interface PlacedVehicle { line: string; v: Vehicle }
+export interface PlacedVehicle { line: string; v: Vehicle; faded: boolean }   // faded: direction unknown under focus
 
 const median = (xs: number[]) => {
   if (!xs.length) return null;
@@ -32,6 +33,8 @@ export class AppState {
   status = $state.raw<Status | null>(null);
   statusFailed = $state(false);
   selection = $state.raw<Selection | null>(null);
+  // Per line, the variants of the one direction to show (route card, "μόνο → …").
+  focus = $state.raw<Record<string, string[]>>({});
   notice = $state<string | null>(null);
   now = $state(Date.now());
 
@@ -44,7 +47,12 @@ export class AppState {
 
   lineInfo = $derived(new Map(this.lines.map(l => [l.id, l])));
 
-  vehicles: PlacedVehicle[] = $derived(this.selected.flatMap(line => (this.live[line]?.vehicles ?? []).map(v => ({ line, v }))));
+  vehicles: PlacedVehicle[] = $derived(this.selected.flatMap(line => {
+    const f = this.focus[line] ? new Set(this.focus[line]) : undefined;
+    const known = new Set(Object.keys(this.statics[line]?.variants ?? {}));
+    return (this.live[line]?.vehicles ?? []).flatMap(v =>
+      isHidden(v.variant, f, known) ? [] : [{ line, v, faded: !!f && !(v.variant && f.has(v.variant)) }]);
+  }));
 
   stats = $derived.by(() => {
     const vs = this.vehicles.map(p => p.v);
@@ -72,8 +80,8 @@ export class AppState {
   selectedVehicle = $derived.by(() => {
     const s = this.selection;
     if (s?.kind !== "vehicle") return null;
-    const v = this.live[s.line]?.vehicles.find(x => x.id === s.id);
-    return v ? { line: s.line, v } : null;
+    // From the visible vehicles: one hidden by a direction focus has no card or highlight.
+    return this.vehicles.find(p => p.line === s.line && p.v.id === s.id) ?? null;
   });
 
   // The variant to emphasise on the map, from a clicked vehicle or route.
@@ -115,7 +123,18 @@ export class AppState {
     } else {
       this.pollers.get(id)?.stop();
       if (this.selection?.line === id) this.selection = null;
+      this.setFocus(id, null);
     }
+  }
+
+  // Show one direction of a line (variants), or all (null). Keeps the selection consistent.
+  setFocus(line: string, variants: string[] | null) {
+    const { [line]: _, ...rest } = this.focus;
+    this.focus = variants ? { ...rest, [line]: variants } : rest;
+    const s = this.selection;
+    if (!variants || s?.line !== line) return;
+    if (s.kind === "route" && !variants.includes(s.variant)) this.selection = { kind: "route", line, variant: variants[0] };
+    if (s.kind === "vehicle" && !this.vehicles.some(p => p.line === line && p.v.id === s.id)) this.selection = null;
   }
 
   selectVehicle(line: string, id: string) {
@@ -168,6 +187,8 @@ export class AppState {
     this.pollState = { ...this.pollState, [id]: s };
     if (s === "unknown" && this.selected.includes(id)) {
       this.selected = this.selected.filter(l => l !== id);
+      if (this.selection?.line === id) this.selection = null;
+      this.setFocus(id, null);
       this.writeUrl();
       this.say(`Η γραμμή ${id} δεν υπάρχει.`);
     }

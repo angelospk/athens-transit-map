@@ -17,6 +17,14 @@ export const fmtDelay = (s: number) => (s === 0 ? "καμία" : s > 0 ? duratio
 
 export const delayText = (s: number | null) => (s == null ? "χωρίς αντιστοίχιση σε δρομολόγιο" : fmtDelay(s));
 
+// Age of a vehicle position on its marker: "24″", then "2′".
+export const STALE_POS_S = 90;
+export const isStalePos = (sec: number) => sec > STALE_POS_S;
+export const ageLabel = (sec: number) => {
+  const s = Math.max(0, Math.floor(sec));
+  return s < 60 ? `${s}″` : `${Math.floor(s / 60)}′`;
+};
+
 export const fmtMinutes = (s: number) => (s >= 0 ? "+" : "−") + Math.abs(s / 60).toFixed(1).replace(".", ",");
 
 export const delayClass = (d: number | null): DelayClass =>

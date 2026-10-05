@@ -3,15 +3,15 @@
 import type { FeatureCollection, LineString, Point } from "geojson";
 import type { LineStatic } from "../types";
 
-export interface DrawnLine { id: string; color: string; data: LineStatic }
+export interface DrawnLine { id: string; color: string; data: LineStatic; visible?: Set<string> }   // visible: focused variants
 
 const flip = ([lat, lon]: [number, number]): [number, number] => [lon, lat];
 
 export function routesFC(lines: DrawnLine[]): FeatureCollection<LineString> {
   return {
     type: "FeatureCollection",
-    features: lines.flatMap(({ id, color, data }) =>
-      Object.entries(data.variants).map(([variant, v]) => ({
+    features: lines.flatMap(({ id, color, data, visible }) =>
+      Object.entries(data.variants).filter(([variant]) => !visible || visible.has(variant)).map(([variant, v]) => ({
         type: "Feature" as const,
         properties: { line: id, variant, color },
         geometry: { type: "LineString" as const, coordinates: v.shape.map(flip) },
