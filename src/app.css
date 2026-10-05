@@ -38,3 +38,4 @@ button, input { font: inherit; color: inherit; }
 .maplibregl-popup-content { background: var(--panel); color: var(--fg); font-size: 13px; padding: 6px 10px; border-radius: 8px; }
 .maplibregl-popup-tip { border-top-color: var(--panel) !important; border-bottom-color: var(--panel) !important; }
 .maplibregl-ctrl-top-right { top: env(safe-area-inset-top); }
+.no-ages .bus .age { display: none; }

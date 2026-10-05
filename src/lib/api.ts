@@ -26,6 +26,13 @@ export async function fetchLine(line: string, signal: AbortSignal): Promise<Fetc
   return getJSON(lineUrl(line), signal);
 }
 
+export const cityUrl = `${API_BASE}/v1/vehicles`;
+
+export async function fetchCity(_: string, signal: AbortSignal): Promise<FetchResult> {
+  if (import.meta.env.VITE_MOCK === "1") return (await import("./mock")).mockCity();
+  return getJSON(cityUrl, signal);
+}
+
 export async function fetchStatus(): Promise<Status | null> {
   if (import.meta.env.VITE_MOCK === "1") return (await import("./mock")).mockStatus();
   const r = await getJSON(`${API_BASE}/v1/status`);

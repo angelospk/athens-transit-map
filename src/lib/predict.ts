@@ -16,7 +16,8 @@ const MAX_LATE_S = 120;      // samples this old on arrival give no speed
 const MAX_AHEAD_S = 150;     // longest extrapolation (the next stop usually caps it first)
 
 export interface Route { shape: [number, number][]; stopIds: string[]; stopS: number[]; endS: number }
-export interface Sample { pos: LngLat; at: number; key: string; nextStop: string | null }   // key: variant + trip
+// key: variant + trip. speed: the backend's smoothed speed (contract rev 3), if any.
+export interface Sample { pos: LngLat; at: number; key: string; nextStop: string | null; speed?: number | null }
 export interface Track {
   s: number; at: number; key: string;
   speed: number | null;   // m/s; null: unknown, do not extrapolate
@@ -114,12 +115,15 @@ const plausible = (from: number, to: number, dt: number) =>
   to >= from - BACK_TOLERANCE_M && to - from <= MAX_SPEED * dt + 100;
 
 // Fold a new GPS sample into a vehicle's track. Returns `prev` itself when the sample is not newer.
+// The backend's speed wins over the two-sample one: it comes from a longer history.
 export function updateTrack(prev: Track | null, sample: Sample, route: Route, nowSec: number): Track | null {
   if (prev && prev.key === sample.key && sample.at <= prev.at) return prev;
   const cands = projectCandidates(route.shape, sample.pos).map(c => c.s);
   if (!cands.length) return null;
+  const late = nowSec - sample.at > MAX_LATE_S;
+  const given = typeof sample.speed === "number" && sample.speed >= 0 && !late ? Math.min(sample.speed, MAX_SPEED) : null;
   const fresh = (s: number, alts?: number[]): Track => ({
-    s, at: sample.at, key: sample.key, speed: null, capS: capFor(route, s, sample.nextStop), endS: route.endS, alts,
+    s, at: sample.at, key: sample.key, speed: alts ? null : given, capS: capFor(route, s, sample.nextStop), endS: route.endS, alts,
   });
   if (!prev || prev.key !== sample.key) {
     const ambiguous = cands[cands.length - 1] - cands[0] > AMBIGUOUS_M;
@@ -135,7 +139,8 @@ export function updateTrack(prev: Track | null, sample: Sample, route: Route, no
   const [from, s] = best;
   const moved = s - from;
   let speed: number | null = moved < STANDING_M ? 0 : Math.min(moved / dt, MAX_SPEED);
-  if (dt > MAX_GAP_S || nowSec - sample.at > MAX_LATE_S) speed = null;
+  if (dt > MAX_GAP_S || late) speed = null;
+  speed = given ?? speed;
   return { s, at: sample.at, key: sample.key, speed, capS: capFor(route, s, sample.nextStop), endS: route.endS };
 }
 

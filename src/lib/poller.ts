@@ -6,10 +6,14 @@ import type { LineLive } from "./types";
 export type PollState = "loading" | "ok" | "warming" | "backoff" | "unknown";
 export interface FetchResult { status: number; body: unknown; date?: number }   // date: server ms
 
-export interface PollerOptions {
+// Anything with the contract's pacing fields: a line, or the whole city (/v1/vehicles).
+export interface Paced { updated_at: number; next_update_at: number }
+
+export interface PollerOptions<T extends Paced = LineLive> {
   line: string;
   fetchLine: (line: string, signal: AbortSignal) => Promise<FetchResult>;
-  onData: (d: LineLive) => void;
+  onData: (d: T) => void;
+  validate?: (b: unknown) => b is T;   // default isLineLive
   onState: (s: PollState) => void;
   clock?: ClockOffset;            // shared by all lines: one server
   wall?: () => number;            // Date.now
@@ -25,9 +29,9 @@ export function isLineLive(b: unknown): b is LineLive {
     && Number.isFinite(d.next_update_at) && Array.isArray(d.vehicles);
 }
 
-export class LinePoller {
+export class LinePoller<T extends Paced = LineLive> {
   readonly line: string;
-  private o: Required<Omit<PollerOptions, "line">>;
+  private o: Required<Omit<PollerOptions<T>, "line">>;
   private running = false;
   private dead = false;               // 404: never poll again
   private gen = 0;                    // drops results of requests from before a stop()
@@ -38,7 +42,7 @@ export class LinePoller {
   private baseDeadline = -Infinity;
   private errors = 0;
 
-  constructor(opts: PollerOptions) {
+  constructor(opts: PollerOptions<T>) {
     this.line = opts.line;
     this.o = {
       clock: new ClockOffset(),
@@ -47,6 +51,7 @@ export class LinePoller {
       rand: Math.random,
       isHidden: () => typeof document !== "undefined" && document.visibilityState === "hidden",
       timeoutMs: 15_000,
+      validate: isLineLive as unknown as (b: unknown) => b is T,
       ...opts,
     };
   }
@@ -103,7 +108,7 @@ export class LinePoller {
     if (gen !== this.gen) return;
     this.inFlight = null;
     const outcome = this.handle(res);
-    if (!outcome) return;
+    if (!outcome || gen !== this.gen) return;   // onData may have stopped us
     this.baseDeadline = this.o.mono() + outcomeDelay({
       outcome, wallNow: this.o.wall(), offsetMs: this.o.clock.ms, jitter: this.o.rand(),
     });
@@ -111,7 +116,7 @@ export class LinePoller {
   }
 
   private handle({ status, body, date }: FetchResult): Outcome | null {
-    if (status === 200 && isLineLive(body)) {
+    if (status === 200 && this.o.validate(body)) {
       this.errors = 0;
       this.o.clock.observe(body.next_update_at, body.updated_at, this.o.wall(), this.o.mono(), date);
       this.o.onData(body);

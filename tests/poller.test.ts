@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LinePoller, type FetchResult, type PollState } from "../src/lib/poller";
 import type { LineLive } from "../src/lib/types";
+import { isCityLive } from "../src/lib/city";
 
 const T0 = 1_791_100_000_000;
 
@@ -265,5 +266,38 @@ describe("LinePoller", () => {
     await vi.advanceTimersByTimeAsync(10_000);
     expect(t.starts).toEqual([T0, T0 + 25_000]);
     t.poller.stop();
+  });
+
+  it("polls the city with a custom validate and the same pacing", async () => {
+    const got: unknown[] = [];
+    const city = (n: number) => ({ updated_at: Math.floor(Date.now() / 1000), next_update_at: Math.floor(Date.now() / 1000) + 30, vehicles: [n] });
+    const poller = new LinePoller({
+      line: "*",
+      fetchLine: async () => ({ status: 200, body: city(1) }),
+      validate: isCityLive,
+      onData: d => got.push(d.vehicles),
+      onState: () => {},
+      rand: () => 0, wall: () => Date.now(), mono: () => Date.now(), isHidden: () => false,
+    });
+    poller.start();
+    await vi.advanceTimersByTimeAsync(31_500);
+    expect(got).toEqual([[1], [1]]);
+    poller.stop();
+  });
+
+  it("stays stopped when onData stops it", async () => {
+    let calls = 0;
+    const poller: LinePoller = new LinePoller({
+      line: "040",
+      fetchLine: async () => { calls++; return { status: 200, body: body(30) }; },
+      onData: () => poller.stop(),
+      onState: () => {},
+      rand: () => 0, wall: () => Date.now(), mono: () => Date.now(), isHidden: () => false,
+    });
+    poller.start();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(calls).toBe(1);
   });
 });

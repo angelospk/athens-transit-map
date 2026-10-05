@@ -12,6 +12,9 @@ export interface Vehicle {
   trip_label: string | null;
   delay_s: number | null;
   next_stop_id: string | null;
+  // Contract rev 3, optional: older servers omit them.
+  speed?: number | null;               // smoothed along-route speed, m/s
+  path?: [number, number][] | null;    // route ahead of the vehicle, [lat, lon]
 }
 
 export interface LineLive {
@@ -19,6 +22,26 @@ export interface LineLive {
   updated_at: number;
   next_update_at: number;
   vehicles: Vehicle[];
+}
+
+// GET /v1/vehicles: every live vehicle of the city (contract rev 3).
+export interface CityVehicle {
+  line: string;
+  id: string;
+  lat: number;
+  lon: number;
+  bearing: number | null;
+  position_at: number;
+  variant: string | null;
+  delay_s: number | null;
+  speed: number | null;
+  path: [number, number][] | null;
+}
+
+export interface CityLive {
+  updated_at: number;
+  next_update_at: number;
+  vehicles: CityVehicle[];
 }
 
 export interface Status {

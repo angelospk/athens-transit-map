@@ -2,8 +2,9 @@
 
 Ζωντανός χάρτης με τα λεωφορεία και τα τρόλεϊ του ΟΑΣΑ: **https://bus.haroldpoi.dev**
 
-A live map of Athens (OASA) buses and trolleys. Pick up to 5 lines; each vehicle shows its line
-number, coloured by delay. Click a vehicle for its delay, trip, next stop and GPS age; click a route
+A live map of Athens (OASA) buses and trolleys. Every live vehicle of the city is on the map, coloured
+by delay; click one to see its line and trip. Pick up to 5 lines to follow them in detail; each vehicle
+shows its line number, coloured by delay. Click a vehicle for its delay, trip, next stop and GPS age; click a route
 for its direction and stops. The chosen lines stay in the URL, so links can be shared
 (`https://bus.haroldpoi.dev/?l=040,Α1`).
 
@@ -14,6 +15,12 @@ The UI follows the viewer of [foivospro/athens-gtfs-realtime](https://github.com
 
 ## Features
 
+- City layer: every live vehicle from `GET /v1/vehicles` (one cached snapshot for all users, ~30 s),
+  drawn by the GPU. Click a vehicle: its line is shown in detail until you click empty map or press Esc;
+  the other vehicles stay, fade or hide (layers button). Off switch in the layers button.
+- Vehicles move along their route between updates, at the speed the backend measured over their last
+  fixes (`speed`, `path`); without it, at the speed of the last two fixes.
+- GPS age labels ("24″") are off by default; the eye button explains them and turns them on.
 - Vehicles labelled with the line number, coloured by delay: up to 2′, 2–5′, 5–10′, over 10′, no trip.
 - Route shapes in the line colour. Line picker with search (Greek, accent-insensitive; `a1` finds `Α1`, `40` finds `040`).
 - Vehicle details: delay, trip ("00:35 ΠΕΙΡΑΙΑΣ → ΣΥΝΤΑΓΜΑ"), next stop, GPS age. The trip's route and stops are highlighted.
@@ -55,7 +62,9 @@ Mock code and fixtures are not included in production builds.
 
 ## Request pacing
 
-One request per chosen line: `GET /v1/lines/{id}`. All users share the cached copy at Cloudflare,
+One request per chosen line: `GET /v1/lines/{id}`, plus `GET /v1/vehicles` for the city layer (same
+pacing rules; turning the layer off stops it). A line opened by clicking a city vehicle is polled
+like a chosen one until it is closed. All users share the cached copy at Cloudflare,
 so the app never adds cache-busting parameters. The rules, from the contract
 (`src/lib/schedule.ts`, `src/lib/poller.ts`, tests in `tests/`):
 
@@ -79,7 +88,8 @@ Static files (`lines.json`, `lines/{id}.json`) are fetched once per page load.
 
 ## Known limits
 
-- No "all lines" view: the live API is per line by design (max 5 per client).
+- The city layer can be up to ~2.5 min behind for lines nobody watches (backend polls them less often);
+  clicking a vehicle fetches its line, which then refreshes every ~30 s.
 - Upstream's "waiting at the terminus" state is not shown: the contract has no such field yet.
 
 ## Deploy

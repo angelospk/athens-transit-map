@@ -5,8 +5,13 @@
 
   let { app }: { app: AppState } = $props();
 
+  // A city vehicle whose line is still loading: what the city layer knows, until the line's data arrives.
   const vehicle = $derived.by(() => {
-    const sv = app.selectedVehicle;
+    const c = app.selectedCity;
+    const sv = app.selectedVehicle ?? (c && {
+      line: c.line, faded: false, loading: true,
+      v: { ...c, route_code: "", trip_id: null, trip_label: null, next_stop_id: null },
+    });
     if (!sv) return null;
     const st = app.statics[sv.line];
     return {
@@ -68,6 +73,7 @@
           {/if}
           <tr><th>Θέση GPS</th><td title={clock(v.position_at)}>{ago(v.position_at, app.serverNow)}</td></tr>
           <tr><th>Όχημα</th><td>{v.id}</td></tr>
+          {#if "loading" in vehicle}<tr><th></th><td class="muted">Φόρτωση δρομολογίου…</td></tr>{/if}
         </tbody>
       </table>
     {:else if route}

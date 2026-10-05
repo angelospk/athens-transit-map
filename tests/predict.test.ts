@@ -93,6 +93,24 @@ describe("updateTrack", () => {
   it("returns null off the route", () => {
     expect(updateTrack(null, sample([23.705, 37.975], 1000), r, 1001)).toBeNull();
   });
+  it("uses the backend's smoothed speed when given, from the first sample on", () => {
+    const t1 = updateTrack(null, sample(at(0.2), 1000, { speed: 6 }), r, 1005)!;
+    expect(t1.speed).toBe(6);
+    const t2 = updateTrack(t1, sample(at(0.5), 1030, { speed: 7.5 }), r, 1035)!;   // measured would be ~8.8
+    expect(t2.speed).toBe(7.5);
+    expect(updateTrack(t2, sample(at(0.5), 1060, { speed: 0 }), r, 1061)!.speed).toBe(0);
+    expect(updateTrack(null, sample(at(0.2), 1000, { speed: 99 }), r, 1001)!.speed).toBe(20);   // clamped
+  });
+  it("falls back to its own speed when the backend's is missing or invalid", () => {
+    const t1 = updateTrack(null, sample(at(0.2), 1000, { speed: null }), r, 1005)!;
+    expect(t1.speed).toBeNull();
+    expect(updateTrack(t1, sample(at(0.5), 1030, { speed: -3 }), r, 1035)!.speed).toBeCloseTo((0.3 * M) / 30, 1);
+    expect(updateTrack(t1, sample(at(0.5), 1030, { speed: NaN }), r, 1035)!.speed).toBeCloseTo((0.3 * M) / 30, 1);
+  });
+  it("gives no speed to old fixes or ambiguous first samples, even with a backend speed", () => {
+    expect(updateTrack(null, sample(at(0.2), 1000, { speed: 6 }), r, 1121)!.speed).toBeNull();
+    expect(updateTrack(null, sample([23.708, 37.970005], 1000, { speed: 6 }), route(outBack), 1001)!.speed).toBeNull();
+  });
 });
 
 describe("predictS", () => {

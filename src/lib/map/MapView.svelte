@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Map as MlMap, Marker, NavigationControl, Popup, setWorkerUrl, type GeoJSONSource } from "maplibre-gl";
+  import { Map as MlMap, Marker, NavigationControl, Popup, setWorkerUrl, type ExpressionSpecification, type GeoJSONSource } from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
   import workerUrl from "virtual:maplibre-worker";
   import { ageLabel, delayClass, isStalePos } from "../format";
@@ -7,6 +7,7 @@
   import { distanceM, Glider, JUMP_M, ScalarGlider, type LngLat } from "../glide";
   import { vehicleHeading } from "../heading";
   import { headingAt, pointAt, predictS, shapeLength, stopOffsets, updateTrack, type Route, type Track } from "../predict";
+  import { cityFC, CityMotion } from "../city";
   import type { Variant } from "../types";
   import type { AppState } from "../state.svelte";
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
@@ -61,7 +62,7 @@
   const key = (line: string, id: string) => `${line}/${id}`;
 
   const drawn: DrawnLine[] = $derived(
-    app.selected.flatMap(id => {
+    app.detailLines.flatMap(id => {
       const data = app.statics[id];
       const focus = app.focus[id];
       return data ? [{ id, color: app.lineInfo.get(id)?.color || DEFAULT_COLOR, data, visible: focus && new Set(focus) }] : [];
@@ -95,7 +96,33 @@
     return g.getImageData(0, 0, c.width, c.height);
   }
 
+  // City layer: every live vehicle, drawn by the GPU (DOM markers would not cope with ~1500).
+  // Dots at city zoom, discs with the line number from zoom 14. Colours from app.css.
+  function addCityLayers(m: MlMap) {
+    const css = getComputedStyle(document.documentElement);
+    const color = (c: string) => css.getPropertyValue(`--${c}`).trim() || "#6c757d";
+    m.addSource("city", { type: "geojson", data: EMPTY });
+    m.addLayer({ id: "city-dot", type: "circle", source: "city",
+      paint: {
+        "circle-color": ["match", ["get", "cls"], ...DELAY_CLASSES.slice(0, 4).flatMap(c => [c, color(c)]), color("none")],
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 2.5, 13, 4.5, 14, 10, 17, 13],
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 14, 1.5],
+        "circle-opacity-transition": { duration: 300 }, "circle-stroke-opacity-transition": { duration: 300 },
+      } as never });
+    m.addLayer({ id: "city-label", type: "symbol", source: "city", minzoom: 14,
+      layout: { "text-field": ["get", "line"], "text-font": ["Noto Sans Bold"],
+        "text-size": ["case", [">", ["length", ["get", "line"]], 3], 8, 10],
+        "text-allow-overlap": true, "text-ignore-placement": true },
+      paint: { "text-color": "#ffffff", "text-opacity-transition": { duration: 300 } } as never });
+    // Ring round the selected vehicle while it is still on the city layer.
+    m.addLayer({ id: "city-selected", type: "circle", source: "city", filter: ["boolean", false],
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 7, 14, 14, 17, 17], "circle-opacity": 0,
+        "circle-stroke-color": color("accent"), "circle-stroke-width": 3 } });
+  }
+
   function addLayers(m: MlMap) {
+    addCityLayers(m);
     m.addImage("route-arrow", arrowImage(), { pixelRatio: 2 });
     m.addSource("routes", { type: "geojson", data: EMPTY });
     m.addSource("highlight", { type: "geojson", data: EMPTY });
@@ -124,6 +151,39 @@
         "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2 } });
   }
 
+  // The city vehicle under a click, with a finger-sized margin; the nearest if several.
+  function nearestCity(m: MlMap, p: { x: number; y: number }) {
+    if (!m.getLayer("city-dot") || m.getLayoutProperty("city-dot", "visibility") === "none") return null;
+    const r = 12;
+    const hits = m.queryRenderedFeatures([[p.x - r, p.y - r], [p.x + r, p.y + r]], { layers: ["city-dot"] });
+    let best = null, bestD = Infinity;
+    for (const f of hits) {
+      const q = m.project((f.geometry as GeoJSON.Point).coordinates as [number, number]);
+      const d = Math.hypot(q.x - p.x, q.y - p.y);
+      if (d < bestD) { best = f; bestD = d; }
+    }
+    return best;
+  }
+
+  // City motion: positions recomputed a few times per second (more often when zoomed in, where
+  // a few metres are visible), only while the layer is on and the tab is visible.
+  const motion = new CityMotion();
+  let cityTimer: ReturnType<typeof setTimeout> | undefined;
+  function drawCity() {
+    clearTimeout(cityTimer);
+    const m = map;
+    if (!m || !loaded || !app.cityOn) return;
+    const src = m.getSource("city") as GeoJSONSource | undefined;
+    if (!src) return;
+    if (!document.hidden) {
+      const nowMs = app.serverMs();
+      src.setData(cityFC(motion.vehicles, motion.positions(nowMs), cityExclude));
+    }
+    const z = m.getZoom();
+    cityTimer = setTimeout(drawCity, document.hidden ? 2000 : z >= 14 ? 250 : z >= 12 ? 500 : 1000);
+  }
+  let cityExclude = new Set<string>();
+
   function setup(node: HTMLDivElement) {
     let m: MlMap;
     try {
@@ -148,8 +208,15 @@
       addLayers(m);
       loaded = true;
     });
+    // One dispatcher: DOM marker (its own handler) → city vehicle → stop → route → empty map.
     m.on("click", e => {
       if ((e.originalEvent.target as Element | null)?.closest?.(".bus")) return;
+      const city = nearestCity(m, e.point);
+      if (city) {
+        popup.remove();
+        app.selectCityVehicle(String(city.properties.line), String(city.properties.id));
+        return;
+      }
       const stop = m.queryRenderedFeatures(e.point, { layers: ["stops"] })[0];
       if (stop) {
         popup.setLngLat((stop.geometry as GeoJSON.Point).coordinates as [number, number])
@@ -160,14 +227,14 @@
       if (route) app.selectRoute(String(route.properties.line), String(route.properties.variant));
       else app.clearSelection();
     });
-    for (const layer of ["routes-hit", "stops"]) {
+    for (const layer of ["routes-hit", "stops", "city-dot"]) {
       m.on("mouseenter", layer, () => (m.getCanvas().style.cursor = "pointer"));
       m.on("mouseleave", layer, () => (m.getCanvas().style.cursor = ""));
     }
 
     map = m;
     app.fit = fitTo;
-    if (import.meta.env.DEV) Object.assign(window, { __map: m, __markers: markers });
+    if (import.meta.env.DEV) Object.assign(window, { __map: m, __markers: markers, __motion: motion });
     return () => {
       app.fit = () => {};
       for (const { glider, along } of markers.values()) { glider.cancel(); along.cancel(); }
@@ -180,6 +247,39 @@
 
   $effect(() => {
     if (loaded) (map!.getSource("routes") as GeoJSONSource).setData(routesFC(drawn));
+  });
+
+  // New city data or a change of what is drawn in detail: update the motion and draw at once.
+  $effect(() => {
+    const city = app.city, on = app.cityOn;
+    cityExclude = app.cityExclude;
+    if (!loaded) return;
+    untrack(() => {
+      if (city) motion.update(city.vehicles, app.serverMs());
+      if (on) drawCity();
+      else { clearTimeout(cityTimer); (map!.getSource("city") as GeoJSONSource).setData(EMPTY); }
+    });
+    return () => clearTimeout(cityTimer);
+  });
+
+  // While a vehicle or route is selected, the other city vehicles are normal, dimmed or hidden;
+  // the selected one stays as it is.
+  $effect(() => {
+    if (!loaded) return;
+    const m = map!, s = app.selection;
+    const sel: ExpressionSpecification = s?.kind === "vehicle"
+      ? ["all", ["==", ["get", "line"], s.line], ["==", ["get", "id"], s.id]] : ["boolean", false];
+    const o = !s || app.others === "normal" ? 1 : app.others === "dim" ? 0.22 : 1;
+    const opacity: ExpressionSpecification = ["case", sel, 1, o];
+    m.setPaintProperty("city-dot", "circle-opacity", opacity);
+    m.setPaintProperty("city-dot", "circle-stroke-opacity", opacity);
+    m.setPaintProperty("city-label", "text-opacity", opacity);
+    const filter = s && app.others === "hide" ? sel : null;
+    m.setFilter("city-dot", filter);
+    m.setFilter("city-label", filter);
+    m.setFilter("city-selected", sel);
+    const vis = app.cityOn ? "visible" : "none";
+    for (const id of ["city-dot", "city-label", "city-selected"]) m.setLayoutProperty(id, "visibility", vis);
   });
 
   $effect(() => {
@@ -242,7 +342,7 @@
 
       const before = entry.track;
       const track = route
-        ? updateTrack(entry.track, { pos, at: v.position_at, key: `${v.variant}/${v.trip_id}`, nextStop: v.next_stop_id }, route, nowSec)
+        ? updateTrack(entry.track, { pos, at: v.position_at, key: `${v.variant}/${v.trip_id}`, nextStop: v.next_stop_id, speed: v.speed }, route, nowSec)
         : null;
       if (track && track === before && entry.route === route) {
         // The same sample again: keep predicting from it.
@@ -308,7 +408,7 @@
   });
 </script>
 
-<div class="map" {@attach setup}></div>
+<div class="map" class:no-ages={!app.showAges} {@attach setup}></div>
 {#if failed}
   <div class="nogl" role="alert">
     Ο χάρτης δεν μπορεί να εμφανιστεί: ο browser δεν υποστηρίζει WebGL2. Δοκίμασε άλλον browser ή ενεργοποίησε την
