@@ -32,15 +32,15 @@ main bundle: about 330 KB of JS gzip in total.
 
 ## Run locally
 
-Needs Node ≥ 22.12.
+Needs [bun](https://bun.sh).
 
 ```bash
-npm install
-npm run dev:mock   # fixture data, no network calls to the backend
-npm run dev        # real backend
-npm test           # unit tests (pacing rules, URL state, formatting, …)
-npm run check      # svelte-check / TypeScript
-npm run build      # static site in dist/
+bun install
+bun run dev:mock   # fixture data, no network calls to the backend
+bun run dev        # real backend
+bun run test       # unit tests (pacing rules, URL state, formatting, …)
+bun run check      # svelte-check / TypeScript
+bun run build      # static site in dist/
 ```
 
 ### Configuration (build-time env)
