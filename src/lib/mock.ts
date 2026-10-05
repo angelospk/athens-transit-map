@@ -1,5 +1,5 @@
 // Fixture-backed fake backend for VITE_MOCK=1. Mimics a 30 s server cycle:
-// every cycle each vehicle moves a few points along its route shape.
+// every cycle each vehicle moves one point along its route shape (wrapping at the end).
 
 import type { FetchResult } from "./poller";
 import type { LineLive, LineStatic, LinesIndex, Status, Vehicle } from "./types";
@@ -8,7 +8,6 @@ const files = import.meta.glob<{ default: unknown }>("../fixtures/*.json", { eag
 const fixture = <T>(name: string) => files[`../fixtures/${name}.json`]?.default as T | undefined;
 
 export const CYCLE_S = 30;
-const STEP = 3;   // shape points per cycle
 
 function nearest(shape: [number, number][], v: Vehicle) {
   let best = 0, bestD = Infinity;
@@ -33,7 +32,7 @@ export function mockLineAt(line: string, nowSec: number): FetchResult {
   const vehicles = live.vehicles.map((v, i) => {
     const shape = (v.variant && st?.variants[v.variant]?.shape) || [];
     if (!shape.length) return { ...v, position_at: updated - 3 - (i % 20) };
-    const at = Math.min(shape.length - 1, nearest(shape, v) + (cycle % 40) * STEP);
+    const at = (nearest(shape, v) + cycle) % shape.length;
     const [lat, lon] = shape[at];
     return { ...v, lat, lon, position_at: updated - 3 - (i % 20) };
   });

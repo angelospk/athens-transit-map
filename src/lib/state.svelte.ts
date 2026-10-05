@@ -1,0 +1,189 @@
+// The one store: chosen lines, live/static data, selection. Components read it; pollers write it.
+
+import { fetchLine, fetchLines, fetchLineStatic, fetchStatus } from "./api";
+import { LinePoller, type PollState } from "./poller";
+import { ClockOffset } from "./schedule";
+import { parseSelection, serializeSelection, toggle } from "./selection";
+import type { LineInfo, LineLive, LineStatic, Status, Vehicle } from "./types";
+
+export const STALE_S = 120;
+const STATUS_EVERY_MS = 60_000;
+
+export type Selection =
+  | { kind: "vehicle"; line: string; id: string }
+  | { kind: "route"; line: string; variant: string };
+
+export interface PlacedVehicle { line: string; v: Vehicle }
+
+const median = (xs: number[]) => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  return s[s.length >> 1];
+};
+
+export class AppState {
+  lines = $state.raw<LineInfo[]>([]);
+  linesFailed = $state(false);
+  selected = $state.raw<string[]>([]);
+  live = $state.raw<Record<string, LineLive>>({});
+  statics = $state.raw<Record<string, LineStatic>>({});
+  pollState = $state.raw<Record<string, PollState>>({});
+  status = $state.raw<Status | null>(null);
+  statusFailed = $state(false);
+  selection = $state.raw<Selection | null>(null);
+  notice = $state<string | null>(null);
+  now = $state(Date.now());
+
+  // Set by MapView: frame the given lines once their shapes are loaded.
+  fit: (ids: string[]) => void = () => {};
+
+  private clock = new ClockOffset();
+  private pollers = new Map<string, LinePoller>();
+  private noticeTimer: ReturnType<typeof setTimeout> | undefined;
+
+  lineInfo = $derived(new Map(this.lines.map(l => [l.id, l])));
+
+  vehicles: PlacedVehicle[] = $derived(this.selected.flatMap(line => (this.live[line]?.vehicles ?? []).map(v => ({ line, v }))));
+
+  stats = $derived.by(() => {
+    const vs = this.vehicles.map(p => p.v);
+    return {
+      vehicles: vs.length,
+      matched: vs.filter(v => v.trip_id != null).length,
+      median: median(vs.flatMap(v => (v.delay_s == null ? [] : [v.delay_s]))),
+    };
+  });
+
+  // Server time in ms, corrected for client clock skew; ticks every second.
+  serverNow = $derived(this.now + this.clock.ms);
+
+  // Seconds since the oldest selected line was updated; null before any data.
+  oldestAge = $derived.by(() => {
+    const ts = this.selected.flatMap(l => (this.live[l] ? [this.live[l].updated_at] : []));
+    return ts.length ? this.serverNow / 1000 - Math.min(...ts) : null;
+  });
+
+  newestUpdate = $derived.by(() => {
+    const ts = this.selected.flatMap(l => (this.live[l] ? [this.live[l].updated_at] : []));
+    return ts.length ? Math.max(...ts) : null;
+  });
+
+  selectedVehicle = $derived.by(() => {
+    const s = this.selection;
+    if (s?.kind !== "vehicle") return null;
+    const v = this.live[s.line]?.vehicles.find(x => x.id === s.id);
+    return v ? { line: s.line, v } : null;
+  });
+
+  // The variant to emphasise on the map, from a clicked vehicle or route.
+  highlight = $derived.by((): { line: string; variant: string } | null => {
+    const s = this.selection;
+    if (s?.kind === "route") return s;
+    const sv = this.selectedVehicle;
+    return sv?.v.variant ? { line: sv.line, variant: sv.v.variant } : null;
+  });
+
+  init() {
+    this.selected = parseSelection(location.search);
+    this.writeUrl();
+    for (const id of this.selected) this.startLine(id);
+    void Promise.allSettled(this.selected.map(fetchLineStatic)).then(() => this.fit(this.selected));
+    this.loadLines();
+    void this.refreshStatus();
+    setInterval(() => (this.now = Date.now()), 1000);
+    setInterval(() => { if (!document.hidden) void this.refreshStatus(); }, STATUS_EVERY_MS);
+    document.addEventListener("visibilitychange", () => {
+      this.now = Date.now();
+      for (const p of this.pollers.values()) p.visibilityChanged();
+    });
+  }
+
+  toggleLine(id: string) {
+    const next = toggle(this.selected, id);
+    if (next === this.selected) {
+      this.say("Έως 5 γραμμές ταυτόχρονα. Αφαίρεσε μία για να προσθέσεις άλλη.");
+      return;
+    }
+    this.selected = next;
+    this.writeUrl();
+    if (next.includes(id)) {
+      this.startLine(id);
+      void fetchLineStatic(id).then(() => this.fit([id]), () => {});
+    } else {
+      this.pollers.get(id)?.stop();
+      if (this.selection?.line === id) this.selection = null;
+    }
+  }
+
+  selectVehicle(line: string, id: string) {
+    this.selection = { kind: "vehicle", line, id };
+  }
+
+  selectRoute(line: string, variant: string) {
+    this.selection = { kind: "route", line, variant };
+  }
+
+  clearSelection() {
+    this.selection = null;
+  }
+
+  private say(text: string) {
+    this.notice = text;
+    clearTimeout(this.noticeTimer);
+    this.noticeTimer = setTimeout(() => (this.notice = null), 4000);
+  }
+
+  private writeUrl() {
+    history.replaceState(history.state, "", location.pathname + serializeSelection(this.selected) + location.hash);
+  }
+
+  private startLine(id: string) {
+    let p = this.pollers.get(id);
+    if (!p) {
+      p = new LinePoller({
+        line: id,
+        fetchLine,
+        clock: this.clock,
+        onData: d => this.onData(id, d),
+        onState: s => this.onPollState(id, s),
+      });
+      this.pollers.set(id, p);
+    }
+    if (!this.live[id]) this.pollState = { ...this.pollState, [id]: "loading" };
+    p.start();
+    fetchLineStatic(id).then(s => (this.statics = { ...this.statics, [id]: s }), () => {});
+  }
+
+  private onData(id: string, d: LineLive) {
+    this.live = { ...this.live, [id]: d };
+    const s = this.selection;
+    if (s?.kind === "vehicle" && s.line === id && !d.vehicles.some(v => v.id === s.id)) this.selection = null;
+  }
+
+  private onPollState(id: string, s: PollState) {
+    this.pollState = { ...this.pollState, [id]: s };
+    if (s === "unknown" && this.selected.includes(id)) {
+      this.selected = this.selected.filter(l => l !== id);
+      this.writeUrl();
+      this.say(`Η γραμμή ${id} δεν υπάρχει.`);
+    }
+  }
+
+  private loadLines() {
+    fetchLines().then(
+      ix => {
+        this.lines = ix.lines;
+        this.linesFailed = false;
+        // Drop ids from an old or hand-edited link that are not lines.
+        for (const id of this.selected) if (!this.lineInfo.has(id)) this.toggleLine(id);
+      },
+      () => (this.linesFailed = true),
+    );
+  }
+
+  private async refreshStatus() {
+    const s = await fetchStatus();
+    this.statusFailed = !s;
+    if (s) this.status = s;
+  }
+}
