@@ -18,4 +18,9 @@ describe("glide math", () => {
     expect(shouldJump([23.7348, 37.9755], [23.6466, 37.9420])).toBe(true);
     expect(shouldJump([23.7348, 37.9755], [23.7358, 37.9760])).toBe(false);
   });
+  it("teleports moves over 1 km and glides shorter ones", () => {
+    // 0.0135° of latitude is about 1.5 km; 0.0081° about 900 m
+    expect(shouldJump([23.73, 37.97], [23.73, 37.9835])).toBe(true);
+    expect(shouldJump([23.73, 37.97], [23.73, 37.9781])).toBe(false);
+  });
 });

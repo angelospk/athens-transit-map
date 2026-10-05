@@ -10,7 +10,9 @@ export async function getJSON(url: string, signal?: AbortSignal): Promise<FetchR
     const r = await fetch(url, { signal });
     let body: unknown = null;
     try { body = await r.json(); } catch { /* Cloudflare error pages are HTML; keep the status */ }
-    return { status: r.status, body };
+    // Server time, if the API exposes it (Access-Control-Expose-Headers: Date).
+    const date = Date.parse(r.headers.get("Date") ?? "");
+    return Number.isFinite(date) ? { status: r.status, body, date } : { status: r.status, body };
   } catch {
     return { status: 0, body: null };
   }

@@ -15,7 +15,7 @@ The UI follows the viewer of [foivospro/athens-gtfs-realtime](https://github.com
 ## Features
 
 - Vehicles labelled with the line number, coloured by delay: up to 2′, 2–5′, 5–10′, over 10′, no trip.
-- Route shapes in the line colour. Line picker with search (Greek, accent-insensitive; `A1` finds `Α1`).
+- Route shapes in the line colour. Line picker with search (Greek, accent-insensitive; `a1` finds `Α1`, `40` finds `040`).
 - Vehicle details: delay, trip ("00:35 ΠΕΙΡΑΙΑΣ → ΣΥΝΤΑΓΜΑ"), next stop, GPS age. The trip's route and stops are highlighted.
 - Route details: direction, number of stops, vehicles on it now. Tap a stop for its name.
 - Vehicles glide to new positions; "πριν 24 δευτερόλεπτα" counters tick every second.
@@ -27,6 +27,8 @@ The UI follows the viewer of [foivospro/athens-gtfs-realtime](https://github.com
 
 Svelte 5 + Vite (static build), MapLibre GL JS 6 with [OpenFreeMap](https://openfreemap.org) vector
 tiles (free, no key). GitHub Pages hosting. No backend of its own.
+MapLibre's worker is built as a second entry (`vite.config.ts`), so it shares one chunk with the
+main bundle: about 330 KB of JS gzip in total.
 
 ## Run locally
 
@@ -65,9 +67,13 @@ so the app never adds cache-busting parameters. The rules, from the contract
 - `503 warming_up`: retry after 10–12 s. `404`: stop and remove the line.
 - At most one request in flight per line.
 
-The contract has no server clock, so the app estimates the client clock offset from `updated_at` /
-`next_update_at` (`ClockOffset`). It assumes the client clock is right unless the responses prove
-otherwise, and it clamps waits to the line's update interval so a wrong clock cannot stop polling.
+The app needs server time for pacing and for the "πριν N" ages when the device clock is wrong
+(`ClockOffset`). It estimates the offset from `updated_at` / `next_update_at`
+and, when the API exposes it ([backend issue #3](https://github.com/angelospk/athens-transit-rt/issues/3)),
+the HTTP `Date` header as a lower bound (cached copies keep an old `Date`). It trusts the client clock unless the responses
+prove otherwise, follows measured clock jumps, and clamps waits to the line's update interval so a
+wrong clock cannot stop polling. Known gaps: without `Date`, if the feed has stopped, a new tab can show a
+too-small age for about 30 s; a fast device clock and a stopped feed together cannot be told apart.
 
 Static files (`lines.json`, `lines/{id}.json`) are fetched once per page load.
 

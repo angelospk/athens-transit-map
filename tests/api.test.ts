@@ -12,6 +12,10 @@ describe("api", () => {
     vi.stubGlobal("fetch", async () => new Response("<html>rate limited</html>", { status: 429 }));
     expect(await getJSON("x")).toEqual({ status: 429, body: null });
   });
+  it("returns the Date header as server time when CORS exposes it", async () => {
+    vi.stubGlobal("fetch", async () => new Response("{}", { status: 200, headers: { Date: "Mon, 05 Oct 2026 09:00:00 GMT" } }));
+    expect((await getJSON("x")).date).toBe(Date.UTC(2026, 9, 5, 9));
+  });
   it("maps network errors to status 0", async () => {
     vi.stubGlobal("fetch", async () => { throw new TypeError("offline"); });
     expect(await getJSON("x")).toEqual({ status: 0, body: null });

@@ -3,7 +3,7 @@
 import { fetchLine, fetchLines, fetchLineStatic, fetchStatus } from "./api";
 import { LinePoller, type PollState } from "./poller";
 import { ClockOffset } from "./schedule";
-import { parseSelection, serializeSelection, toggle } from "./selection";
+import { MAX_LINES, selectionIds, serializeSelection, splitKnown, toggle } from "./selection";
 import type { LineInfo, LineLive, LineStatic, Status, Vehicle } from "./types";
 
 export const STALE_S = 120;
@@ -18,7 +18,8 @@ export interface PlacedVehicle { line: string; v: Vehicle }
 const median = (xs: number[]) => {
   if (!xs.length) return null;
   const s = [...xs].sort((a, b) => a - b);
-  return s[s.length >> 1];
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
 
 export class AppState {
@@ -84,7 +85,9 @@ export class AppState {
   });
 
   init() {
-    this.selected = parseSelection(location.search);
+    const ids = selectionIds(location.search);
+    this.selected = ids.slice(0, MAX_LINES);
+    if (ids.length > MAX_LINES) this.say(`Ο σύνδεσμος είχε ${ids.length} γραμμές. Κράτησα τις πρώτες ${MAX_LINES}.`);
     this.writeUrl();
     for (const id of this.selected) this.startLine(id);
     void Promise.allSettled(this.selected.map(fetchLineStatic)).then(() => this.fit(this.selected));
@@ -128,7 +131,8 @@ export class AppState {
   }
 
   private say(text: string) {
-    this.notice = text;
+    // Notices that arrive together (e.g. from one shared link) are shown together.
+    this.notice = !this.notice ? text : this.notice.includes(text) ? this.notice : `${this.notice} ${text}`;
     clearTimeout(this.noticeTimer);
     this.noticeTimer = setTimeout(() => (this.notice = null), 4000);
   }
@@ -175,7 +179,9 @@ export class AppState {
         this.lines = ix.lines;
         this.linesFailed = false;
         // Drop ids from an old or hand-edited link that are not lines.
-        for (const id of this.selected) if (!this.lineInfo.has(id)) this.toggleLine(id);
+        const { dropped } = splitKnown(this.selected, new Set(this.lineInfo.keys()));
+        for (const id of dropped) this.toggleLine(id);
+        if (dropped.length) this.say(`Άγνωστη γραμμή: ${dropped.join(", ")}. Αφαιρέθηκε από την επιλογή.`);
       },
       () => (this.linesFailed = true),
     );

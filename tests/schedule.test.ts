@@ -52,37 +52,82 @@ describe("ClockOffset", () => {
     const c = new ClockOffset();
     // server time = client + 60 s. A response fetched right after an update: t ≈ interval.
     const serverNow = sec + 60;
-    c.observe(serverNow + 29, serverNow - 1, wall);
+    c.observe(serverNow + 29, serverNow - 1, wall, 0);
     expect(Math.abs(c.ms - 60_000)).toBeLessThanOrEqual(16_000);
     // a second response fetched just after the next update narrows the bounds
-    c.observe(serverNow + 31 + 28, serverNow + 31 - 2, wall + 31_000);
+    c.observe(serverNow + 31 + 28, serverNow + 31 - 2, wall + 31_000, 31_000);
     expect(Math.abs(c.ms - 60_000)).toBeLessThanOrEqual(2_000);
   });
   it("keeps 0 when a single response does not rule it out", () => {
     const c = new ClockOffset();
-    c.observe(sec + 30, sec, wall);        // fresh response, accurate client clock
+    c.observe(sec + 30, sec, wall, 0);        // fresh response, accurate client clock
     expect(c.ms).toBe(0);
-    c.observe(sec + 30, sec, wall + 29_000); // same cached copy shortly before it expires
+    c.observe(sec + 30, sec, wall + 29_000, 29_000); // same cached copy shortly before it expires
     expect(c.ms).toBe(0);
   });
   it("detects a fast client clock once a nearly expired copy is seen", () => {
     const c = new ClockOffset();
     const serverNow = sec - 45;   // client 45 s ahead
-    c.observe(serverNow + 30, serverNow, wall);
-    c.observe(serverNow + 30, serverNow, wall + 29_000);
+    c.observe(serverNow + 30, serverNow, wall, 0);
+    c.observe(serverNow + 30, serverNow, wall + 29_000, 29_000);
     expect(Math.abs(c.ms + 45_000)).toBeLessThanOrEqual(3_000);
   });
-  it("resets when bounds contradict (clock jump)", () => {
+  it("never assumes the server is later than a fresh response proves (no early polls)", () => {
     const c = new ClockOffset();
-    c.observe(sec + 30, sec, wall);
-    c.observe(sec + 30, sec, wall + 3_600_000); // the client clock jumped an hour forward
+    const serverNow = sec - 45;   // client 45 s ahead, one fresh 30 s snapshot
+    c.observe(serverNow + 30, serverNow, wall, 0);
+    expect(c.ms).toBe(-45_000);
+  });
+  it("resets when the client clock jumps", () => {
+    const c = new ClockOffset();
+    c.observe(sec + 30, sec, wall, 0);
+    c.observe(sec + 30, sec, wall + 3_600_000, 1_000); // wall jumped an hour, 1 s really passed
     expect(c.ms).toBeGreaterThanOrEqual(-3_600_000);
     expect(c.ms).toBeLessThanOrEqual(-3_568_000);
   });
+  it("keeps the estimate when the feed stops advancing (old snapshot served again)", () => {
+    const c = new ClockOffset();
+    c.observe(sec + 30, sec, wall, 0);   // fresh, accurate client clock
+    for (const t of [60, 120, 180]) c.observe(sec + 30, sec, wall + t * 1000, t * 1000);
+    expect(c.ms).toBe(0);              // so the 180 s age stays visible
+  });
+  it("ignores the upper bound of a snapshot seen before (stale repeat, accurate clock)", () => {
+    const c = new ClockOffset();
+    c.observe(sec + 20, sec - 10, wall, 0);               // 30 s snapshot, received at age 10 s
+    c.observe(sec + 20, sec - 10, wall + 21_000, 21_000); // same snapshot at age 31 s
+    c.observe(sec + 20, sec - 10, wall + 26_000, 26_000); // and at age 36 s
+    expect(c.ms).toBe(0);
+  });
+  it("keeps the known data age across a client clock jump while the feed is stopped", () => {
+    const c = new ClockOffset();
+    c.observe(sec + 30, sec, wall, 0);                                // fresh, accurate clock
+    c.observe(sec + 30, sec, wall + 3_600_000 + 180_000, 180_000);    // 180 s later, clock +1 h
+    const ageS = (wall + 3_780_000 + c.ms) / 1000 - sec;
+    expect(ageS).toBeCloseTo(180, 0);
+  });
+  it("shows the real age once a stale first snapshot is served again past its expiry", () => {
+    const c = new ClockOffset();
+    c.observe(sec - 150, sec - 180, wall, 0);            // stopped feed, accurate clock
+    // The poller waits until next_update_at by its estimate (+1 s jitter) and gets the same
+    // copy, then retries after the 5 s floor and gets it again.
+    c.observe(sec - 150, sec - 180, wall + 31_000, 31_000);
+    c.observe(sec - 150, sec - 180, wall + 36_000, 36_000);
+    expect(c.ms).toBe(0);
+  });
+  it("uses a fresh HTTP Date to see a stuck feed on the first response", () => {
+    const c = new ClockOffset();
+    c.observe(sec - 150, sec - 180, wall, 0, wall);   // accurate clock, Date = now
+    expect(c.ms).toBe(0);                             // so the age shows 180 s at once
+  });
+  it("treats an old cached Date only as a lower bound", () => {
+    const c = new ClockOffset();
+    c.observe(sec + 10, sec - 20, wall, 0, wall - 20_000);   // copy cached 20 s ago
+    expect(c.ms).toBe(0);
+  });
   it("ignores invalid intervals", () => {
     const c = new ClockOffset();
-    c.observe(sec + 30, sec + 40, wall);
-    c.observe(Number.NaN, sec, wall);
+    c.observe(sec + 30, sec + 40, wall, 0);
+    c.observe(Number.NaN, sec, wall, 0);
     expect(c.ms).toBe(0);
   });
 });

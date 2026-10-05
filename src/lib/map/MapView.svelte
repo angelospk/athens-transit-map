@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Map as MlMap, Marker, NavigationControl, Popup, setWorkerUrl, type GeoJSONSource } from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
-  import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+  import workerUrl from "virtual:maplibre-worker";
   import { delayClass } from "../format";
   import { Glider } from "../glide";
   import type { AppState } from "../state.svelte";

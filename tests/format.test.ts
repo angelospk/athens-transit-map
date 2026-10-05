@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ago, delayClass, duration, fmtDelay } from "../src/lib/format";
+import { ago, delayClass, delayText, duration, fmtDelay } from "../src/lib/format";
 
 describe("duration", () => {
   it("speaks Greek minutes and seconds", () => {
@@ -36,5 +36,13 @@ describe("ago", () => {
   it("counts seconds since a unix time and clamps skew to 0", () => {
     expect(ago(1000, 1_024_000)).toBe("πριν 24 δευτερόλεπτα");
     expect(ago(1030, 1_024_000)).toBe("πριν 0 δευτερόλεπτα");
+  });
+});
+
+describe("delayText", () => {
+  it("says the vehicle is unmatched when there is no delay", () => {
+    expect(delayText(null)).toBe("χωρίς αντιστοίχιση σε δρομολόγιο");
+    expect(delayText(0)).toBe("καμία");
+    expect(delayText(144)).toBe("2 λεπτά και 24 δευτερόλεπτα");
   });
 });

@@ -10,14 +10,21 @@ const LOOKALIKE: Record<string, string> = {
 export const normalizeLineId = (id: string) =>
   [...id.trim().toLocaleUpperCase("el")].map(c => LOOKALIKE[c] ?? c).join("");
 
-export function parseSelection(search: string): string[] {
+// Every id in the link, deduped; parseSelection() keeps the first MAX_LINES.
+export function selectionIds(search: string): string[] {
   const raw = new URLSearchParams(search).get("l") ?? "";
-  const out: string[] = [];
+  const out = new Set<string>();
   for (const part of raw.split(",")) {
     const id = normalizeLineId(part);
-    if (id && !out.includes(id)) out.push(id);
+    if (id) out.add(id);
   }
-  return out.slice(0, MAX_LINES);
+  return [...out];
+}
+
+export const parseSelection = (search: string) => selectionIds(search).slice(0, MAX_LINES);
+
+export function splitKnown(ids: string[], known: Set<string>) {
+  return { kept: ids.filter(id => known.has(id)), dropped: ids.filter(id => !known.has(id)) };
 }
 
 export function serializeSelection(lines: string[]): string {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ago, clock, delayClass, fmtDelay } from "../format";
+  import { ago, clock, delayClass, delayText } from "../format";
   import type { AppState } from "../state.svelte";
 
   let { app }: { app: AppState } = $props();
@@ -53,7 +53,7 @@
             <th>Καθυστέρηση</th>
             <td>
               <i class="dot {delayClass(v.delay_s)}"></i>
-              {v.delay_s == null ? "δεν αντιστοιχίστηκε σε δρομολόγιο" : fmtDelay(v.delay_s)}
+              {delayText(v.delay_s)}
             </td>
           </tr>
           {#if v.trip_label}<tr><th>Δρομολόγιο</th><td title={v.trip_id ?? ""}>{v.trip_label}</td></tr>{/if}

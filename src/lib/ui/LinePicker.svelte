@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { MAX_LINES, normalizeLineId } from "../selection";
+  import { searchLines } from "../search";
+  import { MAX_LINES } from "../selection";
   import type { AppState } from "../state.svelte";
-  import type { LineInfo } from "../types";
 
   let { app }: { app: AppState } = $props();
 
@@ -13,24 +13,7 @@
   let input: HTMLInputElement | undefined = $state();
   let list: HTMLUListElement | undefined = $state();
 
-  // Case-, accent- and final-sigma-insensitive Greek matching.
-  const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase("el").replace(/ς/g, "σ");
-  const byId = (a: LineInfo, b: LineInfo) => a.id.localeCompare(b.id, "el", { numeric: true });
-  const sorted = $derived([...app.lines].sort(byId));
-
-  const results = $derived.by(() => {
-    const q = fold(query.trim());
-    if (!q) return sorted;
-    const qid = fold(normalizeLineId(query));
-    const rank = (l: LineInfo) => {
-      const id = fold(l.id);
-      if (id === qid) return 0;
-      if (id.startsWith(qid)) return 1;
-      if (fold(l.name).includes(q) || fold(l.name_en).includes(q)) return 2;
-      return -1;
-    };
-    return sorted.map(l => [rank(l), l] as const).filter(([r]) => r >= 0).sort((a, b) => a[0] - b[0]).map(([, l]) => l);
-  });
+  const results = $derived(searchLines(app.lines, query));
 
   const full = $derived(app.selected.length >= MAX_LINES);
   const quick = $derived(QUICK.filter(id => app.lineInfo.has(id) && !app.selected.includes(id)));

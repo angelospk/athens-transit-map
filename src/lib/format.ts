@@ -15,6 +15,8 @@ export function duration(sec: number): string {
 
 export const fmtDelay = (s: number) => (s === 0 ? "καμία" : s > 0 ? duration(s) : duration(s) + " νωρίτερα");
 
+export const delayText = (s: number | null) => (s == null ? "χωρίς αντιστοίχιση σε δρομολόγιο" : fmtDelay(s));
+
 export const fmtMinutes = (s: number) => (s >= 0 ? "+" : "−") + Math.abs(s / 60).toFixed(1).replace(".", ",");
 
 export const delayClass = (d: number | null): DelayClass =>

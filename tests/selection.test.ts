@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_LINES, normalizeLineId, parseSelection, serializeSelection, toggle } from "../src/lib/selection";
+import { MAX_LINES, normalizeLineId, parseSelection, selectionIds, serializeSelection, splitKnown, toggle } from "../src/lib/selection";
 
 describe("parseSelection", () => {
   it("decodes, dedupes and maps Latin look-alikes to Greek", () => {
@@ -45,5 +45,21 @@ describe("normalizeLineId", () => {
   it("only maps letters, never digits", () => {
     expect(normalizeLineId("b12")).toBe("Β12");
     expect(normalizeLineId("040")).toBe("040");
+  });
+});
+
+describe("selectionIds", () => {
+  it("returns every id so callers can tell the link was cut to 5", () => {
+    expect(selectionIds("?l=1,2,3,4,5,6,7,8")).toHaveLength(8);
+    expect(parseSelection("?l=1,2,3,4,5,6,7,8")).toEqual(["1", "2", "3", "4", "5"]);
+  });
+});
+
+describe("splitKnown", () => {
+  it("keeps known ids in order and returns the unknown ones", () => {
+    expect(splitKnown(["040", "ΧΧΧ", "Α1", "999"], new Set(["040", "Α1"]))).toEqual({
+      kept: ["040", "Α1"],
+      dropped: ["ΧΧΧ", "999"],
+    });
   });
 });

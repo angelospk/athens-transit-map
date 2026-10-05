@@ -38,27 +38,47 @@ export function outcomeDelay(o: { outcome: Outcome; wallNow: number; offsetMs: n
 export const gapFloor = (hidden: boolean) => (hidden ? HIDDEN_GAP_MS : MIN_GAP_MS);
 
 // Estimates serverNow - clientNow without a server clock in the contract.
-// For a 200 received at client time recv: updated_at <= serverNow, and a cached copy is
-// only served until next_update_at, so next - serverNow is in [-slack, next - updated].
-// A fresh response tightens the lower bound, a nearly expired cached one the upper bound.
+// For a 200 received at client time recv: updated_at <= serverNow always (lower bound).
+// The first time a snapshot is seen it is assumed current (the cache serves it only until
+// next_update_at), so serverNow <= next + slack (upper bound). A snapshot seen again may
+// be stale, so it only gives a lower bound; seen again after its own next_update_at (by
+// our estimate), it proves the feed is stuck, and the assumed upper bounds are dropped.
+// The HTTP Date header, when exposed, is another lower bound (cached copies keep it).
 export class ClockOffset {
   private lo = -Infinity;
   private hi = Infinity;
+  private preferred = 0;                // the client clock, corrected for jumps we measured
+  private skew: number | null = null;   // wall - mono at the last observation
+  private seen = new Set<string>();
 
-  observe(nextUpdateAt: number, updatedAt: number, recvWallMs: number) {
+  observe(nextUpdateAt: number, updatedAt: number, recvWallMs: number, recvMonoMs: number, dateMs?: number) {
     const interval = validInterval(nextUpdateAt, updatedAt);
     if (interval == null) return;
-    const base = nextUpdateAt * 1000 - recvWallMs;
-    const lo = base - interval * 1000, hi = base + SLACK_MS;
-    if (Math.max(lo, this.lo) > Math.min(hi, this.hi)) {
-      this.lo = lo; this.hi = hi;
-    } else {
-      this.lo = Math.max(lo, this.lo); this.hi = Math.min(hi, this.hi);
+    const skew = recvWallMs - recvMonoMs;
+    if (this.skew != null) {   // the client clock may have jumped: shift everything with it
+      const jump = skew - this.skew;
+      this.lo -= jump; this.hi -= jump; this.preferred -= jump;
     }
+    this.skew = skew;
+    this.lo = Math.max(updatedAt * 1000 - recvWallMs, this.lo);
+    // A cached response keeps its old Date, so Date is only a lower bound, like updated_at.
+    // It still shows a stuck feed at once: a fresh Date far past next_update_at.
+    if (dateMs != null && Number.isFinite(dateMs)) this.lo = Math.max(dateMs - recvWallMs, this.lo);
+    const snap = `${updatedAt}/${nextUpdateAt}`;
+    if (!this.seen.has(snap)) {
+      if (this.seen.size > 200) this.seen.clear();
+      this.seen.add(snap);
+      this.hi = Math.min(nextUpdateAt * 1000 + SLACK_MS - recvWallMs, this.hi);
+    } else if (recvWallMs + this.ms > nextUpdateAt * 1000 + SLACK_MS) {
+      this.hi = Infinity;   // stuck feed: the assumed upper bounds were wrong
+    }
+    if (this.hi < this.lo) this.hi = Infinity;
   }
 
-  // Trust the client clock (usually NTP-synced) unless the bounds rule it out.
+  // Trust the client clock (usually NTP-synced) unless the bounds rule it out. Otherwise
+  // take the lower bound: it can only make polls late, never early, and ages too small.
   get ms(): number {
-    return Math.round(Math.min(Math.max(0, this.lo), this.hi));
+    if (this.lo === -Infinity) return Math.round(this.preferred);
+    return Math.round(this.lo <= this.preferred && this.preferred <= this.hi ? this.preferred : this.lo);
   }
 }

@@ -3,7 +3,7 @@
 export type LngLat = [number, number];
 
 export const GLIDE_MS = 1500;
-export const JUMP_M = 3000;   // longer moves (new trip, GPS glitch) are not animated
+export const JUMP_M = 1000;   // longer moves (new trip, GPS glitch) are not animated
 
 export const ease = (k: number) => k * (2 - k);
 

@@ -4,7 +4,7 @@ import { ClockOffset, gapFloor, outcomeDelay, type Outcome } from "./schedule";
 import type { LineLive } from "./types";
 
 export type PollState = "loading" | "ok" | "warming" | "backoff" | "unknown";
-export interface FetchResult { status: number; body: unknown }
+export interface FetchResult { status: number; body: unknown; date?: number }   // date: server ms
 
 export interface PollerOptions {
   line: string;
@@ -110,10 +110,10 @@ export class LinePoller {
     this.arm();
   }
 
-  private handle({ status, body }: FetchResult): Outcome | null {
+  private handle({ status, body, date }: FetchResult): Outcome | null {
     if (status === 200 && isLineLive(body)) {
       this.errors = 0;
-      this.o.clock.observe(body.next_update_at, body.updated_at, this.o.wall());
+      this.o.clock.observe(body.next_update_at, body.updated_at, this.o.wall(), this.o.mono(), date);
       this.o.onData(body);
       this.o.onState("ok");
       return { kind: "ok", nextUpdateAt: body.next_update_at, updatedAt: body.updated_at };

@@ -56,6 +56,10 @@
       </div>
     {/if}
 
+    {#each app.selected.filter(id => app.live[id]?.vehicles.length === 0) as id (id)}
+      <div class="muted">Η γραμμή {id} δεν είχε οχήματα σε κίνηση στην τελευταία ενημέρωση.</div>
+    {/each}
+
     <div class="legend">
       <span><i class="ontime"></i>έως 2′</span><span><i class="late1"></i>2–5′</span>
       <span><i class="late2"></i>5–10′</span><span><i class="late3"></i>πάνω από 10′</span>

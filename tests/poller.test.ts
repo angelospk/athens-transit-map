@@ -52,6 +52,22 @@ describe("LinePoller", () => {
     t.poller.stop();
   });
 
+  it("waits for next_update_at when the client clock is 45 s fast", async () => {
+    // Fake time is the server clock; the cached snapshot changes every 30 s.
+    const snap = () => { const u = Math.floor((Date.now() - T0) / 30_000) * 30 + T0 / 1000; return { line: "040", updated_at: u, next_update_at: u + 30, vehicles: [] }; };
+    const starts: number[] = [];
+    const poller = new LinePoller({
+      line: "040",
+      fetchLine: async () => { starts.push(Date.now()); return { status: 200, body: snap() }; },
+      onData: () => {}, onState: () => {}, rand: () => 0,
+      wall: () => Date.now() + 45_000, mono: () => Date.now(), isHidden: () => false,
+    });
+    poller.start();
+    await vi.advanceTimersByTimeAsync(95_000);
+    expect(starts).toEqual([T0, T0 + 31_000, T0 + 61_000, T0 + 91_000]);
+    poller.stop();
+  });
+
   it("never fetches faster than every 5 s when next_update_at is stale", async () => {
     const t = setup(() => ({ status: 200, body: body(-100) }));
     t.poller.start();
