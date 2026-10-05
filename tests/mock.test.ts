@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { CYCLE_S, mockLineAt } from "../src/lib/mock";
+import { CYCLE_S, MOCK_SPEED, mockLineAt } from "../src/lib/mock";
+import { distanceM } from "../src/lib/glide";
 import { isLineLive } from "../src/lib/poller";
 
 describe("mock backend", () => {
@@ -15,6 +16,15 @@ describe("mock backend", () => {
     const a = mockLineAt("040", 1_791_100_000).body as { vehicles: { lat: number }[] };
     const b = mockLineAt("040", 1_791_100_030).body as { vehicles: { lat: number }[] };
     expect(a.vehicles.some((v, i) => v.lat !== b.vehicles[i].lat)).toBe(true);
+  });
+  it("moves vehicles at a bus-like speed and keeps next_stop_id ahead", () => {
+    type V = { id: string; lat: number; lon: number; position_at: number; next_stop_id: string | null };
+    const a = (mockLineAt("040", 1_791_100_000).body as { vehicles: V[] }).vehicles[0];
+    const b = (mockLineAt("040", 1_791_100_030).body as { vehicles: V[] }).vehicles[0];
+    const v = distanceM([a.lon, a.lat], [b.lon, b.lat]) / (b.position_at - a.position_at);
+    expect(v).toBeGreaterThan(MOCK_SPEED * 0.5);   // straight-line distance <= distance along the route
+    expect(v).toBeLessThanOrEqual(MOCK_SPEED * 1.01);
+    expect(b.next_stop_id).not.toBeNull();
   });
   it("404s unknown lines", () => {
     expect(mockLineAt("ΖΖΖ", 1_791_100_000).status).toBe(404);

@@ -1,22 +1,15 @@
-// Fixture-backed fake backend for VITE_MOCK=1. Mimics a 30 s server cycle:
-// every cycle each vehicle moves one point along its route shape (wrapping at the end).
+// Fixture-backed fake backend for VITE_MOCK=1. Mimics a 30 s server cycle: each vehicle drives
+// along its route shape at MOCK_SPEED (restarting at the end), its GPS fix a few seconds old.
 
 import type { FetchResult } from "./poller";
+import { pointAt, projectCandidates, shapeLength, stopOffsets } from "./predict";
 import type { LineLive, LineStatic, LinesIndex, Status, Vehicle } from "./types";
 
 const files = import.meta.glob<{ default: unknown }>("../fixtures/*.json", { eager: true });
 const fixture = <T>(name: string) => files[`../fixtures/${name}.json`]?.default as T | undefined;
 
 export const CYCLE_S = 30;
-
-function nearest(shape: [number, number][], v: Vehicle) {
-  let best = 0, bestD = Infinity;
-  shape.forEach(([lat, lon], i) => {
-    const d = (lat - v.lat) ** 2 + (lon - v.lon) ** 2;
-    if (d < bestD) { bestD = d; best = i; }
-  });
-  return best;
-}
+export const MOCK_SPEED = 7;   // m/s, about 25 km/h
 
 export function mockLineAt(line: string, nowSec: number): FetchResult {
   const live = fixture<LineLive>(`line-${line}`);
@@ -30,11 +23,18 @@ export function mockLineAt(line: string, nowSec: number): FetchResult {
       : { status: 404, body: { error: "unknown_line" } };
   }
   const vehicles = live.vehicles.map((v, i) => {
-    const shape = (v.variant && st?.variants[v.variant]?.shape) || [];
-    if (!shape.length) return { ...v, position_at: updated - 3 - (i % 20) };
-    const at = (nearest(shape, v) + cycle) % shape.length;
-    const [lat, lon] = shape[at];
-    return { ...v, lat, lon, bearing: null, position_at: updated - 3 - (i % 20) };   // moved: old bearing is wrong
+    const at = updated - 3 - (i % 20);
+    const variant = v.variant ? st?.variants[v.variant] : undefined;
+    if (!variant || variant.shape.length < 2) return { ...v, position_at: at };
+    const len = shapeLength(variant.shape);
+    const s0 = projectCandidates(variant.shape, [v.lon, v.lat])[0]?.s ?? 0;
+    const s = (s0 + MOCK_SPEED * at) % len;
+    const [lon, lat] = pointAt(variant.shape, s);
+    const known = variant.stops.filter(id => st!.stops[id]);
+    const stopS = stopOffsets(variant.shape, known.map(id => [st!.stops[id].lon, st!.stops[id].lat] as [number, number]));
+    const next = known.find((_, k) => stopS[k] > s) ?? null;
+    // Moved, so the fixture's bearing is wrong.
+    return { ...v, lat, lon, bearing: null, position_at: at, next_stop_id: next };
   });
   return { status: 200, body: { line, updated_at: updated, next_update_at: updated + CYCLE_S, vehicles } };
 }

@@ -3,8 +3,11 @@
   import "maplibre-gl/dist/maplibre-gl.css";
   import workerUrl from "virtual:maplibre-worker";
   import { ageLabel, delayClass, isStalePos } from "../format";
-  import { distanceM, Glider, JUMP_M, type LngLat } from "../glide";
+  import { untrack } from "svelte";
+  import { distanceM, Glider, JUMP_M, ScalarGlider, type LngLat } from "../glide";
   import { vehicleHeading } from "../heading";
+  import { headingAt, pointAt, predictS, shapeLength, stopOffsets, updateTrack, type Route, type Track } from "../predict";
+  import type { Variant } from "../types";
   import type { AppState } from "../state.svelte";
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
 
@@ -23,10 +26,37 @@
 
   // Vehicle markers live outside Svelte's reactivity: they are mutated every frame.
   interface Sample { pos: LngLat; at: number; variant: string | null }
-  const markers = new Map<string, {
+  interface Entry {
     marker: Marker; el: HTMLButtonElement; glider: Glider; dir: HTMLElement; age: HTMLElement;
     sample: Sample; prev: LngLat | null; positionAt: number;
-  }>();
+    // Predicted motion: the vehicle moves along its route between GPS updates (predict.ts).
+    track: Track | null; route: Route | null; along: ScalarGlider;
+  }
+  const markers = new Map<string, Entry>();
+
+  // Route geometry per variant, built once per static file.
+  const routes = new WeakMap<Variant, Route>();
+  function routeFor(line: string, variant: string | null): Route | null {
+    const st = variant ? app.statics[line] : undefined;
+    const v = variant ? st?.variants[variant] : undefined;
+    if (!st || !v || v.shape.length < 2) return null;
+    let r = routes.get(v);
+    if (!r) {
+      const known = v.stops.filter(id => st.stops[id]);
+      r = { shape: v.shape, stopIds: known, endS: shapeLength(v.shape),
+        stopS: stopOffsets(v.shape, known.map(id => [st.stops[id].lon, st.stops[id].lat] as LngLat)) };
+      routes.set(v, r);
+    }
+    return r;
+  }
+
+  function setHeading(e: Entry, h: number | null) {
+    e.dir.hidden = h == null;
+    if (h == null) return;
+    // Around the pill (an ellipse), pointing outwards.
+    const rx = e.el.offsetWidth / 2 + 5, ry = 16, a = (h * Math.PI) / 180;
+    e.dir.style.transform = `translate(${Math.sin(a) * rx}px, ${-Math.cos(a) * ry}px) rotate(${h}deg)`;
+  }
   const LANE_PX = 3;   // each direction drawn to the right of its travel direction (two lanes)
   const key = (line: string, id: string) => `${line}/${id}`;
 
@@ -140,7 +170,7 @@
     if (import.meta.env.DEV) Object.assign(window, { __map: m });
     return () => {
       app.fit = () => {};
-      for (const { glider } of markers.values()) glider.cancel();
+      for (const { glider, along } of markers.values()) { glider.cancel(); along.cancel(); }
       markers.clear();
       m.remove();
       map = undefined;
@@ -164,12 +194,14 @@
   $effect(() => {
     const m = map;
     if (!m) return;
+    const nowSec = untrack(() => app.serverNow) / 1000;
     const seen = new Set<string>();
     for (const { line, v, faded } of app.vehicles) {
       const k = key(line, v.id);
       const pos: LngLat = [v.lon, v.lat];
       seen.add(k);
       let entry = markers.get(k);
+      const route = routeFor(line, v.variant);
       if (!entry) {
         const el = document.createElement("button");
         el.type = "button";
@@ -185,18 +217,52 @@
         age.className = "age";
         el.append(num, dir, age);
         const marker = new Marker({ element: el, anchor: "center" }).setLngLat(pos).addTo(m);
-        entry = { marker, el, dir, age, glider: new Glider(pos, p => marker.setLngLat(p)),
-          sample: { pos, at: v.position_at, variant: v.variant }, prev: null, positionAt: v.position_at };
+        const glider = new Glider(pos, p => marker.setLngLat(p));
+        const e: Entry = {
+          marker, el, dir, age, glider, sample: { pos, at: v.position_at, variant: v.variant }, prev: null,
+          positionAt: v.position_at, track: null, route: null,
+          along: new ScalarGlider(0, s => {
+            if (!e.route) return;
+            const p = pointAt(e.route.shape, s);
+            glider.pos = p;
+            marker.setLngLat(p);
+          }),
+        };
+        entry = e;
         markers.set(k, entry);
-      } else {
-        entry.glider.to(pos);
-        // Heading from GPS samples only (not the gliding position); forget them on a new trip or a jump.
-        const s = entry.sample;
-        if (s.variant !== v.variant || distanceM(s.pos, pos) > JUMP_M) entry.prev = null;
-        else if (v.position_at > s.at && (s.pos[0] !== pos[0] || s.pos[1] !== pos[1])) entry.prev = s.pos;
-        if (v.position_at >= s.at) entry.sample = { pos, at: v.position_at, variant: v.variant };
+      } else if (v.position_at < entry.sample.at) {
+        continue;   // older than the sample shown (reordered responses): change nothing
       }
+      // Heading from GPS samples only (not the shown position); forget them on a new trip or a jump.
+      const smp = entry.sample;
+      if (smp.variant !== v.variant || distanceM(smp.pos, pos) > JUMP_M) entry.prev = null;
+      else if (v.position_at > smp.at && (smp.pos[0] !== pos[0] || smp.pos[1] !== pos[1])) entry.prev = smp.pos;
+      entry.sample = { pos, at: v.position_at, variant: v.variant };
       entry.positionAt = v.position_at;
+
+      const before = entry.track;
+      const track = route
+        ? updateTrack(entry.track, { pos, at: v.position_at, key: `${v.variant}/${v.trip_id}`, nextStop: v.next_stop_id }, route, nowSec)
+        : null;
+      if (track && track === before && entry.route === route) {
+        // The same sample again: keep predicting from it.
+      } else if (track) {
+        const target = predictS(track, nowSec);
+        if (before && entry.route === route && before.key === track.key && Math.abs(target - entry.along.value) <= JUMP_M) {
+          entry.glider.cancel();          // one animation owns the marker
+          entry.along.to(target, 1500);   // correction, along the route
+        } else {
+          entry.along.cancel();
+          entry.along.value = target;
+          entry.glider.to(pointAt(route!.shape, target));   // entering route mode: a plain glide there
+        }
+      } else {
+        entry.along.cancel();
+        entry.glider.to(pos);
+      }
+      entry.track = track;
+      entry.route = track ? route : null;
+
       // classList, not className: MapLibre positions the marker through its own classes.
       const cls = delayClass(v.delay_s);
       if (!entry.el.classList.contains(cls)) {
@@ -204,25 +270,19 @@
         entry.el.classList.add("bus", cls);
       }
       entry.el.classList.toggle("faded", faded);
-      const shape = v.variant ? app.statics[line]?.variants[v.variant]?.shape : null;
-      const h = vehicleHeading(v, shape, entry.prev);
-      entry.dir.hidden = h == null;
-      if (h != null) {
-        // Around the pill (an ellipse), pointing outwards.
-        const rx = entry.el.offsetWidth / 2 + 5, ry = 16, a = (h * Math.PI) / 180;
-        entry.dir.style.transform = `translate(${Math.sin(a) * rx}px, ${-Math.cos(a) * ry}px) rotate(${h}deg)`;
-      }
+      setHeading(entry, track?.speed ? headingAt(route!.shape, entry.along.value) : vehicleHeading(v, route?.shape, entry.prev));
       entry.el.setAttribute("aria-label", `Γραμμή ${line}, όχημα ${v.id}`);
     }
     for (const [k, entry] of markers) {
       if (seen.has(k)) continue;
       entry.glider.cancel();
+      entry.along.cancel();
       entry.marker.remove();
       markers.delete(k);
     }
   });
 
-  // Position age on each marker, every second. Touches only text and one class.
+  // Every second: the position age on each marker, and the next predicted step along the route.
   $effect(() => {
     const now = app.serverNow / 1000;
     void app.vehicles;
@@ -232,6 +292,11 @@
       const label = ageLabel(age);
       if (e.age.textContent !== label) e.age.textContent = label;
       e.el.classList.toggle("stale", isStalePos(age));
+      // A running correction (1.5 s) or plain glide finishes first; each 1 s step replaces the last.
+      if (e.track?.speed && e.route && !e.glider.busy && !e.along.correcting) {
+        e.along.to(predictS(e.track, now + 1), 1000, true);
+        setHeading(e, headingAt(e.route.shape, e.along.value));
+      }
     }
   });
 

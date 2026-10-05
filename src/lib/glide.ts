@@ -26,6 +26,7 @@ const reducedMotion = () => typeof matchMedia !== "undefined" && matchMedia("(pr
 // Drives one marker. apply() is called with each intermediate position.
 export class Glider {
   private frame = 0;
+  busy = false;
   constructor(public pos: LngLat, private apply: (p: LngLat) => void) {
     apply(pos);
   }
@@ -39,16 +40,53 @@ export class Glider {
       return;
     }
     const t0 = performance.now();
+    this.busy = true;
     const step = (t: number) => {
       const k = (t - t0) / GLIDE_MS;
       this.pos = k >= 1 ? target : interpolate(from, target, k);
       this.apply(this.pos);
       if (k < 1) this.frame = requestAnimationFrame(step);
+      else this.busy = false;
     };
     this.frame = requestAnimationFrame(step);
   }
 
   cancel() {
     cancelAnimationFrame(this.frame);
+    this.busy = false;
+  }
+}
+
+// Animates one number (a distance along a route) so a marker can follow the route's bends.
+export class ScalarGlider {
+  private frame = 0;
+  busy = false;
+  correcting = false;   // an eased (non-linear) animation is running
+  constructor(public value: number, private apply: (v: number) => void) {}
+
+  to(target: number, ms: number, linear = false) {
+    this.cancel();
+    const from = this.value;
+    if (from === target || reducedMotion() || document.hidden) {
+      this.value = target;
+      this.apply(target);
+      return;
+    }
+    const t0 = performance.now();
+    this.busy = true;
+    this.correcting = !linear;
+    const step = (t: number) => {
+      const k = Math.min(1, (t - t0) / ms);
+      this.value = from + (target - from) * (linear ? k : ease(k));
+      this.apply(this.value);
+      if (k < 1) this.frame = requestAnimationFrame(step);
+      else this.busy = this.correcting = false;
+    };
+    this.frame = requestAnimationFrame(step);
+  }
+
+  cancel() {
+    cancelAnimationFrame(this.frame);
+    this.busy = this.correcting = false;
   }
 }
