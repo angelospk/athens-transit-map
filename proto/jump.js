@@ -26,14 +26,21 @@ function seg(s1, s2) {
 // The three buses. Stale ones show a guessed (predicted) position until the fix at TJ.
 const BUSES = [
   { id: "live", s0: 0, v: 8, cls: "ontime", live: true },
-  { id: "fwd", s0: 100, v: 6, cls: "late1", age0: 160, jump: 150 },   // 900 m ahead
-  { id: "back", s0: 470, v: 6, cls: "ontime", age0: 230, jump: -110 }, // 650 m behind
+  { id: "fwd", s0: 100, v: 6, cls: "late1", age0: 160, jump: 150, raw: 90 },   // 900 m ahead
+  { id: "back", s0: 470, v: 6, cls: "ontime", age0: 230, jump: -110, raw: 380 }, // 650 m behind
 ];
 const oldS = b => b.s0 + b.v * TJ;
 const newS = (b, t) => oldS(b) + b.jump + b.v * (t - TJ);
 const shownS = (b, t) => (b.live || t < TJ ? b.s0 + b.v * t : newS(b, t));
 const age = (b, t) => (b.live ? 2 + (t * 1.3) % 9 : t < TJ ? b.age0 + t : 2 + (t - TJ));
 const fmtAge = s => (s < 60 ? `πριν ${Math.floor(s)}″` : `πριν ${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`);
+// Without motion: the last recorded fix as it is. Live fixes every 3 s, seen 2 s late.
+const FIX_EVERY = 3;
+function lastFix(b, t) {
+  if (!b.live && t < TJ) return { s: b.raw, at: -b.age0 };
+  const t0 = b.live ? 0 : TJ, k = t0 + Math.floor((t - t0) / FIX_EVERY) * FIX_EVERY;
+  return { s: b.live ? shownS(b, k) : newS(b, k), at: k - 2 };
+}
 const clamp = x => Math.max(0, Math.min(1, x));
 const ease = x => (x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2);
 
@@ -204,6 +211,18 @@ const VARIANTS = [
         ageText: dt < 1.6 ? "μόλις τώρα" : fmtAge(age(b, t)), ageColor: C.ontime });
     },
   },
+  {
+    key: "F", caption: "Χωρίς κίνηση: μόνο η τελευταία καταγεγραμμένη θέση και πριν πόσο· ίχνος όταν αλλάζει.",
+    raw: true,
+    draw(g, b, t) {
+      const f = lastFix(b, t), a = t - f.at, since = t - Math.max(0, f.at + 2);
+      if (since < 1 && t >= 1) {   // a new fix arrived under a second ago: trail from the previous one
+        const prev = lastFix(b, f.at + 2 - 0.001);
+        line(g, seg(prev.s, f.s), `rgba(0,113,227,${0.55 * (1 - since)})`, 8);
+      }
+      pill(g, at(f.s), b, a > 90 ? { hollow: 1, dashed: true, alpha: 0.9, ageText: fmtAge(a), ageColor: C.late2 } : { ageText: fmtAge(a) });
+    },
+  },
 ];
 
 // ---- page wiring ----
@@ -226,7 +245,7 @@ function render(t) {
     g.setTransform(2, 0, 0, 2, 0, 0);
     background(g);
     const look = v.stale || staleAll.checked ? hollowLook : todayLook;
-    for (const b of BUSES) b.live ? pill(g, at(shownS(b, t)), b, look(b, t)) : v.draw(g, b, t, look);
+    for (const b of BUSES) b.live && !v.raw ? pill(g, at(shownS(b, t)), b, look(b, t)) : v.draw(g, b, t, look);
   }
   clock.textContent = `t = ${t.toFixed(1)} s · νέα θέση στα ${TJ} s`;
 }
