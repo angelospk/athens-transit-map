@@ -24,8 +24,8 @@ motion lab (`lab/motion/`, results in its `program.md` log).
 - No measured speed: `NO_SPEED` (1.5 m/s), except a held first sample (ambiguous loop leg) and a
   vehicle measured standing (speed 0): those stand.
 - Line markers (`predictS`): the route's stops beyond 15 m ahead of the fix. City layer
-  (`pathPlan`): the backend `path`, its end as the last stop, plus `path_stops` (contract rev 4,
-  optional) when the backend sends them.
+  (`pathPlan`): the backend `path` joined with `path_beyond` (contract rev 4: on to the third
+  stop ahead), waiting at `path_stops`. A rev 3 backend: `path` only, braking into its end.
 - `chase`: `TAU_S` 2.5 → 10 s, `CATCH_MAX` 10 → 6 m/s. A gap closes calmly; a bus at 4 m/s shows
   at most 10 m/s (36 km/h) while catching up.
 
@@ -36,7 +36,7 @@ motion lab (`lab/motion/`, results in its `program.md` log).
 | before | 343 | 225 m | −222 m | 3% | 289 m |
 | line markers (all stops) | 236 | 122 m | −52 m | 21% | 144 m |
 | city, path to the next stop (backend rev 3) | 310 | 183 m | −159 m | 11% | 256 m |
-| city, path to 3 stops (backend rev 4) | 239 | 122 m | −43 m | 22% | 147 m |
+| city, `path` + `path_beyond` (backend rev 4) | 239 | 122 m | −43 m | 22% | 147 m |
 
 Trade-off: the guess is now ahead of the bus more often (21% vs 3% beyond 50 m), so there are a
 few more small backward corrections; the median error halves.

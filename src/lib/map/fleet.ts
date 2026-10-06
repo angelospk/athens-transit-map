@@ -31,10 +31,15 @@ export interface FleetEntry {
 
 const ll = (path: [number, number][]) => path.map(([lat, lon]) => [lon, lat] as LngLat);
 
-// Along the backend `path` when there is one (without a speed: slowly), else straight to the fix.
-const ahead = (shown: LngLat, v: CityVehicle | Vehicle, pos: LngLat, nowSec: number) => v.path
-  ? pathPlan(shown, ll(v.path), v.speed ?? NO_SPEED, v.position_at, nowSec, v.path_stops ?? [])
-  : linePlan(shown, pos, v.bearing);
+// Along the backend `path` and its continuation `path_beyond` (rev 4; it starts at path's end, or
+// at the vehicle when path is null) when there is one, without a speed slowly; else straight to
+// the fix.
+function ahead(shown: LngLat, v: CityVehicle | Vehicle, pos: LngLat, nowSec: number) {
+  const geom = v.path && v.path_beyond ? [...v.path, ...v.path_beyond.slice(1)] : v.path ?? v.path_beyond;
+  return geom
+    ? pathPlan(shown, ll(geom), v.speed ?? NO_SPEED, v.position_at, nowSec, v.path_stops ?? [])
+    : linePlan(shown, pos, v.bearing);
+}
 
 export class Fleet {
   entries = new Map<string, FleetEntry>();

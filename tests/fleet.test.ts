@@ -99,6 +99,17 @@ describe("Fleet", () => {
     expect(at(T + 60)).toBeLessThan(lonAt(300) + 1e-9);      // waits at the stop 200 m on
   });
 
+  it("drives on past the next stop along path_beyond (rev 4), also when path is null at a stop", () => {
+    const f = new Fleet();
+    const beyond: [number, number][] = [[37.97, lonAt(300)], [37.97, lonAt(1500)]];
+    f.city([city(100, T, { path: [[37.97, lonAt(100)], [37.97, lonAt(300)]], path_beyond: beyond, path_stops: [200, 700] })], new Set(), T);
+    const at = (t: number) => f.entries.get("040/1")!.mover.targetPos(t)![0];
+    expect(at(T + 170)).toBeGreaterThan(lonAt(800));          // past both stops
+    const g = new Fleet();
+    g.city([city(300, T, { path: null, path_beyond: beyond, path_stops: [500] })], new Set(), T);
+    expect(g.entries.get("040/1")!.mover.targetPos(T + 60)![0]).toBeGreaterThan(lonAt(400));
+  });
+
   it("keeps the same id on two lines apart", () => {
     const f = new Fleet();
     f.city([city(100, T), city(100, T, { line: "550" })], new Set(), T);

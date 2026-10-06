@@ -14,7 +14,8 @@ Source of truth: `athens-transit-rt/docs/CONTRACT.md`. The frontend keeps a copy
   frontend repo by whoever made it (backend thread opens the copy as a commit or
   issue on the frontend repo).
 
-Revision: 3 (2026-10-06): `GET /v1/vehicles`; `speed` and `path` on vehicles
+Revision: 4 (2026-10-06): `path_beyond` and `path_stops` on vehicles
+(rev 3: `GET /v1/vehicles`; `speed` and `path` on vehicles)
 
 ## Hosts
 
@@ -54,7 +55,9 @@ The frontend combines lines in the browser. Max 5 lines per client (enforced in 
       "delay_s": 140,
       "next_stop_id": "400012",
       "speed": 6.4,
-      "path": [[37.9755, 23.7348], [37.97601, 23.73502], [37.9781, 23.7356]]
+      "path": [[37.9755, 23.7348], [37.97601, 23.73502], [37.9781, 23.7356]],
+      "path_beyond": [[37.9781, 23.7356], [37.98145, 23.73668], [37.98466, 23.73771]],
+      "path_stops": [298, 682, 1050]
     }
   ]
 }
@@ -78,6 +81,16 @@ The frontend combines lines in the browser. Max 5 lines per client (enforced in 
   next stop / the shape's end. Use: move the marker along `path` at `speed` from
   `position_at`, stop at the last point and wait for the next update. The static
   `shape` is not needed for this.
+- `path_beyond` (rev 4): matched vehicles only, the route on from the end of `path` (from
+  the vehicle's point when `path` is `null` because it is at its next stop) to its third
+  stop ahead; at most 1.5 km from the vehicle and never past the shape's end. Same format
+  as `path`; its first point is the last point of `path`. `null` when unmatched, ambiguous,
+  waiting to start, past the last stop, or when `path` already reaches the 1.5 km limit.
+- `path_stops` (rev 4): the stops on `path` followed by `path_beyond`, as whole metres along
+  those points (joined, the shared point once), ascending; the next stop is the end of
+  `path`. `null` when not matched or no stop is on them. Use (rev 4 clients): drive
+  `path` then `path_beyond` from `position_at`, slowing down and waiting a little at each
+  of `path_stops`.
 - Headers: `Cache-Control: public, max-age=<seconds until next_update_at, min 5, max 300>`.
   The frontend refetches a line at `next_update_at + 1..3 s` (random jitter), never faster
   than every 5 s, and at most every 60 s while the tab is hidden.
@@ -108,7 +121,9 @@ to ~2.5 min staler than `/v1/lines/{id}` for lines nobody watches.
       "variant": "2045",
       "delay_s": 140,
       "speed": 6.4,
-      "path": [[37.9755, 23.7348], [37.9781, 23.7356]]
+      "path": [[37.9755, 23.7348], [37.9781, 23.7356]],
+      "path_beyond": [[37.9781, 23.7356], [37.98466, 23.73771]],
+      "path_stops": [297, 1049]
     }
   ]
 }
