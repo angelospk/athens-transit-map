@@ -229,6 +229,8 @@ describe("drive", () => {
     expect(drive(5, stops, 0)(60)).toBe(0);
     expect(drive(5, [], 0.5)(60)).toBe(0);              // shorter than a metre: no phases
     expect(drive(5, [0.2, 0.4], 0.6)(60)).toBe(0);
+    expect(drive(5, stops, 1e6, 0)(60)).toBe(0);         // no horizon: no motion
+    expect(drive(5, stops, 1e6, -10)(60)).toBe(0);
   });
 });
 
