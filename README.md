@@ -19,13 +19,17 @@ The UI follows the viewer of [foivospro/athens-gtfs-realtime](https://github.com
   drawn by the GPU. Click a vehicle: its line is shown in detail until you click empty map or press Esc;
   the other vehicles stay, fade or hide (layers button). Off switch in the layers button.
 - Vehicles move along their route between updates, at the speed the backend measured over their last
-  fixes (`speed`, `path`); without it, at the speed of the last two fixes.
+  fixes (`speed`, `path`), slowing down as the fix gets older. New data never makes them jump: a late
+  vehicle speeds up a little, an early one slows down; one far off fades out and back in at the right
+  place with a ring ("corrected"). One motion per vehicle, shared by the city layer and the chosen lines.
+- Direction chips on the vehicle and route cards; ⇄ on the "μόνο → …" pill switches direction.
+- My location (button under the zoom): a blue dot with its accuracy, the map follows it until you drag.
+  Polled every 5 s in a vehicle, 10 s walking, up to 30 s standing; paused while the tab is hidden.
 - GPS age labels ("24″") are off by default; the eye button explains them and turns them on.
 - Vehicles labelled with the line number, coloured by delay: up to 2′, 2–5′, 5–10′, over 10′, no trip.
 - Route shapes in the line colour. Line picker with search (Greek, accent-insensitive; `a1` finds `Α1`, `40` finds `040`).
 - Vehicle details: delay, trip ("00:35 ΠΕΙΡΑΙΑΣ → ΣΥΝΤΑΓΜΑ"), next stop, GPS age. The trip's route and stops are highlighted.
 - Route details: direction, number of stops, vehicles on it now. Tap a stop for its name.
-- Vehicles glide to new positions; "πριν 24 δευτερόλεπτα" counters tick every second.
 - Max 5 lines at once. Selection kept in the URL (`?l=…`).
 - Banner from `/v1/status` (server problem, expired GTFS) and per-line staleness.
 - Mobile first: compact panel and bottom sheet on phones. Light and dark map.

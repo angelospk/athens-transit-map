@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { directionGroups, isHidden } from "../src/lib/directions";
+import { directionGroups, groupOf, isHidden, otherDirection } from "../src/lib/directions";
 import s040 from "../src/fixtures/lines-040.json";
 import type { LineStatic } from "../src/lib/types";
 
@@ -35,5 +35,21 @@ describe("directionGroups labels", () => {
                   v2: { headsign: "ΑΡΙΣΤΕΡΟΣΤΡΟΦΗ", direction: 0, shape: [], stops: ["a", "b"] },
                   v3: { headsign: "", direction: 0, shape: [], stops: [] } } };
     expect(directionGroups(st as unknown as LineStatic).map(g => g.to)).toEqual(["ΑΦΕΤΗΡΙΑ (ΔΕΞΙΟΣΤΡΟΦΗ)", "ΑΦΕΤΗΡΙΑ (ΑΡΙΣΤΕΡΟΣΤΡΟΦΗ)"]);
+  });
+});
+
+describe("groupOf and otherDirection", () => {
+  const g = [{ to: "A", variants: ["1", "2"] }, { to: "B", variants: ["3"] }];
+  it("finds a variant's direction", () => {
+    expect(groupOf(g, "2")?.to).toBe("A");
+    expect(groupOf(g, "9")).toBeUndefined();
+    expect(groupOf(g, null)).toBeUndefined();
+  });
+  it("swaps between the two directions only", () => {
+    expect(otherDirection(g, ["1", "2"])?.to).toBe("B");
+    expect(otherDirection(g, ["3"])?.to).toBe("A");
+    expect(otherDirection(g, undefined)).toBeNull();
+    expect(otherDirection(g, ["9"])).toBeNull();
+    expect(otherDirection([...g, { to: "C", variants: ["4"] }], ["3"])).toBeNull();
   });
 });

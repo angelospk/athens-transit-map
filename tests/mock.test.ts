@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CYCLE_S, MOCK_SPEED, mockCityAt, mockLineAt, SYNTHETIC } from "../src/lib/mock";
-import { cityPosition, isCityLive } from "../src/lib/city";
+import { isCityLive } from "../src/lib/city";
+import { cumulativeLL, project } from "../src/lib/motion";
 import type { CityLive } from "../src/lib/types";
 import { distanceM } from "../src/lib/glide";
 import { isLineLive } from "../src/lib/poller";
@@ -36,9 +37,12 @@ describe("mock backend", () => {
     expect(isCityLive(a)).toBe(true);
     expect(a.vehicles.length).toBeGreaterThan(SYNTHETIC);
     const next = new Map(b.vehicles.map(v => [v.id, v]));
+    // The next fix lies on the path the vehicle was given, about speed · dt along it.
     for (const v of a.vehicles.filter(v => v.speed && v.id.startsWith("S")).slice(0, 50)) {
-      const w = next.get(v.id)!;
-      expect(distanceM(cityPosition(v, w.position_at), [w.lon, w.lat])).toBeLessThan(5);   // the square is not exactly 2400 m
+      const w = next.get(v.id)!, geom = v.path!.map(([lat, lon]) => [lon, lat] as [number, number]);
+      const p = project(geom, cumulativeLL(geom), [w.lon, w.lat]);
+      expect(p.off).toBeLessThan(5);
+      expect(p.s).toBeCloseTo(v.speed! * (w.position_at - v.position_at), -1);
     }
   });
 });

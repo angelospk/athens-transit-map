@@ -3,6 +3,7 @@ import { distanceM } from "../src/lib/glide";
 import {
   headingAt, pointAt, predictS, projectCandidates, stopOffsets, updateTrack, type Route, type Sample, type Track,
 } from "../src/lib/predict";
+import { aheadM } from "../src/lib/motion";
 
 // Shapes are [lat, lon]. 0.01° lon at 37.97° ≈ 877 m.
 const M = 877.4;
@@ -116,15 +117,27 @@ describe("updateTrack", () => {
 describe("predictS", () => {
   const track: Track = { s: 500, at: 1000, speed: 10, capS: 900, endS: 2 * M, key: "k" };
   it("moves at the recent speed up to the next stop", () => {
-    expect(predictS(track, 1010)).toBe(600);
-    expect(predictS(track, 1050)).toBe(900);
+    expect(predictS(track, 1010)).toBeCloseTo(500 + aheadM(10, 10), 6);
+    expect(predictS(track, 1010)).toBeGreaterThan(590);   // barely slower at first
+    expect(predictS(track, 1080)).toBe(900);   // capped at the next stop
   });
   it("extrapolates at most 150 s and never past the shape end", () => {
-    expect(predictS({ ...track, capS: Infinity, endS: 1e6 }, 1200)).toBe(500 + 1500);
+    expect(predictS({ ...track, capS: Infinity, endS: 1e6 }, 1200)).toBeCloseTo(500 + aheadM(10, 150), 6);
     expect(predictS({ ...track, capS: Infinity }, 1200)).toBeLessThanOrEqual(2 * M);
   });
   it("does not move for a future timestamp or without a speed", () => {
     expect(predictS(track, 990)).toBe(500);
     expect(predictS({ ...track, speed: null }, 1010)).toBe(500);
+  });
+});
+
+describe("aheadM", () => {
+  it("slows down as the fix gets older: an old guess should rather be short than long", () => {
+    expect(aheadM(10, 0)).toBe(0);
+    expect(aheadM(10, 30)).toBeGreaterThan(220);
+    expect(aheadM(10, 30)).toBeLessThan(300);
+    expect(aheadM(10, 150)).toBeLessThan(600);
+    expect(aheadM(10, 1000)).toBe(aheadM(10, 150));
+    expect(aheadM(10, -5)).toBe(0);
   });
 });

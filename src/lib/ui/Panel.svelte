@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { directionGroups } from "../directions";
+  import { directionGroups, otherDirection } from "../directions";
   import { clock, duration, fmtMinutes } from "../format";
   import { STALE_S, type AppState } from "../state.svelte";
   import LinePicker from "./LinePicker.svelte";
@@ -18,8 +18,9 @@
 
   // "040: μόνο → ΣΥΝΤΑΓΜΑ" for every line shown in one direction.
   const focused = $derived(Object.entries(app.focus).map(([line, variants]) => {
-    const g = app.statics[line] && directionGroups(app.statics[line]).find(x => x.variants.join() === variants.join());
-    return { line, to: g?.to ?? "μία κατεύθυνση" };
+    const groups = app.statics[line] ? directionGroups(app.statics[line]) : [];
+    const g = groups.find(x => x.variants.join() === variants.join());
+    return { line, to: g?.to ?? "μία κατεύθυνση", other: otherDirection(groups, variants) };
   }));
 
   const badge = $derived.by(() => {
@@ -136,9 +137,16 @@
 
   <LinePicker {app} />
   {#each focused as f (f.line)}
-    <button type="button" class="focus" onclick={() => app.setFocus(f.line, null)} aria-label="Δείξε όλες τις κατευθύνσεις της {f.line}">
-      {f.line}: μόνο → {f.to} <span aria-hidden="true">×</span>
-    </button>
+    <div class="focus">
+      <span>{f.line}: μόνο → {f.to}</span>
+      {#if f.other}
+        {@const other = f.other}
+        <button type="button" title="Άλλη κατεύθυνση: → {other.to}" aria-label="Δείξε την άλλη κατεύθυνση της {f.line}, προς {other.to}"
+          onclick={() => app.setFocus(f.line, other.variants)}>⇄</button>
+      {/if}
+      <button type="button" title="Όλες οι κατευθύνσεις" aria-label="Δείξε όλες τις κατευθύνσεις της {f.line}"
+        onclick={() => app.setFocus(f.line, null)}>×</button>
+    </div>
   {/each}
   <StatusBanner {app} />
 
@@ -196,8 +204,12 @@
   .stats small { font-size: 13px; }
   .stats span { color: var(--muted); font-size: 11px; }
   .legend .age { margin-right: 4px; font-size: 10px; font-variant-numeric: tabular-nums; }
-  .focus { display: block; min-height: 32px; margin: 6px 0 0; padding: 4px 10px; border: 1px solid var(--accent);
-    border-radius: 16px; background: none; color: var(--accent); font-size: 12px; cursor: pointer; text-align: left; }
+  .focus { display: flex; align-items: center; gap: 2px; min-height: 32px; margin: 6px 0 0; padding: 0 2px 0 10px;
+    border: 1px solid var(--accent); border-radius: 16px; color: var(--accent); font-size: 12px; }
+  .focus span { flex: 1; }
+  .focus button { width: 30px; height: 28px; border: 0; border-radius: 14px; background: none; color: inherit;
+    font-size: 14px; cursor: pointer; }
+  .focus button:hover { background: var(--control); }
   .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 8px 0 0; font-size: 12px; }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
   .foot { margin-top: 10px; font-size: 11px; color: var(--muted); }

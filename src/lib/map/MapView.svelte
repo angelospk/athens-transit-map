@@ -2,14 +2,16 @@
   import { Map as MlMap, Marker, NavigationControl, Popup, setWorkerUrl, type ExpressionSpecification, type GeoJSONSource } from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
   import workerUrl from "virtual:maplibre-worker";
-  import { ageLabel, delayClass, isStalePos } from "../format";
+  import { ageLabel, isStalePos } from "../format";
   import { untrack } from "svelte";
-  import { distanceM, Glider, JUMP_M, ScalarGlider, type LngLat } from "../glide";
+  import type { LngLat } from "../glide";
   import { vehicleHeading } from "../heading";
-  import { headingAt, pointAt, predictS, shapeLength, stopOffsets, updateTrack, type Route, type Track } from "../predict";
-  import { cityFC, CityMotion } from "../city";
+  import { Locator, userPlan, type Fix, type LocState } from "../locate";
+  import { FIX_SWAP, Mover, planOnto } from "../motion";
+  import { shapeLength, stopOffsets } from "../predict";
   import type { Variant } from "../types";
   import type { AppState } from "../state.svelte";
+  import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
 
   setWorkerUrl(workerUrl);
@@ -20,43 +22,56 @@
   const DELAY_CLASSES = ["ontime", "late1", "late2", "late3", "none"];
   const STYLE = (dark: boolean) => `https://tiles.openfreemap.org/styles/${dark ? "dark" : "positron"}`;
   const EMPTY = { type: "FeatureCollection" as const, features: [] };
+  const COS_LAT = Math.cos((37.98 * Math.PI) / 180);
+  const M_PER_PX_Z0 = 156_543.03 * COS_LAT;   // metres per pixel at zoom 0, at Athens
 
   let map = $state.raw<MlMap>();
   let loaded = $state(false);
   let failed = $state(false);
 
-  // Vehicle markers live outside Svelte's reactivity: they are mutated every frame.
-  interface Sample { pos: LngLat; at: number; variant: string | null }
-  interface Entry {
-    marker: Marker; el: HTMLButtonElement; glider: Glider; dir: HTMLElement; age: HTMLElement;
-    sample: Sample; prev: LngLat | null; positionAt: number;
-    // Predicted motion: the vehicle moves along its route between GPS updates (predict.ts).
-    track: Track | null; route: Route | null; along: ScalarGlider;
+  // Every vehicle's motion, shared by the city layer and the detailed lines (fleet.ts).
+  const fleet = new Fleet();
+  // DOM markers of the detailed lines. They live outside Svelte's reactivity: moved every frame.
+  interface Dom {
+    marker: Marker; wrap: HTMLDivElement; el: HTMLButtonElement; dir: HTMLElement; age: HTMLElement;
+    width: number; heading: number | null; fixing: boolean;
   }
-  const markers = new Map<string, Entry>();
+  const doms = new Map<string, Dom>();
+  let owned = new Set<string>();       // detailed lines with data: drawn as DOM markers
+  let fadedKeys = new Set<string>();   // vehicles of an unknown direction under a direction focus
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
   // Route geometry per variant, built once per static file.
-  const routes = new WeakMap<Variant, Route>();
-  function routeFor(line: string, variant: string | null): Route | null {
+  const routes = new WeakMap<Variant, RouteGeom>();
+  function routeFor(line: string, variant: string | null): RouteGeom | null {
     const st = variant ? app.statics[line] : undefined;
     const v = variant ? st?.variants[variant] : undefined;
     if (!st || !v || v.shape.length < 2) return null;
     let r = routes.get(v);
     if (!r) {
       const known = v.stops.filter(id => st.stops[id]);
-      r = { shape: v.shape, stopIds: known, endS: shapeLength(v.shape),
-        stopS: stopOffsets(v.shape, known.map(id => [st.stops[id].lon, st.stops[id].lat] as LngLat)) };
+      r = routeGeom({ shape: v.shape, stopIds: known, endS: shapeLength(v.shape),
+        stopS: stopOffsets(v.shape, known.map(id => [st.stops[id].lon, st.stops[id].lat] as LngLat)) });
       routes.set(v, r);
     }
     return r;
   }
 
-  function setHeading(e: Entry, h: number | null) {
-    e.dir.hidden = h == null;
+  function setHeading(d: Dom, h: number | null) {
+    if (h != null && d.heading != null && Math.abs(((h - d.heading + 540) % 360) - 180) < 2) return;
+    d.heading = h;
+    d.dir.hidden = h == null;
     if (h == null) return;
     // Around the pill (an ellipse), pointing outwards.
-    const rx = e.el.offsetWidth / 2 + 5, ry = 16, a = (h * Math.PI) / 180;
-    e.dir.style.transform = `translate(${Math.sin(a) * rx}px, ${-Math.cos(a) * ry}px) rotate(${h}deg)`;
+    const rx = d.width / 2 + 5, ry = 16, a = (h * Math.PI) / 180;
+    d.dir.style.transform = `translate(${Math.sin(a) * rx}px, ${-Math.cos(a) * ry}px) rotate(${h}deg)`;
+  }
+
+  // Restart a CSS animation class (the correction effect) on an element.
+  function replay(el: Element, cls: string) {
+    el.classList.remove(cls);
+    void (el as HTMLElement).offsetWidth;
+    el.classList.add(cls);
   }
   const LANE_PX = 3;   // each direction drawn to the right of its travel direction (two lanes)
   const key = (line: string, id: string) => `${line}/${id}`;
@@ -96,6 +111,10 @@
     return g.getImageData(0, 0, c.width, c.height);
   }
 
+  // A zoom curve (zoom, value pairs) with every value multiplied by a per-feature factor.
+  const byZoom = (stops: number[], k: ExpressionSpecification) =>
+    ["interpolate", ["linear"], ["zoom"], ...stops.flatMap((x, i): unknown[] => (i % 2 ? [["*", x, k]] : [x]))] as unknown as ExpressionSpecification;
+
   // City layer: every live vehicle, drawn by the GPU (DOM markers would not cope with ~1500).
   // Dots at city zoom, discs with the line number from zoom 14. Colours from app.css.
   function addCityLayers(m: MlMap) {
@@ -105,7 +124,9 @@
     m.addLayer({ id: "city-dot", type: "circle", source: "city",
       paint: {
         "circle-color": ["match", ["get", "cls"], ...DELAY_CLASSES.slice(0, 4).flatMap(c => [c, color(c)]), color("none")],
-        "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 2.5, 13, 4.5, 14, 10, 17, 13],
+        // fade (0..1): the correction effect dissolves the dot, then brings it back.
+        "circle-radius": byZoom([10, 2.5, 13, 4.5, 14, 10, 17, 13], ["+", 1, ["*", 0.5, ["get", "fade"]]]),
+        "circle-blur": ["*", 1.2, ["get", "fade"]],
         "circle-stroke-color": "#ffffff",
         "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 14, 1.5],
         "circle-opacity-transition": { duration: 300 }, "circle-stroke-opacity-transition": { duration: 300 },
@@ -115,6 +136,11 @@
         "text-size": ["case", [">", ["length", ["get", "line"]], 3], 8, 10],
         "text-allow-overlap": true, "text-ignore-placement": true },
       paint: { "text-color": "#ffffff", "text-opacity-transition": { duration: 300 } } as never });
+    // The correction effect's ring, expanding where the vehicle reappears.
+    m.addLayer({ id: "city-ring", type: "circle", source: "city", filter: [">=", ["get", "ring"], 0],
+      paint: { "circle-radius": byZoom([10, 5, 14, 12, 17, 15], ["+", 1, ["*", 1.6, ["get", "ring"]]]),
+        "circle-opacity": 0, "circle-stroke-color": color("accent"), "circle-stroke-width": 2,
+        "circle-stroke-opacity": ["-", 1, ["get", "ring"]] } });
     // Ring round the selected vehicle while it is still on the city layer.
     m.addLayer({ id: "city-selected", type: "circle", source: "city", filter: ["boolean", false],
       paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 7, 14, 14, 17, 17], "circle-opacity": 0,
@@ -165,24 +191,184 @@
     return best;
   }
 
-  // City motion: positions recomputed a few times per second (more often when zoomed in, where
-  // a few metres are visible), only while the layer is on and the tab is visible.
-  const motion = new CityMotion();
-  let cityTimer: ReturnType<typeof setTimeout> | undefined;
-  function drawCity() {
-    clearTimeout(cityTimer);
+  // My location: polled by Locator, drawn as a DOM marker plus an accuracy circle (map metres).
+  let locState = $state<LocState>("off");
+  let follow = $state(false);
+  let flyOnFix = false;
+  let me: { marker: Marker; el: HTMLElement; mover: Mover; fix: Fix } | null = null;
+  const locator = new Locator({
+    geo: navigator.geolocation,
+    onState: s => {
+      locState = s;
+      if (s === "denied") {
+        follow = false;
+        store("locOn", false);
+        app.notify("Ο browser δεν επιτρέπει πρόσβαση στην τοποθεσία. Άλλαξέ το από τις ρυθμίσεις του.");
+      } else if (s === "unavailable") app.notify("Δεν βρέθηκε η τοποθεσία σου. Νέα προσπάθεια σε λίγο.");
+    },
+    onFix: (f, speed) => onMyFix(f, speed),
+  });
+  function store(k: string, v: unknown) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } }
+
+  function onMyFix(f: Fix, speed: number | null) {
     const m = map;
-    if (!m || !loaded || !app.cityOn) return;
-    const src = m.getSource("city") as GeoJSONSource | undefined;
-    if (!src) return;
-    if (!document.hidden) {
-      const nowMs = app.serverMs();
-      src.setData(cityFC(motion.vehicles, motion.positions(nowMs), cityExclude));
+    if (!m) return;
+    const now = Date.now() / 1000, plan = userPlan(f, speed);
+    if (!me) {
+      const el = document.createElement("div");
+      el.className = "me";
+      el.innerHTML = '<i class="cone"></i><b></b>';
+      const wrap = document.createElement("div");
+      wrap.append(el);
+      const marker = new Marker({ element: wrap, anchor: "center", subpixelPositioning: true }).setLngLat(f.pos).addTo(m);
+      me = { marker, el, mover: new Mover(f.pos), fix: f };
+      me.mover.setPlan(plan, plan.target(now), now);
+    } else {
+      const h = planOnto(me.mover.pos, plan, now);
+      me.mover.apply(h, now);
     }
-    const z = m.getZoom();
-    cityTimer = setTimeout(drawCity, document.hidden ? 2000 : z >= 14 ? 250 : z >= 12 ? 500 : 1000);
+    me.fix = f;
+    me.el.classList.toggle("moving", plan.geom.length > 1);
+    if (f.heading != null && Number.isFinite(f.heading)) me.el.style.setProperty("--h", `${f.heading}deg`);
+    (m.getSource("me-acc") as GeoJSONSource | undefined)?.setData({ type: "FeatureCollection",
+      features: [{ type: "Feature", properties: { acc: f.acc }, geometry: { type: "Point", coordinates: f.pos } }] });
+    if (flyOnFix) {
+      flyOnFix = false;
+      m.flyTo({ center: f.pos, zoom: Math.max(m.getZoom(), 15.5), duration: 1200 });
+    }
   }
-  let cityExclude = new Set<string>();
+
+  function dropMe() {
+    me?.marker.remove();
+    me = null;
+    (map?.getSource("me-acc") as GeoJSONSource | undefined)?.setData(EMPTY);
+  }
+
+  // The locate button: off → find me and follow; following → off; not following → follow again.
+  function locateClick() {
+    if (locState === "off" || locState === "denied") {
+      follow = true;
+      flyOnFix = true;
+      store("locOn", true);
+      locator.start();
+    } else if (!follow && me) {
+      follow = true;
+      map?.easeTo({ center: me.mover.pos, zoom: Math.max(map.getZoom(), 15), duration: 600 });
+    } else {
+      follow = false;
+      store("locOn", false);
+      locator.stop();
+      dropMe();
+    }
+  }
+
+  // One frame loop for every moving dot. It runs as often as needed for steps of under half a
+  // pixel at 20 m/s (zoomed out: once a second), 30 fps during correction effects; nothing while
+  // the tab is hidden. Off-screen city vehicles are not stepped: they snap when they come back.
+  let raf = 0, nextDue = 0, cityWasEmpty = true, meFixing = false;
+  function frame() {
+    raf = requestAnimationFrame(frame);
+    const m = map;
+    const t = performance.now();
+    if (!m || !loaded || document.hidden || t < nextDue) return;
+    const now = app.serverMs() / 1000, z = m.getZoom(), mpp = M_PER_PX_Z0 / 2 ** z;
+    const reduced = reducedMotion.matches;
+    let cull: ((p: LngLat) => boolean) | null = null;
+    if (z >= 12) {
+      const b = m.getBounds(), w = b.getEast() - b.getWest(), h = b.getNorth() - b.getSouth();
+      const W = b.getWest() - w * 0.2, E = b.getEast() + w * 0.2, S = b.getSouth() - h * 0.2, N = b.getNorth() + h * 0.2;
+      cull = p => p[0] < W || p[0] > E || p[1] < S || p[1] > N;
+    }
+    let fixing = false;
+    const features: GeoJSON.Feature<GeoJSON.Point>[] = [];
+    for (const e of fleet.entries.values()) {
+      const dom = owned.has(e.line);
+      if (!dom && (!app.cityOn || (cull && !e.mover.fixing && cull(e.mover.pos) && cull(e.mover.targetPos(now) ?? e.mover.pos)))) continue;
+      e.mover.reduced = reduced;
+      const r = e.mover.step(now);
+      if (r.fx != null) fixing = true;
+      if (dom) drawDom(e, r.pos, r.fx);
+      else features.push({ type: "Feature", geometry: { type: "Point", coordinates: r.pos },
+        properties: { line: e.line, id: e.id, cls: e.cls, ...fxProps(r.fx) } });
+    }
+    for (const [k, d] of doms) {
+      const e = fleet.entries.get(k);
+      if (!e || !owned.has(e.line)) { d.marker.remove(); doms.delete(k); }
+    }
+    if (app.cityOn && (features.length || !cityWasEmpty)) {
+      (m.getSource("city") as GeoJSONSource).setData({ type: "FeatureCollection", features });
+      cityWasEmpty = !features.length;
+    }
+    if (me) {
+      me.mover.reduced = reduced;
+      const r = me.mover.step(Date.now() / 1000);
+      me.marker.setLngLat(r.pos);
+      if (r.fx != null && !meFixing) replay(me.el, "fixing");
+      meFixing = r.fx != null;
+      if (meFixing) fixing = true;
+      if (follow && !m.isMoving()) m.setCenter(r.pos);   // not during the fly-to or a gesture
+    }
+    nextDue = t + (fixing && z >= 13 ? 33 : Math.min(1000, Math.max(16, (0.5 * mpp / 20) * 1000)));
+  }
+
+  // City correction effect: fade out where it was, then fade in with a ring where it is.
+  function fxProps(fx: number | null) {
+    if (fx == null) return { fade: 0, ring: -1 };
+    if (fx < FIX_SWAP) return { fade: fx / FIX_SWAP, ring: -1 };
+    const q = (fx - FIX_SWAP) / (1 - FIX_SWAP);
+    return { fade: 1 - q, ring: q };
+  }
+
+  function drawDom(e: FleetEntry, pos: LngLat, fx: number | null) {
+    let d = doms.get(e.key);
+    if (!d) d = makeDom(e, pos);
+    d.marker.setLngLat(pos);
+    if (fx != null && !d.fixing) replay(d.el, "fixing");
+    d.fixing = fx != null;
+    const cls = e.cls;
+    if (!d.el.classList.contains(cls)) {
+      d.el.classList.remove(...DELAY_CLASSES);
+      d.el.classList.add(cls);
+    }
+    d.el.classList.toggle("faded", fadedKeys.has(e.key));
+    // Heading: along the route while moving on it, else from the bearing or the last fixes.
+    const moving = e.mover.plan && e.mover.plan.geom.length > 1 && (e.mover.plan.target(app.serverMs() / 1000 + 1) > e.mover.s + 0.5);
+    setHeading(d, moving ? e.mover.heading() : vehicleHeading({ lon: e.pos[0], lat: e.pos[1], bearing: e.bearing }, e.route?.route.shape, e.prev));
+  }
+
+  function makeDom(e: FleetEntry, pos: LngLat): Dom {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "bus";
+    el.onclick = ev => {
+      ev.stopPropagation();
+      app.selectVehicle(e.line, e.id);
+    };
+    const num = document.createElement("span");
+    num.textContent = e.line;
+    const dir = document.createElement("i");
+    dir.className = "dir";
+    const age = document.createElement("span");
+    age.className = "age";
+    el.append(num, dir, age);
+    el.setAttribute("aria-label", `Γραμμή ${e.line}, όχημα ${e.id}`);
+    // The marker element only positions; the visible pill (and its effects) is the child.
+    const wrap = document.createElement("div");
+    wrap.append(el);
+    const marker = new Marker({ element: wrap, anchor: "center", subpixelPositioning: true }).setLngLat(pos).addTo(map!);
+    const d: Dom = { marker, wrap, el, dir, age, width: el.offsetWidth, heading: null, fixing: false };
+    doms.set(e.key, d);
+    const s = app.selection;
+    if (s?.kind === "vehicle" && s.line === e.line && s.id === e.id) { el.classList.add("selected"); wrap.classList.add("sel"); }
+    updateAge(d, e, app.serverNow / 1000);
+    return d;
+  }
+
+  function updateAge(d: Dom, e: FleetEntry, now: number) {
+    const age = now - e.at, label = ageLabel(age);
+    if (d.age.textContent !== label) d.age.textContent = label;
+    d.el.classList.toggle("stale", isStalePos(age));
+  }
 
   function setup(node: HTMLDivElement) {
     let m: MlMap;
@@ -202,12 +388,37 @@
     }
     m.touchZoomRotate.disableRotation();
     m.addControl(new NavigationControl({ showCompass: false }), "top-right");
+    m.addControl({ onAdd: () => locateCtl, onRemove: () => locateCtl.remove() }, "top-right");
+    m.on("dragstart", () => (follow = false));   // only user gestures fire it
 
     const popup = new Popup({ closeButton: false, offset: 10, maxWidth: "240px" });
     m.on("load", () => {
       addLayers(m);
+      m.addSource("me-acc", { type: "geojson", data: EMPTY });
+      // Accuracy circle in map metres: px = metres · 2^zoom / metres-per-pixel at zoom 0.
+      m.addLayer({ id: "me-acc", type: "circle", source: "me-acc",
+        paint: { "circle-radius": ["interpolate", ["exponential", 2], ["zoom"],
+          0, ["/", ["get", "acc"], M_PER_PX_Z0], 22, ["/", ["*", ["get", "acc"], 2 ** 22], M_PER_PX_Z0]],
+        "circle-color": "#1a73e8", "circle-opacity": 0.12, "circle-stroke-color": "#1a73e8", "circle-stroke-opacity": 0.35,
+        "circle-stroke-width": 1 } }, "city-dot");
       loaded = true;
     });
+    raf = requestAnimationFrame(frame);
+    const onVisible = () => {
+      locator.visibilityChanged();
+      if (document.hidden) return;
+      for (const e of fleet.entries.values()) e.mover.snap();
+      me?.mover.snap();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    // Turned on last time and still allowed: start again (no fly-to; the map stays where it opens).
+    let disposed = false;
+    try {
+      if (JSON.parse(localStorage.getItem("locOn") ?? "false"))
+        navigator.permissions?.query({ name: "geolocation" }).then(r => {
+          if (r.state === "granted" && !disposed) locator.start();
+        }, () => {});
+    } catch { /* storage blocked */ }
     // One dispatcher: DOM marker (its own handler) → city vehicle → stop → route → empty map.
     m.on("click", e => {
       if ((e.originalEvent.target as Element | null)?.closest?.(".bus")) return;
@@ -234,11 +445,17 @@
 
     map = m;
     app.fit = fitTo;
-    if (import.meta.env.DEV) Object.assign(window, { __map: m, __markers: markers, __motion: motion });
+    if (import.meta.env.DEV) Object.assign(window, { __map: m, __fleet: fleet, __doms: doms });
     return () => {
       app.fit = () => {};
-      for (const { glider, along } of markers.values()) { glider.cancel(); along.cancel(); }
-      markers.clear();
+      disposed = true;
+      cancelAnimationFrame(raf);
+      document.removeEventListener("visibilitychange", onVisible);
+      locator.stop();
+      dropMe();
+      for (const d of doms.values()) d.marker.remove();
+      doms.clear();
+      fleet.entries.clear();
       m.remove();
       map = undefined;
       loaded = false;
@@ -249,17 +466,14 @@
     if (loaded) (map!.getSource("routes") as GeoJSONSource).setData(routesFC(drawn));
   });
 
-  // New city data or a change of what is drawn in detail: update the motion and draw at once.
+  // New city data, or a change of the lines drawn in detail: hand the vehicles to the fleet.
   $effect(() => {
-    const city = app.city, on = app.cityOn;
-    cityExclude = app.cityExclude;
-    if (!loaded) return;
+    const city = app.city, on = app.cityOn, own = app.cityExclude;
     untrack(() => {
-      if (city) motion.update(city.vehicles, app.serverMs());
-      if (on) drawCity();
-      else { clearTimeout(cityTimer); (map!.getSource("city") as GeoJSONSource).setData(EMPTY); }
+      owned = own;
+      fleet.city(on && city ? city.vehicles : [], own, app.serverMs() / 1000);
+      if (loaded && !on) (map!.getSource("city") as GeoJSONSource).setData(EMPTY);
     });
-    return () => clearTimeout(cityTimer);
   });
 
   // While a vehicle or route is selected, the other city vehicles are normal, dimmed or hidden;
@@ -270,7 +484,7 @@
     const sel: ExpressionSpecification = s?.kind === "vehicle"
       ? ["all", ["==", ["get", "line"], s.line], ["==", ["get", "id"], s.id]] : ["boolean", false];
     const o = !s || app.others === "normal" ? 1 : app.others === "dim" ? 0.22 : 1;
-    const opacity: ExpressionSpecification = ["case", sel, 1, o];
+    const opacity: ExpressionSpecification = ["*", ["case", sel, 1, o], ["-", 1, ["*", 0.85, ["get", "fade"]]]];
     m.setPaintProperty("city-dot", "circle-opacity", opacity);
     m.setPaintProperty("city-dot", "circle-stroke-opacity", opacity);
     m.setPaintProperty("city-label", "text-opacity", opacity);
@@ -279,7 +493,7 @@
     m.setFilter("city-label", filter);
     m.setFilter("city-selected", sel);
     const vis = app.cityOn ? "visible" : "none";
-    for (const id of ["city-dot", "city-label", "city-selected"]) m.setLayoutProperty(id, "visibility", vis);
+    for (const id of ["city-dot", "city-label", "city-selected", "city-ring"]) m.setLayoutProperty(id, "visibility", vis);
   });
 
   $effect(() => {
@@ -290,121 +504,55 @@
     (map!.getSource("stops") as GeoJSONSource).setData(stopsFC(line, h?.variant));
   });
 
-  // Sync DOM markers with the vehicles of the chosen lines. Runs on new data, not every second.
+  // New data of the detailed lines (or a direction focus): hand it to the fleet, line by line.
   $effect(() => {
-    const m = map;
-    if (!m) return;
-    const nowSec = untrack(() => app.serverNow) / 1000;
-    const seen = new Set<string>();
-    for (const { line, v, faded } of app.vehicles) {
-      const k = key(line, v.id);
-      const pos: LngLat = [v.lon, v.lat];
-      seen.add(k);
-      let entry = markers.get(k);
-      const route = routeFor(line, v.variant);
-      if (!entry) {
-        const el = document.createElement("button");
-        el.type = "button";
-        el.onclick = ev => {
-          ev.stopPropagation();
-          app.selectVehicle(line, v.id);
-        };
-        const num = document.createElement("span");
-        num.textContent = line;
-        const dir = document.createElement("i");
-        dir.className = "dir";
-        const age = document.createElement("span");
-        age.className = "age";
-        el.append(num, dir, age);
-        const marker = new Marker({ element: el, anchor: "center" }).setLngLat(pos).addTo(m);
-        const glider = new Glider(pos, p => marker.setLngLat(p));
-        const e: Entry = {
-          marker, el, dir, age, glider, sample: { pos, at: v.position_at, variant: v.variant }, prev: null,
-          positionAt: v.position_at, track: null, route: null,
-          along: new ScalarGlider(0, s => {
-            if (!e.route) return;
-            const p = pointAt(e.route.shape, s);
-            glider.pos = p;
-            marker.setLngLat(p);
-          }),
-        };
-        entry = e;
-        markers.set(k, entry);
-      } else if (v.position_at < entry.sample.at) {
-        continue;   // older than the sample shown (reordered responses): change nothing
-      }
-      // Heading from GPS samples only (not the shown position); forget them on a new trip or a jump.
-      const smp = entry.sample;
-      if (smp.variant !== v.variant || distanceM(smp.pos, pos) > JUMP_M) entry.prev = null;
-      else if (v.position_at > smp.at && (smp.pos[0] !== pos[0] || smp.pos[1] !== pos[1])) entry.prev = smp.pos;
-      entry.sample = { pos, at: v.position_at, variant: v.variant };
-      entry.positionAt = v.position_at;
-
-      const before = entry.track;
-      const track = route
-        ? updateTrack(entry.track, { pos, at: v.position_at, key: `${v.variant}/${v.trip_id}`, nextStop: v.next_stop_id, speed: v.speed }, route, nowSec)
-        : null;
-      if (track && track === before && entry.route === route) {
-        // The same sample again: keep predicting from it.
-      } else if (track) {
-        const target = predictS(track, nowSec);
-        if (before && entry.route === route && before.key === track.key && Math.abs(target - entry.along.value) <= JUMP_M) {
-          entry.glider.cancel();          // one animation owns the marker
-          entry.along.to(target, 1500);   // correction, along the route
-        } else {
-          entry.along.cancel();
-          entry.along.value = target;
-          entry.glider.to(pointAt(route!.shape, target));   // entering route mode: a plain glide there
-        }
-      } else {
-        entry.along.cancel();
-        entry.glider.to(pos);
-      }
-      entry.track = track;
-      entry.route = track ? route : null;
-
-      // classList, not className: MapLibre positions the marker through its own classes.
-      const cls = delayClass(v.delay_s);
-      if (!entry.el.classList.contains(cls)) {
-        entry.el.classList.remove(...DELAY_CLASSES);
-        entry.el.classList.add("bus", cls);
-      }
-      entry.el.classList.toggle("faded", faded);
-      setHeading(entry, track?.speed ? headingAt(route!.shape, entry.along.value) : vehicleHeading(v, route?.shape, entry.prev));
-      entry.el.setAttribute("aria-label", `Γραμμή ${line}, όχημα ${v.id}`);
-    }
-    for (const [k, entry] of markers) {
-      if (seen.has(k)) continue;
-      entry.glider.cancel();
-      entry.along.cancel();
-      entry.marker.remove();
-      markers.delete(k);
-    }
+    const vs = app.vehicles, own = app.cityExclude;
+    void app.statics;
+    untrack(() => {
+      owned = own;
+      fadedKeys = new Set(vs.filter(p => p.faded).map(p => `${p.line}/${p.v.id}`));
+      const now = app.serverMs() / 1000;
+      const byLine = new Map<string, typeof vs>();
+      for (const p of vs) byLine.set(p.line, [...(byLine.get(p.line) ?? []), p]);
+      for (const line of own) fleet.line(line, (byLine.get(line) ?? []).map(p => ({ v: p.v, route: routeFor(line, p.v.variant) })), now);
+    });
   });
 
-  // Every second: the position age on each marker, and the next predicted step along the route.
+  // Every second: the GPS age on each marker.
   $effect(() => {
     const now = app.serverNow / 1000;
-    void app.vehicles;
     if (document.hidden) return;
-    for (const e of markers.values()) {
-      const age = now - e.positionAt;
-      const label = ageLabel(age);
-      if (e.age.textContent !== label) e.age.textContent = label;
-      e.el.classList.toggle("stale", isStalePos(age));
-      // A running correction (1.5 s) or plain glide finishes first; each 1 s step replaces the last.
-      if (e.track?.speed && e.route && !e.glider.busy && !e.along.correcting) {
-        e.along.to(predictS(e.track, now + 1), 1000, true);
-        setHeading(e, headingAt(e.route.shape, e.along.value));
-      }
+    for (const [k, d] of doms) {
+      const e = fleet.entries.get(k);
+      if (e) updateAge(d, e, now);
     }
   });
 
   $effect(() => {
     const s = app.selection;
-    const sel = s?.kind === "vehicle" ? key(s.line, s.id) : null;
-    void app.vehicles;   // re-run when markers are created
-    for (const [k, { el }] of markers) el.classList.toggle("selected", k === sel);
+    const sel = s?.kind === "vehicle" ? `${s.line}/${s.id}` : null;
+    for (const [k, d] of doms) {
+      d.el.classList.toggle("selected", k === sel);
+      d.wrap.classList.toggle("sel", k === sel);
+    }
+  });
+
+  // The locate button (a MapLibre control under the zoom buttons).
+  const locateCtl = document.createElement("div");
+  locateCtl.className = "maplibregl-ctrl maplibregl-ctrl-group";
+  const locateBtn = document.createElement("button");
+  locateBtn.type = "button";
+  locateBtn.className = "locate";
+  locateBtn.innerHTML = '<svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="10" cy="10" r="5.2"/><circle class="core" cx="10" cy="10" r="2"/><path d="M10 1.5v2.8M10 15.7v2.8M1.5 10h2.8M15.7 10h2.8"/></svg>';
+  locateBtn.onclick = locateClick;
+  locateCtl.append(locateBtn);
+  $effect(() => {
+    const s = locState, f = follow;
+    locateBtn.dataset.state = s === "on" && f ? "follow" : s;
+    const label = s === "off" || s === "denied" ? "Η θέση μου" : f ? "Σταμάτα να δείχνεις τη θέση μου" : "Ακολούθησε τη θέση μου";
+    locateBtn.title = label;
+    locateBtn.setAttribute("aria-label", label);
+    locateBtn.setAttribute("aria-pressed", String(s !== "off" && s !== "denied"));
   });
 </script>
 

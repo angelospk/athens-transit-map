@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { directionGroups } from "../directions";
+  import { directionGroups, groupOf } from "../directions";
   import { ago, clock, delayClass, delayText } from "../format";
   import type { AppState } from "../state.svelte";
+  import type { DirectionGroup } from "../directions";
 
   let { app }: { app: AppState } = $props();
 
@@ -18,6 +19,8 @@
       ...sv,
       info: app.lineInfo.get(sv.line),
       nextStop: sv.v.next_stop_id ? st?.stops[sv.v.next_stop_id] : undefined,
+      groups: st ? directionGroups(st) : [],
+      focus: app.focus[sv.line],
     };
   });
 
@@ -30,6 +33,7 @@
     const name = (i: number) => st.stops[variant.stops[i]]?.name ?? "";
     return {
       line: s.line,
+      id: s.variant,
       info: app.lineInfo.get(s.line),
       variant,
       from: name(0),
@@ -40,6 +44,25 @@
     };
   });
 </script>
+
+<!-- Direction chips: show one direction on the map. From a vehicle, the other direction opens
+     that direction's route card (the vehicle is not on it). -->
+{#snippet dirs(line: string, groups: DirectionGroup[], focus: string[] | undefined, mine: DirectionGroup | undefined)}
+  <div class="dirs" role="group" aria-label="Κατεύθυνση στον χάρτη">
+    <button type="button" aria-pressed={!focus} onclick={() => app.setFocus(line, null)}>Όλες</button>
+    {#each groups as g (g.variants.join())}
+      <button type="button" class:mine={g === mine} aria-pressed={focus?.join() === g.variants.join()}
+        title={g === mine ? "Η κατεύθυνση αυτού του οχήματος" : undefined}
+        onclick={() => {
+          // Read everything first: selectRoute tears this block down. It goes before setFocus,
+          // which would drop a vehicle selection the new direction hides.
+          const l = line, vs = g.variants, other = app.selection?.kind === "vehicle" && g !== mine;
+          if (other) app.selectRoute(l, vs[0]);
+          app.setFocus(l, vs);
+        }}>→ {g.to}</button>
+    {/each}
+  </div>
+{/snippet}
 
 <svelte:window onkeydown={e => { if (e.key === "Escape" && app.selection) app.clearSelection(); }} />
 
@@ -76,6 +99,10 @@
           {#if "loading" in vehicle}<tr><th></th><td class="muted">Φόρτωση δρομολογίου…</td></tr>{/if}
         </tbody>
       </table>
+      {#if vehicle.groups.length > 1}
+        {@const mine = groupOf(vehicle.groups, v.variant)}
+        {@render dirs(vehicle.line, vehicle.groups, vehicle.focus, mine)}
+      {/if}
     {:else if route}
       <table>
         <tbody>
@@ -85,13 +112,7 @@
         </tbody>
       </table>
       {#if route.groups.length > 1}
-        <div class="dirs" role="group" aria-label="Κατεύθυνση στον χάρτη">
-          <button type="button" aria-pressed={!route.focus} onclick={() => app.setFocus(route.line, null)}>Όλες</button>
-          {#each route.groups as g (g.variants.join())}
-            <button type="button" aria-pressed={route.focus?.join() === g.variants.join()}
-              onclick={() => app.setFocus(route.line, g.variants)}>→ {g.to}</button>
-          {/each}
-        </div>
+        {@render dirs(route.line, route.groups, route.focus, groupOf(route.groups, route.id))}
       {/if}
     {/if}
   </section>
@@ -116,6 +137,7 @@
   .dirs button { min-height: 36px; padding: 4px 12px; border: 1px solid var(--border); border-radius: 18px;
     background: var(--control); cursor: pointer; font-size: 13px; }
   .dirs button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .dirs button.mine:not([aria-pressed="true"]) { border-color: var(--accent); }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
   @media (max-width: 719px) {
     .card { left: 0; right: 0; bottom: 0; width: auto; border-radius: 16px 16px 0 0; border-width: 1px 0 0;

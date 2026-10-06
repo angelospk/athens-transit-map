@@ -270,6 +270,10 @@ export class AppState {
     this.cityPoller.start();
   }
 
+  notify(text: string) {
+    this.say(text);
+  }
+
   private say(text: string) {
     // Notices that arrive together (e.g. from one shared link) are shown together.
     this.notice = !this.notice ? text : this.notice.includes(text) ? this.notice : `${this.notice} ${text}`;

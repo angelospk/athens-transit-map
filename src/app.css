@@ -16,11 +16,12 @@ html, body, #app { margin: 0; height: 100%; overflow: hidden; background: var(--
   font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
 button, input { font: inherit; color: inherit; }
 
-/* Vehicle markers are MapLibre DOM markers, outside any component scope. */
-.bus { min-width: 34px; height: 22px; padding: 0 5px; border-radius: 11px; color: #fff; cursor: pointer;
+/* Vehicle markers are MapLibre DOM markers, outside any component scope. The marker element is a
+   plain wrapper (MapLibre owns its transform); .bus inside it is the visible pill. */
+.maplibregl-marker.sel { z-index: 2; }
+.bus { position: relative; display: block; min-width: 34px; height: 22px; padding: 0 5px; border-radius: 11px; color: #fff; cursor: pointer;
   font: 700 11px/18px system-ui, sans-serif; text-align: center; border: 2px solid #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, .45); white-space: nowrap; }
-/* No `position` here: MapLibre's .maplibregl-marker is absolute, which also anchors .dir and .age. */
 .bus .dir { position: absolute; left: 50%; top: 50%; width: 0; height: 0; margin: -4px 0 0 -4px; pointer-events: none;
   border: 4px solid transparent; border-top: 0; border-bottom: 7px solid var(--fg);
   filter: drop-shadow(0 0 1px var(--bg)) drop-shadow(0 0 1px var(--bg)); }
@@ -39,3 +40,44 @@ button, input { font: inherit; color: inherit; }
 .maplibregl-popup-tip { border-top-color: var(--panel) !important; border-bottom-color: var(--panel) !important; }
 .maplibregl-ctrl-top-right { top: env(safe-area-inset-top); }
 .no-ages .bus .age { display: none; }
+
+/* Correction effect (motion.ts, FIX_S = 0.9 s, swap at 45 %): the dot dissolves where it was,
+   reappears where it is, with a ring. Only opacity, filter and scale: cheap to animate. */
+@keyframes fix {
+  0% { opacity: 1; filter: none; scale: 1; }
+  44% { opacity: .1; filter: blur(4px); scale: 1.45; }
+  46% { opacity: .1; filter: blur(4px); scale: .75; }
+  100% { opacity: 1; filter: none; scale: 1; }
+}
+@keyframes fix-ring {
+  0%, 45% { opacity: 0; scale: .8; }
+  55% { opacity: .9; }
+  100% { opacity: 0; scale: 2; }
+}
+.fixing { animation: fix .9s ease-in-out; }
+.fixing::after { content: ""; position: absolute; inset: -3px; border: 2px solid var(--accent); border-radius: 14px;
+  pointer-events: none; opacity: 0; animation: fix-ring .9s ease-out; }
+@media (prefers-reduced-motion: reduce) { .fixing, .fixing::after { animation: none; } }
+
+/* My location. */
+.me { position: relative; width: 18px; height: 18px; }
+.me b { position: absolute; inset: 0; border-radius: 50%; background: #1a73e8; border: 3px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .12), 0 1px 4px rgba(0, 0, 0, .35); }
+.me::before { content: ""; position: absolute; inset: -9px; border-radius: 50%; background: rgba(26, 115, 232, .22);
+  animation: me-pulse 2.4s ease-out infinite; }
+.me .cone { display: none; position: absolute; left: calc(50% - 10px); bottom: 50%; width: 0; height: 0;
+  border-left: 10px solid transparent; border-right: 10px solid transparent; border-bottom: 26px solid rgba(26, 115, 232, .35);
+  transform-origin: 50% 100%; transform: rotate(var(--h, 0deg)); }
+.me.moving .cone { display: block; }
+.me.fixing::after { border-radius: 50%; }
+@keyframes me-pulse { 0% { scale: .6; opacity: .9; } 100% { scale: 1.6; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .me::before { animation: none; } }
+
+.maplibregl-ctrl-group button.locate { display: grid; place-items: center; color: #333; }
+.locate .core { fill: none; }
+.locate[data-state="searching"] { animation: locating 1s ease-in-out infinite alternate; }
+.locate[data-state="on"], .locate[data-state="unavailable"], .locate[data-state="follow"] { color: #1a73e8 !important; }
+.locate[data-state="follow"] .core { fill: currentColor; }
+.locate[data-state="denied"] { color: #999 !important; }
+@keyframes locating { to { opacity: .35; } }
+@media (prefers-color-scheme: dark) { .maplibregl-ctrl-group button.locate { color: #ddd; } }

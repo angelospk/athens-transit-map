@@ -26,3 +26,13 @@ export function directionGroups(st: LineStatic): DirectionGroup[] {
 // missing from the static data (`known`), stay visible.
 export const isHidden = (variant: string | null, focus: Set<string> | undefined, known: Set<string>) =>
   !!focus && variant != null && known.has(variant) && !focus.has(variant);
+
+// The direction group a variant belongs to, and the other one of a two-direction line.
+export const groupOf = (groups: DirectionGroup[], variant: string | null | undefined) =>
+  variant ? groups.find(g => g.variants.includes(variant)) : undefined;
+
+export function otherDirection(groups: DirectionGroup[], focus: string[] | undefined): DirectionGroup | null {
+  if (groups.length !== 2 || !focus) return null;
+  const i = groups.findIndex(g => g.variants.join() === focus.join());
+  return i < 0 ? null : groups[1 - i];
+}

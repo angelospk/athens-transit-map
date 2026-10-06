@@ -3,6 +3,7 @@
 
 import { distanceM, type LngLat } from "./glide";
 import { bearingDeg } from "./heading";
+import { aheadM } from "./motion";
 
 const NEAR_ROUTE_M = 150;    // farther than this, the shape says nothing about the vehicle
 const TIE_M = 20;            // other legs this close to the nearest are candidates too
@@ -13,7 +14,6 @@ const MAX_SPEED = 20;        // m/s (72 km/h)
 // Real feeds: fixes arrive 20-50 s old, and a line may refresh only every 30-120 s.
 const MAX_GAP_S = 180;       // samples farther apart in time give no speed
 const MAX_LATE_S = 120;      // samples this old on arrival give no speed
-const MAX_AHEAD_S = 150;     // longest extrapolation (the next stop usually caps it first)
 
 export interface Route { shape: [number, number][]; stopIds: string[]; stopS: number[]; endS: number }
 // key: variant + trip. speed: the backend's smoothed speed (contract rev 3), if any.
@@ -146,6 +146,5 @@ export function updateTrack(prev: Track | null, sample: Sample, route: Route, no
 
 export function predictS(t: Track, nowSec: number): number {
   if (t.speed == null) return t.s;
-  const dt = Math.min(Math.max(nowSec - t.at, 0), MAX_AHEAD_S);
-  return Math.min(t.s + t.speed * dt, Math.max(t.capS, t.s), t.endS);
+  return Math.min(t.s + aheadM(t.speed, nowSec - t.at), Math.max(t.capS, t.s), t.endS);
 }
