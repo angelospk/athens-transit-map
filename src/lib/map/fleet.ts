@@ -4,7 +4,7 @@
 
 import { delayClass, type DelayClass } from "../format";
 import { distanceM, JUMP_M, type LngLat } from "../glide";
-import { linePlan, Mover, NO_SPEED, pathPlan, planOnto, type Plan, cumulativeLL } from "../motion";
+import { linePlan, Mover, project, NO_SPEED, pathPlan, planOnto, type Plan, cumulativeLL } from "../motion";
 import { predictS, updateTrack, type Route, type Track } from "../predict";
 import type { CityVehicle, Vehicle } from "../types";
 
@@ -30,7 +30,18 @@ export interface FleetEntry {
   route: RouteGeom | null;
 }
 
+export const GAP_M = 25;   // a guess stays this far behind the vehicle ahead on its line
 const MOVED_M = 15;   // GPS jitter below this is not a movement
+
+// What to add to an entry's shown s for its s on its route: exact on the route or a handoff onto it,
+// else (a plan kept from the city layer) where its shown point projects onto the route.
+function toRoute(e: FleetEntry): number | null {
+  const p = e.mover.plan, r = e.route;
+  if (!p || !r) return null;
+  if (p.geom === r.geom) return 0;
+  if (p.base?.geom === r.geom) return p.base.ds;
+  return project(r.geom, r.cum, e.mover.pos, e.track?.s).s - e.mover.s;
+}
 
 const ll = (path: [number, number][]) => path.map(([lat, lon]) => [lon, lat] as LngLat);
 
@@ -54,6 +65,8 @@ export class Fleet {
       if (owned.has(v.line)) continue;
       const k = `${v.line}/${v.id}`;
       seen.add(k);
+      const old = this.entries.get(k);
+      if (old) old.track = old.route = null;   // a closed detailed line: its order no longer applies
       const e = this.fix(k, v.line, v.id, v, nowSec);
       if (!e) continue;
       const pos: LngLat = [v.lon, v.lat];
@@ -99,6 +112,29 @@ export class Fleet {
       }
     }
     for (const [k, e] of this.entries) if (e.line === line && !seen.has(k)) this.entries.delete(k);
+  }
+
+  // Detailed lines: a vehicle whose last fix is behind another's on the same route does not pass it
+  // on a guess (the fixes decide the order); it stays GAP_M behind the other's guess, and behind
+  // where the other is shown. Tracks not resolved on the route take no part. Call before each step.
+  spacing(nowSec: number) {
+    const groups = new Map<RouteGeom, FleetEntry[]>();
+    for (const e of this.entries.values()) {
+      e.mover.cap = null;
+      if (e.track && !e.track.alts && e.route) {
+        const g = groups.get(e.route);
+        if (g) g.push(e); else groups.set(e.route, [e]);
+      }
+    }
+    for (const g of groups.values()) {
+      if (g.length < 2) continue;
+      g.sort((a, b) => b.track!.s - a.track!.s);
+      for (let i = 1; i < g.length; i++) {
+        const lead = g[i - 1], ds = toRoute(g[i]), lds = toRoute(lead);
+        const bound = Math.min(predictS(lead.track!, nowSec), lds == null ? Infinity : lead.mover.s + lds) - GAP_M;
+        if (ds != null) g[i].mover.cap = bound - ds;
+      }
+    }
   }
 
   // The entry for a fix, or null when the fix is older than the one shown (or, unless `same`, equal).

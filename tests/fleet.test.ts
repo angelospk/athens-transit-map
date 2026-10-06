@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { distanceM, type LngLat } from "../src/lib/glide";
-import { Fleet, routeGeom } from "../src/lib/map/fleet";
+import { Fleet, GAP_M, routeGeom } from "../src/lib/map/fleet";
 import { shapeLength } from "../src/lib/predict";
 import type { CityVehicle, Vehicle } from "../src/lib/types";
 
@@ -148,6 +148,87 @@ describe("Fleet", () => {
     expect(standing()).toBe(2);
     f.line("040", [{ v: line(400, T + 120), route }], T + 120);
     expect(standing()).toBe(0);
+  });
+
+  describe("spacing on a detailed line", () => {
+    const s = (f: Fleet, id: string) => f.entries.get(`040/${id}`)!.mover.s;
+    const drive = (f: Fleet, from: number, to: number, check: () => void) => {
+      for (let t = from; t <= to + 1e-9; t += 0.05) {
+        f.spacing(t);
+        for (const e of f.entries.values()) e.mover.step(t);
+        check();
+      }
+    };
+    it("a guess does not pass the vehicle whose fix is ahead", () => {
+      const f = new Fleet();
+      f.line("040", [{ v: line(500, T, { id: "1", speed: 0 }), route }, { v: line(300, T, { id: "2", speed: 15 }), route }], T);
+      drive(f, T, T + 60, () => expect(s(f, "2")).toBeLessThanOrEqual(s(f, "1") - GAP_M + 1e-6));
+      expect(s(f, "2")).toBeGreaterThan(s(f, "1") - GAP_M - 5);   // it did come up behind
+    });
+    it("a real overtake (the fixes say so) is shown", () => {
+      const f = new Fleet();
+      f.line("040", [{ v: line(500, T, { id: "1", speed: 0 }), route }, { v: line(300, T, { id: "2", speed: 15 }), route }], T);
+      drive(f, T, T + 30, () => {});
+      f.line("040", [{ v: line(510, T + 30, { id: "1", speed: 0 }), route }, { v: line(700, T + 30, { id: "2", speed: 15 }), route }], T + 30);
+      drive(f, T + 30, T + 60, () => {});
+      expect(s(f, "2")).toBeGreaterThan(s(f, "1") + 100);
+    });
+    it("the bound is the leader's guess, also when it is shown ahead of it or on another geometry", () => {
+      const f = new Fleet();
+      f.line("040", [{ v: line(500, T, { id: "1", speed: 0 }), route }, { v: line(300, T, { id: "2", speed: 15 }), route }], T);
+      const lead = f.entries.get("040/1")!;
+      lead.mover.s = 700;                     // shown ahead of its fix (a correction back is coming)
+      f.spacing(T);
+      expect(f.entries.get("040/2")!.mover.cap).toBeCloseTo(500 - GAP_M, 0);
+      lead.mover.plan = { ...lead.mover.plan!, geom: [...lead.mover.plan!.geom] };   // a handoff geometry
+      f.spacing(T);
+      expect(f.entries.get("040/2")!.mover.cap).toBeCloseTo(500 - GAP_M, 0);
+    });
+    it("holds a follower still on a handoff geometry, in route terms", () => {
+      const f = new Fleet();
+      // The follower came from the city layer 35 m off its route point: it is joined to the route.
+      f.city([city(300, T, { id: "2", lat: 37.9703, speed: 15 })], new Set(), T);
+      f.line("040", [{ v: line(500, T, { id: "1", speed: 0 }), route }, { v: line(300, T + 1, { id: "2", speed: 15 }), route }], T + 1);
+      const fol = f.entries.get("040/2")!;
+      expect(fol.mover.plan!.geom).not.toBe(route.geom);
+      expect(fol.mover.plan!.base?.geom).toBe(route.geom);
+      drive(f, T + 1, T + 60, () => {});
+      const ds = fol.mover.plan!.geom === route.geom ? 0 : fol.mover.plan!.base!.ds;
+      expect(fol.mover.s + ds).toBeLessThanOrEqual(500 - GAP_M + 1);
+    });
+    it("holds a follower that keeps its city plan (the same fix from both sources)", () => {
+      const f = new Fleet();
+      f.city([city(300, T, { id: "2", speed: 15 })], new Set(), T);
+      const cityPlan = f.entries.get("040/2")!.mover.plan;
+      f.line("040", [{ v: line(500, T, { id: "1", speed: 0 }), route }, { v: line(300, T, { id: "2", speed: 15 }), route }], T + 1);
+      expect(f.entries.get("040/2")!.mover.plan).toBe(cityPlan);
+      drive(f, T + 1, T + 60, () => {});
+      expect(f.entries.get("040/2")!.mover.pos[0]).toBeLessThanOrEqual(lonAt(500 - GAP_M + 1));
+    });
+    it("forgets the tracks of a line that went back to the city layer", () => {
+      const f = new Fleet();
+      f.line("040", [{ v: line(500, T, { id: "1", speed: 0 }), route }, { v: line(300, T, { id: "2", speed: 15 }), route }], T);
+      f.city([city(500, T + 30, { id: "1", speed: 0 }), city(320, T + 30, { id: "2" })], new Set(), T + 30);
+      f.spacing(T + 30);
+      expect(f.entries.get("040/2")!.mover.cap).toBeNull();
+      expect(f.entries.get("040/2")!.track).toBeNull();
+    });
+    it("leaves out a track not resolved on the route (ambiguous first fix)", () => {
+      const f = new Fleet();
+      f.line("040", [{ v: line(500, T, { id: "1", speed: 0 }), route }, { v: line(300, T, { id: "2", speed: 15 }), route }], T);
+      f.entries.get("040/1")!.track!.alts = [500, 1200];
+      f.spacing(T);
+      expect(f.entries.get("040/2")!.mover.cap).toBeNull();
+    });
+    it("never pulls a vehicle backwards", () => {
+      const f = new Fleet();
+      f.line("040", [{ v: line(500, T, { id: "1", speed: 0 }), route }, { v: line(300, T, { id: "2", speed: 15 }), route }], T);
+      drive(f, T, T + 30, () => {});
+      // Now the fixes say 2 is behind 1 by little: 2 holds where it is, no step back.
+      f.line("040", [{ v: line(520, T + 30, { id: "1", speed: 0 }), route }, { v: line(470, T + 30, { id: "2", speed: 0 }), route }], T + 30);
+      let last = s(f, "2");
+      drive(f, T + 30, T + 40, () => { expect(s(f, "2")).toBeGreaterThanOrEqual(last - 1e-6); last = s(f, "2"); });
+    });
   });
 
   it("remembers where a vehicle moved from on a newer fix (still mode trail)", () => {

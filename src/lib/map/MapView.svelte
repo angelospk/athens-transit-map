@@ -311,6 +311,7 @@
     const trails: GeoJSON.Feature<GeoJSON.LineString>[] = [];
     const s = app.selection, selKey = s?.kind === "vehicle" ? `${s.line}/${s.id}` : null, only = app.only;
     const still = !app.motion;
+    if (!still) fleet.spacing(now);
     for (const e of fleet.entries.values()) {
       const dom = owned.has(e.line);
       const shown = e.key === selKey || passes(only, e.cls, now - e.at);
@@ -376,8 +377,10 @@
     d.el.classList.toggle("faded", fadedKeys.has(e.key));
     // Heading: along the route while moving on it, else from the bearing or the last fixes; none
     // for a vehicle that stands and did not move over its last two fixes.
-    const moving = !still && e.mover.plan && e.mover.plan.geom.length > 1 && (e.mover.plan.target(app.serverMs() / 1000 + 1) > e.mover.s + 0.5);
-    setHeading(d, moving ? e.mover.heading() : e.standing >= 2 ? null
+    const held = !still && e.mover.cap != null && e.mover.s >= e.mover.cap - 0.5;   // behind another on its line
+    const moving = !still && !held && e.mover.plan && e.mover.plan.geom.length > 1
+      && e.mover.plan.target(app.serverMs() / 1000 + 1) > e.mover.s + 0.5;
+    setHeading(d, moving ? e.mover.heading() : held || e.standing >= 2 ? null
       : vehicleHeading({ lon: e.pos[0], lat: e.pos[1], bearing: e.bearing }, e.route?.route.shape, e.prev));
     return d;
   }

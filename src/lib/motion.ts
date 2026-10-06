@@ -85,6 +85,7 @@ export interface Plan {
   geom: LngLat[];
   cum: number[];                       // metres from geom[0] to each point
   target: (tSec: number) => number;    // metres along geom where the dot should be
+  base?: { geom: LngLat[]; ds: number };   // a handoff onto `geom`: s here is s + ds there
 }
 
 export const holdM = (v: number) => Math.min(80, Math.max(25, 8 * v));
@@ -162,7 +163,8 @@ function joinAt(shown: LngLat, p: Plan, at: number): Handoff {
   const start = pointAtLL(p.geom, p.cum, at), d = distanceM(shown, start);
   const rest = p.geom.filter((_, i) => p.cum[i] > at);
   const geom = [shown, start, ...rest];
-  return { plan: { geom, cum: cumulativeLL(geom), target: t => d + Math.max(0, p.target(t) - at) }, s0: 0, fix: false };
+  return { plan: { geom, cum: cumulativeLL(geom), target: t => d + Math.max(0, p.target(t) - at), base: { geom: p.geom, ds: at - d } },
+    s0: 0, fix: false };
 }
 
 // Hand a shown dot over to new geometry without a jump (see the design note).
@@ -215,6 +217,7 @@ export class Mover {
   private snapPending = false;
   private aheadSince: number | null = null;
   reduced = false;   // prefers-reduced-motion: no animation, always at the target
+  cap: number | null = null;   // do not move forward past this s (the vehicle ahead on the line)
 
   constructor(pos: LngLat) { this.pos = pos; }
 
@@ -269,7 +272,9 @@ export class Mover {
     const dt = nowSec - this.last;
     this.last = nowSec;
     if (!p) return { pos: this.pos, fx: null, trail: null };
-    const target = p.target(nowSec);
+    const target = p.target(nowSec), s0 = this.s;
+    // Held behind the vehicle ahead (spacing): never forward past the cap, never backwards for it.
+    const held = (x: number) => (this.cap != null && x > s0 && x > this.cap ? Math.max(s0, this.cap) : x);
     let fx: number | null = null;
     if (dt > SNAP_S || dt < 0 || this.reduced || this.snapPending) {
       this.snapPending = false;
@@ -277,7 +282,7 @@ export class Mover {
       this.off = this.glide = this.trail = null;
     } else if (this.glide) {
       const k = (nowSec - this.glide.t0) / GLIDE_S;
-      if (k >= 1) { this.s = target; this.endGlide(p, nowSec); }
+      if (k >= 1) { this.s = held(target); this.endGlide(p, nowSec); }
       else { fx = Math.max(0, k); this.s = this.glide.from + (target - this.glide.from) * easeInOut(fx); }
     } else {
       const v = Math.max(0, p.target(nowSec + 1) - target);
@@ -288,6 +293,7 @@ export class Mover {
       if (r === "fix" || (waiting && nowSec - this.aheadSince! > WAIT_S)) { this.startFix(nowSec); fx = 0; }
       else this.s = r;
     }
+    this.s = held(this.s);
     let pos = pointAtLL(p.geom, p.cum, this.s);
     if (this.off) {
       const k = (nowSec - this.offAt) / this.offDur;
