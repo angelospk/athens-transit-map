@@ -374,9 +374,11 @@
       d.el.classList.add(cls);
     }
     d.el.classList.toggle("faded", fadedKeys.has(e.key));
-    // Heading: along the route while moving on it, else from the bearing or the last fixes.
+    // Heading: along the route while moving on it, else from the bearing or the last fixes; none
+    // for a vehicle that stands and did not move over its last two fixes.
     const moving = !still && e.mover.plan && e.mover.plan.geom.length > 1 && (e.mover.plan.target(app.serverMs() / 1000 + 1) > e.mover.s + 0.5);
-    setHeading(d, moving ? e.mover.heading() : vehicleHeading({ lon: e.pos[0], lat: e.pos[1], bearing: e.bearing }, e.route?.route.shape, e.prev));
+    setHeading(d, moving ? e.mover.heading() : e.standing >= 2 ? null
+      : vehicleHeading({ lon: e.pos[0], lat: e.pos[1], bearing: e.bearing }, e.route?.route.shape, e.prev));
     return d;
   }
 

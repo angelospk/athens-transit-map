@@ -21,6 +21,7 @@ export interface FleetEntry {
   at: number;                 // position_at of the fix being shown
   pos: LngLat;                // that fix
   prev: LngLat | null;        // the fix before (heading without a bearing)
+  standing: number;           // fixes in a row that moved less than MOVED_M (up to 2; 2 when new)
   moved: { from: LngLat; at: number } | null;   // the last move to a new fix (motion off: its trail)
   bearing: number | null;
   variant: string | null;
@@ -28,6 +29,8 @@ export interface FleetEntry {
   track: Track | null;        // detailed lines only (predict.ts)
   route: RouteGeom | null;
 }
+
+const MOVED_M = 15;   // GPS jitter below this is not a movement
 
 const ll = (path: [number, number][]) => path.map(([lat, lon]) => [lon, lat] as LngLat);
 
@@ -105,7 +108,7 @@ export class Fleet {
     const pos: LngLat = [v.lon, v.lat];
     let e = this.entries.get(k);
     if (!e) {
-      e = { key: k, line, id, mover: new Mover(pos), at: v.position_at, pos, prev: null, moved: null, bearing: v.bearing,
+      e = { key: k, line, id, mover: new Mover(pos), at: v.position_at, pos, prev: null, moved: null, standing: 2, bearing: v.bearing,
         variant: v.variant, cls: delayClass(v.delay_s), track: null, route: null };
       this.entries.set(k, e);
       return e;
@@ -115,6 +118,7 @@ export class Fleet {
     if (v.position_at === e.at && !same) return null;
     if (v.position_at > e.at) {
       if (e.pos[0] !== pos[0] || e.pos[1] !== pos[1]) e.moved = { from: e.pos, at: nowSec };
+      e.standing = distanceM(e.pos, pos) >= MOVED_M ? 0 : Math.min(2, e.standing + 1);
       // Heading from GPS fixes; forget them on a new trip or a jump.
       e.prev = e.variant !== v.variant || distanceM(e.pos, pos) > JUMP_M ? null
         : e.pos[0] !== pos[0] || e.pos[1] !== pos[1] ? e.pos : e.prev;

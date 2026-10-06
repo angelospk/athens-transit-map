@@ -133,6 +133,23 @@ describe("Fleet", () => {
     expect(max).toBeLessThan(1.5);
   });
 
+  it("counts the fixes in a row without movement (no direction arrow for a standing vehicle)", () => {
+    const f = new Fleet();
+    const standing = () => f.entries.get("040/1")!.standing;
+    f.city([city(100, T)], new Set(), T);
+    expect(standing()).toBe(2);                         // one fix: no movement known
+    f.city([city(300, T + 30)], new Set(), T + 30);
+    expect(standing()).toBe(0);
+    f.city([city(305, T + 60)], new Set(), T + 60);  // 5 m: GPS noise
+    expect(standing()).toBe(1);
+    f.line("040", [{ v: line(308, T + 90), route }], T + 90);
+    expect(standing()).toBe(2);
+    f.line("040", [{ v: line(308, T + 90), route }], T + 95);   // the same fix again: no change
+    expect(standing()).toBe(2);
+    f.line("040", [{ v: line(400, T + 120), route }], T + 120);
+    expect(standing()).toBe(0);
+  });
+
   it("remembers where a vehicle moved from on a newer fix (still mode trail)", () => {
     const f = new Fleet();
     f.city([city(100, T)], new Set(), T + 5);
