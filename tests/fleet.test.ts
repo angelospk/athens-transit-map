@@ -27,6 +27,22 @@ const run = (f: Fleet, from: number, to: number) => {
 };
 
 describe("Fleet", () => {
+  it("updates the delay class when the same fix comes with a new delay", () => {
+    const f = new Fleet();
+    f.city([city(100, T, { delay_s: 0 })], new Set(), T + 20);
+    f.city([city(100, T, { delay_s: 601 })], new Set(), T + 30);
+    expect(f.entries.get("040/1")!.cls).toBe("late3");
+    f.line("040", [{ v: line(100, T, { delay_s: 0 }), route }], T + 35);
+    expect(f.entries.get("040/1")!.cls).toBe("ontime");
+  });
+
+  it("keeps the delay class of the newer fix when an older one arrives", () => {
+    const f = new Fleet();
+    f.city([city(300, T + 30, { delay_s: 601 })], new Set(), T + 30);
+    f.city([city(100, T, { delay_s: 0 })], new Set(), T + 35);
+    expect(f.entries.get("040/1")!.cls).toBe("late3");
+  });
+
   it("keeps the motion when a clicked vehicle's line brings the fix the city layer already shows", () => {
     const f = new Fleet();
     f.city([city(100, T)], new Set(), T + 20);

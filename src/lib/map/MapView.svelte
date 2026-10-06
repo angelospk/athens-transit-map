@@ -2,7 +2,7 @@
   import { Map as MlMap, Marker, NavigationControl, Popup, setWorkerUrl, type ExpressionSpecification, type GeoJSONSource } from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
   import workerUrl from "virtual:maplibre-worker";
-  import { ageLabel, isStalePos } from "../format";
+  import { ageLabel, isStalePos, passes } from "../format";
   import { untrack } from "svelte";
   import type { LngLat } from "../glide";
   import { vehicleHeading } from "../heading";
@@ -281,15 +281,18 @@
     }
     let fixing = false;
     const features: GeoJSON.Feature<GeoJSON.Point>[] = [];
+    const s = app.selection, selKey = s?.kind === "vehicle" ? `${s.line}/${s.id}` : null, only = app.only;
     for (const e of fleet.entries.values()) {
       const dom = owned.has(e.line);
+      const shown = e.key === selKey || passes(only, e.cls, now - e.at);
+      if (!shown && !dom) continue;
       if (!dom && (!app.cityOn || (cull && !e.mover.fixing && cull(e.mover.pos) && cull(e.mover.targetPos(now) ?? e.mover.pos)))) continue;
       e.mover.reduced = reduced;
       const r = e.mover.step(now);
       if (r.fx != null) fixing = true;
-      if (dom) drawDom(e, r.pos, r.fx);
+      if (dom) drawDom(e, r.pos, r.fx).wrap.classList.toggle("filtered", !shown);
       else features.push({ type: "Feature", geometry: { type: "Point", coordinates: r.pos },
-        properties: { line: e.line, id: e.id, cls: e.cls, ...fxProps(r.fx) } });
+        properties: { line: e.line, id: e.id, cls: e.cls, stale: isStalePos(now - e.at), ...fxProps(r.fx) } });
     }
     for (const [k, d] of doms) {
       const e = fleet.entries.get(k);
@@ -319,7 +322,7 @@
     return { fade: 1 - q, ring: q };
   }
 
-  function drawDom(e: FleetEntry, pos: LngLat, fx: number | null) {
+  function drawDom(e: FleetEntry, pos: LngLat, fx: number | null): Dom {
     let d = doms.get(e.key);
     if (!d) d = makeDom(e, pos);
     d.marker.setLngLat(pos);
@@ -334,6 +337,7 @@
     // Heading: along the route while moving on it, else from the bearing or the last fixes.
     const moving = e.mover.plan && e.mover.plan.geom.length > 1 && (e.mover.plan.target(app.serverMs() / 1000 + 1) > e.mover.s + 0.5);
     setHeading(d, moving ? e.mover.heading() : vehicleHeading({ lon: e.pos[0], lat: e.pos[1], bearing: e.bearing }, e.route?.route.shape, e.prev));
+    return d;
   }
 
   function makeDom(e: FleetEntry, pos: LngLat): Dom {
@@ -484,7 +488,8 @@
     const sel: ExpressionSpecification = s?.kind === "vehicle"
       ? ["all", ["==", ["get", "line"], s.line], ["==", ["get", "id"], s.id]] : ["boolean", false];
     const o = !s || app.others === "normal" ? 1 : app.others === "dim" ? 0.22 : 1;
-    const opacity: ExpressionSpecification = ["*", ["case", sel, 1, o], ["-", 1, ["*", 0.85, ["get", "fade"]]]];
+    const opacity: ExpressionSpecification = ["*", ["case", sel, 1, o], ["case", ["get", "stale"], 0.45, 1],
+      ["-", 1, ["*", 0.85, ["get", "fade"]]]];
     m.setPaintProperty("city-dot", "circle-opacity", opacity);
     m.setPaintProperty("city-dot", "circle-stroke-opacity", opacity);
     m.setPaintProperty("city-label", "text-opacity", opacity);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ageLabel, ago, isStalePos, delayClass, delayText, duration, fmtDelay } from "../src/lib/format";
+import { ageLabel, ago, isStalePos, delayClass, delayText, duration, fmtDelay, passes } from "../src/lib/format";
 
 describe("duration", () => {
   it("speaks Greek minutes and seconds", () => {
@@ -58,5 +58,25 @@ describe("ageLabel", () => {
     expect(ageLabel(59.999)).toBe("59″");
     expect(isStalePos(90)).toBe(false);
     expect(isStalePos(90.5)).toBe(true);
+  });
+});
+
+describe("passes", () => {
+  const all = { fresh: false, onTime: false };
+  it("shows everything without filters", () => {
+    expect(passes(all, "late3", 300)).toBe(true);
+    expect(passes(all, "none", 0)).toBe(true);
+  });
+  it("only fresh: hides the positions drawn as stale", () => {
+    const f = { ...all, fresh: true };
+    expect(passes(f, "ontime", 90)).toBe(true);
+    expect(passes(f, "ontime", 91)).toBe(false);
+  });
+  it("only on time: up to 5 minutes late, not unmatched", () => {
+    const f = { ...all, onTime: true };
+    expect(passes(f, "ontime", 0)).toBe(true);
+    expect(passes(f, "late1", 0)).toBe(true);
+    expect(passes(f, "late2", 0)).toBe(false);
+    expect(passes(f, "none", 0)).toBe(false);
   });
 });

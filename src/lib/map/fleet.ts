@@ -42,7 +42,6 @@ export class Fleet {
       seen.add(k);
       const e = this.fix(k, v.line, v.id, v, nowSec);
       if (!e) continue;
-      e.cls = delayClass(v.delay_s);
       const pos: LngLat = [v.lon, v.lat];
       const h = v.path && v.speed != null
         ? pathPlan(e.mover.pos, ll(v.path), v.speed, v.position_at, nowSec)
@@ -62,7 +61,6 @@ export class Fleet {
       const sameFix = old && v.position_at === old.at;
       const e = this.fix(k, line, v.id, v, nowSec, true);
       if (!e) continue;
-      e.cls = delayClass(v.delay_s);
       const pos: LngLat = [v.lon, v.lat];
       const before = e.track;
       e.track = route
@@ -94,17 +92,20 @@ export class Fleet {
   }
 
   // The entry for a fix, or null when the fix is older than the one shown (or, unless `same`, equal).
+  // The same fix may come with a new delay: its class is updated all the same.
   private fix(k: string, line: string, id: string, v: { lat: number; lon: number; position_at: number;
-    bearing: number | null; variant: string | null }, nowSec: number, same = false): FleetEntry | null {
+    bearing: number | null; variant: string | null; delay_s: number | null }, nowSec: number, same = false): FleetEntry | null {
     const pos: LngLat = [v.lon, v.lat];
     let e = this.entries.get(k);
     if (!e) {
       e = { key: k, line, id, mover: new Mover(pos), at: v.position_at, pos, prev: null, bearing: v.bearing,
-        variant: v.variant, cls: "none", track: null, route: null };
+        variant: v.variant, cls: delayClass(v.delay_s), track: null, route: null };
       this.entries.set(k, e);
       return e;
     }
-    if (v.position_at < e.at || (v.position_at === e.at && !same)) return null;
+    if (v.position_at < e.at) return null;
+    e.cls = delayClass(v.delay_s);
+    if (v.position_at === e.at && !same) return null;
     if (v.position_at > e.at) {
       // Heading from GPS fixes; forget them on a new trip or a jump.
       e.prev = e.variant !== v.variant || distanceM(e.pos, pos) > JUMP_M ? null

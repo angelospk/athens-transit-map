@@ -23,13 +23,14 @@
     return { line, to: g?.to ?? "μία κατεύθυνση", other: otherDirection(groups, variants) };
   }));
 
+  // Shown only while something is wrong: no data yet, or none for a while.
   const badge = $derived.by(() => {
     const city = !app.selected.length && app.cityOn && !cityMissing;
-    if (!app.selected.length && !city) return { cls: "", text: "Διάλεξε γραμμή" };
+    if (!app.selected.length && !city) return null;
     const age = city ? cityAge : app.oldestAge;
     if (age == null) return { cls: "", text: "Σύνδεση…" };
     if (age > STALE_S) return { cls: "stale", text: "Χωρίς ενημέρωση" };
-    return { cls: "live", text: "Ζωντανά" };
+    return null;
   });
 
   const oldest = $derived.by(() => {
@@ -45,17 +46,19 @@
 <section class="panel" aria-label="Πίνακας ελέγχου">
   <div class="head">
     <h1>Λεωφορεία ΟΑΣΑ</h1>
-    <span class="badge {badge.cls}" title="Ανανέωση μόλις ο διακομιστής έχει νέα δεδομένα (περίπου κάθε 30 δευτερόλεπτα)">
-      <i></i><span>{badge.text}</span>
-    </span>
-    <button type="button" class="tool" class:on={pop === "layers"} aria-expanded={pop === "layers"} aria-controls="pop-layers"
+    {#if badge}
+      <span class="badge {badge.cls}" title="Ανανέωση μόλις ο διακομιστής έχει νέα δεδομένα (περίπου κάθε 30 δευτερόλεπτα)">
+        <i></i><span>{badge.text}</span>
+      </span>
+    {/if}
+    <button type="button" class="tool" class:on={pop === "layers"} class:filtering={app.only.fresh || app.only.onTime} aria-expanded={pop === "layers"} aria-controls="pop-layers"
       aria-label="Επίπεδα χάρτη" title="Επίπεδα χάρτη" onclick={() => toggle("layers")}>
       <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
         <path d="M10 3l7 3.8-7 3.8-7-3.8z" /><path d="M3 10.2l7 3.8 7-3.8" /><path d="M3 13.6l7 3.8 7-3.8" />
       </svg>
     </button>
     <button type="button" class="tool" class:on={pop === "ages"} aria-expanded={pop === "ages"} aria-controls="pop-ages"
-      aria-label="Ηλικία θέσης GPS" title="Ηλικία θέσης GPS" onclick={() => toggle("ages")}>
+      aria-label="Πόσο παλιά είναι η θέση" title="Πόσο παλιά είναι η θέση" onclick={() => toggle("ages")}>
       <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
         <path d="M1.8 10S5 4.5 10 4.5 18.2 10 18.2 10 15 15.5 10 15.5 1.8 10 1.8 10z" /><circle cx="10" cy="10" r="2.6" />
         {#if !app.showAges}<path d="M3.5 3.5l13 13" />{/if}
@@ -85,12 +88,25 @@
           {/each}
         </div>
       </div>
+      <div class="field">
+        <span>Δείξε μόνο:</span>
+        <label class="switch">
+          <input type="checkbox" checked={app.only.fresh} onchange={e => app.setOnly({ fresh: e.currentTarget.checked })} />
+          <span>Με πρόσφατη θέση<br /><small>Κρύβει όσα δεν έστειλαν θέση για πάνω από 1½ λεπτό.</small></span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" checked={app.only.onTime} onchange={e => app.setOnly({ onTime: e.currentTarget.checked })} />
+          <span>Στην ώρα τους<br /><small>Έως 5 λεπτά καθυστέρηση (πράσινα και κίτρινα).</small></span>
+        </label>
+      </div>
       <p class="hint">Πάτα ένα όχημα για να δεις τη γραμμή του. Πάτα σε κενό σημείο για να ξαναδείς όλα.</p>
     </div>
   {:else if pop === "ages"}
-    <div class="pop" id="pop-ages" role="dialog" aria-label="Ηλικία θέσης GPS">
-      <p><b class="age">24″</b> Πόσο παλιά είναι η τελευταία θέση GPS που έστειλε το όχημα. Ο ΟΑΣΑ στέλνει θέσεις
+    <div class="pop" id="pop-ages" role="dialog" aria-label="Πόσο παλιά είναι η θέση">
+      <p><b class="age">24″</b> Πριν από τόσο έστειλε το όχημα την τελευταία του θέση. Ο ΟΑΣΑ στέλνει θέσεις
         κάθε 20–60″· ανάμεσα, ο χάρτης μετακινεί το όχημα πάνω στη διαδρομή του με την ταχύτητα που είχε.</p>
+      <p>Ένα όχημα <b>αχνό με πορτοκαλί ηλικία</b> δεν έχει στείλει θέση για πάνω από 1½ λεπτό: η πραγματική θέση του μπορεί να είναι
+        αλλού. Όταν έρθει νέα θέση, μετακινείται εκεί.</p>
       {#if oldest != null}
         <p class="hint" title="Ώρα δεδομένων {clock(oldest)}">Ενημέρωση γραμμών πριν {duration(Math.max(0, app.serverNow / 1000 - oldest))}</p>
       {/if}
@@ -128,10 +144,11 @@
     {/each}
 
     <div class="legend">
-      <span><i class="ontime"></i>έως 2′</span><span><i class="late1"></i>2–5′</span>
+      <span class="lead">Καθυστέρηση:</span>
+      <span><i class="ontime"></i>έως 2′ ή νωρίτερα</span><span><i class="late1"></i>2–5′</span>
       <span><i class="late2"></i>5–10′</span><span><i class="late3"></i>πάνω από 10′</span>
       <span><i class="none"></i>χωρίς δρομολόγιο</span>
-      {#if app.showAges}<span><b class="age">24″</b>ηλικία θέσης GPS</span>{/if}
+      {#if app.showAges}<span><b class="age">24″</b>πριν από τόσο ήρθε η θέση</span>{/if}
     </div>
   </div>
 
@@ -165,14 +182,14 @@
   .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted);
     white-space: nowrap; }
   .badge i { width: 8px; height: 8px; border-radius: 50%; background: var(--none); }
-  .badge.live { color: var(--fg); }
-  .badge.live i { background: var(--ontime); animation: pulse 2s infinite; }
   .badge.stale i { background: var(--late3); }
-  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(26, 127, 55, .6); } 70%, 100% { box-shadow: 0 0 0 6px rgba(26, 127, 55, 0); } }
-  @media (prefers-reduced-motion: reduce) { .badge.live i { animation: none; } }
   .tool { display: grid; place-items: center; width: 34px; height: 34px; margin: -8px -4px; border: 0; border-radius: 8px;
     background: none; color: var(--muted); cursor: pointer; }
   .tool:hover, .tool.on { background: var(--control); color: var(--fg); }
+  /* A map filter is on: some vehicles are hidden. */
+  .tool { position: relative; }
+  .tool.filtering::after { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px;
+    border-radius: 50%; background: var(--accent); }
   .pop { position: absolute; z-index: 7; top: calc(100% + 6px); left: 0; right: 0; padding: 12px 14px; font-size: 13px;
     background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
     backdrop-filter: blur(8px); }
@@ -211,6 +228,7 @@
     font-size: 14px; cursor: pointer; }
   .focus button:hover { background: var(--control); }
   .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 8px 0 0; font-size: 12px; }
+  .legend .lead { color: var(--muted); }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
   .foot { margin-top: 10px; font-size: 11px; color: var(--muted); }
   .foot a { color: inherit; }

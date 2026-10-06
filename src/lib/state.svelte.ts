@@ -1,6 +1,7 @@
 // The one store: chosen lines, live/static data, selection. Components read it; pollers write it.
 
 import { isHidden } from "./directions";
+import type { Only } from "./format";
 import { fetchCity, fetchLine, fetchLines, fetchLineStatic, fetchStatus } from "./api";
 import { cityKey, cleanCity, isCityLive } from "./city";
 import { LinePoller, type PollState } from "./poller";
@@ -59,6 +60,9 @@ export class AppState {
   cityOn = $state(stored("cityOn", true, isBool));
   others = $state<Others>(stored("others", "dim", v => v === "normal" || v === "dim" || v === "hide"));
   showAges = $state(stored("showAges", false, isBool));
+  // Map filters; the selected vehicle is always shown.
+  only = $state.raw<Only>(stored("only", { fresh: false, onTime: false },
+    v => !!v && isBool((v as Only).fresh) && isBool((v as Only).onTime)));
   // A line shown in detail because its vehicle was clicked on the city layer; not one of the picks.
   tempLine = $state<string | null>(null);
 
@@ -209,6 +213,11 @@ export class AppState {
   setShowAges(on: boolean) {
     this.showAges = on;
     store("showAges", on);
+  }
+
+  setOnly(o: Partial<Only>) {
+    this.only = { ...this.only, ...o };
+    store("only", this.only);
   }
 
   // A vehicle clicked on the city layer: select it and show its line in detail for a while.

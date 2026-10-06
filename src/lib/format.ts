@@ -25,6 +25,11 @@ export const ageLabel = (sec: number) => {
   return s < 60 ? `${s}″` : `${Math.floor(s / 60)}′`;
 };
 
+// Map filters (layers popover): only positions not drawn as stale; only vehicles at most 5′ late.
+export interface Only { fresh: boolean; onTime: boolean }
+export const passes = (f: Only, cls: DelayClass, ageSec: number) =>
+  (!f.fresh || !isStalePos(ageSec)) && (!f.onTime || cls === "ontime" || cls === "late1");
+
 export const fmtMinutes = (s: number) => (s >= 0 ? "+" : "−") + Math.abs(s / 60).toFixed(1).replace(".", ",");
 
 export const delayClass = (d: number | null): DelayClass =>
