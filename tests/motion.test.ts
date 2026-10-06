@@ -189,6 +189,14 @@ describe("drive", () => {
     expect(f(300) / 300).toBeGreaterThan(0.9 * PACE * 5);
     expect(f(300) / 300).toBeLessThan(1.1 * PACE * 5);
   });
+  it("without known stops, cruises at the mean speed (no waits to make up for)", () => {
+    const f = drive(10, [], 1e6);
+    expect(f(100) / 100).toBeCloseTo(PACE * 10, 6);
+  });
+  it("counts a stop listed twice once", () => {
+    const twice = stops.flatMap(x => [x, x]);
+    expect(drive(5, twice, 1e6)(200)).toBeCloseTo(drive(5, stops, 1e6)(200), 6);
+  });
   it("brakes into each stop and waits there DWELL_S", () => {
     const f = drive(5, stops, 1e6);
     let t = 0;
@@ -219,6 +227,8 @@ describe("drive", () => {
     expect(drive(0, stops, 1e6)(60)).toBe(0);
     expect(drive(5, stops, 1e6)(-5)).toBe(0);
     expect(drive(5, stops, 0)(60)).toBe(0);
+    expect(drive(5, [], 0.5)(60)).toBe(0);              // shorter than a metre: no phases
+    expect(drive(5, [0.2, 0.4], 0.6)(60)).toBe(0);
   });
 });
 

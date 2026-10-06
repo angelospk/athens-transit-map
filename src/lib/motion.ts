@@ -40,19 +40,22 @@ interface Phase { t: number; s: number; v: number; a: number }
 export function drive(v: number, stops: number[], end: number, horizon = HORIZON_S): (dt: number) => number {
   const mean = PACE * v;
   if (!(mean > 0) || !(end > 0)) return () => 0;
-  const ahead = stops.filter(x => x > 0 && x < end), legs = [...ahead, end];
-  // Cruise so that, over a typical gap, cruising plus one wait gives the mean speed.
+  const ahead: number[] = [];
+  for (const x of stops) if (x >= 1 && x < end && x - (ahead[ahead.length - 1] ?? 0) >= 1) ahead.push(x);   // listed twice: once
+  const legs = [...ahead, end];
+  // Cruise so that, over a typical gap, cruising plus one wait gives the mean speed. No stops
+  // known: no waits either, so cruise at the mean.
   const gaps = ahead.slice(0, 4).map((x, i) => x - (i ? ahead[i - 1] : 0));
   const L = gaps.length >= 2 ? gaps.reduce((a, b) => a + b, 0) / gaps.length : STOP_GAP_M;
   const run = L / mean - DWELL_S;
-  const vc = run > L / MAX_CRUISE ? L / run : MAX_CRUISE;
+  const vc = !ahead.length ? Math.min(mean, MAX_CRUISE) : run > L / MAX_CRUISE ? L / run : MAX_CRUISE;
   const ph: Phase[] = [];
   let t = 0, s = 0, u = vc;
   const go = (dur: number, a: number) => { if (dur > 0) { ph.push({ t, s, v: u, a }); s += u * dur + (a * dur * dur) / 2; u += a * dur; t += dur; } };
   for (const x of legs) {
     if (t >= horizon) break;
     const d = x - s;
-    if (d < 1) continue;   // the same stop twice
+    if (d < 1) continue;   // the end right at the last stop
     if ((u * u) / (2 * ACC) >= d) go((2 * d) / u, -(u * u) / (2 * d));   // too close: brake harder
     else {
       const top = Math.min(vc, Math.sqrt(ACC * d + (u * u) / 2));
@@ -65,6 +68,7 @@ export function drive(v: number, stops: number[], end: number, horizon = HORIZON
     ph.push({ t, s, v: 0, a: 0 });
     t += DWELL_S;
   }
+  if (!ph.length) return () => 0;   // less than a metre to go
   return dt => {
     const k = Math.min(Math.max(dt, 0), horizon);
     let p = ph[0];
