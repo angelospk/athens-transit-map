@@ -21,6 +21,7 @@ export interface FleetEntry {
   at: number;                 // position_at of the fix being shown
   pos: LngLat;                // that fix
   prev: LngLat | null;        // the fix before (heading without a bearing)
+  moved: { from: LngLat; at: number } | null;   // the last move to a new fix (motion off: its trail)
   bearing: number | null;
   variant: string | null;
   cls: DelayClass;
@@ -98,7 +99,7 @@ export class Fleet {
     const pos: LngLat = [v.lon, v.lat];
     let e = this.entries.get(k);
     if (!e) {
-      e = { key: k, line, id, mover: new Mover(pos), at: v.position_at, pos, prev: null, bearing: v.bearing,
+      e = { key: k, line, id, mover: new Mover(pos), at: v.position_at, pos, prev: null, moved: null, bearing: v.bearing,
         variant: v.variant, cls: delayClass(v.delay_s), track: null, route: null };
       this.entries.set(k, e);
       return e;
@@ -107,6 +108,7 @@ export class Fleet {
     e.cls = delayClass(v.delay_s);
     if (v.position_at === e.at && !same) return null;
     if (v.position_at > e.at) {
+      if (e.pos[0] !== pos[0] || e.pos[1] !== pos[1]) e.moved = { from: e.pos, at: nowSec };
       // Heading from GPS fixes; forget them on a new trip or a jump.
       e.prev = e.variant !== v.variant || distanceM(e.pos, pos) > JUMP_M ? null
         : e.pos[0] !== pos[0] || e.pos[1] !== pos[1] ? e.pos : e.prev;

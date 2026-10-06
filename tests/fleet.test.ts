@@ -113,5 +113,21 @@ describe("Fleet", () => {
     }
     expect(max).toBeLessThan(1.5);
   });
+
+  it("remembers where a vehicle moved from on a newer fix (still mode trail)", () => {
+    const f = new Fleet();
+    f.city([city(100, T)], new Set(), T + 5);
+    expect(f.entries.get("040/1")!.moved).toBeNull();          // first sight: no trail
+    f.city([city(100, T)], new Set(), T + 10);
+    expect(f.entries.get("040/1")!.moved).toBeNull();          // same fix
+    f.city([city(900, T + 30)], new Set(), T + 40);
+    const m = f.entries.get("040/1")!.moved!;
+    expect(distanceM(m.from, [lonAt(100), 37.97])).toBeLessThan(0.5);
+    expect(m.at).toBe(T + 40);
+    f.city([city(500, T + 20)], new Set(), T + 50);            // older fix: ignored
+    expect(f.entries.get("040/1")!.moved).toBe(m);
+    f.line("040", [{ v: line(900, T + 60), route }], T + 70);  // newer fix, same place: no new trail
+    expect(f.entries.get("040/1")!.moved).toBe(m);
+  });
 });
 

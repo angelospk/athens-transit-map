@@ -60,6 +60,8 @@ export class AppState {
   cityOn = $state(stored("cityOn", true, isBool));
   others = $state<Others>(stored("others", "dim", v => v === "normal" || v === "dim" || v === "hide"));
   showAges = $state(stored("showAges", false, isBool));
+  // Off: every vehicle stays at its last GPS fix (no motion in between); its age is always shown.
+  motion = $state(stored("motion", true, isBool));
   // Map filters; the selected vehicle is always shown.
   only = $state.raw<Only>(stored("only", { fresh: false, onTime: false },
     v => !!v && isBool((v as Only).fresh) && isBool((v as Only).onTime)));
@@ -213,6 +215,11 @@ export class AppState {
   setShowAges(on: boolean) {
     this.showAges = on;
     store("showAges", on);
+  }
+
+  setMotion(on: boolean) {
+    this.motion = on;
+    store("motion", on);
   }
 
   setOnly(o: Partial<Only>) {

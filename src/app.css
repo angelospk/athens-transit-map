@@ -25,12 +25,12 @@ button, input { font: inherit; color: inherit; }
 .bus .dir { position: absolute; left: 50%; top: 50%; width: 0; height: 0; margin: -4px 0 0 -4px; pointer-events: none;
   border: 4px solid transparent; border-top: 0; border-bottom: 7px solid var(--fg);
   filter: drop-shadow(0 0 1px var(--bg)) drop-shadow(0 0 1px var(--bg)); }
-.bus .age { position: absolute; top: calc(100% + 1px); left: 50%; transform: translateX(-50%); padding: 0 3px;
+.vm .age { position: absolute; top: calc(100% + 1px); left: 50%; transform: translateX(-50%); padding: 0 3px;
   border-radius: 6px; background: var(--panel); color: var(--fg); font: 600 10px/13px system-ui, sans-serif;
   box-shadow: 0 0 2px rgba(0, 0, 0, .35); pointer-events: none; font-variant-numeric: tabular-nums; }
-.bus.stale { opacity: .55; }
-.bus.stale .age { color: var(--late2); }
 .bus.faded { border-style: dashed; opacity: .7; }
+.bus.stale { opacity: .3; }
+.vm.stale .age { color: var(--late2); }
 .bus.selected { outline: 3px solid var(--accent); outline-offset: 1px; z-index: 2; }
 .bus:focus-visible { outline: 3px solid var(--accent); }
 .ontime { background: var(--ontime); } .late1 { background: var(--late1); } .late2 { background: var(--late2); }
@@ -40,26 +40,9 @@ button, input { font: inherit; color: inherit; }
 .maplibregl-popup-tip { border-top-color: var(--panel) !important; border-bottom-color: var(--panel) !important; }
 .maplibregl-ctrl-top-right { top: env(safe-area-inset-top); }
 /* A stale marker always shows its age: it says why it is pale. */
-.no-ages .bus:not(.stale) .age { display: none; }
+.no-ages .vm:not(.stale) .age { display: none; }
 .filtered { display: none; }
 
-/* Correction effect (motion.ts, FIX_S = 0.9 s, swap at 45 %): the dot dissolves where it was,
-   reappears where it is, with a ring. Only opacity, filter and scale: cheap to animate. */
-@keyframes fix {
-  0% { opacity: 1; filter: none; scale: 1; }
-  44% { opacity: .1; filter: blur(4px); scale: 1.45; }
-  46% { opacity: .1; filter: blur(4px); scale: .75; }
-  100% { opacity: 1; filter: none; scale: 1; }
-}
-@keyframes fix-ring {
-  0%, 45% { opacity: 0; scale: .8; }
-  55% { opacity: .9; }
-  100% { opacity: 0; scale: 2; }
-}
-.fixing { animation: fix .9s ease-in-out; }
-.fixing::after { content: ""; position: absolute; inset: -3px; border: 2px solid var(--accent); border-radius: 14px;
-  pointer-events: none; opacity: 0; animation: fix-ring .9s ease-out; }
-@media (prefers-reduced-motion: reduce) { .fixing, .fixing::after { animation: none; } }
 
 /* My location. */
 .me { position: relative; width: 18px; height: 18px; }
@@ -71,7 +54,6 @@ button, input { font: inherit; color: inherit; }
   border-left: 10px solid transparent; border-right: 10px solid transparent; border-bottom: 26px solid rgba(26, 115, 232, .35);
   transform-origin: 50% 100%; transform: rotate(var(--h, 0deg)); }
 .me.moving .cone { display: block; }
-.me.fixing::after { border-radius: 50%; }
 @keyframes me-pulse { 0% { scale: .6; opacity: .9; } 100% { scale: 1.6; opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .me::before { animation: none; } }
 

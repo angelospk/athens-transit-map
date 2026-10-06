@@ -7,7 +7,7 @@
   import type { LngLat } from "../glide";
   import { vehicleHeading } from "../heading";
   import { Locator, userPlan, type Fix, type LocState } from "../locate";
-  import { FIX_SWAP, Mover, planOnto } from "../motion";
+  import { Mover, planOnto } from "../motion";
   import { shapeLength, stopOffsets } from "../predict";
   import type { Variant } from "../types";
   import type { AppState } from "../state.svelte";
@@ -34,12 +34,13 @@
   // DOM markers of the detailed lines. They live outside Svelte's reactivity: moved every frame.
   interface Dom {
     marker: Marker; wrap: HTMLDivElement; el: HTMLButtonElement; dir: HTMLElement; age: HTMLElement;
-    width: number; heading: number | null; fixing: boolean;
+    width: number; heading: number | null;
   }
   const doms = new Map<string, Dom>();
   let owned = new Set<string>();       // detailed lines with data: drawn as DOM markers
   let fadedKeys = new Set<string>();   // vehicles of an unknown direction under a direction focus
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+  const STILL_TRAIL_S = 1;   // motion off: the trail of a move to a new fix fades over this
 
   // Route geometry per variant, built once per static file.
   const routes = new WeakMap<Variant, RouteGeom>();
@@ -67,12 +68,6 @@
     d.dir.style.transform = `translate(${Math.sin(a) * rx}px, ${-Math.cos(a) * ry}px) rotate(${h}deg)`;
   }
 
-  // Restart a CSS animation class (the correction effect) on an element.
-  function replay(el: Element, cls: string) {
-    el.classList.remove(cls);
-    void (el as HTMLElement).offsetWidth;
-    el.classList.add(cls);
-  }
   const LANE_PX = 3;   // each direction drawn to the right of its travel direction (two lanes)
   const key = (line: string, id: string) => `${line}/${id}`;
 
@@ -111,10 +106,6 @@
     return g.getImageData(0, 0, c.width, c.height);
   }
 
-  // A zoom curve (zoom, value pairs) with every value multiplied by a per-feature factor.
-  const byZoom = (stops: number[], k: ExpressionSpecification) =>
-    ["interpolate", ["linear"], ["zoom"], ...stops.flatMap((x, i): unknown[] => (i % 2 ? [["*", x, k]] : [x]))] as unknown as ExpressionSpecification;
-
   // City layer: every live vehicle, drawn by the GPU (DOM markers would not cope with ~1500).
   // Dots at city zoom, discs with the line number from zoom 14. Colours from app.css.
   function addCityLayers(m: MlMap) {
@@ -124,9 +115,7 @@
     m.addLayer({ id: "city-dot", type: "circle", source: "city",
       paint: {
         "circle-color": ["match", ["get", "cls"], ...DELAY_CLASSES.slice(0, 4).flatMap(c => [c, color(c)]), color("none")],
-        // fade (0..1): the correction effect dissolves the dot, then brings it back.
-        "circle-radius": byZoom([10, 2.5, 13, 4.5, 14, 10, 17, 13], ["+", 1, ["*", 0.5, ["get", "fade"]]]),
-        "circle-blur": ["*", 1.2, ["get", "fade"]],
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 2.5, 13, 4.5, 14, 10, 17, 13],
         "circle-stroke-color": "#ffffff",
         "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 14, 1.5],
         "circle-opacity-transition": { duration: 300 }, "circle-stroke-opacity-transition": { duration: 300 },
@@ -136,11 +125,6 @@
         "text-size": ["case", [">", ["length", ["get", "line"]], 3], 8, 10],
         "text-allow-overlap": true, "text-ignore-placement": true },
       paint: { "text-color": "#ffffff", "text-opacity-transition": { duration: 300 } } as never });
-    // The correction effect's ring, expanding where the vehicle reappears.
-    m.addLayer({ id: "city-ring", type: "circle", source: "city", filter: [">=", ["get", "ring"], 0],
-      paint: { "circle-radius": byZoom([10, 5, 14, 12, 17, 15], ["+", 1, ["*", 1.6, ["get", "ring"]]]),
-        "circle-opacity": 0, "circle-stroke-color": color("accent"), "circle-stroke-width": 2,
-        "circle-stroke-opacity": ["-", 1, ["get", "ring"]] } });
     // Ring round the selected vehicle while it is still on the city layer.
     m.addLayer({ id: "city-selected", type: "circle", source: "city", filter: ["boolean", false],
       paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 7, 14, 14, 17, 17], "circle-opacity": 0,
@@ -149,6 +133,15 @@
 
   function addLayers(m: MlMap) {
     addCityLayers(m);
+    // Trails of corrections (the route a vehicle glided along) and, with motion off, of moves to a
+    // new fix. Always under the vehicle: city dots' trails under the dots, detailed lines' trails
+    // over the route lines (their vehicles are DOM markers, above the map).
+    m.addSource("trails", { type: "geojson", data: EMPTY });
+    const trail = (id: string, dom: boolean, before?: string) => m.addLayer({ id, type: "line", source: "trails",
+      filter: ["==", ["get", "dom"], dom], layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#0071e3",
+        "line-width": 8, "line-opacity": ["*", 0.55, ["get", "alpha"]] } }, before);
+    trail("trails-city", false, "city-dot");
     m.addImage("route-arrow", arrowImage(), { pixelRatio: 2 });
     m.addSource("routes", { type: "geojson", data: EMPTY });
     m.addSource("highlight", { type: "geojson", data: EMPTY });
@@ -172,6 +165,7 @@
       layout: { "symbol-placement": "line", "symbol-spacing": 80, "icon-image": "route-arrow",
         "icon-rotation-alignment": "map", "icon-keep-upright": false, "icon-offset": [0, LANE_PX],
         "icon-allow-overlap": true, "icon-ignore-placement": true } });
+    trail("trails-line", true);
     m.addLayer({ id: "stops", type: "circle", source: "stops",
       paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 3, 16, 6], "circle-color": "#ffffff",
         "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2 } });
@@ -263,9 +257,10 @@
   }
 
   // One frame loop for every moving dot. It runs as often as needed for steps of under half a
-  // pixel at 20 m/s (zoomed out: once a second), 30 fps during correction effects; nothing while
+  // pixel at 20 m/s (zoomed out: once a second), faster during corrections and trails; nothing while
   // the tab is hidden. Off-screen city vehicles are not stepped: they snap when they come back.
-  let raf = 0, nextDue = 0, cityWasEmpty = true, meFixing = false;
+  // With motion off, every vehicle is drawn at its last fix; a move to a new fix leaves a trail.
+  let raf = 0, nextDue = 0, cityWasEmpty = true, trailsWereEmpty = true;
   function frame() {
     raf = requestAnimationFrame(frame);
     const m = map;
@@ -281,18 +276,36 @@
     }
     let fixing = false;
     const features: GeoJSON.Feature<GeoJSON.Point>[] = [];
+    const trails: GeoJSON.Feature<GeoJSON.LineString>[] = [];
     const s = app.selection, selKey = s?.kind === "vehicle" ? `${s.line}/${s.id}` : null, only = app.only;
+    const still = !app.motion;
     for (const e of fleet.entries.values()) {
       const dom = owned.has(e.line);
       const shown = e.key === selKey || passes(only, e.cls, now - e.at);
       if (!shown && !dom) continue;
-      if (!dom && (!app.cityOn || (cull && !e.mover.fixing && cull(e.mover.pos) && cull(e.mover.targetPos(now) ?? e.mover.pos)))) continue;
-      e.mover.reduced = reduced;
-      const r = e.mover.step(now);
-      if (r.fx != null) fixing = true;
-      if (dom) drawDom(e, r.pos, r.fx).wrap.classList.toggle("filtered", !shown);
-      else features.push({ type: "Feature", geometry: { type: "Point", coordinates: r.pos },
-        properties: { line: e.line, id: e.id, cls: e.cls, stale: isStalePos(now - e.at), ...fxProps(r.fx) } });
+      const moved = still && !reduced && e.moved && now - e.moved.at < STILL_TRAIL_S ? e.moved : null;
+      if (!dom && (!app.cityOn || (cull && (still
+        ? !moved && cull(e.pos)
+        : !e.mover.fixing && cull(e.mover.pos) && cull(e.mover.targetPos(now) ?? e.mover.pos))))) continue;
+      let pos: LngLat, trail: { geom: LngLat[]; alpha: number } | null;
+      if (still) {
+        pos = e.pos;
+        trail = moved && { geom: [moved.from, e.pos], alpha: 1 - (now - moved.at) / STILL_TRAIL_S };
+      } else {
+        e.mover.reduced = reduced;
+        const r = e.mover.step(now);
+        pos = r.pos;
+        trail = r.trail;
+        if (e.mover.fixing) fixing = true;
+      }
+      if (moved) fixing = true;
+      // A trail is drawn like its vehicle: not for one filtered out, hidden or dimmed by a selection.
+      const o = dom || !s || app.others === "normal" || e.key === selKey ? 1 : app.others === "dim" ? 0.22 : 0;
+      if (trail && shown && o && trail.geom.length > 1)
+        trails.push({ type: "Feature", geometry: { type: "LineString", coordinates: trail.geom }, properties: { alpha: trail.alpha * o, dom } });
+      if (dom) drawDom(e, pos, still).wrap.classList.toggle("filtered", !shown);
+      else features.push({ type: "Feature", geometry: { type: "Point", coordinates: pos },
+        properties: { line: e.line, id: e.id, cls: e.cls, stale: isStalePos(now - e.at) } });
     }
     for (const [k, d] of doms) {
       const e = fleet.entries.get(k);
@@ -302,32 +315,27 @@
       (m.getSource("city") as GeoJSONSource).setData({ type: "FeatureCollection", features });
       cityWasEmpty = !features.length;
     }
+    if (trails.length || !trailsWereEmpty) {
+      (m.getSource("trails") as GeoJSONSource).setData({ type: "FeatureCollection", features: trails });
+      trailsWereEmpty = !trails.length;
+    }
     if (me) {
       me.mover.reduced = reduced;
       const r = me.mover.step(Date.now() / 1000);
       me.marker.setLngLat(r.pos);
-      if (r.fx != null && !meFixing) replay(me.el, "fixing");
-      meFixing = r.fx != null;
-      if (meFixing) fixing = true;
+      if (me.mover.fixing) fixing = true;
       if (follow && !m.isMoving()) m.setCenter(r.pos);   // not during the fly-to or a gesture
     }
-    nextDue = t + (fixing && z >= 13 ? 33 : Math.min(1000, Math.max(16, (0.5 * mpp / 20) * 1000)));
+    // Corrections and trails: 30 fps close up; zoomed out, where they are a few pixels and every frame
+    // steps the whole city, 4 fps.
+    const idle = Math.min(1000, Math.max(16, (0.5 * mpp / 20) * 1000));
+    nextDue = t + (fixing ? Math.min(idle, z >= 13 ? 33 : 250) : idle);
   }
 
-  // City correction effect: fade out where it was, then fade in with a ring where it is.
-  function fxProps(fx: number | null) {
-    if (fx == null) return { fade: 0, ring: -1 };
-    if (fx < FIX_SWAP) return { fade: fx / FIX_SWAP, ring: -1 };
-    const q = (fx - FIX_SWAP) / (1 - FIX_SWAP);
-    return { fade: 1 - q, ring: q };
-  }
-
-  function drawDom(e: FleetEntry, pos: LngLat, fx: number | null): Dom {
+  function drawDom(e: FleetEntry, pos: LngLat, still: boolean): Dom {
     let d = doms.get(e.key);
     if (!d) d = makeDom(e, pos);
     d.marker.setLngLat(pos);
-    if (fx != null && !d.fixing) replay(d.el, "fixing");
-    d.fixing = fx != null;
     const cls = e.cls;
     if (!d.el.classList.contains(cls)) {
       d.el.classList.remove(...DELAY_CLASSES);
@@ -335,7 +343,7 @@
     }
     d.el.classList.toggle("faded", fadedKeys.has(e.key));
     // Heading: along the route while moving on it, else from the bearing or the last fixes.
-    const moving = e.mover.plan && e.mover.plan.geom.length > 1 && (e.mover.plan.target(app.serverMs() / 1000 + 1) > e.mover.s + 0.5);
+    const moving = !still && e.mover.plan && e.mover.plan.geom.length > 1 && (e.mover.plan.target(app.serverMs() / 1000 + 1) > e.mover.s + 0.5);
     setHeading(d, moving ? e.mover.heading() : vehicleHeading({ lon: e.pos[0], lat: e.pos[1], bearing: e.bearing }, e.route?.route.shape, e.prev));
     return d;
   }
@@ -354,13 +362,15 @@
     dir.className = "dir";
     const age = document.createElement("span");
     age.className = "age";
-    el.append(num, dir, age);
+    el.append(num, dir);
     el.setAttribute("aria-label", `Γραμμή ${e.line}, όχημα ${e.id}`);
-    // The marker element only positions; the visible pill (and its effects) is the child.
+    // The marker element only positions; the visible pill is the child. The age label is beside the
+    // pill, not in it: a stale pill is faint, its age stays readable.
     const wrap = document.createElement("div");
-    wrap.append(el);
+    wrap.className = "vm";
+    wrap.append(el, age);
     const marker = new Marker({ element: wrap, anchor: "center", subpixelPositioning: true }).setLngLat(pos).addTo(map!);
-    const d: Dom = { marker, wrap, el, dir, age, width: el.offsetWidth, heading: null, fixing: false };
+    const d: Dom = { marker, wrap, el, dir, age, width: el.offsetWidth, heading: null };
     doms.set(e.key, d);
     const s = app.selection;
     if (s?.kind === "vehicle" && s.line === e.line && s.id === e.id) { el.classList.add("selected"); wrap.classList.add("sel"); }
@@ -371,7 +381,9 @@
   function updateAge(d: Dom, e: FleetEntry, now: number) {
     const age = now - e.at, label = ageLabel(age);
     if (d.age.textContent !== label) d.age.textContent = label;
-    d.el.classList.toggle("stale", isStalePos(age));
+    const stale = isStalePos(age);
+    d.el.classList.toggle("stale", stale);
+    d.wrap.classList.toggle("stale", stale);
   }
 
   function setup(node: HTMLDivElement) {
@@ -476,6 +488,7 @@
     untrack(() => {
       owned = own;
       fleet.city(on && city ? city.vehicles : [], own, app.serverMs() / 1000);
+      nextDue = 0;   // draw new fixes (and their trails) now
       if (loaded && !on) (map!.getSource("city") as GeoJSONSource).setData(EMPTY);
     });
   });
@@ -488,8 +501,7 @@
     const sel: ExpressionSpecification = s?.kind === "vehicle"
       ? ["all", ["==", ["get", "line"], s.line], ["==", ["get", "id"], s.id]] : ["boolean", false];
     const o = !s || app.others === "normal" ? 1 : app.others === "dim" ? 0.22 : 1;
-    const opacity: ExpressionSpecification = ["*", ["case", sel, 1, o], ["case", ["get", "stale"], 0.45, 1],
-      ["-", 1, ["*", 0.85, ["get", "fade"]]]];
+    const opacity: ExpressionSpecification = ["*", ["case", sel, 1, o], ["case", ["get", "stale"], 0.3, 1]];
     m.setPaintProperty("city-dot", "circle-opacity", opacity);
     m.setPaintProperty("city-dot", "circle-stroke-opacity", opacity);
     m.setPaintProperty("city-label", "text-opacity", opacity);
@@ -498,7 +510,7 @@
     m.setFilter("city-label", filter);
     m.setFilter("city-selected", sel);
     const vis = app.cityOn ? "visible" : "none";
-    for (const id of ["city-dot", "city-label", "city-selected", "city-ring"]) m.setLayoutProperty(id, "visibility", vis);
+    for (const id of ["city-dot", "city-label", "city-selected"]) m.setLayoutProperty(id, "visibility", vis);
   });
 
   $effect(() => {
@@ -520,6 +532,16 @@
       const byLine = new Map<string, typeof vs>();
       for (const p of vs) byLine.set(p.line, [...(byLine.get(p.line) ?? []), p]);
       for (const line of own) fleet.line(line, (byLine.get(line) ?? []).map(p => ({ v: p.v, route: routeFor(line, p.v.variant) })), now);
+      nextDue = 0;
+    });
+  });
+
+  // Motion back on: every dot goes straight to where its motion says (no glide from the last fix).
+  $effect(() => {
+    const on = app.motion;
+    untrack(() => {
+      if (on) for (const e of fleet.entries.values()) e.mover.snap();
+      nextDue = 0;
     });
   });
 
@@ -561,7 +583,7 @@
   });
 </script>
 
-<div class="map" class:no-ages={!app.showAges} {@attach setup}></div>
+<div class="map" class:no-ages={!app.showAges && app.motion} {@attach setup}></div>
 {#if failed}
   <div class="nogl" role="alert">
     Ο χάρτης δεν μπορεί να εμφανιστεί: ο browser δεν υποστηρίζει WebGL2. Δοκίμασε άλλον browser ή ενεργοποίησε την

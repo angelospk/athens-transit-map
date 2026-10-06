@@ -33,6 +33,9 @@
     return null;
   });
 
+  // With motion off, ages are always shown: they are all that says how old a position is.
+  const ages = $derived(app.showAges || !app.motion);
+
   const oldest = $derived.by(() => {
     const ts = app.selected.flatMap(l => (app.live[l] ? [app.live[l].updated_at] : []));
     return ts.length ? Math.min(...ts) : null;
@@ -61,7 +64,7 @@
       aria-label="Πόσο παλιά είναι η θέση" title="Πόσο παλιά είναι η θέση" onclick={() => toggle("ages")}>
       <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
         <path d="M1.8 10S5 4.5 10 4.5 18.2 10 18.2 10 15 15.5 10 15.5 1.8 10 1.8 10z" /><circle cx="10" cy="10" r="2.6" />
-        {#if !app.showAges}<path d="M3.5 3.5l13 13" />{/if}
+        {#if !ages}<path d="M3.5 3.5l13 13" />{/if}
       </svg>
     </button>
     <button type="button" class="fold" aria-expanded={!collapsed} aria-controls="panel-body"
@@ -104,7 +107,9 @@
   {:else if pop === "ages"}
     <div class="pop" id="pop-ages" role="dialog" aria-label="Πόσο παλιά είναι η θέση">
       <p><b class="age">24″</b> Πριν από τόσο έστειλε το όχημα την τελευταία του θέση. Ο ΟΑΣΑ στέλνει θέσεις
-        κάθε 20–60″· ανάμεσα, ο χάρτης μετακινεί το όχημα πάνω στη διαδρομή του με την ταχύτητα που είχε.</p>
+        κάθε 20–60″· {#if app.motion}ανάμεσα, ο χάρτης μετακινεί το όχημα πάνω στη διαδρομή του με την ταχύτητα που είχε.
+        Αν η νέα θέση είναι μακριά, το όχημα γλιστράει γρήγορα ως εκεί και αφήνει μπλε ίχνος.{:else}ανάμεσα, το όχημα μένει
+        εκεί που ήταν όταν έστειλε. Όταν έρθει νέα θέση, πάει εκεί και αφήνει για λίγο μπλε ίχνος.{/if}</p>
       <p>Ένα όχημα <b>αχνό με πορτοκαλί ηλικία</b> δεν έχει στείλει θέση για πάνω από 1½ λεπτό: η πραγματική θέση του μπορεί να είναι
         αλλού. Όταν έρθει νέα θέση, μετακινείται εκεί.</p>
       {#if oldest != null}
@@ -114,8 +119,12 @@
         <p class="hint" title="Ώρα δεδομένων {clock(app.city!.updated_at)}">Ενημέρωση πόλης πριν {duration(cityAge)}</p>
       {/if}
       <label class="switch">
-        <input type="checkbox" checked={app.showAges} onchange={e => app.setShowAges(e.currentTarget.checked)} />
-        <span>Δείξε την ηλικία πάνω στα οχήματα</span>
+        <input type="checkbox" checked={app.motion} onchange={e => app.setMotion(e.currentTarget.checked)} />
+        <span>Κίνηση ανάμεσα στις θέσεις<br /><small>Κλειστό: κάθε όχημα μένει στην τελευταία θέση που έστειλε.</small></span>
+      </label>
+      <label class="switch">
+        <input type="checkbox" checked={ages} disabled={!app.motion} onchange={e => app.setShowAges(e.currentTarget.checked)} />
+        <span>Δείξε την ηλικία πάνω στα οχήματα{#if !app.motion}<br /><small>Πάντα, όταν η κίνηση είναι κλειστή.</small>{/if}</span>
       </label>
     </div>
   {/if}
@@ -148,7 +157,7 @@
       <span><i class="ontime"></i>έως 2′ ή νωρίτερα</span><span><i class="late1"></i>2–5′</span>
       <span><i class="late2"></i>5–10′</span><span><i class="late3"></i>πάνω από 10′</span>
       <span><i class="none"></i>χωρίς δρομολόγιο</span>
-      {#if app.showAges}<span><b class="age">24″</b>πριν από τόσο ήρθε η θέση</span>{/if}
+      {#if ages}<span><b class="age">24″</b>πριν από τόσο ήρθε η θέση</span>{/if}
     </div>
   </div>
 
