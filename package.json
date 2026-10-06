@@ -10,7 +10,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "proto:jump": "vite --open /proto/jump.html"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
