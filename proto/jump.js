@@ -73,7 +73,7 @@ function rr(g, x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
 // The bus pill as in the app: line number on the delay colour, white border, age label below.
 // o: { alpha, scale, blur, hollow (0..1), dashed, grey, ageText, ageColor }
 function pill(g, p, b, o = {}) {
-  const { alpha = 1, scale = 1, blur = 0, hollow = 0, dashed = false, grey = false, ageText, ageColor = "#1d1d1f" } = o;
+  const { alpha = 1, scale = 1, blur = 0, hollow = 0, dashed = false, grey = false, ageText, ageColor = "#1d1d1f", solidAge = false } = o;
   const col = grey ? "#9a9aa0" : C[b.cls];
   g.save(); g.globalAlpha = alpha; if (blur) g.filter = `blur(${blur}px)`;
   g.translate(p.x, p.y); g.scale(scale, scale);
@@ -86,6 +86,7 @@ function pill(g, p, b, o = {}) {
   g.font = "700 11px system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
   g.fillText("137", 0, 0.5);
   if (ageText) {
+    if (solidAge) g.globalAlpha = 1;
     g.font = "600 10px system-ui, sans-serif";
     const w = g.measureText(ageText).width + 8;
     rr(g, -w / 2, 13, w, 14, 6); g.fillStyle = "rgba(255,255,255,.96)"; g.fill();
@@ -135,10 +136,11 @@ function todayLook(b, t) {
   const a = age(b, t);
   return a > 90 ? { alpha: 0.55, ageText: fmtAge(a), ageColor: C.late2 } : { ageText: fmtAge(a) };
 }
-// Proposed: hollow, dashed, with its age, so it reads as "a guess, not a fresh position".
+// Proposed: much fainter than today, age label still readable.
+const FAINT = 0.3;
+const faintLook = a => (a > 90 ? { alpha: FAINT, solidAge: true, ageText: fmtAge(a), ageColor: C.late2 } : { ageText: fmtAge(a) });
 function hollowLook(b, t) {
-  const a = age(b, t);
-  return a > 90 ? { hollow: 1, dashed: true, alpha: 0.9, ageText: fmtAge(a), ageColor: C.late2 } : { ageText: fmtAge(a) };
+  return faintLook(age(b, t));
 }
 
 // ---- variants: each draws the two stale buses for time t ----
@@ -200,14 +202,14 @@ const VARIANTS = [
     },
   },
   {
-    key: "E", caption: "Τα παλιά δεδομένα φαίνονται κούφια με την ηλικία τους· γεμίζουν μόλις έρθει νέα θέση.",
+    key: "E", caption: "Τα παλιά δεδομένα φαίνονται αχνά με την ηλικία τους· γίνονται έντονα μόλις έρθει νέα θέση.",
     stale: true,
     draw(g, b, t, look) {
       const dt = t - TJ;
       if (dt < 0 || dt >= 2) return pill(g, at(shownS(b, t)), b, look(b, t));
       const q = clamp(dt / 0.6);
-      pill(g, at(oldS(b)), b, { hollow: 1, dashed: true, grey: true, alpha: 0.8 * (1 - clamp(dt / 1.5)) });
-      pill(g, at(newS(b, t)), b, { hollow: 1 - q, dashed: q < 1, scale: 1 + 0.15 * Math.sin(q * Math.PI),
+      pill(g, at(oldS(b)), b, { grey: true, alpha: FAINT * (1 - clamp(dt / 1.5)) });
+      pill(g, at(newS(b, t)), b, { alpha: FAINT + (1 - FAINT) * q, solidAge: true, scale: 1 + 0.15 * Math.sin(q * Math.PI),
         ageText: dt < 1.6 ? "μόλις τώρα" : fmtAge(age(b, t)), ageColor: C.ontime });
     },
   },
@@ -220,7 +222,7 @@ const VARIANTS = [
         const prev = lastFix(b, f.at + 2 - 0.001);
         line(g, seg(prev.s, f.s), `rgba(0,113,227,${0.55 * (1 - since)})`, 8);
       }
-      pill(g, at(f.s), b, a > 90 ? { hollow: 1, dashed: true, alpha: 0.9, ageText: fmtAge(a), ageColor: C.late2 } : { ageText: fmtAge(a) });
+      pill(g, at(f.s), b, faintLook(a));
     },
   },
 ];
