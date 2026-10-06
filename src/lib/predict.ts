@@ -3,7 +3,7 @@
 
 import { distanceM, type LngLat } from "./glide";
 import { bearingDeg } from "./heading";
-import { aheadM } from "./motion";
+import { drive, NO_SPEED } from "./motion";
 
 const NEAR_ROUTE_M = 150;    // farther than this, the shape says nothing about the vehicle
 const TIE_M = 20;            // other legs this close to the nearest are candidates too
@@ -17,11 +17,11 @@ const MAX_LATE_S = 120;      // samples this old on arrival give no speed
 
 export interface Route { shape: [number, number][]; stopIds: string[]; stopS: number[]; endS: number }
 // key: variant + trip. speed: the backend's smoothed speed (contract rev 3), if any.
-export interface Sample { pos: LngLat; at: number; key: string; nextStop: string | null; speed?: number | null }
+export interface Sample { pos: LngLat; at: number; key: string; speed?: number | null }
 export interface Track {
   s: number; at: number; key: string;
-  speed: number | null;   // m/s; null: unknown, do not extrapolate
-  capS: number;           // do not pass this (next stop)
+  speed: number | null;   // m/s; null: unknown (moves at NO_SPEED unless held)
+  stopS: number[];        // the route's stops (it waits at the ones ahead)
   endS: number;
   alts?: number[];        // held first sample: every candidate s
 }
@@ -103,14 +103,6 @@ export function stopOffsets(shape: [number, number][], stops: LngLat[]): number[
   });
 }
 
-function capFor(route: Route, s: number, nextStop: string | null): number {
-  if (nextStop) {
-    const i = route.stopIds.findIndex((id, k) => id === nextStop && route.stopS[k] >= s - BACK_TOLERANCE_M);
-    if (i >= 0) return Math.max(route.stopS[i], s);
-  }
-  return route.endS;
-}
-
 const plausible = (from: number, to: number, dt: number) =>
   to >= from - BACK_TOLERANCE_M && to - from <= MAX_SPEED * dt + 100;
 
@@ -123,7 +115,7 @@ export function updateTrack(prev: Track | null, sample: Sample, route: Route, no
   const late = nowSec - sample.at > MAX_LATE_S;
   const given = typeof sample.speed === "number" && sample.speed >= 0 && !late ? Math.min(sample.speed, MAX_SPEED) : null;
   const fresh = (s: number, alts?: number[]): Track => ({
-    s, at: sample.at, key: sample.key, speed: alts ? null : given, capS: capFor(route, s, sample.nextStop), endS: route.endS, alts,
+    s, at: sample.at, key: sample.key, speed: alts ? null : given, stopS: route.stopS, endS: route.endS, alts,
   });
   if (!prev || prev.key !== sample.key) {
     const ambiguous = cands[cands.length - 1] - cands[0] > AMBIGUOUS_M;
@@ -141,10 +133,20 @@ export function updateTrack(prev: Track | null, sample: Sample, route: Route, no
   let speed: number | null = moved < STANDING_M ? 0 : Math.min(moved / dt, MAX_SPEED);
   if (dt > MAX_GAP_S || late) speed = null;
   speed = given ?? speed;
-  return { s, at: sample.at, key: sample.key, speed, capS: capFor(route, s, sample.nextStop), endS: route.endS };
+  return { s, at: sample.at, key: sample.key, speed, stopS: route.stopS, endS: route.endS };
 }
 
+const STOP_PASSED_M = 15;   // a stop this close ahead is the one the vehicle stands at
+const drives = new WeakMap<Track, (dt: number) => number>();
+
+// Where the vehicle is at nowSec: driving with stops from its fix. A held first sample (which leg
+// of a loop?) stands.
 export function predictS(t: Track, nowSec: number): number {
-  if (t.speed == null) return t.s;
-  return Math.min(t.s + aheadM(t.speed, nowSec - t.at), Math.max(t.capS, t.s), t.endS);
+  if (t.alts) return t.s;
+  let f = drives.get(t);
+  if (!f) {
+    const stops = t.stopS.filter(x => x > t.s + STOP_PASSED_M).map(x => x - t.s);
+    drives.set(t, f = drive(t.speed ?? NO_SPEED, stops, t.endS - t.s));
+  }
+  return t.s + f(nowSec - t.at);
 }

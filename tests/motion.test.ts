@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { distanceM, type LngLat } from "../src/lib/glide";
-import { aheadM, chase, cumulativeLL, GLIDE_S, holdM, linePlan, Mover, pathPlan, pointAtLL, project, subLine, TRAIL_S, type Plan } from "../src/lib/motion";
+import {
+  CATCH_MAX, chase, cumulativeLL, drive, DWELL_S, GLIDE_S, holdM, HORIZON_S, linePlan, Mover, PACE, pathPlan, pointAtLL, project,
+  subLine, TRAIL_S, type Plan,
+} from "../src/lib/motion";
 
 // 0.01° lon at 37.97° ≈ 877 m. Geometry here is [lon, lat].
 const M = 877.4;
@@ -16,9 +19,11 @@ describe("chase", () => {
   it("moves at target speed when on target, faster when behind, never overshoots", () => {
     expect(chase(96, 100, 8, 0.5)).toBe(100);               // the target moved 4 m: reach it
     const late = chase(0, 100, 8, 0.5) as number;
-    expect(late).toBeGreaterThan(4 + 4);                     // faster than v
-    expect(late).toBeLessThanOrEqual(0.5 * (8 + 10) + 1e-9); // capped catch-up
-    expect(chase(99, 100, 0, 5)).toBe(100);                  // no overshoot
+    expect(late).toBeGreaterThan(0.5 * 8);                   // faster than v
+    expect(late).toBeLessThanOrEqual(0.5 * (8 + CATCH_MAX) + 1e-9); // capped catch-up
+    expect(CATCH_MAX).toBeLessThanOrEqual(6);                // no burst after new data
+    expect(chase(99, 100, 0, 5)).toBeLessThanOrEqual(100);   // no overshoot
+    expect(chase(99, 100, 0, 5)).toBeGreaterThan(99);
   });
   it("slows down instead of reversing when a little ahead", () => {
     const ahead = chase(110, 100, 8, 0.5) as number;
@@ -85,8 +90,8 @@ describe("Mover", () => {
     mv.setPlan(plan(() => 200), 0, 0);
     mv.step(1);
     expect(mv.s).toBeGreaterThan(5);
-    expect(mv.s).toBeLessThanOrEqual(10 + 1e-9);
-    for (let t = 1.1; t < 30; t += 0.1) mv.step(t);
+    expect(mv.s).toBeLessThanOrEqual(CATCH_MAX + 1e-9);
+    for (let t = 1.1; t < 90; t += 0.1) mv.step(t);
     expect(mv.s).toBeCloseTo(200, 0);
   });
   it("glides back along the route to a target far behind, then leaves a fading trail", () => {
@@ -177,12 +182,59 @@ describe("Mover", () => {
   });
 });
 
+describe("drive", () => {
+  const stops = Array.from({ length: 20 }, (_, i) => 300 * (i + 1));   // a stop every 300 m
+  it("keeps PACE times the measured mean speed, stops included", () => {
+    const f = drive(5, stops, 1e6, 600);
+    expect(f(300) / 300).toBeGreaterThan(0.9 * PACE * 5);
+    expect(f(300) / 300).toBeLessThan(1.1 * PACE * 5);
+  });
+  it("brakes into each stop and waits there DWELL_S", () => {
+    const f = drive(5, stops, 1e6);
+    let t = 0;
+    while (f(t) < 300 - 1e-6) t += 0.1;
+    expect(f(t - 1) - f(t - 2)).toBeLessThan(2);        // slow just before the stop
+    expect(f(t + DWELL_S - 0.5)).toBeCloseTo(300, 6);   // standing
+    expect(f(t + DWELL_S + 3)).toBeGreaterThan(300);    // and off again
+  });
+  it("never goes backwards, past the end or past the horizon", () => {
+    const f = drive(8, stops, 1000);
+    let prev = 0;
+    for (let t = 0; t <= 400; t += 0.5) {
+      expect(f(t)).toBeGreaterThanOrEqual(prev - 1e-9);
+      prev = f(t);
+    }
+    expect(prev).toBeLessThanOrEqual(1000);
+    const g = drive(5, [], 1e6);
+    expect(g(HORIZON_S + 60)).toBe(g(HORIZON_S));
+  });
+  it("brakes harder when the first stop is too close to brake gently", () => {
+    const f = drive(15, [10, 400], 1e6);
+    let t = 0;
+    while (f(t) < 10 - 1e-6) t += 0.05;
+    expect(t).toBeLessThan(5);
+    expect(f(t + DWELL_S - 0.5)).toBeCloseTo(10, 6);
+  });
+  it("stands without a speed, before the fix and at the end", () => {
+    expect(drive(0, stops, 1e6)(60)).toBe(0);
+    expect(drive(5, stops, 1e6)(-5)).toBe(0);
+    expect(drive(5, stops, 0)(60)).toBe(0);
+  });
+});
+
 describe("plans from new data", () => {
   it("continues along a new path from the projected shown point", () => {
     const r = pathPlan(atM(300), east, 8, 1000, 1000)!;
     expect(r.fix).toBe(false);
     expect(r.s0).toBeCloseTo(300, 0);
-    expect(r.plan.target(1010)).toBeCloseTo(aheadM(8, 10), 5);   // the path starts at the fix
+    expect(r.plan.target(1010)).toBeCloseTo(drive(8, [], cumulativeLL(east)[2])(10), 5);   // the path starts at the fix
+  });
+  it("drives into the stops of the path and stops at its end", () => {
+    const r = pathPlan(atM(0), east, 15, 1000, 1000, [400])!;
+    const end = cumulativeLL(east)[2];
+    expect(r.plan.target(1000 + 600)).toBeCloseTo(end, 6);
+    const f = drive(15, [400], end);
+    expect(r.plan.target(1040)).toBeCloseTo(f(40), 5);
   });
   it("prepends the shown point when it is behind the new path's start", () => {
     const r = pathPlan([23.695, 37.97], east, 8, 1000, 1000)!;

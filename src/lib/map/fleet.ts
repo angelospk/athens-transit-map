@@ -4,7 +4,7 @@
 
 import { delayClass, type DelayClass } from "../format";
 import { distanceM, JUMP_M, type LngLat } from "../glide";
-import { linePlan, Mover, pathPlan, planOnto, type Plan, cumulativeLL } from "../motion";
+import { linePlan, Mover, NO_SPEED, pathPlan, planOnto, type Plan, cumulativeLL } from "../motion";
 import { predictS, updateTrack, type Route, type Track } from "../predict";
 import type { CityVehicle, Vehicle } from "../types";
 
@@ -31,6 +31,11 @@ export interface FleetEntry {
 
 const ll = (path: [number, number][]) => path.map(([lat, lon]) => [lon, lat] as LngLat);
 
+// Along the backend `path` when there is one (without a speed: slowly), else straight to the fix.
+const ahead = (shown: LngLat, v: CityVehicle | Vehicle, pos: LngLat, nowSec: number) => v.path
+  ? pathPlan(shown, ll(v.path), v.speed ?? NO_SPEED, v.position_at, nowSec, v.path_stops ?? [])
+  : linePlan(shown, pos, v.bearing);
+
 export class Fleet {
   entries = new Map<string, FleetEntry>();
 
@@ -44,9 +49,7 @@ export class Fleet {
       const e = this.fix(k, v.line, v.id, v, nowSec);
       if (!e) continue;
       const pos: LngLat = [v.lon, v.lat];
-      const h = v.path && v.speed != null
-        ? pathPlan(e.mover.pos, ll(v.path), v.speed, v.position_at, nowSec)
-        : linePlan(e.mover.pos, pos, v.bearing);
+      const h = ahead(e.mover.pos, v, pos, nowSec);
       this.apply(e, h.plan, h.s0, nowSec, h.off, h.fix);
     }
     for (const [k, e] of this.entries) if (!owned.has(e.line) && !seen.has(k)) this.entries.delete(k);
@@ -66,7 +69,7 @@ export class Fleet {
       const before = e.track;
       e.track = route
         ? updateTrack(e.route === route ? e.track : null,
-          { pos, at: v.position_at, key: `${v.variant}/${v.trip_id}`, nextStop: v.next_stop_id, speed: v.speed }, route.route, nowSec)
+          { pos, at: v.position_at, key: `${v.variant}/${v.trip_id}`, speed: v.speed }, route.route, nowSec)
         : null;
       const keepRoute = e.route === route && !!before && before.key === e.track?.key;
       e.route = e.track ? route : null;
@@ -83,9 +86,7 @@ export class Fleet {
           this.apply(e, h.plan, h.s0, nowSec, h.off, h.fix);
         }
       } else {
-        const h = v.path && v.speed != null
-          ? pathPlan(e.mover.pos, ll(v.path), v.speed, v.position_at, nowSec)
-          : linePlan(e.mover.pos, pos, v.bearing);
+        const h = ahead(e.mover.pos, v, pos, nowSec);
         this.apply(e, h.plan, h.s0, nowSec, h.off, h.fix);
       }
     }

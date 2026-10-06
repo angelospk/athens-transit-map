@@ -15,6 +15,7 @@ export interface Vehicle {
   // Contract rev 3, optional: older servers omit them.
   speed?: number | null;               // smoothed along-route speed, m/s
   path?: [number, number][] | null;    // route ahead of the vehicle, [lat, lon]
+  path_stops?: number[] | null;        // rev 4: metres along `path` of each stop on it
 }
 
 export interface LineLive {
@@ -36,6 +37,7 @@ export interface CityVehicle {
   delay_s: number | null;
   speed: number | null;
   path: [number, number][] | null;
+  path_stops?: number[] | null;   // rev 4
 }
 
 export interface CityLive {

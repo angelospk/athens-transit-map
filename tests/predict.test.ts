@@ -3,7 +3,7 @@ import { distanceM } from "../src/lib/glide";
 import {
   headingAt, pointAt, predictS, projectCandidates, stopOffsets, updateTrack, type Route, type Sample, type Track,
 } from "../src/lib/predict";
-import { aheadM } from "../src/lib/motion";
+import { drive, NO_SPEED } from "../src/lib/motion";
 
 // Shapes are [lat, lon]. 0.01° lon at 37.97° ≈ 877 m.
 const M = 877.4;
@@ -21,7 +21,7 @@ const pointAtEnd = (shape: [number, number][]) => {
   return d;
 };
 const sample = (pos: [number, number], t: number, extra: Partial<Sample> = {}): Sample =>
-  ({ pos, at: t, key: "v1/t1", nextStop: null, ...extra });
+  ({ pos, at: t, key: "v1/t1", ...extra });
 
 describe("geometry", () => {
   it("projects onto the shape, with every leg that passes close by", () => {
@@ -82,14 +82,10 @@ describe("updateTrack", () => {
     expect(back.s).toBeGreaterThan(M);
     expect(back.speed).toBeGreaterThan(5);
   });
-  it("caps at the next stop ahead, never behind the vehicle", () => {
+  it("knows the stops ahead of the vehicle", () => {
     const rs = route(east, ["A", "B"], [at(0.3), at(1.2)]);
-    const t1 = updateTrack(null, sample(at(0.1), 1000, { nextStop: "A" }), rs, 1001)!;
-    expect(t1.capS).toBeCloseTo(rs.stopS[0], 0);
-    const t2 = updateTrack(t1, sample(at(0.5), 1030, { nextStop: "A" }), rs, 1031)!;   // stale next stop
-    expect(t2.capS).toBeGreaterThanOrEqual(t2.s);
-    const t3 = updateTrack(t2, sample(at(0.6), 1060, { nextStop: "B" }), rs, 1061)!;
-    expect(t3.capS).toBeCloseTo(rs.stopS[1], 0);
+    const t1 = updateTrack(null, sample(at(0.1), 1000), rs, 1001)!;
+    expect(t1.stopS).toBe(rs.stopS);
   });
   it("returns null off the route", () => {
     expect(updateTrack(null, sample([23.705, 37.975], 1000), r, 1001)).toBeNull();
@@ -115,29 +111,22 @@ describe("updateTrack", () => {
 });
 
 describe("predictS", () => {
-  const track: Track = { s: 500, at: 1000, speed: 10, capS: 900, endS: 2 * M, key: "k" };
-  it("moves at the recent speed up to the next stop", () => {
-    expect(predictS(track, 1010)).toBeCloseTo(500 + aheadM(10, 10), 6);
-    expect(predictS(track, 1010)).toBeGreaterThan(590);   // barely slower at first
-    expect(predictS(track, 1080)).toBe(900);   // capped at the next stop
+  const stopS = [900, 1300];
+  const track: Track = { s: 500, at: 1000, speed: 10, stopS, endS: 2 * M, key: "k" };
+  it("drives the stops ahead of the vehicle, from the fix", () => {
+    const f = drive(10, [400, 800], 2 * M - 500);
+    expect(predictS(track, 1010)).toBeCloseTo(500 + f(10), 6);
+    expect(predictS(track, 1000 + 600)).toBeLessThanOrEqual(2 * M);
   });
-  it("extrapolates at most 150 s and never past the shape end", () => {
-    expect(predictS({ ...track, capS: Infinity, endS: 1e6 }, 1200)).toBeCloseTo(500 + aheadM(10, 150), 6);
-    expect(predictS({ ...track, capS: Infinity }, 1200)).toBeLessThanOrEqual(2 * M);
+  it("ignores a stop the vehicle is at or has passed", () => {
+    const f = drive(10, [400], 2 * M - 890);
+    expect(predictS({ ...track, s: 890 }, 1010)).toBeCloseTo(890 + f(10), 6);
   });
-  it("does not move for a future timestamp or without a speed", () => {
+  it("moves slowly without a speed, not at all when standing, held or before the fix", () => {
+    expect(predictS({ ...track, speed: null }, 1010)).toBeCloseTo(500 + drive(NO_SPEED, [400, 800], 2 * M - 500)(10), 6);
+    expect(predictS({ ...track, speed: 0 }, 1010)).toBe(500);
+    expect(predictS({ ...track, speed: null, alts: [500, 1500] }, 1010)).toBe(500);
     expect(predictS(track, 990)).toBe(500);
-    expect(predictS({ ...track, speed: null }, 1010)).toBe(500);
   });
 });
 
-describe("aheadM", () => {
-  it("slows down as the fix gets older: an old guess should rather be short than long", () => {
-    expect(aheadM(10, 0)).toBe(0);
-    expect(aheadM(10, 30)).toBeGreaterThan(220);
-    expect(aheadM(10, 30)).toBeLessThan(300);
-    expect(aheadM(10, 150)).toBeLessThan(600);
-    expect(aheadM(10, 1000)).toBe(aheadM(10, 150));
-    expect(aheadM(10, -5)).toBe(0);
-  });
-});

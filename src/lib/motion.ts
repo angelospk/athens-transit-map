@@ -7,8 +7,8 @@
 import { distanceM, type LngLat } from "./glide";
 import { bearingDeg } from "./heading";
 
-export const TAU_S = 2.5;      // a gap closes with this time constant...
-export const CATCH_MAX = 10;   // ...at most this much faster than the target (m/s)
+export const TAU_S = 10;       // a gap closes with this time constant...
+export const CATCH_MAX = 6;    // ...at most this much faster than the target (m/s): no burst after new data
 export const FAR_M = 600;      // farther ahead: correction, not a race
 export const GLIDE_S = 1.2;    // correction glide length
 export const TRAIL_S = 0.8;    // its trail fades out over this, after the glide
@@ -22,12 +22,57 @@ const NOISE_M = 25;            // shorter backward moves are GPS noise
 const WAIT_S = 6;              // a dot ahead of a standing target waits this long, then is corrected
 const WAIT_M = 8;              // (closer than this it just stays)
 
-// Metres driven dt seconds after a fix at speed v, guessed short: the speed fades with a 60 s time
-// constant (buses slow down and stop; a late correction forwards looks better than one backwards).
-export const DECAY_S = 60;
-export const MAX_AHEAD_S = 150;
-export const aheadM = (v: number, dt: number) =>
-  v * DECAY_S * (1 - Math.exp(-Math.min(Math.max(dt, 0), MAX_AHEAD_S) / DECAY_S));
+// Driving with stops (docs/research/realistic-motion.md, chosen in lab/motion): the bus cruises,
+// brakes into every stop, waits there and pulls away again. Its mean speed, stops included, is
+// PACE times the measured one (a little slow: a late catch-up looks better than a reverse).
+export const PACE = 0.85;
+export const DWELL_S = 15;      // wait at each stop
+export const HORIZON_S = 180;   // after this long without a new fix, stand
+export const NO_SPEED = 1.5;    // m/s for a vehicle on its route without a measured speed
+const ACC = 1;                  // m/s², braking and pulling away
+const STOP_GAP_M = 400;         // stop spacing when fewer than two gaps are known
+const MAX_CRUISE = 15;          // m/s
+
+interface Phase { t: number; s: number; v: number; a: number }
+
+// Metres from the fix dt seconds after it, at measured mean speed v (m/s). stops: metres ahead,
+// ascending; the vehicle stands for good at `end`.
+export function drive(v: number, stops: number[], end: number, horizon = HORIZON_S): (dt: number) => number {
+  const mean = PACE * v;
+  if (!(mean > 0) || !(end > 0)) return () => 0;
+  const ahead = stops.filter(x => x > 0 && x < end), legs = [...ahead, end];
+  // Cruise so that, over a typical gap, cruising plus one wait gives the mean speed.
+  const gaps = ahead.slice(0, 4).map((x, i) => x - (i ? ahead[i - 1] : 0));
+  const L = gaps.length >= 2 ? gaps.reduce((a, b) => a + b, 0) / gaps.length : STOP_GAP_M;
+  const run = L / mean - DWELL_S;
+  const vc = run > L / MAX_CRUISE ? L / run : MAX_CRUISE;
+  const ph: Phase[] = [];
+  let t = 0, s = 0, u = vc;
+  const go = (dur: number, a: number) => { if (dur > 0) { ph.push({ t, s, v: u, a }); s += u * dur + (a * dur * dur) / 2; u += a * dur; t += dur; } };
+  for (const x of legs) {
+    if (t >= horizon) break;
+    const d = x - s;
+    if (d < 1) continue;   // the same stop twice
+    if ((u * u) / (2 * ACC) >= d) go((2 * d) / u, -(u * u) / (2 * d));   // too close: brake harder
+    else {
+      const top = Math.min(vc, Math.sqrt(ACC * d + (u * u) / 2));
+      const up = (top * top - u * u) / (2 * ACC), down = (top * top) / (2 * ACC);
+      go((top - u) / ACC, ACC);
+      go((d - up - down) / top, 0);
+      go(top / ACC, -ACC);
+    }
+    s = x; u = 0;
+    ph.push({ t, s, v: 0, a: 0 });
+    t += DWELL_S;
+  }
+  return dt => {
+    const k = Math.min(Math.max(dt, 0), horizon);
+    let p = ph[0];
+    for (const q of ph) if (q.t <= k) p = q; else break;
+    const r = k - p.t;
+    return Math.min(end, Math.max(p.s, p.s + p.v * r + (p.a * r * r) / 2));
+  };
+}
 
 export interface Plan {
   geom: LngLat[];
@@ -133,10 +178,11 @@ const smooth = (k: number) => k * k * (3 - 2 * k);
 const easeInOut = (k: number) => (k < 0.5 ? 4 * k * k * k : 1 - (-2 * k + 2) ** 3 / 2);
 const angle = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
 
-// A backend `path` ([lon, lat] here) driven at `speed` from position_at `at`.
-export function pathPlan(shown: LngLat, path: LngLat[], speed: number, at: number, nowSec: number): Handoff {
-  const cum = cumulativeLL(path), end = cum[cum.length - 1];
-  return planOnto(shown, { geom: path, cum, target: t => Math.min(end, aheadM(speed, t - at)) }, nowSec);
+// A backend `path` ([lon, lat] here) driven at `speed` from position_at `at`, waiting at `stops`
+// (metres along it, contract rev 4). Without stops it brakes into the path's end only.
+export function pathPlan(shown: LngLat, path: LngLat[], speed: number, at: number, nowSec: number, stops: number[] = []): Handoff {
+  const cum = cumulativeLL(path), f = drive(speed, stops, cum[cum.length - 1]);
+  return planOnto(shown, { geom: path, cum, target: t => f(t - at) }, nowSec);
 }
 
 // No geometry: glide straight to a fixed point. With a bearing, a point well behind is a correction.

@@ -91,6 +91,14 @@ describe("Fleet", () => {
     expect(f.entries.size).toBe(0);
   });
 
+  it("moves a vehicle without a speed slowly along its path, and stops at the path's stops", () => {
+    const f = new Fleet();
+    f.city([city(100, T, { speed: null, path_stops: [200] })], new Set(), T);
+    const at = (t: number) => f.entries.get("040/1")!.mover.targetPos(t)![0];
+    expect(at(T + 60)).toBeGreaterThan(lonAt(150));         // ~1.3 m/s
+    expect(at(T + 60)).toBeLessThan(lonAt(300) + 1e-9);      // waits at the stop 200 m on
+  });
+
   it("keeps the same id on two lines apart", () => {
     const f = new Fleet();
     f.city([city(100, T), city(100, T, { line: "550" })], new Set(), T);
@@ -102,11 +110,11 @@ describe("Fleet", () => {
     const north: [number, number][] = [[37.97015, lonAt(100)], [37.97015, lonAt(1100)]];
     f.city([city(100, T, { lat: 37.97015, path: north })], new Set(), T);   // driven ~17 m off the route
     run(f, T, T + 30);
-    f.line("040", [{ v: line(300, T + 30), route }], T + 30);   // newer fix a bit ahead: hand over, offset fades
+    f.line("040", [{ v: line(420, T + 30), route }], T + 30);   // newer fix a bit ahead: hand over, offset fades
     let prev = run(f, T + 30, T + 30.5), max = 0;
     for (let i = 1; i < 70; i++) {
       const t = T + 30.5 + i * 0.05;
-      if (i === 10) f.line("040", [{ v: line(300, T + 30), route }], t);   // the same data again
+      if (i === 10) f.line("040", [{ v: line(420, T + 30), route }], t);   // the same data again
       const p = f.entries.get("040/1")!.mover.step(t).pos;
       max = Math.max(max, distanceM(prev, p));
       prev = p;

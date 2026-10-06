@@ -2,7 +2,10 @@
 // A model gets what the map knows when fix A arrives and returns s(t): metres along the shape
 // at GPS time t. Times are unix seconds.
 
-import { aheadM } from "../../src/lib/motion";
+import { drive, NO_SPEED } from "../../src/lib/motion";
+
+// The pre-2026-10-06 guess (src/lib/motion.ts aheadM), kept for the baseline.
+const aheadM = (v: number, dt: number) => v * 60 * (1 - Math.exp(-Math.min(Math.max(dt, 0), 150) / 60));
 
 export interface Fix { at: number; known: number; s: number; speed: number | null; delay: number | null }
 export interface Run { veh: string; line: string; variant: string; stopS: number[]; endS: number; fixes: Fix[] }
@@ -92,6 +95,13 @@ const ownMean = (w: number) => (c: Ctx): number | null => {
   return Math.max(0, Math.min(20, (A.s - old.s) / (A.at - old.at)));
 };
 
+function shipped(c: Ctx, maxStops: number) {
+  const A = last(c.hist), ahead = c.run.stopS.filter(x => x > A.s + 15).map(x => x - A.s);
+  const end = ahead.length > maxStops ? ahead[maxStops - 1] : c.run.endS - A.s;
+  const f = drive(A.speed ?? NO_SPEED, maxStops === Infinity ? ahead : ahead.slice(0, maxStops - 1), end);
+  return (t: number) => A.s + f(t - A.at);
+}
+
 export const MODELS: Model[] = [
   { name: "stand (no motion)", predict: c => { const s = last(c.hist).s; return () => s; } },
   {
@@ -107,6 +117,11 @@ export const MODELS: Model[] = [
   { name: "stops 0.85 d15 h180 fb1.5", predict: profile(0.85, 15, 180, 1.5) },
   { name: "  same, path to 1 stop (today)", predict: profile(0.85, 15, 180, 1.5, 1, undefined, 1) },
   { name: "  same, path to 3 stops", predict: profile(0.85, 15, 180, 1.5, 1, undefined, 3) },
+  // What ships (src/lib/motion.ts drive): line markers see every stop; the city layer sees the
+  // backend path (today: to the next stop; contract rev 4: up to 3 stops).
+  { name: "SHIP drive, all stops", predict: c => shipped(c, Infinity) },
+  { name: "SHIP drive, path to 1 stop", predict: c => shipped(c, 1) },
+  { name: "SHIP drive, path to 3 stops", predict: c => shipped(c, 3) },
   { name: "stops 1.0 d15 h180 fb1.5", predict: profile(1.0, 15, 180, 1.5) },
   { name: "stops own+peer 0.85 (LastVehicle)", predict: profile(0.85, 15, 180, 1.5, 1, blended) },
   { name: "stops mean300 0.85", predict: profile(0.85, 15, 180, 1.5, 1, ownMean(300)) },
