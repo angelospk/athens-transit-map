@@ -32,12 +32,13 @@ export const NO_SPEED = 1.5;    // m/s for a vehicle on its route without a meas
 const ACC = 1;                  // m/s², braking and pulling away
 const STOP_GAP_M = 400;         // stop spacing when fewer than two gaps are known
 const MAX_CRUISE = 15;          // m/s
+export const MIN_CRUISE = 3;    // m/s; slower traffic waits longer at stops instead (lab: same score)
 
 interface Phase { t: number; s: number; v: number; a: number }
 
 // Metres from the fix dt seconds after it, at measured mean speed v (m/s). stops: metres ahead,
 // ascending; the vehicle stands for good at `end`.
-export function drive(v: number, stops: number[], end: number, horizon = HORIZON_S): (dt: number) => number {
+export function drive(v: number, stops: number[], end: number, horizon = HORIZON_S, minCruise = MIN_CRUISE): (dt: number) => number {
   const mean = PACE * v;
   if (!(mean > 0) || !(end > 0)) return () => 0;
   const ahead: number[] = [];
@@ -48,7 +49,9 @@ export function drive(v: number, stops: number[], end: number, horizon = HORIZON
   const gaps = ahead.slice(0, 4).map((x, i) => x - (i ? ahead[i - 1] : 0));
   const L = gaps.length >= 2 ? gaps.reduce((a, b) => a + b, 0) / gaps.length : STOP_GAP_M;
   const run = L / mean - DWELL_S;
-  const vc = !ahead.length ? Math.min(mean, MAX_CRUISE) : run > L / MAX_CRUISE ? L / run : MAX_CRUISE;
+  let vc = !ahead.length ? Math.min(mean, MAX_CRUISE) : run > L / MAX_CRUISE ? L / run : MAX_CRUISE;
+  let dwell = DWELL_S;
+  if (ahead.length && vc < minCruise) { vc = minCruise; dwell = Math.max(DWELL_S, L / mean - L / vc); }
   const ph: Phase[] = [];
   let t = 0, s = 0, u = vc;
   const go = (dur: number, a: number) => { if (dur > 0) { ph.push({ t, s, v: u, a }); s += u * dur + (a * dur * dur) / 2; u += a * dur; t += dur; } };
@@ -66,7 +69,7 @@ export function drive(v: number, stops: number[], end: number, horizon = HORIZON
     }
     s = x; u = 0;
     ph.push({ t, s, v: 0, a: 0 });
-    t += DWELL_S;
+    t += dwell;
   }
   if (!ph.length) return () => 0;   // less than a metre to go
   return dt => {

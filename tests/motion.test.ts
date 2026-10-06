@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { distanceM, type LngLat } from "../src/lib/glide";
 import {
-  CATCH_MAX, chase, cumulativeLL, drive, DWELL_S, GLIDE_S, holdM, HORIZON_S, linePlan, Mover, PACE, pathPlan, pointAtLL, project,
+  CATCH_MAX, chase, cumulativeLL, drive, DWELL_S, GLIDE_S, holdM, HORIZON_S, linePlan, MIN_CRUISE, Mover, PACE, pathPlan, pointAtLL, project,
   subLine, TRAIL_S, type Plan,
 } from "../src/lib/motion";
 
@@ -204,6 +204,15 @@ describe("drive", () => {
     expect(f(t - 1) - f(t - 2)).toBeLessThan(2);        // slow just before the stop
     expect(f(t + DWELL_S - 0.5)).toBeCloseTo(300, 6);   // standing
     expect(f(t + DWELL_S + 3)).toBeGreaterThan(300);    // and off again
+  });
+  it("in slow traffic drives at MIN_CRUISE and waits longer at stops, same mean", () => {
+    const f = drive(1.5, stops, 1e6, 1200);
+    expect(f(1200) / 1200).toBeGreaterThan(0.9 * PACE * 1.5);
+    expect(f(1200) / 1200).toBeLessThan(1.1 * PACE * 1.5);
+    let t = 0;
+    while (f(t) < 300 - 1e-6) t += 0.1;
+    expect(f(t - 5) - f(t - 6)).toBeGreaterThan(MIN_CRUISE - 0.5);   // cruising, not crawling
+    expect(f(t + 60)).toBeCloseTo(300, 6);                           // a long wait
   });
   it("never goes backwards, past the end or past the horizon", () => {
     const f = drive(8, stops, 1000);

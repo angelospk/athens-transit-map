@@ -53,3 +53,4 @@ ahead) and `jump` (how far the guess moves when the next fix arrives: the visibl
 | 2026-10-06 | same | TheTransitClock LastVehicle: peers' speed over next 400 m (alone / 1:1 blend) | +100 / +2 | no |
 | 2026-10-06 | same | scalar Kalman on speed, prior 3 ± 2 m/s | +50 | no |
 | 2026-10-06 | same | own mean speed over 300 s instead of backend median slope | -2 | no (within noise; recheck with more data) |
+| 2026-10-06 | 4 h, Tue 11:19-15:30 | min cruise 3/4/5/6/8 m/s, rest as longer waits at stops (Harold: "it does not stop at stops" on slow lines) | 194/199/211/227/266 vs 197; test 173 vs 173 | 3 m/s (same score, visible stops) |
