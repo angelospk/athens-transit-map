@@ -83,6 +83,12 @@
           <small>{#if cityMissing}Δεν είναι ακόμα διαθέσιμο από τον διακομιστή.{:else if app.city}{app.city.vehicles.length} οχήματα σε όλη την πόλη, ανανέωση κάθε ~30″{:else}Φόρτωση…{/if}</small>
         </span>
       </label>
+      <label class="switch">
+        <input type="checkbox" checked={app.metroOn} onchange={e => app.setMetroOn(e.currentTarget.checked)} />
+        <span><b>Μετρό, ΗΣΑΠ και τραμ</b><br />
+          <small>Σταθμοί και γραμμές, χωρίς ζωντανά δεδομένα. Πάτα έναν σταθμό για τις γραμμές του.</small>
+        </span>
+      </label>
       <div class="field" role="radiogroup" aria-label="Τα άλλα οχήματα όταν επιλέγεις ένα">
         <span>Όταν επιλέγεις όχημα, τα υπόλοιπα:</span>
         <div class="seg">

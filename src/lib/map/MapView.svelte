@@ -6,6 +6,7 @@
   import { untrack } from "svelte";
   import type { LngLat } from "../glide";
   import { vehicleHeading } from "../heading";
+  import { metroFC } from "../metro";
   import { Locator, userPlan, type Fix, type LocState } from "../locate";
   import { Mover, planOnto } from "../motion";
   import { shapeLength, stopOffsets } from "../predict";
@@ -131,7 +132,27 @@
         "circle-stroke-color": color("accent"), "circle-stroke-width": 3 } });
   }
 
+  // Metro, ISAP and tram, under everything else. A focused station's lines stay bright.
+  function addMetroLayers(m: MlMap) {
+    const on = (a: number, b: number): ExpressionSpecification => ["case", ["get", "on"], a, b];
+    const byZoom = (stops: unknown[]) => ["interpolate", ["linear"], ["zoom"], ...stops] as ExpressionSpecification;
+    m.addSource("metro", { type: "geojson", data: EMPTY });
+    m.addLayer({ id: "metro-line", type: "line", source: "metro", filter: ["==", ["get", "kind"], "line"],
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": ["get", "color"], "line-width": byZoom([10, 2, 14, 4, 17, 6]), "line-opacity": on(0.85, 0.15) } });
+    m.addLayer({ id: "metro-station", type: "circle", source: "metro", filter: ["==", ["get", "kind"], "station"],
+      paint: { "circle-radius": byZoom([10, 2.5, 14, ["case", ["get", "hub"], 6, 4.5], 17, ["case", ["get", "hub"], 9, 7]]),
+        "circle-color": "#ffffff", "circle-stroke-color": ["case", ["get", "hub"], "#222222", ["get", "color"]],
+        "circle-stroke-width": byZoom([10, 1, 14, 2]), "circle-opacity": on(1, 0.3), "circle-stroke-opacity": on(1, 0.3) } });
+    m.addLayer({ id: "metro-label", type: "symbol", source: "metro", minzoom: 13,
+      filter: ["all", ["==", ["get", "kind"], "station"], ["get", "on"]],
+      layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Bold"], "text-size": 11,
+        "text-offset": [0, 1.1], "text-anchor": "top", "text-optional": true },
+      paint: { "text-color": "#333333", "text-halo-color": "#ffffff", "text-halo-width": 1.5 } });
+  }
+
   function addLayers(m: MlMap) {
+    addMetroLayers(m);
     addCityLayers(m);
     // Trails of corrections (the route a vehicle glided along) and, with motion off, of moves to a
     // new fix. Always under the vehicle: city dots' trails under the dots, detailed lines' trails
@@ -169,6 +190,17 @@
     m.addLayer({ id: "stops", type: "circle", source: "stops",
       paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 3, 16, 6], "circle-color": "#ffffff",
         "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2 } });
+  }
+
+  // The metro station under a click, with a finger-sized margin; the nearest if several.
+  function nearestStation(m: MlMap, p: { x: number; y: number }) {
+    if (m.getLayoutProperty("metro-station", "visibility") === "none") return null;
+    const r = 10, hits = m.queryRenderedFeatures([[p.x - r, p.y - r], [p.x + r, p.y + r]], { layers: ["metro-station"] });
+    const d = (f: (typeof hits)[number]) => {
+      const q = m.project((f.geometry as GeoJSON.Point).coordinates as [number, number]);
+      return Math.hypot(q.x - p.x, q.y - p.y);
+    };
+    return hits.reduce<(typeof hits)[number] | null>((b, f) => (!b || d(f) < d(b) ? f : b), null);
   }
 
   // The city vehicle under a click, with a finger-sized margin; the nearest if several.
@@ -450,11 +482,20 @@
           .setText(String(stop.properties.name)).addTo(m);
         return;
       }
+      const station = nearestStation(m, e.point);
+      if (station) {
+        const name = String(station.properties.name);
+        app.metroStation = name;
+        popup.setLngLat((station.geometry as GeoJSON.Point).coordinates as [number, number])
+          .setText(`${name} · ${station.properties.lines}`).addTo(m);
+        return;
+      }
       const route = m.queryRenderedFeatures(e.point, { layers: ["routes-hit"] })[0];
-      if (route) app.selectRoute(String(route.properties.line), String(route.properties.variant));
-      else app.clearSelection();
+      if (route) return app.selectRoute(String(route.properties.line), String(route.properties.variant));
+      app.metroStation = null;
+      app.clearSelection();
     });
-    for (const layer of ["routes-hit", "stops", "city-dot"]) {
+    for (const layer of ["routes-hit", "stops", "city-dot", "metro-station"]) {
       m.on("mouseenter", layer, () => (m.getCanvas().style.cursor = "pointer"));
       m.on("mouseleave", layer, () => (m.getCanvas().style.cursor = ""));
     }
@@ -480,6 +521,13 @@
 
   $effect(() => {
     if (loaded) (map!.getSource("routes") as GeoJSONSource).setData(routesFC(drawn));
+  });
+
+  $effect(() => {
+    if (!loaded) return;
+    const m = map!, data = app.metro, on = app.metroOn;
+    (m.getSource("metro") as GeoJSONSource).setData(on && data ? metroFC(data, app.metroStation) : EMPTY);
+    for (const id of ["metro-line", "metro-station", "metro-label"]) m.setLayoutProperty(id, "visibility", on ? "visible" : "none");
   });
 
   // New city data, or a change of the lines drawn in detail: hand the vehicles to the fleet.

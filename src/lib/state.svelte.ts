@@ -4,6 +4,7 @@ import { isHidden } from "./directions";
 import type { Only } from "./format";
 import { fetchCity, fetchLine, fetchLines, fetchLineStatic, fetchStatus } from "./api";
 import { cityKey, cleanCity, isCityLive } from "./city";
+import { loadMetro, type MetroData } from "./metro";
 import { LinePoller, type PollState } from "./poller";
 import { ClockOffset } from "./schedule";
 import { MAX_LINES, selectionIds, serializeSelection, splitKnown, toggle } from "./selection";
@@ -67,6 +68,10 @@ export class AppState {
     v => !!v && isBool((v as Only).fresh) && isBool((v as Only).onTime)));
   // A line shown in detail because its vehicle was clicked on the city layer; not one of the picks.
   tempLine = $state<string | null>(null);
+  // Metro, ISAP and tram (static). metroStation: the station whose lines are shown, others faded.
+  metroOn = $state(stored("metroOn", false, isBool));
+  metro = $state.raw<MetroData | null>(null);
+  metroStation = $state<string | null>(null);
 
   // Set by MapView: frame the given lines once their shapes are loaded.
   fit: (ids: string[]) => void = () => {};
@@ -153,6 +158,7 @@ export class AppState {
     this.loadLines();
     void this.refreshStatus();
     if (this.cityOn) this.startCity();
+    if (this.metroOn) this.loadMetro();
     setInterval(() => (this.now = Date.now()), 1000);
     setInterval(() => { if (!document.hidden) void this.refreshStatus(); }, STATUS_EVERY_MS);
     document.addEventListener("visibilitychange", () => {
@@ -205,6 +211,17 @@ export class AppState {
       this.cityPoller?.stop();
       if (this.tempLine && this.selection?.line === this.tempLine) this.clearSelection();
     }
+  }
+
+  setMetroOn(on: boolean) {
+    this.metroOn = on;
+    store("metroOn", on);
+    if (on) this.loadMetro();
+    else this.metroStation = null;
+  }
+
+  private loadMetro() {
+    if (!this.metro) loadMetro().then(d => (this.metro = d), () => this.say("Δεν φόρτωσαν οι γραμμές του μετρό."));
   }
 
   setOthers(o: Others) {
