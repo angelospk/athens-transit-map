@@ -12,6 +12,7 @@
   import { shapeLength, stopOffsets } from "../predict";
   import type { Variant } from "../types";
   import type { AppState } from "../state.svelte";
+  import OldTimetable from "../ui/OldTimetable.svelte";
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
 
@@ -710,10 +711,7 @@
 
 <div class="map" class:no-ages={!app.showAges && app.motion} {@attach setup}></div>
 {#if Info}<Info bind:open={infoOpen} motion={app.motion} {ended} />{/if}
-{#if ended}
-  <!-- Small, next to the ⓘ: the sheet it opens explains it. -->
-  <button type="button" class="old" onclick={openInfo}>⚠ Παλιό πρόγραμμα ΟΑΣΑ</button>
-{/if}
+{#if ended}<OldTimetable {ended} onmore={openInfo} />{/if}
 {#if failed}
   <div class="nogl" role="alert">
     Ο χάρτης δεν μπορεί να εμφανιστεί: ο browser δεν υποστηρίζει WebGL2. Δοκίμασε άλλον browser ή ενεργοποίησε την
@@ -723,9 +721,6 @@
 
 <style>
   .map { position: absolute; inset: 0; }
-  .old { position: absolute; z-index: 2; right: 10px; bottom: calc(40px + env(safe-area-inset-bottom)); padding: 3px 9px;
-    border: 0; border-radius: 12px; background: var(--warn-bg); color: var(--fg); font-size: 11px; box-shadow: var(--shadow);
-    cursor: pointer; }
   .nogl { position: absolute; inset: auto 16px 16px; padding: 12px 14px; border-radius: 12px;
     background: var(--warn-bg); box-shadow: var(--shadow); }
 </style>
