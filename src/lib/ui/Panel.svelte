@@ -144,11 +144,8 @@
   {/if}
 
   <div id="panel-body" hidden={collapsed}>
-    {#if !app.selected.length}
-      <div class="muted">
-        {#if app.cityOn && !cityMissing}Όλα τα οχήματα της πόλης. Πάτα ένα για τη γραμμή του, ή διάλεξε έως 5 γραμμές.
-        {:else}Διάλεξε έως 5 γραμμές για να δεις τα οχήματα ζωντανά.{/if}
-      </div>
+    {#if !app.selected.length && !(app.cityOn && !cityMissing)}
+      <div class="muted">Διάλεξε έως 5 γραμμές για να δεις τα οχήματα ζωντανά.</div>
     {/if}
 
     {#if app.selected.length || (app.cityOn && app.city)}
