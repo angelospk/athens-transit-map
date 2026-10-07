@@ -17,6 +17,8 @@
 
   const full = $derived(app.selected.length >= MAX_LINES);
   const quick = $derived(QUICK.filter(id => app.lineInfo.has(id) && !app.selected.includes(id)));
+  const favs = $derived(app.favorites.filter(id => app.lineInfo.has(id)));
+  const favsOff = $derived(favs.filter(id => !app.selected.includes(id)).length);
 
   function pick(id: string) {
     if (!app.selected.includes(id) && full) {
@@ -45,6 +47,9 @@
     } else if (e.key === "Enter" && open && results[active]) {
       e.preventDefault();
       pick(results[active].id);
+    } else if (e.key === "*" && open && results[active]) {
+      e.preventDefault();   // star the active line
+      app.toggleFavorite(results[active].id);
     } else if (e.key === "Escape") {
       open = false;
     } else if (e.key === "Tab") {
@@ -106,13 +111,27 @@
     {onkeydown}
   />
 
-  {#if !app.selected.length && quick.length && !open}
+  {#if favs.length && !open}
+    <!-- Starred lines: each chip shows or hides its line, so several are a tap each. -->
+    <div class="quick" role="group" aria-label="Αγαπημένες γραμμές">
+      <span aria-hidden="true">★</span>
+      {#each favs as id (id)}
+        {@const on = app.selected.includes(id)}
+        <button type="button" class="fav" style:--c={app.lineInfo.get(id)?.color} aria-pressed={on}
+          aria-label="{on ? 'Απόκρυψη' : 'Εμφάνιση'} γραμμής {id}" onclick={() => app.toggleLine(id)}>{id}</button>
+      {/each}
+      {#if favs.length > 1 && favsOff}
+        <button type="button" class="all" onclick={() => app.showFavorites()}>Όλες</button>
+      {/if}
+    </div>
+  {:else if !app.selected.length && quick.length && !open}
     <div class="quick">
       <span>Δημοφιλείς:</span>
       {#each quick as id (id)}
         <button type="button" class="q" style:--c={app.lineInfo.get(id)?.color} onclick={() => pick(id)}>{id}</button>
       {/each}
     </div>
+    <div class="tip">Πάτα ☆ σε μια γραμμή της λίστας για να μπει στις αγαπημένες.</div>
   {/if}
 
   {#if open}
@@ -126,6 +145,7 @@
       {/if}
       {#each results as l, i (l.id)}
         {@const sel = app.selected.includes(l.id)}
+        {@const star = app.favorites.includes(l.id)}
         <!-- svelte-ignore a11y_click_events_have_key_events (keyboard goes through the combobox input) -->
         <li
           id="line-opt-{i}"
@@ -140,6 +160,9 @@
           <span class="id" style:--c={l.color} style:--t={l.text_color}>{l.id}</span>
           <span class="name">{l.name}</span>
           {#if sel}<span class="check" aria-hidden="true">✓</span>{/if}
+          <button type="button" class="star" class:on={star} tabindex="-1" aria-pressed={star}
+            aria-label="{star ? 'Αφαίρεση από' : 'Προσθήκη στις'} αγαπημένες: {l.id}" title="Αγαπημένη (πλήκτρο *)"
+            onclick={e => { e.stopPropagation(); app.toggleFavorite(l.id); }}>{star ? "★" : "☆"}</button>
         </li>
       {/each}
     </ul>
@@ -171,4 +194,14 @@
     font-weight: 700; text-align: center; font-size: 13px; }
   .name { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .check { color: var(--accent); font-weight: 700; }
+  .star { flex: none; width: 36px; height: 36px; margin: -4px -4px -4px 0; border: 0; border-radius: 8px; background: none;
+    color: var(--muted); font-size: 18px; cursor: pointer; }
+  .star:hover { background: var(--control); }
+  .star.on { color: #f59f00; }
+  .fav { min-height: 32px; padding: 0 10px; border: 2px solid var(--c, #3b5bdb); border-radius: 16px; background: none;
+    color: var(--fg); font-weight: 700; cursor: pointer; }
+  .fav[aria-pressed="true"] { background: var(--c, #3b5bdb); color: #fff; }
+  .all { min-height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: 16px; background: var(--control);
+    font-size: 12px; cursor: pointer; }
+  .tip { margin-top: 6px; color: var(--muted); font-size: 11px; }
 </style>

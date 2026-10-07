@@ -31,6 +31,7 @@ function store(key: string, v: unknown) {
   try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* private mode */ }
 }
 const isBool = (v: unknown) => typeof v === "boolean";
+const isIds = (v: unknown) => Array.isArray(v) && v.every(x => typeof x === "string");
 
 export interface PlacedVehicle { line: string; v: Vehicle; faded: boolean }   // faded: direction unknown under focus
 
@@ -68,10 +69,13 @@ export class AppState {
     v => !!v && isBool((v as Only).fresh) && isBool((v as Only).onTime)));
   // A line shown in detail because its vehicle was clicked on the city layer; not one of the picks.
   tempLine = $state<string | null>(null);
-  // Metro, ISAP and tram (static). metroStation: the station whose lines are shown, others faded.
-  metroOn = $state(stored("metroOn", false, isBool));
+  // Metro, ISAP and tram (static): stations always, the pinned lines' tracks. metroStation: the
+  // tapped station, whose card pins its lines.
+  metroLines = $state.raw<string[]>(stored("metroLines", [], isIds));
   metro = $state.raw<MetroData | null>(null);
   metroStation = $state<string | null>(null);
+  // Starred bus lines: a chip row under the search, to show several at once.
+  favorites = $state.raw<string[]>(stored("favorites", [], isIds));
 
   // Set by MapView: frame the given lines once their shapes are loaded.
   fit: (ids: string[]) => void = () => {};
@@ -158,7 +162,7 @@ export class AppState {
     this.loadLines();
     void this.refreshStatus();
     if (this.cityOn) this.startCity();
-    if (this.metroOn) this.loadMetro();
+    this.loadMetro();
     setInterval(() => (this.now = Date.now()), 1000);
     setInterval(() => { if (!document.hidden) void this.refreshStatus(); }, STATUS_EVERY_MS);
     document.addEventListener("visibilitychange", () => {
@@ -213,15 +217,56 @@ export class AppState {
     }
   }
 
-  setMetroOn(on: boolean) {
-    this.metroOn = on;
-    store("metroOn", on);
-    if (on) this.loadMetro();
-    else this.metroStation = null;
+  toggleMetroLine(id: string) {
+    this.setMetroLines(this.metroLines.includes(id) ? this.metroLines.filter(l => l !== id) : [...this.metroLines, id]);
   }
 
-  private loadMetro() {
-    if (!this.metro) loadMetro().then(d => (this.metro = d), () => this.say("Δεν φόρτωσαν οι γραμμές του μετρό."));
+  setMetroLines(ids: string[]) {
+    this.metroLines = ids;
+    store("metroLines", ids);
+  }
+
+  // A station tapped on the map (null: none). Its card replaces a vehicle's or route's.
+  selectStation(name: string | null) {
+    if (name) this.clearSelection();
+    this.metroStation = name;
+  }
+
+  toggleFavorite(id: string) {
+    this.favorites = this.favorites.includes(id) ? this.favorites.filter(l => l !== id) : [...this.favorites, id];
+    store("favorites", this.favorites);
+  }
+
+  // Add every starred line to the picks, as many as fit, and frame them together.
+  showFavorites() {
+    const add = this.favorites.filter(id => this.lineInfo.has(id) && !this.selected.includes(id));
+    const fit = add.slice(0, MAX_LINES - this.selected.length);
+    if (fit.length) {
+      if (this.tempLine && fit.includes(this.tempLine)) this.tempLine = null;   // now a pick
+      this.selected = [...this.selected, ...fit];
+      this.writeUrl();
+      for (const id of fit) this.startLine(id);
+      void Promise.allSettled(fit.map(fetchLineStatic)).then(() => this.fit(fit));
+    }
+    if (fit.length < add.length)
+      this.say(`Έως ${MAX_LINES} γραμμές ταυτόχρονα: έδειξα ${fit.length} από τις ${add.length} αγαπημένες.`);
+  }
+
+  // Loads the metro data once; after a failure, the next call tries again (the layers menu calls it).
+  private metroLoading = false;
+  loadMetro() {
+    if (this.metro || this.metroLoading) return;
+    this.metroLoading = true;
+    loadMetro().then(d => { this.metro = d; this.migrateMetro(); }, () => this.say("Δεν φόρτωσαν οι γραμμές του μετρό."))
+      .finally(() => (this.metroLoading = false));
+  }
+
+  // The old single switch ("metroOn") becomes every line pinned, once, unless lines were already chosen.
+  private migrateMetro() {
+    if (!stored("metroOn", false, isBool) || !this.metro) return;
+    try { if (localStorage.getItem("metroLines") != null) return localStorage.removeItem("metroOn"); } catch { return; }
+    this.setMetroLines(this.metro.lines.map(l => l.id));
+    try { localStorage.removeItem("metroOn"); } catch { /* blocked */ }
   }
 
   setOthers(o: Others) {
@@ -246,6 +291,7 @@ export class AppState {
 
   // A vehicle clicked on the city layer: select it and show its line in detail for a while.
   selectCityVehicle(line: string, id: string) {
+    this.metroStation = null;
     if (this.tempLine !== line) {
       this.dropTemp();
       if (!this.selected.includes(line)) {
@@ -267,11 +313,13 @@ export class AppState {
   }
 
   selectVehicle(line: string, id: string) {
+    this.metroStation = null;
     if (line !== this.tempLine) this.dropTemp();
     this.selection = { kind: "vehicle", line, id };
   }
 
   selectRoute(line: string, variant: string) {
+    this.metroStation = null;
     if (line !== this.tempLine) this.dropTemp();
     this.selection = { kind: "route", line, variant };
   }

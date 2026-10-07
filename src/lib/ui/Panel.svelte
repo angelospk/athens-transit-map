@@ -3,6 +3,7 @@
   import { clock, duration, fmtMinutes } from "../format";
   import { STALE_S, type AppState } from "../state.svelte";
   import LinePicker from "./LinePicker.svelte";
+  import MetroToggles from "./MetroToggles.svelte";
   import StatsSheet from "./StatsSheet.svelte";
   import StatusBanner from "./StatusBanner.svelte";
 
@@ -12,8 +13,28 @@
   let collapsed = $state(matchMedia("(max-width: 719px)").matches);
   // One popover at a time: map layers, or GPS age.
   let pop = $state<"layers" | "ages" | null>(null);
-  const toggle = (p: "layers" | "ages") => (pop = pop === p ? null : p);
+  const toggle = (p: "layers" | "ages") => {
+    pop = pop === p ? null : p;
+    if (pop !== "layers") return;
+    app.loadMetro();   // again, if the first load failed
+    app.selectStation(null);   // its card would cover the menu's metro lines on a phone
+  };
   let statsOpen = $state(false);
+
+  // A popover opens under the panel, whose height varies (stats arrive, it folds): it uses the rest
+  // of the window, then scrolls. With little room left (a phone held sideways) it covers the panel.
+  function fitHeight(el: HTMLElement) {
+    const set = () => {
+      const panel = el.parentElement!.getBoundingClientRect();
+      const over = innerHeight - panel.bottom - 18 < 200;
+      el.classList.toggle("over", over);
+      el.style.maxHeight = `${Math.max(0, innerHeight - (over ? panel.top : panel.bottom + 6) - 12)}px`;
+    };
+    const ro = new ResizeObserver(set);
+    ro.observe(el.parentElement!);
+    addEventListener("resize", set);
+    return () => { ro.disconnect(); removeEventListener("resize", set); };
+  }
 
   const cityAge = $derived(app.city ? Math.max(0, app.serverNow / 1000 - app.city.updated_at) : null);
   const cityMissing = $derived(app.cityState === "unknown");
@@ -69,7 +90,7 @@
       </svg>
     </button>
     <button type="button" class="tool" class:on={pop === "ages"} aria-expanded={pop === "ages"} aria-controls="pop-ages"
-      aria-label="Πόσο παλιά είναι η θέση" title="Πόσο παλιά είναι η θέση" onclick={() => toggle("ages")}>
+      aria-label="Κίνηση και ηλικία θέσης" title="Κίνηση και ηλικία θέσης" onclick={() => toggle("ages")}>
       <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
         <path d="M1.8 10S5 4.5 10 4.5 18.2 10 18.2 10 15 15.5 10 15.5 1.8 10 1.8 10z" /><circle cx="10" cy="10" r="2.6" />
         {#if !ages}<path d="M3.5 3.5l13 13" />{/if}
@@ -84,62 +105,67 @@
   </div>
 
   {#if pop === "layers"}
-    <div class="pop" id="pop-layers" role="dialog" aria-label="Επίπεδα χάρτη">
-      <label class="switch">
-        <input type="checkbox" checked={app.cityOn} disabled={cityMissing} onchange={e => app.setCityOn(e.currentTarget.checked)} />
-        <span><b>Όλα τα λεωφορεία</b><br />
-          <small>{#if cityMissing}Δεν είναι ακόμα διαθέσιμο από τον διακομιστή.{:else if app.city}{app.city.vehicles.length} οχήματα σε όλη την πόλη, ανανέωση κάθε ~30″{:else}Φόρτωση…{/if}</small>
-        </span>
-      </label>
-      <label class="switch">
-        <input type="checkbox" checked={app.metroOn} onchange={e => app.setMetroOn(e.currentTarget.checked)} />
-        <span><b>Μετρό, ΗΣΑΠ και τραμ</b><br />
-          <small>Σταθμοί και γραμμές, χωρίς ζωντανά δεδομένα. Πάτα έναν σταθμό για τις γραμμές του.</small>
-        </span>
-      </label>
-      <div class="field" role="radiogroup" aria-label="Τα άλλα οχήματα όταν επιλέγεις ένα">
-        <span>Όταν επιλέγεις όχημα, τα υπόλοιπα:</span>
-        <div class="seg">
-          {#each [["normal", "Κανονικά"], ["dim", "Αχνά"], ["hide", "Κρυφά"]] as const as [v, label] (v)}
-            <button type="button" role="radio" aria-checked={app.others === v} onclick={() => app.setOthers(v)}>{label}</button>
-          {/each}
+    <div class="pop" id="pop-layers" role="dialog" aria-labelledby="pop-layers-h" {@attach fitHeight}>
+      <h3 id="pop-layers-h">Τι δείχνει ο χάρτης</h3>
+      <section>
+        <h4>Λεωφορεία</h4>
+        <label class="switch">
+          <input type="checkbox" checked={app.cityOn} disabled={cityMissing} onchange={e => app.setCityOn(e.currentTarget.checked)} />
+          <span>Όλα τα λεωφορεία της πόλης<br />
+            <small>{#if cityMissing}Δεν είναι ακόμα διαθέσιμο από τον διακομιστή.{:else if app.city}{app.city.vehicles.length} οχήματα τώρα. Κλειστό: μόνο οι γραμμές που διαλέγεις.{:else}Φόρτωση…{/if}</small>
+          </span>
+        </label>
+        <div class="field">
+          <span>Δείξε μόνο τα λεωφορεία:</span>
+          <label class="switch">
+            <input type="checkbox" checked={app.only.fresh} onchange={e => app.setOnly({ fresh: e.currentTarget.checked })} />
+            <span>Με πρόσφατη θέση<br /><small>Κρύβει όσα δεν έστειλαν θέση για πάνω από 1½ λεπτό.</small></span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" checked={app.only.onTime} onchange={e => app.setOnly({ onTime: e.currentTarget.checked })} />
+            <span>Στην ώρα τους<br /><small>Έως 5 λεπτά καθυστέρηση (πράσινα και κίτρινα).</small></span>
+          </label>
         </div>
-      </div>
-      <div class="field">
-        <span>Δείξε μόνο:</span>
-        <label class="switch">
-          <input type="checkbox" checked={app.only.fresh} onchange={e => app.setOnly({ fresh: e.currentTarget.checked })} />
-          <span>Με πρόσφατη θέση<br /><small>Κρύβει όσα δεν έστειλαν θέση για πάνω από 1½ λεπτό.</small></span>
-        </label>
-        <label class="switch">
-          <input type="checkbox" checked={app.only.onTime} onchange={e => app.setOnly({ onTime: e.currentTarget.checked })} />
-          <span>Στην ώρα τους<br /><small>Έως 5 λεπτά καθυστέρηση (πράσινα και κίτρινα).</small></span>
-        </label>
-      </div>
-      <p class="hint">Πάτα ένα όχημα για να δεις τη γραμμή του. Πάτα σε κενό σημείο για να ξαναδείς όλα.</p>
+        <div class="field" role="radiogroup" aria-label="Τα άλλα λεωφορεία όταν πατάς ένα">
+          <span>Όταν πατάς ένα λεωφορείο, τα υπόλοιπα:</span>
+          <div class="seg">
+            {#each [["normal", "Κανονικά"], ["dim", "Αχνά"], ["hide", "Κρυφά"]] as const as [v, label] (v)}
+              <button type="button" role="radio" aria-checked={app.others === v} onclick={() => app.setOthers(v)}>{label}</button>
+            {/each}
+          </div>
+        </div>
+      </section>
+      <section>
+        <h4>Μετρό, ΗΣΑΠ και τραμ</h4>
+        <p class="hint">Οι σταθμοί φαίνονται πάντα. Διάλεξε ποιες γραμμές φαίνονται, εδώ ή πατώντας έναν σταθμό. Χωρίς ζωντανά δεδομένα.</p>
+        {#if app.metro}
+          <MetroToggles {app} ids={app.metro.lines.map(l => l.id)} />
+        {:else}
+          <p class="hint">Φόρτωση…</p>
+        {/if}
+      </section>
     </div>
   {:else if pop === "ages"}
-    <div class="pop" id="pop-ages" role="dialog" aria-label="Πόσο παλιά είναι η θέση">
-      <p><b class="age">24″</b> Πριν από τόσο έστειλε το όχημα την τελευταία του θέση. Ο ΟΑΣΑ στέλνει θέσεις
-        κάθε 20–60″· {#if app.motion}ανάμεσα, ο χάρτης μετακινεί το όχημα πάνω στη διαδρομή του με την ταχύτητα που είχε.
-        Αν η νέα θέση είναι μακριά, το όχημα γλιστράει γρήγορα ως εκεί και αφήνει μπλε ίχνος.{:else}ανάμεσα, το όχημα μένει
-        εκεί που ήταν όταν έστειλε. Όταν έρθει νέα θέση, πάει εκεί και αφήνει για λίγο μπλε ίχνος.{/if}</p>
-      <p>Ένα όχημα <b>αχνό με πορτοκαλί ηλικία</b> δεν έχει στείλει θέση για πάνω από 1½ λεπτό: η πραγματική θέση του μπορεί να είναι
-        αλλού. Όταν έρθει νέα θέση, μετακινείται εκεί.</p>
+    <div class="pop" id="pop-ages" role="dialog" aria-labelledby="pop-ages-h" {@attach fitHeight}>
+      <h3 id="pop-ages-h">Θέση των οχημάτων</h3>
+      <label class="switch">
+        <input type="checkbox" checked={app.motion} onchange={e => app.setMotion(e.currentTarget.checked)} />
+        <span>Κίνηση ανάμεσα στις θέσεις<br /><small>Ανοιχτό: το όχημα προχωράει πάνω στη διαδρομή του με την ταχύτητα που είχε, ώσπου να έρθει νέα θέση.
+          Κλειστό: μένει εκεί που ήταν όταν έστειλε.</small></span>
+      </label>
+      <label class="switch">
+        <input type="checkbox" checked={ages} disabled={!app.motion} onchange={e => app.setShowAges(e.currentTarget.checked)} />
+        <span>Ηλικία θέσης πάνω στο όχημα<br /><small><b class="age">24″</b>= έστειλε θέση πριν 24 δευτερόλεπτα.{#if !app.motion}
+          Πάντα ανοιχτό όταν η κίνηση είναι κλειστή.{/if}</small></span>
+      </label>
+      <p class="hint">Ο ΟΑΣΑ στέλνει θέσεις κάθε 20–60″. Όταν η νέα θέση είναι μακριά, το όχημα πηγαίνει γρήγορα ως εκεί και αφήνει
+        για λίγο μπλε ίχνος. Αχνό όχημα με πορτοκαλί ηλικία: δεν έστειλε θέση για πάνω από 1½ λεπτό, άρα μπορεί να είναι αλλού.</p>
       {#if oldest != null}
         <p class="hint" title="Ώρα δεδομένων {clock(oldest)}">Ενημέρωση γραμμών πριν {duration(Math.max(0, app.serverNow / 1000 - oldest))}</p>
       {/if}
       {#if cityAge != null && app.cityOn}
         <p class="hint" title="Ώρα δεδομένων {clock(app.city!.updated_at)}">Ενημέρωση πόλης πριν {duration(cityAge)}</p>
       {/if}
-      <label class="switch">
-        <input type="checkbox" checked={app.motion} onchange={e => app.setMotion(e.currentTarget.checked)} />
-        <span>Κίνηση ανάμεσα στις θέσεις<br /><small>Κλειστό: κάθε όχημα μένει στην τελευταία θέση που έστειλε.</small></span>
-      </label>
-      <label class="switch">
-        <input type="checkbox" checked={ages} disabled={!app.motion} onchange={e => app.setShowAges(e.currentTarget.checked)} />
-        <span>Δείξε την ηλικία πάνω στα οχήματα{#if !app.motion}<br /><small>Πάντα, όταν η κίνηση είναι κλειστή.</small>{/if}</span>
-      </label>
     </div>
   {/if}
 
@@ -213,8 +239,12 @@
     border-radius: 50%; background: var(--accent); }
   .pop { position: absolute; z-index: 7; top: calc(100% + 6px); left: 0; right: 0; padding: 12px 14px; font-size: 13px;
     background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
-    backdrop-filter: blur(8px); }
+    backdrop-filter: blur(8px); box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; }
+  .pop.over { top: 0; }
   .pop p { margin: 0 0 8px; }
+  .pop h3 { margin: 0 0 8px; font-size: 14px; }
+  .pop h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .pop section + section { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--border); }
   .pop .age { margin-right: 4px; padding: 0 4px; border-radius: 6px; background: var(--control); font-size: 11px;
     font-variant-numeric: tabular-nums; }
   .hint { color: var(--muted); font-size: 12px; }

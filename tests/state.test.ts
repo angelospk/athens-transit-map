@@ -95,3 +95,101 @@ describe("AppState city focus (temporary line)", () => {
     expect(app.live["040"]).toBeUndefined();
   });
 });
+
+describe("AppState metro lines and favourites", () => {
+  vi.stubGlobal("fetch", () => new Promise(() => {}));
+  const mem = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (k: string) => mem.get(k) ?? null,
+    setItem: (k: string, v: string) => void mem.set(k, v),
+    removeItem: (k: string) => void mem.delete(k),
+  });
+  const metro = { source: "t", stations: [{ name: "ΟΜΟΝΟΙΑ", lon: 0, lat: 0, lines: ["M1", "M2"] }],
+    lines: ["M1", "M2", "M3"].map(id => ({ id, name: id, color: "#000", paths: [] })) };
+  const fresh = () => { mem.clear(); return new AppState(); };
+
+  it("pins and unpins metro lines, and remembers them", () => {
+    const app = fresh();
+    expect(app.metroLines).toEqual([]);
+    app.toggleMetroLine("M2");
+    app.toggleMetroLine("M1");
+    expect(app.metroLines).toEqual(["M2", "M1"]);
+    app.toggleMetroLine("M2");
+    expect(app.metroLines).toEqual(["M1"]);
+    expect(new AppState().metroLines).toEqual(["M1"]);
+  });
+
+  it("sets all or none at once", () => {
+    const app = fresh();
+    app.metro = metro;
+    app.setMetroLines(["M1", "M2", "M3"]);
+    expect(app.metroLines).toEqual(["M1", "M2", "M3"]);
+    app.setMetroLines([]);
+    expect(app.metroLines).toEqual([]);
+  });
+
+  it("turns the old single metro switch into all lines once the data loads", () => {
+    mem.clear();
+    mem.set("metroOn", "true");
+    const app = new AppState();
+    app.metro = metro;
+    (app as unknown as { migrateMetro(): void }).migrateMetro();
+    expect(app.metroLines).toEqual(["M1", "M2", "M3"]);
+    expect(mem.get("metroLines")).toBe('["M1","M2","M3"]');
+  });
+
+  it("keeps lines already chosen over the old switch", () => {
+    mem.clear();
+    mem.set("metroOn", "true");
+    mem.set("metroLines", "[]");
+    const app = new AppState();
+    app.metro = metro;
+    (app as unknown as { migrateMetro(): void }).migrateMetro();
+    expect(app.metroLines).toEqual([]);
+    expect(mem.has("metroOn")).toBe(false);
+  });
+
+  it("a tapped station and a selected vehicle exclude each other", () => {
+    const app = fresh();
+    app.selectStation("ΟΜΟΝΟΙΑ");
+    expect(app.metroStation).toBe("ΟΜΟΝΟΙΑ");
+    app.selectCityVehicle("040", "1");
+    expect(app.metroStation).toBeNull();
+    app.selectStation("ΟΜΟΝΟΙΑ");
+    expect(app.selection).toBeNull();
+  });
+
+  it("stars and unstars lines, and remembers them", () => {
+    const app = fresh();
+    app.toggleFavorite("040");
+    app.toggleFavorite("550");
+    app.toggleFavorite("040");
+    expect(app.favorites).toEqual(["550"]);
+    expect(new AppState().favorites).toEqual(["550"]);
+  });
+
+  it("shows all favourites at once, up to the line limit, keeping the picks", () => {
+    const app = fresh();
+    app.lines = ["1", "2", "3", "4", "5", "6"].map(id => ({ id, name: id, color: "#000", text_color: "#fff" })) as never;
+    app.selected = ["1"];
+    for (const id of ["2", "3", "4", "5", "6"]) app.toggleFavorite(id);
+    app.showFavorites();
+    expect(app.selected).toEqual(["1", "2", "3", "4", "5"]);
+    expect(app.notice).toMatch(/4 από τις 5/);
+  });
+
+  it("frames all the added favourites at once", async () => {
+    vi.stubGlobal("fetch", () => Promise.reject(new Error("offline")));
+    const app = fresh();
+    // Line ids no other test used: fetchLineStatic keeps one request per line for the whole run.
+    app.lines = ["F1", "F2"].map(id => ({ id, name: id, color: "#000", text_color: "#fff" })) as never;
+    const fits: string[][] = [];
+    app.fit = ids => fits.push(ids);
+    app.toggleFavorite("F1");
+    app.toggleFavorite("F2");
+    app.showFavorites();
+    await new Promise(r => setTimeout(r, 0));
+    expect(fits).toEqual([["F1", "F2"]]);
+    vi.stubGlobal("fetch", () => new Promise(() => {}));
+  });
+});

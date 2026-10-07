@@ -1,5 +1,6 @@
 // Metro, ISAP and tram: a static layer (no live data exists). public/metro.json comes from
-// scripts/metro.ts. A focused station shows its lines; the rest of the network fades.
+// scripts/metro.ts and scripts/metro-osm.ts (track shapes). Stations always show; a line's track
+// shows once it is pinned (layers menu, or a tapped station's card).
 
 import { distanceM, type LngLat } from "./glide";
 
@@ -26,18 +27,17 @@ export async function loadMetro(): Promise<MetroData> {
   return r.json();
 }
 
-// Lines and stations; `on` is false for what the focused station's lines do not reach.
-export function metroFC(data: MetroData, focus: string | null): GeoJSON.FeatureCollection {
-  const lit = new Set(data.stations.find(s => s.name === focus)?.lines ?? data.lines.map(l => l.id));
+// The pinned lines' tracks and every station; `sel` marks the tapped one.
+export function metroFC(data: MetroData, shown: string[], station: string | null): GeoJSON.FeatureCollection {
   const color = new Map(data.lines.map(l => [l.id, l.color]));
   return {
     type: "FeatureCollection",
     features: [
-      ...data.lines.map((l): GeoJSON.Feature => ({ type: "Feature", geometry: { type: "MultiLineString", coordinates: l.paths },
-        properties: { kind: "line", id: l.id, color: l.color, on: lit.has(l.id) } })),
+      ...data.lines.filter(l => shown.includes(l.id)).map((l): GeoJSON.Feature => ({ type: "Feature",
+        geometry: { type: "MultiLineString", coordinates: l.paths }, properties: { kind: "line", id: l.id, color: l.color } })),
       ...data.stations.map((s): GeoJSON.Feature => ({ type: "Feature", geometry: { type: "Point", coordinates: [s.lon, s.lat] },
         properties: { kind: "station", name: s.name, lines: s.lines.join(" "), color: color.get(s.lines[0]) ?? "#666666",
-          hub: s.lines.length > 1, on: s.lines.some(id => lit.has(id)) } })),
+          hub: s.lines.length > 1, sel: s.name === station } })),
     ],
   };
 }

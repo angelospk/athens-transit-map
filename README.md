@@ -23,13 +23,16 @@ The UI follows the viewer of [foivospro/athens-gtfs-realtime](https://github.com
   vehicle speeds up a little, an early one slows down; one far off fades out and back in at the right
   place with a ring ("corrected"). One motion per vehicle, shared by the city layer and the chosen lines.
 - Direction chips on the vehicle and route cards; ⇄ on the "μόνο → …" pill switches direction.
-- Metro, ISAP and tram (layers button, off by default): stations and lines from the STASY GTFS on
-  [data.gov.gr](https://data.gov.gr/dataset/4e897a75-975a-4ce7-af65-f32ea01f93b9), static (no live data exists).
-  Tap a station: its lines stay bright, the rest fade. Rebuild `public/metro.json` with
-  `bun scripts/metro.ts <unzipped GTFS dir>`; the feed has no shapes, so lines go station to station.
+- Metro, ISAP and tram: stations always shown (from the STASY GTFS on
+  [data.gov.gr](https://data.gov.gr/dataset/4e897a75-975a-4ce7-af65-f32ea01f93b9)), static (no live data exists).
+  Pin a line in the layers menu or on a tapped station's card to draw its track. Rebuild
+  `public/metro.json` with `bun scripts/metro.ts <unzipped GTFS dir>`, then `bun scripts/metro-osm.ts`:
+  the feed has no shapes, so the tracks come from OpenStreetMap route relations (© OSM contributors, ODbL).
+- Favourite lines: ☆ in the search list (or `*` on the active row); the ★ chips under the search show or
+  hide each one, "Όλες" shows them all (up to 5).
 - My location (button under the zoom): a blue dot with its accuracy, the map follows it until you drag.
   Polled every 5 s in a vehicle, 10 s walking, up to 30 s standing; paused while the tab is hidden.
-- GPS age labels ("24″") are off by default; the eye button explains them and turns them on.
+- GPS age labels ("24″") are off by default; the eye button ("Κίνηση και ηλικία θέσης") turns them and motion on or off.
 - Vehicles labelled with the line number, coloured by delay: up to 2′, 2–5′, 5–10′, over 10′, no trip.
 - Route shapes in the line colour. Line picker with search (Greek, accent-insensitive; `a1` finds `Α1`, `40` finds `040`).
 - Vehicle details: delay, trip ("00:35 ΠΕΙΡΑΙΑΣ → ΣΥΝΤΑΓΜΑ"), next stop, GPS age. The trip's route and stops are highlighted.

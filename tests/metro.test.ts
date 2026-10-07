@@ -20,33 +20,28 @@ const props = (fc: GeoJSON.FeatureCollection, kind: string) =>
   fc.features.filter(f => f.properties!.kind === kind).map(f => f.properties!);
 
 describe("metroFC", () => {
-  it("draws every line and station, all on, without a focus", () => {
-    const fc = metroFC(data, null);
-    expect(props(fc, "line").map(p => [p.id, p.color, p.on])).toEqual([["M1", "#0a0", true], ["M2", "#e00", true], ["T6", "#f90", true]]);
-    expect(props(fc, "station").every(p => p.on)).toBe(true);
-    expect(fc.features.find(f => f.properties!.id === "M1")!.geometry).toEqual({ type: "MultiLineString", coordinates: [[[23.64, 37.94], [23.72, 37.97]]] });
+  it("draws only the pinned lines, every station always", () => {
+    const fc = metroFC(data, ["M2"], null);
+    expect(props(fc, "line").map(p => [p.id, p.color])).toEqual([["M2", "#e00"]]);
+    expect(props(fc, "station").map(p => p.name)).toEqual(["ΠΕΙΡΑΙΑΣ", "ΟΜΟΝΟΙΑ", "ΣΥΝΤΑΓΜΑ", "Πικροδάφνη"]);
+    expect(fc.features.find(f => f.properties!.id === "M2")!.geometry).toEqual({ type: "MultiLineString", coordinates: [[[23.70, 37.99], [23.74, 37.97]]] });
   });
 
-  it("a focused station turns on its lines and the stations on them, the rest off", () => {
-    const fc = metroFC(data, "ΣΥΝΤΑΓΜΑ");
-    expect(props(fc, "line").filter(p => p.on).map(p => p.id)).toEqual(["M2"]);
-    expect(props(fc, "station").filter(p => p.on).map(p => p.name)).toEqual(["ΟΜΟΝΟΙΑ", "ΣΥΝΤΑΓΜΑ"]);
+  it("no pinned line: stations only", () => {
+    const fc = metroFC(data, [], null);
+    expect(props(fc, "line")).toEqual([]);
+    expect(props(fc, "station")).toHaveLength(4);
   });
 
-  it("an interchange turns on all of its lines", () => {
-    const fc = metroFC(data, "ΟΜΟΝΟΙΑ");
-    expect(props(fc, "line").filter(p => p.on).map(p => p.id)).toEqual(["M1", "M2"]);
-    expect(props(fc, "station").filter(p => !p.on).map(p => p.name)).toEqual(["Πικροδάφνη"]);
+  it("marks the tapped station", () => {
+    const st = props(metroFC(data, [], "ΟΜΟΝΟΙΑ"), "station");
+    expect(st.filter(p => p.sel).map(p => p.name)).toEqual(["ΟΜΟΝΟΙΑ"]);
   });
 
-  it("colours a station by its first line, an interchange in white, and lists its lines", () => {
-    const st = props(metroFC(data, null), "station");
+  it("colours a station by its first line, marks an interchange, and lists its lines", () => {
+    const st = props(metroFC(data, [], null), "station");
     expect(st.find(p => p.name === "ΠΕΙΡΑΙΑΣ")).toMatchObject({ color: "#0a0", lines: "M1", hub: false });
     expect(st.find(p => p.name === "ΟΜΟΝΟΙΑ")).toMatchObject({ lines: "M1 M2", hub: true });
-  });
-
-  it("an unknown focus is no focus", () => {
-    expect(props(metroFC(data, "ΠΟΥΘΕΝΑ"), "line").every(p => p.on)).toBe(true);
   });
 });
 
