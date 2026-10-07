@@ -54,3 +54,14 @@ ahead) and `jump` (how far the guess moves when the next fix arrives: the visibl
 | 2026-10-06 | same | scalar Kalman on speed, prior 3 ± 2 m/s | +50 | no |
 | 2026-10-06 | same | own mean speed over 300 s instead of backend median slope | -2 | no (within noise; recheck with more data) |
 | 2026-10-06 | 4 h, Tue 11:19-15:30 | min cruise 3/4/5/6/8 m/s, rest as longer waits at stops (Harold: "it does not stop at stops" on slow lines) | 194/199/211/227/266 vs 197; test 173 vs 173 | 3 m/s (same score, visible stops) |
+
+## Results
+
+Shipped model, test split (2026-10-06 11:19-11:59, not used for tuning), line markers: median error 225 → 122 m,
+`jump` p50 289 → 144 m, `ahead>50` 3% → 21%. A live browser reading (60 s, one run, not in the lab): 219 → 184 corrections.
+Spec with all variants: `docs/superpowers/specs/2026-10-06-stop-aware-motion-design.md`.
+
+- The big win was dropping the cap at the next stop: real buses pass it well before the next fix, so the old guess was behind in 75% of cases.
+- Tuning of waits, factor and horizon moves the score by 2-5 m: noise at this data size. Ideas from transit systems (peer speed, Kalman) did not beat the simple model.
+- The backend must send stops beyond the next one (`path_beyond`, rev 4): without it 343 → 310 instead of 343 → 239.
+- Limit: one Tuesday, mostly 11:00-15:30. Rush hour, weekends and night are not measured. The backend now records history for a longer retune.
