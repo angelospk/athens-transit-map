@@ -1,9 +1,12 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import { searchLines } from "../search";
   import { MAX_LINES } from "../selection";
   import type { AppState } from "../state.svelte";
 
-  let { app }: { app: AppState } = $props();
+  // expanded: the panel's dropdown is open, which is where the quick picks (favourites, popular) show.
+  // tail: buttons of the panel, at the right of the first row (the chips, or the search with no chips).
+  let { app, expanded = true, tail }: { app: AppState; expanded?: boolean; tail?: Snippet } = $props();
 
   const QUICK = ["040", "550", "Α1", "Χ95", "2"];
 
@@ -69,7 +72,7 @@
 
 <svelte:document onpointerdown={e => { if (open && !(e.target as Element).closest?.(".picker")) open = false; }} />
 
-<div class="picker">
+<div class="picker" class:chipped={app.selected.length > 0}>
   {#if app.selected.length}
     <ul class="chips" aria-label="Επιλεγμένες γραμμές">
       {#each app.selected as id (id)}
@@ -91,6 +94,7 @@
       {/each}
     </ul>
   {/if}
+  {#if tail}<div class="tail">{@render tail()}</div>{/if}
 
   <input
     bind:this={input}
@@ -111,7 +115,7 @@
     {onkeydown}
   />
 
-  {#if favs.length && !open}
+  {#if expanded && favs.length && !open}
     <!-- Starred lines: each chip shows or hides its line, so several are a tap each. -->
     <div class="quick" role="group" aria-label="Αγαπημένες γραμμές">
       <span aria-hidden="true">★</span>
@@ -124,7 +128,7 @@
         <button type="button" class="all" onclick={() => app.showFavorites()}>Όλες</button>
       {/if}
     </div>
-  {:else if !app.selected.length && quick.length && !open}
+  {:else if expanded && !app.selected.length && quick.length && !open}
     <div class="quick">
       <span>Δημοφιλείς:</span>
       {#each quick as id (id)}
@@ -170,14 +174,18 @@
 </div>
 
 <style>
-  .picker { position: relative; margin-top: 10px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; padding: 0; list-style: none; }
+  .picker { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 4px; align-items: start; }
+  .chips { grid-column: 1; grid-row: 1; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; padding: 0; list-style: none; }
+  /* The panel's buttons: beside the chips, or, with no chips, beside the search. */
+  .tail { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 2px; margin: -4px -6px 0 0; }
+  .picker:not(.chipped) input { grid-column: 1; grid-row: 1; }
+  .quick, .tip { grid-column: 1 / -1; }
   .chip { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 0 10px; border: 0;
     border-radius: 16px; background: var(--c); color: var(--t); font-weight: 700; cursor: pointer; }
   .chip .x { opacity: .8; font-weight: 400; margin-left: 2px; }
   .chip .st { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%;
     background: rgba(0, 0, 0, .3); font-size: 11px; }
-  input { width: 100%; min-height: 40px; padding: 8px 12px; border-radius: 10px; border: 1px solid transparent;
+  input { grid-column: 1 / -1; grid-row: 2; width: 100%; min-height: 40px; padding: 8px 12px; border-radius: 10px; border: 1px solid transparent;
     background: var(--control); font-size: 16px; /* 16px stops iOS zooming on focus */ }
   input:focus { outline: 2px solid var(--accent); outline-offset: 0; }
   .quick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; color: var(--muted); font-size: 12px; }

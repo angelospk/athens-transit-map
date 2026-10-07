@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
   import { directionGroups, focusGroup, otherDirection } from "../directions";
   import { clock, duration, fmtMinutes } from "../format";
@@ -14,20 +14,55 @@
 
   // Phones start compact: the map matters more than the stats at a bus stop.
   let collapsed = $state(matchMedia("(max-width: 719px)").matches);
-  // One popover at a time: the map menu, or the trip planner (loaded on first open).
-  let pop = $state<"layers" | "trip" | null>(null);
+  // One popover at a time: the map menu, what the symbols mean, or the trip planner (loaded on first open).
+  let pop = $state<"layers" | "help" | "trip" | null>(null);
   // On a phone the planner replaces the panel's content, so both fit above the map.
   const narrow = new MediaQuery("(max-width: 719px)");
   const tripOnly = $derived(pop === "trip" && narrow.current);
   let tripButton: HTMLButtonElement | undefined = $state();
-  const closeTrip = () => { pop = null; tripButton?.focus(); };
-  $effect(() => { if (pop !== "trip") app.tripEnds = null; });   // its A and B leave the map with it
-  const toggle = (p: "layers" | "trip") => {
+  let layersButton: HTMLButtonElement | undefined = $state();
+  let foldButton: HTMLButtonElement | undefined = $state();
+  const helpButtons: { bar?: HTMLButtonElement; body?: HTMLButtonElement } = $state({});
+  let focusOpen = $state(false);   // the direction rows of several lines, under their one summary row
+
+  // Focus returns to what opened a popover when that is on the screen (the compass, the map-menu and
+  // ? buttons live in the dropdown, which may be closed now); else to the chevron.
+  async function refocus(p: "layers" | "help" | "trip") {
+    await tick();
+    const b = p === "trip" ? tripButton : p === "layers" ? layersButton : helpButtons.body?.offsetParent ? helpButtons.body : helpButtons.bar;
+    (b?.offsetParent ? b : foldButton)?.focus();
+  }
+  const closeTrip = () => { pop = null; void refocus("trip"); };   // its A and B stay on the map until its own ×
+  const toggle = (p: "layers" | "help" | "trip") => {
     pop = pop === p ? null : p;
+    if (pop === "help") {
+      app.markHelpSeen();   // the ? leaves the bar: focus goes into the popover instead
+      void tick().then(() => document.getElementById("pop-help")?.focus());
+    }
     if (pop !== "layers") return;
     app.loadMetro();   // again, if the first load failed
     app.selectStation(null);   // its card would cover the menu's metro lines on a phone
   };
+  // The chevron: opens and closes the dropdown. From the planner (a phone) it goes back to the dropdown.
+  function fold() {
+    if (tripOnly) { pop = null; collapsed = false; return; }
+    collapsed = !collapsed;
+    if (collapsed && pop && pop !== "trip") pop = null;
+  }
+  // Escape: a popover first, then the dropdown (when focus is in it; the search closes its own list).
+  function onEscape(e: KeyboardEvent) {
+    if (e.key !== "Escape") return;
+    if (pop && pop !== "trip") {
+      const p = pop;
+      pop = null;
+      e.stopPropagation();
+      void refocus(p);
+    } else if (!collapsed && !tripOnly && (e.target as Element | null)?.closest?.("#panel-body")) {
+      collapsed = true;
+      e.stopPropagation();
+      void tick().then(() => foldButton?.focus());
+    }
+  }
 
   // A popover opens under the panel, whose height varies (stats arrive, it folds): it uses the rest
   // of the window, then scrolls. With little room left (a phone held sideways) it covers the panel.
@@ -76,6 +111,8 @@
   const ring = $derived(from == null || to == null || stale ? null : untrack(() => ringAt({ from, to }, app.serverNow / 1000)));
   let boxW = $state(0), boxH = $state(0);
 
+  $effect(() => { if (focused.length < 2) focusOpen = false; });
+
   const ages = $derived(app.showAges || !app.motion);
 
   const oldest = $derived.by(() => {
@@ -84,12 +121,12 @@
   });
 </script>
 
-<!-- Escape closes an open popover first (capture: before the info card's handler). -->
-<!-- The trip planner stays open while the map is used; it closes itself (×, Escape). -->
+<!-- Escape is handled in capture, before the info card's handler. The trip planner stays open while the map is
+     used; it closes itself (×, Escape). -->
 <svelte:window onclick={e => { if (pop && pop !== "trip" && !(e.target as Element).closest?.(".pop, .tool")) pop = null; }}
-  onkeydowncapture={e => { if (e.key === "Escape" && pop && pop !== "trip") { pop = null; e.stopPropagation(); } }} />
+  onkeydowncapture={onEscape} />
 
-<section class="panel" class:raised={pop === "layers"} aria-label="Πίνακας ελέγχου" bind:clientWidth={boxW} bind:clientHeight={boxH}>
+<section class="panel" class:raised={pop === "layers" || pop === "help"} aria-label="Πίνακας ελέγχου" bind:clientWidth={boxW} bind:clientHeight={boxH}>
   <!-- Decorative: on the border. Fills clockwise over the refresh cycle; amber and full when nothing has come for a while. -->
   <svg class="ring" width={boxW + 2} height={boxH + 2} aria-hidden="true">
     {#if stale}
@@ -101,31 +138,15 @@
       {/key}
     {/if}
   </svg>
-  <div class="head">
-    <h1>Λεωφορεία ΟΑΣΑ</h1>
-    {#if badge}
-      <span class="badge {badge.cls}" title="Ανανέωση μόλις ο διακομιστής έχει νέα δεδομένα (περίπου κάθε 30 δευτερόλεπτα)">
-        <i></i><span>{badge.text}</span>
-      </span>
+  <h1 class="sr">Λεωφορεία ΟΑΣΑ</h1>
+
+  <!-- Always shown: the picked lines, the search, and the ways to open the rest. -->
+  <div class="bar">
+    {#if tripOnly}
+      <div class="tripbar"><span>Διαδρομή χωρίς αλλαγή</span>{@render tail()}</div>
+    {:else}
+      <LinePicker {app} expanded={!collapsed} {tail} />
     {/if}
-    <button type="button" class="tool" class:on={pop === "trip"} aria-expanded={pop === "trip"} bind:this={tripButton}
-      aria-label="Διαδρομή: ποιες γραμμές με πάνε" title="Διαδρομή: ποιες γραμμές με πάνε" onclick={() => toggle("trip")}>
-      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
-        <circle cx="10" cy="10" r="7.6" /><path d="M12.8 7.2l-1.6 4-4 1.6 1.6-4z" />
-      </svg>
-    </button>
-    <button type="button" class="tool" class:on={pop === "layers"} class:filtering={app.only.fresh || app.only.onTime} aria-expanded={pop === "layers"} aria-controls="pop-layers"
-      aria-label="Τι δείχνει ο χάρτης" title="Τι δείχνει ο χάρτης" onclick={() => toggle("layers")}>
-      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
-        <path d="M10 3l7 3.8-7 3.8-7-3.8z" /><path d="M3 10.2l7 3.8 7-3.8" /><path d="M3 13.6l7 3.8 7-3.8" />
-      </svg>
-    </button>
-    <button type="button" class="fold" aria-expanded={!collapsed} aria-controls="panel-body"
-      aria-label={collapsed ? "Εμφάνιση λεπτομερειών" : "Απόκρυψη λεπτομερειών"} onclick={() => (collapsed = !collapsed)}>
-      <svg viewBox="0 0 12 8" width="14" height="10" aria-hidden="true" class={{ up: !collapsed }}>
-        <path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
-    </button>
   </div>
 
   {#if pop === "trip"}
@@ -136,9 +157,12 @@
     {:catch}
       <div class="pop"><p class="hint">Δεν φόρτωσε. Έλεγξε τη σύνδεση και πάτα ξανά την πυξίδα.</p></div>
     {/await}
+  {:else if pop === "help"}
+    <div class="pop" id="pop-help" role="dialog" tabindex="-1" aria-label="Τι σημαίνει κάθε σύμβολο" {@attach fitHeight}>
+      <HelpPop />
+    </div>
   {:else if pop === "layers"}
-    <div class="pop" id="pop-layers" role="dialog" aria-labelledby="pop-layers-h" {@attach fitHeight}>
-      <h3 id="pop-layers-h">Τι δείχνει ο χάρτης</h3>
+    <div class="pop" id="pop-layers" role="dialog" aria-label="Επίπεδα χάρτη" {@attach fitHeight}>
       <section>
         <h4>Λεωφορεία</h4>
         <label class="switch">
@@ -193,16 +217,33 @@
           <p class="hint">Φόρτωση…</p>
         {/if}
       </section>
-      <section>
-        <details class="hint">
-          <summary>Τι σημαίνει κάθε σύμβολο</summary>
-          <HelpPop />
-        </details>
-      </section>
     </div>
   {/if}
 
+  <!-- The dropdown: the tools, then what the picked lines are doing. -->
   <div id="panel-body" hidden={collapsed || tripOnly}>
+    <div class="tools">
+      {#if badge}
+        <span class="badge {badge.cls}" title="Ανανέωση μόλις ο διακομιστής έχει νέα δεδομένα (περίπου κάθε 30 δευτερόλεπτα)">
+          <i></i><span>{badge.text}</span>
+        </span>
+      {/if}
+      <span class="spacer"></span>
+      <button type="button" class="tool" class:on={pop === "trip"} class:pinned={!!app.tripEnds && pop !== "trip"} aria-expanded={pop === "trip"} bind:this={tripButton}
+        aria-label="Διαδρομή: ποιες γραμμές με πάνε" title="Διαδρομή: ποιες γραμμές με πάνε" onclick={() => toggle("trip")}>
+        <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+          <circle cx="10" cy="10" r="7.6" /><path d="M12.8 7.2l-1.6 4-4 1.6 1.6-4z" />
+        </svg>
+      </button>
+      {@render help("body")}
+      <button type="button" class="tool" class:on={pop === "layers"} class:filtering={app.only.fresh || app.only.onTime} aria-expanded={pop === "layers"} aria-controls="pop-layers"
+        bind:this={layersButton} aria-label="Επίπεδα χάρτη" title="Επίπεδα χάρτη" onclick={() => toggle("layers")}>
+        <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+          <path d="M10 3l7 3.8-7 3.8-7-3.8z" /><path d="M3 10.2l7 3.8 7-3.8" /><path d="M3 13.6l7 3.8 7-3.8" />
+        </svg>
+      </button>
+    </div>
+
     {#if !app.selected.length && !(app.cityOn && !cityMissing)}
       <div class="muted">Διάλεξε έως 5 γραμμές για να δεις τα οχήματα ζωντανά.</div>
     {/if}
@@ -218,10 +259,6 @@
       </div>
     {/if}
 
-    {#each app.selected.filter(id => app.live[id]?.vehicles.length === 0) as id (id)}
-      <div class="muted">Η γραμμή {id} δεν είχε οχήματα σε κίνηση στην τελευταία ενημέρωση.</div>
-    {/each}
-
     <div class="legend">
       <span class="lead">Καθυστέρηση:</span>
       <span><i class="ontime"></i>έως 2′ ή νωρίτερα</span><span><i class="late1"></i>2–5′</span>
@@ -229,30 +266,44 @@
       <span><i class="none"></i>χωρίς δρομολόγιο</span>
       {#if ages}<span><b class="age">24″</b>πριν από τόσο ήρθε η θέση</span>{/if}
     </div>
+
+    {#if focused.length}
+      {#if focused.length > 1}
+        <!-- Several lines in one direction: one row, the rows of each line behind the chevron. -->
+        <div class="focus">
+          <span>{focused.map(f => f.line).join(", ")}: μία κατεύθυνση</span>
+          <button type="button" title="Όλες οι κατευθύνσεις" aria-label="Δείξε όλες τις κατευθύνσεις όλων των γραμμών"
+            onclick={() => { for (const f of focused) app.setFocus(f.line, null); }}>×</button>
+          <button type="button" aria-expanded={focusOpen} aria-controls="focus-rows" aria-label="Κατευθύνσεις ανά γραμμή"
+            onclick={() => (focusOpen = !focusOpen)}>
+            <svg viewBox="0 0 12 8" width="12" height="8" aria-hidden="true" class={{ up: focusOpen }}><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          </button>
+        </div>
+      {/if}
+      <div id="focus-rows" hidden={focused.length > 1 && !focusOpen}>
+      {#each focused as f (f.line)}
+        <div class="focus">
+          <span>{f.line}: μόνο → {f.to}</span>
+          {#if f.other}
+            {@const other = f.other}
+            <button type="button" title="Άλλη κατεύθυνση: → {other.to}" aria-label="Δείξε την άλλη κατεύθυνση της {f.line}, προς {other.to}"
+              onclick={() => app.setFocus(f.line, other.variants)}>⇄</button>
+          {/if}
+          <button type="button" title="Όλες οι κατευθύνσεις" aria-label="Δείξε όλες τις κατευθύνσεις της {f.line}"
+            onclick={() => app.setFocus(f.line, null)}>×</button>
+        </div>
+      {/each}
+      </div>
+    {/if}
+    {#if app.alert}
+      {@const a = app.alert}
+      <div class="focus">
+        <span>🔔 {a.lines.map(l => l.line).join(", ")} · {a.n === 1 ? "στην προηγούμενη στάση" : `${a.n} στάσεις πριν`} · έως {clock(a.until).slice(0, 5)}</span>
+        <button type="button" title="Τέλος ειδοποίησης" aria-label="Σταμάτα την ειδοποίηση" onclick={() => app.setAlert(null)}>×</button>
+      </div>
+    {/if}
   </div>
 
-  <div class="picks" hidden={tripOnly}>
-  <LinePicker {app} />
-  {#each focused as f (f.line)}
-    <div class="focus">
-      <span>{f.line}: μόνο → {f.to}</span>
-      {#if f.other}
-        {@const other = f.other}
-        <button type="button" title="Άλλη κατεύθυνση: → {other.to}" aria-label="Δείξε την άλλη κατεύθυνση της {f.line}, προς {other.to}"
-          onclick={() => app.setFocus(f.line, other.variants)}>⇄</button>
-      {/if}
-      <button type="button" title="Όλες οι κατευθύνσεις" aria-label="Δείξε όλες τις κατευθύνσεις της {f.line}"
-        onclick={() => app.setFocus(f.line, null)}>×</button>
-    </div>
-  {/each}
-  {#if app.alert}
-    {@const a = app.alert}
-    <div class="focus">
-      <span>🔔 {a.lines.map(l => l.line).join(", ")} · {a.n === 1 ? "στην προηγούμενη στάση" : `${a.n} στάσεις πριν`} · έως {clock(a.until).slice(0, 5)}</span>
-      <button type="button" title="Τέλος ειδοποίησης" aria-label="Σταμάτα την ειδοποίηση" onclick={() => app.setAlert(null)}>×</button>
-    </div>
-  {/if}
-  </div>
   {#each app.hits as h (h.id)}
     <div class="hit" role="alert">
       <span>🚌 {h.text}</span>
@@ -260,6 +311,29 @@
     </div>
   {/each}
   <StatusBanner {app} />
+
+  {#snippet tail()}
+    {@render help("bar")}
+    <button type="button" class="fold" aria-expanded={tripOnly ? false : !collapsed} aria-controls="panel-body" bind:this={foldButton}
+      aria-label={tripOnly ? "Σύμπτυξη διαδρομής" : collapsed ? "Εμφάνιση λεπτομερειών" : "Απόκρυψη λεπτομερειών"} onclick={fold}>
+      <svg viewBox="0 0 12 8" width="14" height="10" aria-hidden="true" class={{ up: !collapsed && !tripOnly }}>
+        <path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </button>
+  {/snippet}
+
+  <!-- The ?: in the bar until it has been pressed once, then in the dropdown, next to the compass. -->
+  {#snippet help(where: "bar" | "body")}
+    {#if (where === "body") === app.helpSeen}
+      <button type="button" class="tool" class:on={pop === "help"} aria-expanded={pop === "help"} aria-controls="pop-help"
+        aria-label="Τι σημαίνει κάθε σύμβολο" title="Τι σημαίνει κάθε σύμβολο" onclick={() => toggle("help")}
+        bind:this={helpButtons[where]}>
+        <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="10" cy="10" r="7.6" /><path d="M7.8 7.9a2.3 2.3 0 1 1 3.3 2.1c-.7.4-1.1.8-1.1 1.6" /><circle cx="10" cy="14.2" r=".5" fill="currentColor" />
+        </svg>
+      </button>
+    {/if}
+  {/snippet}
 </section>
 
 <style>
@@ -273,25 +347,27 @@
     animation: ring var(--dur) linear var(--delay) forwards; }
   .ring .late { stroke: var(--late2); opacity: .8; }
   @keyframes ring { to { stroke-dashoffset: 0; } }
-  h1 { font-size: 15px; margin: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .head { display: flex; align-items: center; gap: 8px; }
+  .sr { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .tripbar { display: flex; align-items: center; gap: 2px; }
+  .tripbar span { flex: 1; font-size: 13px; font-weight: 600; }
+  .tools { display: flex; align-items: center; gap: 2px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+  .spacer { flex: 1; }
   .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted);
     white-space: nowrap; }
   .badge i { width: 8px; height: 8px; border-radius: 50%; background: var(--none); }
   .badge.stale i { background: var(--late3); }
-  .tool { display: grid; place-items: center; width: 34px; height: 34px; margin: -8px -4px; border: 0; border-radius: 8px;
+  .tool { display: grid; place-items: center; flex: none; width: 40px; height: 40px; margin: 0; border: 0; border-radius: 8px;
     background: none; color: var(--muted); cursor: pointer; }
   .tool:hover, .tool.on { background: var(--control); color: var(--fg); }
   /* A map filter is on: some vehicles are hidden. */
   .tool { position: relative; }
-  .tool.filtering::after { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px;
+  .tool.filtering::after, .tool.pinned::after { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px;
     border-radius: 50%; background: var(--accent); }
   .pop { position: absolute; z-index: 7; top: calc(100% + 6px); left: 0; right: 0; padding: 12px 14px; font-size: 13px;
     background: var(--bg); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
     box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; }
   .pop.over { top: 0; }
   .pop p { margin: 0 0 8px; }
-  .pop h3 { margin: 0 0 8px; font-size: 14px; }
   .pop h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
   .pop section + section { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--border); }
   .pop .age { margin-right: 4px; padding: 0 4px; border-radius: 6px; background: var(--control); font-size: 11px;
@@ -310,7 +386,7 @@
   .seg { display: flex; padding: 2px; border-radius: 9px; background: var(--control); margin-bottom: 10px; }
   .seg button { flex: 1; min-height: 30px; border: 0; border-radius: 7px; background: none; cursor: pointer; font-size: 12px; }
   .seg button[aria-checked="true"] { background: var(--panel); box-shadow: 0 1px 3px rgba(0, 0, 0, .2); font-weight: 600; }
-  .fold { width: 40px; height: 40px; margin: -10px -10px -10px 0; border: 0; background: none; color: var(--muted);
+  .fold { flex: none; width: 40px; height: 40px; margin: 0; border: 0; background: none; color: var(--muted);
     cursor: pointer; border-radius: 8px; }
   .fold:hover { background: var(--control); }
   .fold svg { transition: transform .15s; }
@@ -323,10 +399,12 @@
   .legend .age { margin-right: 4px; font-size: 10px; font-variant-numeric: tabular-nums; }
   .focus { display: flex; align-items: center; gap: 2px; min-height: 32px; margin: 6px 0 0; padding: 0 2px 0 10px;
     border: 1px solid var(--accent); border-radius: 16px; color: var(--accent); font-size: 12px; }
-  .focus span { flex: 1; }
-  .focus button { width: 30px; height: 28px; border: 0; border-radius: 14px; background: none; color: inherit;
+  .focus span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .focus button { flex: none; width: 30px; height: 28px; border: 0; border-radius: 14px; background: none; color: inherit;
     font-size: 14px; cursor: pointer; }
   .focus button:hover { background: var(--control); }
+  .focus svg { transition: transform .15s; }
+  .focus svg.up { transform: rotate(180deg); }
   .hit { display: flex; align-items: flex-start; gap: 6px; margin-top: 8px; padding: 8px 4px 8px 10px; border-radius: 10px;
     background: var(--accent); color: #fff; font-size: 14px; font-weight: 600; }
   .hit span { flex: 1; }
@@ -340,6 +418,5 @@
   @media (max-width: 719px) {
     .panel { left: 8px; right: 60px; width: auto; max-width: none; padding: 10px 12px; }
     .stats b { font-size: 16px; }
-    .badge span { display: none; }
   }
 </style>

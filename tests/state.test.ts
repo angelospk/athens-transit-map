@@ -415,3 +415,16 @@ describe("AppState lines without vehicles", () => {
     expect(app.notice).toContain("550");
   });
 });
+
+describe("AppState help hint", () => {
+  vi.stubGlobal("fetch", () => new Promise(() => {}));
+
+  it("shows the ? until it is pressed once, and then never again", () => {
+    localStorage.removeItem("helpSeen");
+    const app = new AppState();
+    expect(app.helpSeen).toBe(false);
+    app.markHelpSeen();
+    expect(app.helpSeen).toBe(true);
+    expect(new AppState().helpSeen).toBe(true);
+  });
+});

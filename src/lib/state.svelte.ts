@@ -69,6 +69,8 @@ export class AppState {
   cityOn = $state(stored("cityOn", true, isBool));
   others = $state<Others>(stored("others", "dim", v => v === "normal" || v === "dim" || v === "hide"));
   showAges = $state(stored("showAges", false, isBool));
+  // The ? (what the map symbols mean) shows in the panel's bar until it has been pressed once.
+  helpSeen = $state(stored("helpSeen", false, isBool));
   // Off: every vehicle stays at its last GPS fix (no motion in between); its age is always shown.
   motion = $state(stored("motion", true, isBool));
   // Map filters; the selected vehicle is always shown.
@@ -338,6 +340,12 @@ export class AppState {
   setOthers(o: Others) {
     this.others = o;
     store("others", o);
+  }
+
+  markHelpSeen() {
+    if (this.helpSeen) return;
+    this.helpSeen = true;
+    store("helpSeen", true);
   }
 
   setShowAges(on: boolean) {
