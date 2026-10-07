@@ -5,6 +5,7 @@
   import { clock, duration, fmtMinutes } from "../format";
   import { refreshCycle, ringAt } from "../refresh";
   import { STALE_S, type AppState } from "../state.svelte";
+  import HelpPop from "./HelpPop.svelte";
   import LinePicker from "./LinePicker.svelte";
   import MetroToggles from "./MetroToggles.svelte";
   import StatusBanner from "./StatusBanner.svelte";
@@ -191,6 +192,12 @@
         {:else}
           <p class="hint">Φόρτωση…</p>
         {/if}
+      </section>
+      <section>
+        <details class="hint">
+          <summary>Τι σημαίνει κάθε σύμβολο</summary>
+          <HelpPop />
+        </details>
       </section>
     </div>
   {/if}
