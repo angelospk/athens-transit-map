@@ -5,7 +5,6 @@
   import { STALE_S, type AppState } from "../state.svelte";
   import LinePicker from "./LinePicker.svelte";
   import MetroToggles from "./MetroToggles.svelte";
-  import StatsSheet from "./StatsSheet.svelte";
   import StatusBanner from "./StatusBanner.svelte";
 
   let { app }: { app: AppState } = $props();
@@ -26,7 +25,6 @@
     app.loadMetro();   // again, if the first load failed
     app.selectStation(null);   // its card would cover the menu's metro lines on a phone
   };
-  let statsOpen = $state(false);
 
   // A popover opens under the panel, whose height varies (stats arrive, it folds): it uses the rest
   // of the window, then scrolls. With little room left (a phone held sideways) it covers the panel.
@@ -89,12 +87,6 @@
       aria-label="Διαδρομή: ποιες γραμμές με πάνε" title="Διαδρομή: ποιες γραμμές με πάνε" onclick={() => toggle("trip")}>
       <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
         <circle cx="10" cy="10" r="7.6" /><path d="M12.8 7.2l-1.6 4-4 1.6 1.6-4z" />
-      </svg>
-    </button>
-    <button type="button" class="tool" class:on={statsOpen} aria-haspopup="dialog" aria-label="Στατιστικά δικτύου"
-      title="Στατιστικά δικτύου" onclick={() => { pop = null; statsOpen = true; }}>
-      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
-        <path d="M3 17h14" /><path d="M5.5 14V9" /><path d="M10 14V4.5" /><path d="M14.5 14v-6" />
       </svg>
     </button>
     <button type="button" class="tool" class:on={pop === "layers"} class:filtering={app.only.fresh || app.only.onTime} aria-expanded={pop === "layers"} aria-controls="pop-layers"
@@ -237,13 +229,7 @@
     </div>
   {/each}
   <StatusBanner {app} />
-
-  <div class="foot" hidden={collapsed || tripOnly}>
-    <a href="https://github.com/angelospk/athens-transit-map" target="_blank" rel="noopener">Κώδικας</a> ·
-    Δεδομένα ΟΑΣΑ
-  </div>
 </section>
-<StatsSheet bind:open={statsOpen} />
 
 <style>
   .panel { position: absolute; z-index: 5; top: calc(12px + env(safe-area-inset-top)); left: 12px; width: 344px;
@@ -312,8 +298,6 @@
   .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 8px 0 0; font-size: 12px; }
   .legend .lead { color: var(--muted); }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
-  .foot { margin-top: 10px; font-size: 11px; color: var(--muted); }
-  .foot a { color: inherit; }
   [hidden] { display: none !important; }
   @media (max-width: 719px) {
     .panel { left: 8px; right: 60px; width: auto; max-width: none; padding: 10px 12px; }

@@ -12,7 +12,6 @@
   import { shapeLength, stopOffsets } from "../predict";
   import type { Variant } from "../types";
   import type { AppState } from "../state.svelte";
-  import InfoSheet from "../ui/InfoSheet.svelte";
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
 
@@ -472,19 +471,23 @@
     m.touchZoomRotate.disableRotation();
     m.addControl(new NavigationControl({ showCompass: false }), "top-right");
     m.addControl({ onAdd: () => locateCtl, onRemove: () => locateCtl.remove() }, "top-right");
-    // The credits stay on the map as before; the ⓘ opens the info sheet (it lists them too) instead of toggling them.
-    // Capture + stopImmediatePropagation: MapLibre's own click handler must not run (it would collapse them).
+    // Only the ⓘ stays on the map: it opens the info dialog (sources, credits, statistics) instead of toggling the
+    // credits. Capture + stopImmediatePropagation: MapLibre's own click handler must not run.
     const credit = node.querySelector<HTMLElement>(".maplibregl-ctrl-attrib-button");
     if (credit) {
       credit.title = "Πηγές δεδομένων";
       credit.setAttribute("aria-label", "Πηγές δεδομένων");
       credit.setAttribute("aria-haspopup", "dialog");
-      credit.addEventListener("click", e => { e.preventDefault(); e.stopImmediatePropagation(); infoOpen = true; }, true);
+      credit.addEventListener("click", e => { e.preventDefault(); e.stopImmediatePropagation(); void openInfo(); }, true);
     }
     m.on("dragstart", () => (follow = false));   // only user gestures fire it
 
     const popup = new Popup({ closeButton: false, offset: 10, maxWidth: "240px" });
     m.on("load", () => {
+      // MapLibre opens the credits at first; collapse them. It does not reopen them (the control is compact).
+      const attrib = node.querySelector(".maplibregl-ctrl-attrib");
+      attrib?.classList.remove("maplibregl-compact-show");
+      attrib?.removeAttribute("open");
       addLayers(m);
       m.addSource("me-acc", { type: "geojson", data: EMPTY });
       // Accuracy circle in map metres: px = metres · 2^zoom / metres-per-pixel at zoom 0.
@@ -687,14 +690,26 @@
   });
 
   let infoOpen = $state(false);
+  let Info = $state.raw<typeof import("../ui/InfoDialog.svelte").default | null>(null);
+  let infoLoad: Promise<typeof import("../ui/InfoDialog.svelte").default> | null = null;
+  async function openInfo() {
+    infoLoad ??= import("../ui/InfoDialog.svelte").then(m => m.default);
+    try {
+      Info = await infoLoad;
+      infoOpen = true;
+    } catch {
+      infoLoad = null;
+      app.notify("Δεν φόρτωσαν οι πληροφορίες. Δοκίμασε ξανά.");
+    }
+  }
   const ended = $derived(gtfsEnded(app.status?.gtfs_expires));
 </script>
 
 <div class="map" class:no-ages={!app.showAges && app.motion} {@attach setup}></div>
-<InfoSheet bind:open={infoOpen} motion={app.motion} {ended} />
+{#if Info}<Info bind:open={infoOpen} motion={app.motion} {ended} />{/if}
 {#if ended}
   <!-- Small, next to the ⓘ: the sheet it opens explains it. -->
-  <button type="button" class="old" onclick={() => (infoOpen = true)}>⚠ Παλιό πρόγραμμα ΟΑΣΑ</button>
+  <button type="button" class="old" onclick={openInfo}>⚠ Παλιό πρόγραμμα ΟΑΣΑ</button>
 {/if}
 {#if failed}
   <div class="nogl" role="alert">

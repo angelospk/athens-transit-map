@@ -9,3 +9,4 @@ export const TILE_CREDITS = [
   { text: "© OpenMapTiles", href: "https://www.openmaptiles.org/" },
   { lead: "Δεδομένα από ", text: "OpenStreetMap", href: "https://www.openstreetmap.org/copyright" },
 ];
+export const FRONTEND_REPO = "https://github.com/angelospk/athens-transit-map";
