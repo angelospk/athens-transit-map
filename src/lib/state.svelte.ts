@@ -8,7 +8,7 @@ import { loadMetro, type MetroData } from "./metro";
 import { LinePoller, type PollState } from "./poller";
 import { ClockOffset } from "./schedule";
 import { MAX_LINES, selectionIds, serializeSelection, splitKnown, toggle } from "./selection";
-import type { AlertHit, AlertSpec } from "./alerts";
+import { hitText, type AlertHit, type AlertSpec } from "./alerts";
 import type { CityLive, CityVehicle, LineInfo, LineLive, LineStatic, Status, Vehicle } from "./types";
 
 export const STALE_S = 120;
@@ -306,8 +306,7 @@ export class AppState {
   }
 
   alertHit(h: AlertHit, stop: string) {
-    const late = h.delay_s != null && h.delay_s >= 60 ? ` (καθυστέρηση ${Math.round(h.delay_s / 60)}′)` : "";
-    const text = h.left === 1 ? `Το ${h.line} έρχεται: επόμενη στάση του η ${stop}${late}.` : `Το ${h.line} είναι ${h.left} στάσεις πριν από ${stop}${late}.`;
+    const text = hitText(h, stop);
     this.hits = [...this.hits, { id: ++this.hitId, text }].slice(-3);
     return text;
   }

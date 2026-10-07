@@ -1,7 +1,7 @@
 # Stop alerts (trip planner, phase 2)
 
 Status 2026-10-07: option A built (`src/lib/alerts.ts`, `src/lib/alertWatch.svelte.ts`, `public/sw.js`).
-Option C (Telegram) planned below; B (Web Push) is not planned while C covers iPhones.
+Option C (Telegram) built 2026-10-08 (`bot/`, `src/lib/tglink.ts`; payload format in tglink.ts); B (Web Push) is not planned while C covers iPhones.
 
 Goal: pick a stop near you; get a phone notification shortly before a bus that goes where you want
 reaches it. Settings: how early (stops before, e.g. 3), which lines.

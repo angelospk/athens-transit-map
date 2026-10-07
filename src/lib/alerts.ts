@@ -23,8 +23,18 @@ export interface AlertHit { line: string; vehicle: string; left: number; stop: s
 
 // Fires each trip once per alert; an alert with another end time is a new alert.
 export class AlertWatch {
-  private fired = new Map<string, number>();   // trip key → when fired (s)
-  private until = NaN;
+  private fired: Map<string, number>;   // trip key → when fired (s)
+  private until: number;
+
+  // From snapshot(): a restarted server must not fire the same trips again.
+  constructor(saved?: { until: number; fired: [string, number][] }) {
+    this.until = saved?.until ?? NaN;
+    this.fired = new Map(saved?.fired ?? []);
+  }
+
+  snapshot() {
+    return { until: this.until, fired: [...this.fired] };
+  }
 
   check(spec: AlertSpec, live: Record<string, LineLive>, statics: Record<string, LineStatic>, nowS: number): AlertHit[] {
     if (spec.until !== this.until) { this.fired.clear(); this.until = spec.until; }
@@ -48,4 +58,10 @@ export class AlertWatch {
     }
     return hits;
   }
+}
+
+// "Το 622 είναι 2 στάσεις πριν από ΑΓΟΡΑ (καθυστέρηση 3′)." — the page's card and the Telegram message.
+export function hitText(h: AlertHit, stop: string): string {
+  const late = h.delay_s != null && h.delay_s >= 60 ? ` (καθυστέρηση ${Math.round(h.delay_s / 60)}′)` : "";
+  return h.left === 1 ? `Το ${h.line} έρχεται: επόμενη στάση του η ${stop}${late}.` : `Το ${h.line} είναι ${h.left} στάσεις πριν από ${stop}${late}.`;
 }

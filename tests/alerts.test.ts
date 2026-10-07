@@ -73,6 +73,13 @@ describe("AlertWatch", () => {
     expect(w.check({ ...spec, until: spec.until + 1 }, live([veh({ next_stop_id: "s4" })]), statics, NOW)).toHaveLength(1);
   });
 
+  it("keeps its fired trips across a save and restore", () => {
+    const w = new AlertWatch();
+    expect(w.check(spec, live([veh({ next_stop_id: "s4" })]), statics, NOW)).toHaveLength(1);
+    const back = new AlertWatch(JSON.parse(JSON.stringify(w.snapshot())));
+    expect(back.check(spec, live([veh({ next_stop_id: "s4" })]), statics, NOW)).toEqual([]);
+  });
+
   it("tells a trip without trip_id by vehicle and variant", () => {
     const w = new AlertWatch();
     expect(w.check(spec, live([veh({ trip_id: null, next_stop_id: "s4" })]), statics, NOW)).toHaveLength(1);

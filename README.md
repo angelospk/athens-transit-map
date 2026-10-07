@@ -39,6 +39,9 @@ The UI follows the viewer of [foivospro/athens-gtfs-realtime](https://github.com
 - Stop alert (🔔 in the planner): a card in the panel, a vibration and a system notification (where the browser
   allows; a small `public/sw.js` shows it on phones) when a bus of the trip is 1–5 stops before the boarding
   stop. For 2 hours, while the page is open. Rule in `src/lib/alerts.ts`.
+- Telegram alerts: "Στο Telegram" next to 🔔 opens [@oasa_bus_bot](https://t.me/oasa_bus_bot) with the lines and
+  boarding stops in the start link (`src/lib/tglink.ts`). The bot (`bot/`, no account; Σταμάτα and Απεγγραφή
+  buttons) runs on a small VPS: `bun run bot:build`, `bot/deploy.sh`; its token stays on that machine.
 - Favourite lines: ☆ in the search list (or `*` on the active row); the ★ chips under the search show or
   hide each one, "Όλες" shows them all (up to 5).
 - My location (button under the zoom): a blue dot with its accuracy, the map follows it until you drag.

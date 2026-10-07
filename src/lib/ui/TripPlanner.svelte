@@ -10,6 +10,7 @@
   import { untrack } from "svelte";
   import { fetchLines } from "../api";
   import { MAX_LINES } from "../selection";
+  import { encodeAlert } from "../tglink";
   import type { AppState } from "../state.svelte";
   import { centre, distM, findTrips, geocode, loadTripIndex, places, searchPlaces, suggest, toggleTripLine, type TripIndex } from "../trip";
 
@@ -187,6 +188,15 @@
     app.setAlert({ n, until: Math.floor(app.serverMs() / 1000) + ALERT_S, label: f.label, lines });
   }
 
+  // The same alert in Telegram: the trip's lines on the map, best first (src/lib/tglink.ts).
+  const BOT = "oasa_bus_bot";
+  const tgLink = $derived.by(() => {
+    if (!trips || !data || data.stale) return null;
+    const lines = trips.filter(t => app.selected.includes(t.line)).map(t => ({ line: t.line, variants: t.variants.map(v => ({ id: v.id, i: v.i })) }));
+    const p = encodeAlert(data.ix, n, lines);
+    return p && `https://t.me/${BOT}?start=${p}`;
+  });
+
   const stop = (k: number) => data?.ix.s[k][0] ?? "";
   const metres = (m: number) => (m < 50 ? "δίπλα" : `≈ ${Math.round(m / 50) * 50} μ.`);
   const icon = (p: Place) => ({ area: "◎", stop: "🚏", me: "📍", street: "⌖", poi: "•" })[p.kind ?? "street"];
@@ -303,14 +313,19 @@
           {:else if data.stale}
             <small>Ειδοποίηση: όχι με παλιά δεδομένα στάσεων.</small>
           {:else}
-            <button type="button" class="bell" onclick={alertMe}>🔔 Ειδοποίησέ με</button>
+            <span class="lead">🔔 Ειδοποίηση</span>
             <select aria-label="Πόσες στάσεις πριν" bind:value={n}>
               {#each [1, 2, 3, 4, 5] as k (k)}<option value={k}>{k === 1 ? "στην προηγούμενη στάση" : `${k} στάσεις πριν`}</option>{/each}
             </select>
+            <button type="button" class="bell" onclick={alertMe}>Εδώ</button>
+          {/if}
+          {#if tgLink}
+            <a class="bell tg" href={tgLink} target="_blank" rel="noopener">Στο Telegram</a>
           {/if}
         </div>
-        {#if !app.alert}
-          <p class="note">Για 2 ώρες, όσο η σελίδα είναι ανοιχτή{canNotify ? "" : " (σε αυτόν τον browser μόνο μέσα στη σελίδα)"}. Με κλειδωμένη οθόνη δεν έρχεται.</p>
+        {#if !app.alert && !data.stale}
+          <p class="note">Για 2 ώρες. Εδώ: όσο η σελίδα είναι ανοιχτή{canNotify ? "" : ", μόνο μέσα στη σελίδα"}.
+            Telegram: και με κλειδωμένη οθόνη, από το @{BOT}.</p>
         {/if}
       {/if}
     {:else}
@@ -370,6 +385,8 @@
   .chip[aria-pressed="true"] { background: var(--c); color: var(--t); }
   .alert { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
   .alert span { flex: 1; }
+  .alert .lead { flex: none; font-weight: 600; }
+  .bell.tg { display: inline-grid; place-items: center; background: #229ed9; text-decoration: none; }
   .bell { min-height: 34px; padding: 0 12px; border: 0; border-radius: 9px; background: var(--accent); color: #fff; font-weight: 600;
     font-size: 14px; cursor: pointer; }
   select { min-height: 34px; padding: 0 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--control);

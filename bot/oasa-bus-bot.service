@@ -1,0 +1,21 @@
+[Unit]
+Description=Telegram stop alerts for bus.haroldpoi.dev (@oasa_bus_bot)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/home/ubuntu/.config/oasa-bus-bot/env
+
+[Service]
+User=ubuntu
+Environment=HOME=/home/ubuntu
+EnvironmentFile=/home/ubuntu/.config/oasa-bus-bot/env
+ExecStart=/usr/bin/node /home/ubuntu/oasa-bus-bot/oasa-bus-bot.mjs
+Restart=on-failure
+RestartSec=30
+MemoryMax=120M
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/.local/state/oasa-bus-bot
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
