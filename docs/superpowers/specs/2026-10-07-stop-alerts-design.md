@@ -1,4 +1,7 @@
-# Stop alerts (trip planner, phase 2) — plan, not built
+# Stop alerts (trip planner, phase 2)
+
+Status 2026-10-07: option A built (`src/lib/alerts.ts`, `src/lib/alertWatch.svelte.ts`, `public/sw.js`).
+Option C (Telegram) planned below; B (Web Push) is not planned while C covers iPhones.
 
 Goal: pick a stop near you; get a phone notification shortly before a bus that goes where you want
 reaches it. Settings: how early (stops before, e.g. 3), which lines.
@@ -14,8 +17,10 @@ reaches it. Settings: how early (stops before, e.g. 3), which lines.
 
 ## Rule (shared by both options)
 
-For a vehicle on a serving variant with `next_stop_id`: `away = i − index(next_stop_id in variant)`,
-taking the occurrence at or before `i` (loops pass a stop twice). Alert once when `0 < away ≤ N`.
+For a vehicle on a serving variant with `next_stop_id` at position k: `left = i − k + 1` (stops to the
+boarding stop, itself included). Alert once when `1 ≤ left ≤ N`. A next stop the variant passes twice
+(loops) says nothing about which pass it is: no answer until the bus reaches another stop. The boarding
+stop's name is checked against the static file, so an index from other GTFS data never alerts.
 Identity of one approach: `trip_id` (fallback `vehicle id + variant + day`) + boarding stop. Suppress:
 fix older than 90 s, unknown `next_stop_id`, variant not serving. A skipped threshold (away jumps 4 → 1)
 still alerts. A variant change drops the pending alert. Each alert expires after its trip or 2 h.
@@ -46,6 +51,29 @@ Backend (new, contract rev 5, additive):
 Frontend: service worker with `push` handler, `PushManager.subscribe`, the same settings UI.
 
 Effort: 2–3 days, plus privacy: a subscription endpoint is personal data; keep only what the alert needs.
+
+## Option C — Telegram bot (no account)
+
+Why: iPhone browsers show web notifications only for a Home Screen web app, and none with the screen
+locked. Telegram delivers to the phone like any message.
+
+- Flow: 🔔 in the planner → "Στο Telegram" opens `https://t.me/<bot>?start=<payload>`; the user taps Start;
+  the bot answers with what it watches and buttons [Σταμάτα] [Απεγγραφή από όλα]. Identity = Telegram
+  chat id. No account, no email.
+- Payload (≤ 64 chars `[A-Za-z0-9_-]`, so ≤ 48 bytes before base64url): `v1|line|variant|i|n` plus the
+  GTFS version day. Variant + position keep the planner's choice on loops; the bot checks them against
+  the static file (name check as above) and rejects a link from other GTFS data.
+- Service: a small bun service on the Oracle VPS (runs when the home machine is off; light). Telegram long
+  polling (no inbound port). One paced poller per line with alerts, shared by all chats:
+  `GET transit.haroldpoi.dev/v1/lines/{id}` at the contract's pace (this marks the line watched).
+  Same rule (`src/lib/alerts.ts`, imported). Limits: alerts per chat (5), lines polled (20).
+- State: one JSON file, written atomically (temp + rename): alerts with expiry, fired trip keys, Telegram
+  update offset. Drop an alert at expiry, on Stop, and when Telegram says the chat blocked the bot (403).
+- Messages (Greek): "🚌 Το 622 είναι 2 στάσεις πριν από ΑΓΟΡΑ (καθυστέρηση 3′)" + buttons.
+- Needs from Harold: a bot made with @BotFather (name, token as a secret on the VPS), and one choice:
+  one-off alerts (2 h) or also a repeating one ("weekdays 08:00–09:00").
+
+Effort: about a day with tests, plus the deploy.
 
 ## Recommendation
 

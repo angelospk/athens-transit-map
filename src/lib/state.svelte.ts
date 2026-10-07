@@ -8,6 +8,7 @@ import { loadMetro, type MetroData } from "./metro";
 import { LinePoller, type PollState } from "./poller";
 import { ClockOffset } from "./schedule";
 import { MAX_LINES, selectionIds, serializeSelection, splitKnown, toggle } from "./selection";
+import type { AlertHit, AlertSpec } from "./alerts";
 import type { CityLive, CityVehicle, LineInfo, LineLive, LineStatic, Status, Vehicle } from "./types";
 
 export const STALE_S = 120;
@@ -32,6 +33,10 @@ function store(key: string, v: unknown) {
 }
 const isBool = (v: unknown) => typeof v === "boolean";
 const isIds = (v: unknown) => Array.isArray(v) && v.every(x => typeof x === "string");
+
+// A stop alert from the trip planner; label: the boarding stop's name.
+export type StopAlert = AlertSpec & { label: string };
+export interface ShownHit { id: number; text: string }
 
 export interface PlacedVehicle { line: string; v: Vehicle; faded: boolean }   // faded: direction unknown under focus
 
@@ -76,6 +81,18 @@ export class AppState {
   metroStation = $state<string | null>(null);
   // Starred bus lines: a chip row under the search, to show several at once.
   favorites = $state.raw<string[]>(stored("favorites", [], isIds));
+  // Stop alert: the planner's lines that are still picked (a line taken off the map stops alerting; put
+  // back, it alerts again until the alert ends); null once over. hits: arrivals shown until dismissed.
+  private alertSpec = $state.raw<StopAlert | null>(null);
+  alert = $derived.by((): StopAlert | null => {
+    const a = this.alertSpec;
+    const lines = a?.lines.filter(l => this.selected.includes(l.line)) ?? [];
+    if (!a || !lines.length || this.serverNow / 1000 > a.until) return null;
+    return lines.length === a.lines.length ? a : { ...a, lines };
+  });
+  hits = $state.raw<ShownHit[]>([]);
+  private hitId = 0;
+  private alertsStarted = false;
   // The trip planner's start and end ([lat, lon]), marked on the map while the planner is open.
   tripEnds = $state.raw<{ from: [number, number]; to: [number, number] } | null>(null);
 
@@ -259,6 +276,7 @@ export class AppState {
   private tripGen = 0;
   showTrip(lines: { id: string; variants: string[] }[]): string[] {
     if (!lines.length) return [];
+    this.alertSpec = null;   // a new trip: the old alert no longer fits
     const keep = lines.slice(0, MAX_LINES), ids = keep.map(l => l.id), left = lines.slice(MAX_LINES).map(l => l.id);
     this.metroStation = null;
     this.selection = null;
@@ -274,6 +292,28 @@ export class AppState {
     void Promise.allSettled(ids.map(fetchLineStatic)).then(() => { if (gen === this.tripGen) this.fit(ids); });
     if (left.length) this.say(`Έως ${MAX_LINES} γραμμές ταυτόχρονα. Εκτός: ${left.join(", ")}.`);
     return left;
+  }
+
+  // The watcher loads with the first alert and then follows app.alert.
+  setAlert(a: StopAlert | null) {
+    this.alertSpec = a;
+    if (!a || this.alertsStarted) return;
+    this.alertsStarted = true;
+    import("./alertWatch.svelte").then(m => m.watchAlerts(this), () => {
+      this.alertsStarted = false;
+      this.say("Η ειδοποίηση δεν φόρτωσε. Δοκίμασε ξανά.");
+    });
+  }
+
+  alertHit(h: AlertHit, stop: string) {
+    const late = h.delay_s != null && h.delay_s >= 60 ? ` (καθυστέρηση ${Math.round(h.delay_s / 60)}′)` : "";
+    const text = h.left === 1 ? `Το ${h.line} έρχεται: επόμενη στάση του η ${stop}${late}.` : `Το ${h.line} είναι ${h.left} στάσεις πριν από ${stop}${late}.`;
+    this.hits = [...this.hits, { id: ++this.hitId, text }].slice(-3);
+    return text;
+  }
+
+  dismissHit(id: number) {
+    this.hits = this.hits.filter(h => h.id !== id);
   }
 
   // Loads the metro data once; after a failure, the next call tries again (the layers menu calls it).

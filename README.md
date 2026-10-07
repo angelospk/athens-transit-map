@@ -28,18 +28,22 @@ The UI follows the viewer of [foivospro/athens-gtfs-realtime](https://github.com
   Pin a line in the layers menu or on a tapped station's card to draw its track. Rebuild
   `public/metro.json` with `bun scripts/metro.ts <unzipped GTFS dir>`, then `bun scripts/metro-osm.ts`:
   the feed has no shapes, so the tracks come from OpenStreetMap route relations (© OSM contributors, ODbL).
-- Trip planner (🧭 in the panel): from where to where (my location, a stop name, or an address), and the
-  map shows every line that goes there with no change, each in the right direction, with A and B pins (max 5
-  lines; the list names the rest). Stop names come from `public/trips.json` (every stop and each variant's stop
+- Trip planner (🧭 in the panel): from where to where (my location, a stop name, an area or a street), and
+  the map shows every line that goes there with no change, each in the right direction, with A and B pins
+  (max 5 lines; the list names the rest). On a phone the planner replaces the panel's content and folds to one
+  line once a trip is shown. Stop names come from `public/trips.json` (every stop and each variant's stop
   order); rebuild it with `bun scripts/trips.ts` when OASA publishes a new GTFS (the planner says when it is
-  older than the line list). Addresses and areas with no stop of that name come from OpenStreetMap's
-  [Nominatim](https://nominatim.org) (only on Enter, at most one request a second; `VITE_GEOCODE_URL` changes it).
-  The planner, its index and its geocoder load on the first 🧭 tap, not with the map.
+  older than the line list). Areas and streets come from [Photon](https://photon.komoot.io) (OpenStreetMap
+  data, asked after a pause in typing; `VITE_GEOCODE_URL` changes it). The planner, its index and the geocoder
+  load on the first 🧭 tap, not with the map.
+- Stop alert (🔔 in the planner): a card in the panel, a vibration and a system notification (where the browser
+  allows; a small `public/sw.js` shows it on phones) when a bus of the trip is 1–5 stops before the boarding
+  stop. For 2 hours, while the page is open. Rule in `src/lib/alerts.ts`.
 - Favourite lines: ☆ in the search list (or `*` on the active row); the ★ chips under the search show or
   hide each one, "Όλες" shows them all (up to 5).
 - My location (button under the zoom): a blue dot with its accuracy, the map follows it until you drag.
   Polled every 5 s in a vehicle, 10 s walking, up to 30 s standing; paused while the tab is hidden.
-- GPS age labels ("24″") are off by default; the eye button ("Κίνηση και ηλικία θέσης") turns them and motion on or off.
+- GPS age labels ("24″") are off by default; the map menu (layers button) turns them and motion on or off.
 - Vehicles labelled with the line number, coloured by delay: up to 2′, 2–5′, 5–10′, over 10′, no trip.
 - Route shapes in the line colour. Line picker with search (Greek, accent-insensitive; `a1` finds `Α1`, `40` finds `040`).
 - Vehicle details: delay, trip ("00:35 ΠΕΙΡΑΙΑΣ → ΣΥΝΤΑΓΜΑ"), next stop, GPS age. The trip's route and stops are highlighted.
@@ -74,7 +78,7 @@ bun run build      # static site in dist/
 |---|---|---|
 | `VITE_API_BASE` | `https://transit.haroldpoi.dev` | Live API (`/v1/lines/{id}`, `/v1/status`) |
 | `VITE_STATIC_BASE` | `https://angelospk.github.io/athens-transit-rt/static/v1` | Static data (`lines.json`, `lines/{id}.json`) |
-| `VITE_GEOCODE_URL` | `https://nominatim.openstreetmap.org/search` | Address search of the trip planner (Nominatim API) |
+| `VITE_GEOCODE_URL` | `https://photon.komoot.io/api/` | Area and street search of the trip planner (Photon API) |
 | `VITE_MOCK` | unset | `1` = answer every request from `src/fixtures/` (moving vehicles, 30 s cycle) |
 
 Mock code and fixtures are not included in production builds.

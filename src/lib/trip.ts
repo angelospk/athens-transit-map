@@ -9,8 +9,9 @@ export type Pt = [number, number];   // [lat, lon]
 // s: every stop [name, lat, lon]; l: line → variant → its stops, as indexes into s.
 export interface TripIndex { v: string; s: [string, number, number][]; l: Record<string, Record<string, number[]>> }
 
-// A place to start or end at: stops of one name close together, an address, or the user's location.
-export interface Place { label: string; hint?: string; pts: Pt[]; lines: string[] }
+// A place to start or end at: stops of one name close together, an area or street (geocoder), or the
+// user's location.
+export interface Place { label: string; hint?: string; pts: Pt[]; lines: string[]; kind?: "stop" | "area" | "street" | "poi" | "me" }
 
 export interface TripVariant {
   id: string;
@@ -49,7 +50,7 @@ export function places(ix: TripIndex): Place[] {
     const list = groups.get(key) ?? [];
     groups.set(key, list);
     let g = list.find(x => distM(x.seed, p) <= CLUSTER_M);
-    if (!g) list.push((g = { seed: p, place: { label: name, pts: [], lines: [] }, lines: new Set() }));
+    if (!g) list.push((g = { seed: p, place: { label: name, pts: [], lines: [], kind: "stop" }, lines: new Set() }));
     g.place.pts.push(p);
     for (const l of lines[k]) g.lines.add(l);
   }
@@ -122,21 +123,36 @@ export function toggleTripLine(app: AppState, t: TripLine) {
   if (!was && app.selected.includes(t.line)) app.setFocus(t.line, t.variants.map(v => v.id));
 }
 
-// Nominatim answers: name = first part of the address, hint = the next two (district, municipality).
-// A long street comes in pieces with the same name and area: the first one stands for all.
-export function parseNominatim(body: unknown): Place[] {
-  if (!Array.isArray(body)) return [];
+// Photon answers (GeoJSON, [lon, lat]): areas, streets and addresses, other places (poi). Left out: bus
+// stops (the index has them, with their lines) and municipal boundaries (the area of the name comes too). A long street comes in pieces with the same name and area:
+// the first one stands for all.
+export function parsePhoton(body: unknown): Place[] {
+  const features = (body as { features?: unknown } | null)?.features;
+  if (!Array.isArray(features)) return [];
   const seen = new Set<string>();
-  return body.flatMap((r): Place[] => {
-    const lat = Number(r?.lat), lon = Number(r?.lon);
-    if (typeof r?.display_name !== "string" || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return [];
-    const parts = r.display_name.split(", ");
-    const place: Place = { label: parts[0], hint: parts.slice(1, 3).join(", "), pts: [[lat, lon]], lines: [] };
-    const key = `${place.label}|${place.hint}`;
+  return features.flatMap((f): Place[] => {
+    const p = f?.properties, c = f?.geometry?.coordinates;
+    if (!p || !Array.isArray(c) || p.osm_value === "bus_stop" || p.osm_key === "boundary") return [];
+    const lon = Number(c[0]), lat = Number(c[1]);
+    const label = p.name ?? (p.street ? [p.street, p.housenumber].filter(Boolean).join(" ") : null);
+    if (typeof label !== "string" || !label || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return [];
+    const hint = [...new Set([p.district ?? p.locality, p.city].filter((x): x is string => typeof x === "string" && x !== label))].join(", ");
+    const kind = p.osm_key === "place" ? "area" : p.type === "street" || (p.housenumber && !p.name) ? "street" : "poi";
+    const key = `${label}|${hint}`;
     if (seen.has(key)) return [];
     seen.add(key);
-    return [place];
+    return [{ label, ...(hint ? { hint } : {}), pts: [[lat, lon]], lines: [], kind }];
   });
+}
+
+// One short list: areas first (what people type: "Ταύρος"), then stop places, streets, and one other
+// place. An area with a stop place of its name within 1 km is that place: the stops have the lines.
+export function suggest(own: Place[], geo: Place[], max = 7): Place[] {
+  const covered = (a: Place) => own.some(o => fold(o.label) === fold(a.label) && o.pts.some(p => distM(p, a.pts[0]) < 1000));
+  const areas = geo.filter(g => g.kind === "area" && !covered(g)).slice(0, 2);
+  const rest = [...geo.filter(g => g.kind === "street"), ...geo.filter(g => g.kind === "poi").slice(0, 1)];
+  const stops = own.slice(0, Math.max(max - areas.length - Math.min(rest.length, 2), 0));
+  return [...areas, ...stops, ...rest].slice(0, max);
 }
 
 let index: Promise<TripIndex> | null = null;
@@ -150,26 +166,20 @@ export function loadTripIndex(): Promise<TripIndex> {
   return (index = p);
 }
 
-// Addresses and areas (Ταύρος has no stop of its name), from OpenStreetMap's Nominatim. Its usage
-// policy: no search as you type, at most one request a second, results cached.
-const GEOCODE_URL = import.meta.env.VITE_GEOCODE_URL || "https://nominatim.openstreetmap.org/search";
+// Areas and streets (Ταύρος has no stop of its name), from Photon (OpenStreetMap data, made for search
+// as you type; the caller waits for a pause in typing). Answers are cached.
+const GEOCODE_URL = import.meta.env.VITE_GEOCODE_URL || "https://photon.komoot.io/api/";
 const geocoded = new Map<string, Place[]>();
-let geocodeAt = 0;
 export async function geocode(query: string, signal?: AbortSignal): Promise<Place[]> {
-  const q = query.trim();
-  const hit = geocoded.get(fold(q));
+  const q = query.trim(), key = fold(q);
+  const hit = geocoded.get(key);
   if (hit) return hit;
-  const wait = geocodeAt + 1100 - Date.now();
-  geocodeAt = Date.now() + Math.max(0, wait);
-  if (wait > 0) await new Promise(r => setTimeout(r, wait));
-  signal?.throwIfAborted();
   const u = new URL(GEOCODE_URL);
-  // Attica, only.
-  Object.entries({ q, format: "jsonv2", countrycodes: "gr", viewbox: "23.35,38.25,24.15,37.65", bounded: "1",
-    limit: "5", "accept-language": "el" }).forEach(([k, v]) => u.searchParams.set(k, v));
+  // Attica only.
+  Object.entries({ q, bbox: "23.35,37.65,24.15,38.25", limit: "8" }).forEach(([k, v]) => u.searchParams.set(k, v));
   const r = await fetch(u, { signal });
-  if (!r.ok) throw new Error(r.status === 429 ? "busy" : `HTTP ${r.status}`);
-  const found = parseNominatim(await r.json());
-  geocoded.set(fold(q), found);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const found = parsePhoton(await r.json());
+  geocoded.set(key, found);
   return found;
 }

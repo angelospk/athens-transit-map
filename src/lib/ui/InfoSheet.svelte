@@ -1,8 +1,10 @@
 <script lang="ts">
   import { MediaQuery } from "svelte/reactivity";
+  import { dayMonth } from "../format";
   import { BACKEND_REPO, GTFS_PAGE, STASY_GTFS_PAGE, TILE_CREDITS } from "../sources";
 
-  let { open = $bindable(false), motion }: { open: boolean; motion: boolean } = $props();
+  // ended: the day the OASA timetable ended, when it is past (explained at the top).
+  let { open = $bindable(false), motion, ended = null }: { open: boolean; motion: boolean; ended?: string | null } = $props();
 
   let dlg: HTMLDialogElement;
 
@@ -32,6 +34,14 @@
         <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
       </button>
     </header>
+    {#if ended}
+      <div class="old">
+        <b>Το πρόγραμμα του ΟΑΣΑ έληξε στις {dayMonth(ended)}.</b> Ο ΟΑΣΑ δεν έχει δημοσιεύσει ακόμα νέο πρόγραμμα
+        δρομολογίων (GTFS), οπότε ο χάρτης χρησιμοποιεί το τελευταίο. Οι θέσεις των οχημάτων είναι ζωντανές· οι
+        καθυστερήσεις και τα δρομολόγια βγαίνουν από το παλιό πρόγραμμα, άρα είναι κατά προσέγγιση. Μόλις βγει νέο,
+        ο χάρτης το παίρνει αυτόματα. <a href={GTFS_PAGE} target="_blank" rel="noopener">Το αρχείο στο data.gov.gr</a>
+      </div>
+    {/if}
     <p class="lede">Ο χάρτης είναι τρία επίπεδα, το ένα πάνω στο άλλο.</p>
 
     <div class="layers">
@@ -114,6 +124,8 @@
   .close { display: grid; place-items: center; width: 36px; height: 36px; margin: -6px -8px -6px 0; border: 0;
     border-radius: 8px; background: none; color: var(--muted); cursor: pointer; }
   .close:hover { background: var(--control); color: var(--fg); }
+  .old { margin: 0 0 12px; padding: 8px 10px; border-radius: 8px; background: var(--warn-bg); font-size: 13px; }
+  .old a { color: inherit; }
   .lede { margin: 0 0 8px; color: var(--muted); }
   .layers { display: grid; grid-template-columns: 300px 1fr; gap: 0 20px; align-items: stretch; }
   .layers svg { display: block; width: 100%; max-width: 300px; height: auto; }

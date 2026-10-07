@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { MediaQuery } from "svelte/reactivity";
   import { directionGroups, focusGroup, otherDirection } from "../directions";
   import { clock, duration, fmtMinutes } from "../format";
   import { STALE_S, type AppState } from "../state.svelte";
@@ -11,12 +12,15 @@
 
   // Phones start compact: the map matters more than the stats at a bus stop.
   let collapsed = $state(matchMedia("(max-width: 719px)").matches);
-  // One popover at a time: map layers, GPS age, or the trip planner (loaded on first open).
-  let pop = $state<"layers" | "ages" | "trip" | null>(null);
+  // One popover at a time: the map menu, or the trip planner (loaded on first open).
+  let pop = $state<"layers" | "trip" | null>(null);
+  // On a phone the planner replaces the panel's content, so both fit above the map.
+  const narrow = new MediaQuery("(max-width: 719px)");
+  const tripOnly = $derived(pop === "trip" && narrow.current);
   let tripButton: HTMLButtonElement | undefined = $state();
   const closeTrip = () => { pop = null; tripButton?.focus(); };
   $effect(() => { if (pop !== "trip") app.tripEnds = null; });   // its A and B leave the map with it
-  const toggle = (p: "layers" | "ages" | "trip") => {
+  const toggle = (p: "layers" | "trip") => {
     pop = pop === p ? null : p;
     if (pop !== "layers") return;
     app.loadMetro();   // again, if the first load failed
@@ -89,21 +93,14 @@
     </button>
     <button type="button" class="tool" class:on={statsOpen} aria-haspopup="dialog" aria-label="Στατιστικά δικτύου"
       title="Στατιστικά δικτύου" onclick={() => { pop = null; statsOpen = true; }}>
-      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-        <circle cx="10" cy="10" r="7.6" /><path d="M10 9v5" /><circle cx="10" cy="6.2" r=".5" fill="currentColor" />
+      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+        <path d="M3 17h14" /><path d="M5.5 14V9" /><path d="M10 14V4.5" /><path d="M14.5 14v-6" />
       </svg>
     </button>
     <button type="button" class="tool" class:on={pop === "layers"} class:filtering={app.only.fresh || app.only.onTime} aria-expanded={pop === "layers"} aria-controls="pop-layers"
-      aria-label="Επίπεδα χάρτη" title="Επίπεδα χάρτη" onclick={() => toggle("layers")}>
+      aria-label="Τι δείχνει ο χάρτης" title="Τι δείχνει ο χάρτης" onclick={() => toggle("layers")}>
       <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
         <path d="M10 3l7 3.8-7 3.8-7-3.8z" /><path d="M3 10.2l7 3.8 7-3.8" /><path d="M3 13.6l7 3.8 7-3.8" />
-      </svg>
-    </button>
-    <button type="button" class="tool" class:on={pop === "ages"} aria-expanded={pop === "ages"} aria-controls="pop-ages"
-      aria-label="Κίνηση και ηλικία θέσης" title="Κίνηση και ηλικία θέσης" onclick={() => toggle("ages")}>
-      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-        <path d="M1.8 10S5 4.5 10 4.5 18.2 10 18.2 10 15 15.5 10 15.5 1.8 10 1.8 10z" /><circle cx="10" cy="10" r="2.6" />
-        {#if !ages}<path d="M3.5 3.5l13 13" />{/if}
       </svg>
     </button>
     <button type="button" class="fold" aria-expanded={!collapsed} aria-controls="panel-body"
@@ -129,23 +126,11 @@
         <h4>Λεωφορεία</h4>
         <label class="switch">
           <input type="checkbox" checked={app.cityOn} disabled={cityMissing} onchange={e => app.setCityOn(e.currentTarget.checked)} />
-          <span>Όλα τα λεωφορεία της πόλης<br />
-            <small>{#if cityMissing}Δεν είναι ακόμα διαθέσιμο από τον διακομιστή.{:else if app.city}{app.city.vehicles.length} οχήματα τώρα. Κλειστό: μόνο οι γραμμές που διαλέγεις.{:else}Φόρτωση…{/if}</small>
-          </span>
+          <span>Όλα της πόλης <small>{#if cityMissing}(όχι ακόμα διαθέσιμο){:else if app.city}· {app.city.vehicles.length} τώρα{/if}</small><br />
+            <small>Κλειστό: μόνο οι γραμμές που διαλέγεις.</small></span>
         </label>
-        <div class="field">
-          <span>Δείξε μόνο τα λεωφορεία:</span>
-          <label class="switch">
-            <input type="checkbox" checked={app.only.fresh} onchange={e => app.setOnly({ fresh: e.currentTarget.checked })} />
-            <span>Με πρόσφατη θέση<br /><small>Κρύβει όσα δεν έστειλαν θέση για πάνω από 1½ λεπτό.</small></span>
-          </label>
-          <label class="switch">
-            <input type="checkbox" checked={app.only.onTime} onchange={e => app.setOnly({ onTime: e.currentTarget.checked })} />
-            <span>Στην ώρα τους<br /><small>Έως 5 λεπτά καθυστέρηση (πράσινα και κίτρινα).</small></span>
-          </label>
-        </div>
         <div class="field" role="radiogroup" aria-label="Τα άλλα λεωφορεία όταν πατάς ένα">
-          <span>Όταν πατάς ένα λεωφορείο, τα υπόλοιπα:</span>
+          <span>Όταν πατάς ένα, τα άλλα:</span>
           <div class="seg">
             {#each [["normal", "Κανονικά"], ["dim", "Αχνά"], ["hide", "Κρυφά"]] as const as [v, label] (v)}
               <button type="button" role="radio" aria-checked={app.others === v} onclick={() => app.setOthers(v)}>{label}</button>
@@ -154,8 +139,37 @@
         </div>
       </section>
       <section>
+        <h4>Φίλτρα <small>· κρύβουν λεωφορεία</small></h4>
+        <label class="switch">
+          <input type="checkbox" checked={app.only.fresh} onchange={e => app.setOnly({ fresh: e.currentTarget.checked })} />
+          <span>Μόνο με πρόσφατη θέση<br /><small>Έστειλαν θέση τα τελευταία 1½ λεπτά.</small></span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" checked={app.only.onTime} onchange={e => app.setOnly({ onTime: e.currentTarget.checked })} />
+          <span>Μόνο στην ώρα τους<br /><small>Έως 5 λεπτά καθυστέρηση.</small></span>
+        </label>
+      </section>
+      <section>
+        <h4>Κίνηση</h4>
+        <label class="switch">
+          <input type="checkbox" checked={app.motion} onchange={e => app.setMotion(e.currentTarget.checked)} />
+          <span>Κίνηση ανάμεσα στις θέσεις<br /><small>Κλειστό: το όχημα μένει εκεί που έστειλε θέση.</small></span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" checked={ages} disabled={!app.motion} onchange={e => app.setShowAges(e.currentTarget.checked)} />
+          <span>Ηλικία θέσης <b class="age">24″</b><br /><small>{#if app.motion}Πριν πόσο έστειλε θέση.{:else}Πάντα ανοιχτό όταν η κίνηση είναι κλειστή.{/if}</small></span>
+        </label>
+        <details class="hint">
+          <summary>Πώς κινούνται</summary>
+          Ο ΟΑΣΑ στέλνει θέσεις κάθε 20–60″. Όταν η νέα θέση είναι μακριά, το όχημα πηγαίνει γρήγορα ως εκεί και αφήνει
+          για λίγο μπλε ίχνος. Αχνό όχημα με πορτοκαλί ηλικία: δεν έστειλε θέση για πάνω από 1½ λεπτό, άρα μπορεί να είναι αλλού.
+          {#if oldest != null}<br /><span title="Ώρα δεδομένων {clock(oldest)}">Ενημέρωση γραμμών πριν {duration(Math.max(0, app.serverNow / 1000 - oldest))}.</span>{/if}
+          {#if cityAge != null && app.cityOn}<br /><span title="Ώρα δεδομένων {clock(app.city!.updated_at)}">Ενημέρωση πόλης πριν {duration(cityAge)}.</span>{/if}
+        </details>
+      </section>
+      <section>
         <h4>Μετρό, ΗΣΑΠ και τραμ</h4>
-        <p class="hint">Οι σταθμοί φαίνονται πάντα. Διάλεξε ποιες γραμμές φαίνονται, εδώ ή πατώντας έναν σταθμό. Χωρίς ζωντανά δεδομένα.</p>
+        <p class="hint">Οι σταθμοί φαίνονται πάντα. Διάλεξε ποιες γραμμές, εδώ ή σε έναν σταθμό. Χωρίς ζωντανά δεδομένα.</p>
         {#if app.metro}
           <MetroToggles {app} ids={app.metro.lines.map(l => l.id)} />
         {:else}
@@ -163,31 +177,9 @@
         {/if}
       </section>
     </div>
-  {:else if pop === "ages"}
-    <div class="pop" id="pop-ages" role="dialog" aria-labelledby="pop-ages-h" {@attach fitHeight}>
-      <h3 id="pop-ages-h">Θέση των οχημάτων</h3>
-      <label class="switch">
-        <input type="checkbox" checked={app.motion} onchange={e => app.setMotion(e.currentTarget.checked)} />
-        <span>Κίνηση ανάμεσα στις θέσεις<br /><small>Ανοιχτό: το όχημα προχωράει πάνω στη διαδρομή του με την ταχύτητα που είχε, ώσπου να έρθει νέα θέση.
-          Κλειστό: μένει εκεί που ήταν όταν έστειλε.</small></span>
-      </label>
-      <label class="switch">
-        <input type="checkbox" checked={ages} disabled={!app.motion} onchange={e => app.setShowAges(e.currentTarget.checked)} />
-        <span>Ηλικία θέσης πάνω στο όχημα<br /><small><b class="age">24″</b>= έστειλε θέση πριν 24 δευτερόλεπτα.{#if !app.motion}
-          Πάντα ανοιχτό όταν η κίνηση είναι κλειστή.{/if}</small></span>
-      </label>
-      <p class="hint">Ο ΟΑΣΑ στέλνει θέσεις κάθε 20–60″. Όταν η νέα θέση είναι μακριά, το όχημα πηγαίνει γρήγορα ως εκεί και αφήνει
-        για λίγο μπλε ίχνος. Αχνό όχημα με πορτοκαλί ηλικία: δεν έστειλε θέση για πάνω από 1½ λεπτό, άρα μπορεί να είναι αλλού.</p>
-      {#if oldest != null}
-        <p class="hint" title="Ώρα δεδομένων {clock(oldest)}">Ενημέρωση γραμμών πριν {duration(Math.max(0, app.serverNow / 1000 - oldest))}</p>
-      {/if}
-      {#if cityAge != null && app.cityOn}
-        <p class="hint" title="Ώρα δεδομένων {clock(app.city!.updated_at)}">Ενημέρωση πόλης πριν {duration(cityAge)}</p>
-      {/if}
-    </div>
   {/if}
 
-  <div id="panel-body" hidden={collapsed}>
+  <div id="panel-body" hidden={collapsed || tripOnly}>
     {#if !app.selected.length && !(app.cityOn && !cityMissing)}
       <div class="muted">Διάλεξε έως 5 γραμμές για να δεις τα οχήματα ζωντανά.</div>
     {/if}
@@ -216,6 +208,7 @@
     </div>
   </div>
 
+  <div class="picks" hidden={tripOnly}>
   <LinePicker {app} />
   {#each focused as f (f.line)}
     <div class="focus">
@@ -229,9 +222,23 @@
         onclick={() => app.setFocus(f.line, null)}>×</button>
     </div>
   {/each}
+  {#if app.alert}
+    {@const a = app.alert}
+    <div class="focus">
+      <span>🔔 {a.lines.map(l => l.line).join(", ")} · {a.n === 1 ? "στην προηγούμενη στάση" : `${a.n} στάσεις πριν`} · έως {clock(a.until).slice(0, 5)}</span>
+      <button type="button" title="Τέλος ειδοποίησης" aria-label="Σταμάτα την ειδοποίηση" onclick={() => app.setAlert(null)}>×</button>
+    </div>
+  {/if}
+  </div>
+  {#each app.hits as h (h.id)}
+    <div class="hit" role="alert">
+      <span>🚌 {h.text}</span>
+      <button type="button" aria-label="Κλείσιμο" onclick={() => app.dismissHit(h.id)}>×</button>
+    </div>
+  {/each}
   <StatusBanner {app} />
 
-  <div class="foot" hidden={collapsed}>
+  <div class="foot" hidden={collapsed || tripOnly}>
     <a href="https://github.com/angelospk/athens-transit-map" target="_blank" rel="noopener">Κώδικας</a> ·
     Δεδομένα ΟΑΣΑ
   </div>
@@ -296,6 +303,12 @@
   .focus button { width: 30px; height: 28px; border: 0; border-radius: 14px; background: none; color: inherit;
     font-size: 14px; cursor: pointer; }
   .focus button:hover { background: var(--control); }
+  .hit { display: flex; align-items: flex-start; gap: 6px; margin-top: 8px; padding: 8px 4px 8px 10px; border-radius: 10px;
+    background: var(--accent); color: #fff; font-size: 14px; font-weight: 600; }
+  .hit span { flex: 1; }
+  .hit button { width: 30px; height: 28px; border: 0; border-radius: 8px; background: none; color: inherit; font-size: 18px; cursor: pointer; }
+  .pop h4 small { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .pop details summary { cursor: pointer; margin-bottom: 4px; }
   .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 8px 0 0; font-size: 12px; }
   .legend .lead { color: var(--muted); }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }

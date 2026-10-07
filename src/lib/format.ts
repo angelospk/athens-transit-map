@@ -40,3 +40,9 @@ export const clock = (t: number) =>
 
 // "πριν 24 δευτερόλεπτα"; unixSec is server time, nowMs the client clock.
 export const ago = (unixSec: number, nowMs: number) => "πριν " + duration(Math.max(0, nowMs / 1000 - unixSec));
+
+// The day (YYYY-MM-DD) the OASA timetable ended, when it is past (Athens time; the end day counts).
+export const gtfsEnded = (expires: string | undefined, now = new Date()) =>
+  expires && expires < now.toLocaleDateString("sv-SE", { timeZone: "Europe/Athens" }) ? expires : null;
+// "2026-10-06" -> "6/10"
+export const dayMonth = (d: string) => d.slice(5).split("-").reverse().map(Number).join("/");

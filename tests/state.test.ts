@@ -273,3 +273,40 @@ describe("trip result buttons", () => {
     expect(app.focus["6"]).toBeUndefined();
   });
 });
+
+describe("AppState stop alert", () => {
+  vi.stubGlobal("fetch", () => new Promise(() => {}));
+  const spec = (...lines: string[]) => ({ n: 3, until: Date.now() / 1000 + 7200, label: "ΑΓΟΡΑ", lines: lines.map(line => ({ line, variants: [] })) });
+
+  it("watches only the alert's lines that are still picked, none once all are gone", () => {
+    const app = new AppState();
+    app.selected = ["622", "550"];
+    app.setAlert(spec("622", "550"));
+    app.toggleLine("550");
+    expect(app.alert?.lines.map(l => l.line)).toEqual(["622"]);
+    app.toggleLine("622");
+    expect(app.alert).toBeNull();
+  });
+
+  it("is gone once its time is over", () => {
+    const app = new AppState();
+    app.selected = ["622"];
+    app.setAlert({ ...spec("622"), until: Date.now() / 1000 - 1 });
+    expect(app.alert).toBeNull();
+  });
+
+  it("ends when a new trip is shown", () => {
+    const app = new AppState();
+    app.setAlert(spec("622"));
+    app.showTrip([{ id: "622", variants: ["x"] }]);
+    expect(app.alert).toBeNull();
+  });
+
+  it("keeps hits until dismissed", () => {
+    const app = new AppState();
+    app.alertHit({ line: "622", vehicle: "1", left: 2, stop: "s", delay_s: 60 }, "ΑΓΟΡΑ");
+    expect(app.hits.map(h => h.text)).toEqual(["Το 622 είναι 2 στάσεις πριν από ΑΓΟΡΑ (καθυστέρηση 1′)."]);
+    app.dismissHit(app.hits[0].id);
+    expect(app.hits).toEqual([]);
+  });
+});

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findTrips, parseNominatim, places, searchPlaces, type Pt, type TripIndex } from "../src/lib/trip";
+import { findTrips, parsePhoton, places, searchPlaces, suggest, type Place, type Pt, type TripIndex } from "../src/lib/trip";
 
 // ~111 m per 0.001° of latitude: stops on a north-south street, 0.001° apart.
 const at = (k: number): Pt => [38 + k * 0.001, 23.7];
@@ -86,21 +86,52 @@ describe("places and searchPlaces", () => {
   });
 });
 
-describe("parseNominatim", () => {
-  it("keeps results with valid coordinates, named by their first parts", () => {
-    const r = parseNominatim([
-      { display_name: "Ταύρος, Δημοτική Ενότητα Ταύρου, Δήμος Μοσχάτου-Ταύρου, Περιφερειακή Ενότητα Νοτίου Τομέα", lat: "37.97", lon: "23.69" },
-      { display_name: "Κακό", lat: "x", lon: "23" },
-      { lat: "37", lon: "23" },
+describe("parsePhoton", () => {
+  const f = (properties: object, coordinates: unknown = [23.69, 37.97]) => ({ type: "Feature", geometry: { type: "Point", coordinates }, properties });
+  it("reads areas, streets and places as [lat, lon], and skips bus stops and broken features", () => {
+    const r = parsePhoton({ features: [
+      f({ name: "Ταύρος", osm_key: "place", osm_value: "suburb", city: "Δημοτική Ενότητα Ταύρου" }),
+      f({ name: "Γαλατσίου", osm_key: "highway", osm_value: "secondary", type: "street", district: "Γαλάτσι", city: "Δήμος Γαλατσίου" }, [23.75, 38.01]),
+      f({ name: "ΓΑΛΑΤΣΙ", osm_key: "highway", osm_value: "bus_stop" }),
+      f({ name: "Δήμος Γαλατσίου", osm_key: "boundary", osm_value: "administrative" }),
+      f({ osm_key: "place" }),
+      f({ name: "Κακό", osm_key: "place" }, ["x", 1]),
+      f({ street: "Μαρασλή", housenumber: "20", osm_key: "building", type: "house", city: "Αθήνα" }, [23.74, 37.98]),
+      f({ name: "EKO", osm_key: "amenity", osm_value: "charging_station", type: "house", street: "Γαλατσίου", housenumber: "88", city: "Γαλάτσι" }, [23.74, 37.98]),
+      { nope: 1 },
+    ] });
+    expect(r).toEqual<Place[]>([
+      { label: "Ταύρος", hint: "Δημοτική Ενότητα Ταύρου", pts: [[37.97, 23.69]], lines: [], kind: "area" },
+      { label: "Γαλατσίου", hint: "Γαλάτσι, Δήμος Γαλατσίου", pts: [[38.01, 23.75]], lines: [], kind: "street" },
+      { label: "Μαρασλή 20", hint: "Αθήνα", pts: [[37.98, 23.74]], lines: [], kind: "street" },
+      { label: "EKO", hint: "Γαλάτσι", pts: [[37.98, 23.74]], lines: [], kind: "poi" },
     ]);
-    expect(r).toEqual([{ label: "Ταύρος", hint: "Δημοτική Ενότητα Ταύρου, Δήμος Μοσχάτου-Ταύρου", pts: [[37.97, 23.69]], lines: [] }]);
   });
   it("keeps one of the same name and area (pieces of one street)", () => {
-    const piece = (lat: string) => ({ display_name: "Μαρασλή, Λυκαβηττός, Κολωνάκι, Αθήνα", lat, lon: "23.74" });
-    expect(parseNominatim([piece("37.97"), piece("37.971")]).map(p => p.pts)).toEqual([[[37.97, 23.74]]]);
+    const piece = (lat: number) => f({ name: "Μαρασλή", osm_key: "highway", type: "street", city: "Αθήνα" }, [23.74, lat]);
+    expect(parsePhoton({ features: [piece(37.97), piece(37.971)] })).toHaveLength(1);
   });
-  it("gives nothing for a body that is not a list", () => {
-    expect(parseNominatim({ error: "x" })).toEqual([]);
-    expect(parseNominatim(null)).toEqual([]);
+  it("gives nothing for a body without features", () => {
+    expect(parsePhoton({ error: "x" })).toEqual([]);
+    expect(parsePhoton(null)).toEqual([]);
+  });
+});
+
+describe("suggest", () => {
+  const stop = (label: string, lat: number): Place => ({ label, pts: [[lat, 23.7]], lines: ["1"], kind: "stop" });
+  const geo = (label: string, lat: number, kind: Place["kind"]): Place => ({ label, pts: [[lat, 23.7]], lines: [], kind });
+
+  it("puts areas first, then stops, then streets, in a short list", () => {
+    const own = ["Α", "Β", "Γ", "Δ", "Ε"].map((l, k) => stop(l, 38 + k));
+    const r = suggest(own, [geo("Οδός", 37, "street"), geo("Περιοχή", 37.5, "area")], 6);
+    expect(r.map(p => p.label)).toEqual(["Περιοχή", "Α", "Β", "Γ", "Δ", "Οδός"]);
+  });
+  it("shows at most one point of interest (shops, chargers), after streets", () => {
+    const r = suggest([], [geo("Φορτιστής", 37, "poi"), geo("Κατάστημα", 37.1, "poi"), geo("Οδός", 37.2, "street")]);
+    expect(r.map(p => p.label)).toEqual(["Οδός", "Φορτιστής"]);
+  });
+  it("drops an area that a stop place of the same name already covers", () => {
+    const r = suggest([stop("ΑΜΠΕΛΟΚΗΠΟΙ", 37.987)], [geo("Αμπελόκηποι", 37.989, "area"), geo("Αμπελόκηποι", 37.5, "area")]);
+    expect(r.map(p => p.pts[0][0])).toEqual([37.5, 37.987]);   // the far one is another place
   });
 });

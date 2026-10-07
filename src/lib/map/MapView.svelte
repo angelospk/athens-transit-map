@@ -2,7 +2,7 @@
   import { Map as MlMap, Marker, NavigationControl, Popup, setWorkerUrl, type ExpressionSpecification, type GeoJSONSource } from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
   import workerUrl from "virtual:maplibre-worker";
-  import { ageLabel, isStalePos, passes } from "../format";
+  import { ageLabel, dayMonth, gtfsEnded, isStalePos, passes } from "../format";
   import { untrack } from "svelte";
   import type { LngLat } from "../glide";
   import { vehicleHeading } from "../heading";
@@ -687,10 +687,15 @@
   });
 
   let infoOpen = $state(false);
+  const ended = $derived(gtfsEnded(app.status?.gtfs_expires));
 </script>
 
 <div class="map" class:no-ages={!app.showAges && app.motion} {@attach setup}></div>
-<InfoSheet bind:open={infoOpen} motion={app.motion} />
+<InfoSheet bind:open={infoOpen} motion={app.motion} {ended} />
+{#if ended}
+  <!-- Small, next to the ⓘ: the sheet it opens explains it. -->
+  <button type="button" class="old" onclick={() => (infoOpen = true)}>⚠ Παλιό πρόγραμμα ΟΑΣΑ</button>
+{/if}
 {#if failed}
   <div class="nogl" role="alert">
     Ο χάρτης δεν μπορεί να εμφανιστεί: ο browser δεν υποστηρίζει WebGL2. Δοκίμασε άλλον browser ή ενεργοποίησε την
@@ -700,6 +705,9 @@
 
 <style>
   .map { position: absolute; inset: 0; }
+  .old { position: absolute; z-index: 2; right: 10px; bottom: calc(40px + env(safe-area-inset-bottom)); padding: 3px 9px;
+    border: 0; border-radius: 12px; background: var(--warn-bg); color: var(--fg); font-size: 11px; box-shadow: var(--shadow);
+    cursor: pointer; }
   .nogl { position: absolute; inset: auto 16px 16px; padding: 12px 14px; border-radius: 12px;
     background: var(--warn-bg); box-shadow: var(--shadow); }
 </style>

@@ -80,3 +80,14 @@ describe("passes", () => {
     expect(passes(f, "none", 0)).toBe(false);
   });
 });
+
+describe("gtfsEnded", () => {
+  it("gives the end day only once it is past in Athens", async () => {
+    const { gtfsEnded, dayMonth } = await import("../src/lib/format");
+    const at = new Date("2026-10-06T22:30:00Z");   // 01:30 on the 7th in Athens
+    expect(gtfsEnded("2026-10-06", at)).toBe("2026-10-06");
+    expect(gtfsEnded("2026-10-07", at)).toBeNull();
+    expect(gtfsEnded(undefined, at)).toBeNull();
+    expect(dayMonth("2026-10-06")).toBe("6/10");
+  });
+});
