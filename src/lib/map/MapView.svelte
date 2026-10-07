@@ -107,6 +107,20 @@
     return g.getImageData(0, 0, c.width, c.height);
   }
 
+  // A pointer for a city vehicle: the tip is up and sits outside the disc; the symbol layer turns
+  // the whole image about its centre (the vehicle) by the heading.
+  function pointerImage(): ImageData {
+    const r = 2, c = document.createElement("canvas");
+    c.width = c.height = 48 * r;
+    const g = c.getContext("2d")!;
+    g.scale(r, r);
+    g.lineJoin = "round";
+    g.beginPath(); g.moveTo(24, 2); g.lineTo(29, 11); g.lineTo(19, 11); g.closePath();
+    g.strokeStyle = "#fff"; g.lineWidth = 3; g.stroke();
+    g.fillStyle = "#222"; g.fill();
+    return g.getImageData(0, 0, c.width, c.height);
+  }
+
   // City layer: every live vehicle, drawn by the GPU (DOM markers would not cope with ~1500).
   // Dots at city zoom, discs with the line number from zoom 14. Colours from app.css.
   function addCityLayers(m: MlMap) {
@@ -126,6 +140,13 @@
         "text-size": ["case", [">", ["length", ["get", "line"]], 3], 8, 10],
         "text-allow-overlap": true, "text-ignore-placement": true },
       paint: { "text-color": "#ffffff", "text-opacity-transition": { duration: 300 } } as never });
+    // A pointer on each moving vehicle (heading `h`), from zoom 13, where the dots are big enough.
+    m.addImage("city-pointer", pointerImage(), { pixelRatio: 2 });
+    m.addLayer({ id: "city-heading", type: "symbol", source: "city", minzoom: 13, filter: ["has", "h"],
+      layout: { "icon-image": "city-pointer", "icon-rotate": ["get", "h"], "icon-rotation-alignment": "map",
+        "icon-size": ["interpolate", ["linear"], ["zoom"], 13, 0.45, 14, 0.8, 17, 1],
+        "icon-allow-overlap": true, "icon-ignore-placement": true },
+      paint: { "icon-opacity-transition": { duration: 300 } } as never });
     // Ring round the selected vehicle while it is still on the city layer.
     m.addLayer({ id: "city-selected", type: "circle", source: "city", filter: ["boolean", false],
       paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 7, 14, 14, 17, 17], "circle-opacity": 0,
@@ -337,8 +358,11 @@
       if (trail && shown && o && trail.geom.length > 1)
         trails.push({ type: "Feature", geometry: { type: "LineString", coordinates: trail.geom }, properties: { alpha: trail.alpha * o, dom } });
       if (dom) drawDom(e, pos, still).wrap.classList.toggle("filtered", !shown);
-      else features.push({ type: "Feature", geometry: { type: "Point", coordinates: pos },
-        properties: { line: e.line, id: e.id, cls: e.cls, stale: isStalePos(now - e.at) } });
+      else {
+        const h = headingOf(e, still);
+        features.push({ type: "Feature", geometry: { type: "Point", coordinates: pos },
+          properties: { line: e.line, id: e.id, cls: e.cls, stale: isStalePos(now - e.at), ...(h != null && { h }) } });
+      }
     }
     for (const [k, d] of doms) {
       const e = fleet.entries.get(k);
@@ -365,6 +389,16 @@
     nextDue = t + (fixing ? Math.min(idle, z >= 13 ? 33 : 250) : idle);
   }
 
+  // Heading: along the route while moving on it, else from the bearing or the last fixes; none
+  // for a vehicle that stands and did not move over its last two fixes.
+  function headingOf(e: FleetEntry, still: boolean): number | null {
+    const held = !still && e.mover.cap != null && e.mover.s >= e.mover.cap - 0.5;   // behind another on its line
+    const moving = !still && !held && e.mover.plan && e.mover.plan.geom.length > 1
+      && e.mover.plan.target(app.serverMs() / 1000 + 1) > e.mover.s + 0.5;
+    return moving ? e.mover.heading() : held || e.standing >= 2 ? null
+      : vehicleHeading({ lon: e.pos[0], lat: e.pos[1], bearing: e.bearing }, e.route?.route.shape, e.prev);
+  }
+
   function drawDom(e: FleetEntry, pos: LngLat, still: boolean): Dom {
     let d = doms.get(e.key);
     if (!d) d = makeDom(e, pos);
@@ -375,13 +409,7 @@
       d.el.classList.add(cls);
     }
     d.el.classList.toggle("faded", fadedKeys.has(e.key));
-    // Heading: along the route while moving on it, else from the bearing or the last fixes; none
-    // for a vehicle that stands and did not move over its last two fixes.
-    const held = !still && e.mover.cap != null && e.mover.s >= e.mover.cap - 0.5;   // behind another on its line
-    const moving = !still && !held && e.mover.plan && e.mover.plan.geom.length > 1
-      && e.mover.plan.target(app.serverMs() / 1000 + 1) > e.mover.s + 0.5;
-    setHeading(d, moving ? e.mover.heading() : held || e.standing >= 2 ? null
-      : vehicleHeading({ lon: e.pos[0], lat: e.pos[1], bearing: e.bearing }, e.route?.route.shape, e.prev));
+    setHeading(d, headingOf(e, still));
     return d;
   }
 
@@ -558,12 +586,14 @@
     m.setPaintProperty("city-dot", "circle-opacity", opacity);
     m.setPaintProperty("city-dot", "circle-stroke-opacity", opacity);
     m.setPaintProperty("city-label", "text-opacity", opacity);
+    m.setPaintProperty("city-heading", "icon-opacity", opacity);
     const filter = s && app.others === "hide" ? sel : null;
     m.setFilter("city-dot", filter);
+    m.setFilter("city-heading", filter ? ["all", ["has", "h"], filter] : ["has", "h"]);
     m.setFilter("city-label", filter);
     m.setFilter("city-selected", sel);
     const vis = app.cityOn ? "visible" : "none";
-    for (const id of ["city-dot", "city-label", "city-selected"]) m.setLayoutProperty(id, "visibility", vis);
+    for (const id of ["city-dot", "city-label", "city-heading", "city-selected"]) m.setLayoutProperty(id, "visibility", vis);
   });
 
   $effect(() => {
