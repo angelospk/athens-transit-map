@@ -33,6 +33,7 @@
   let sheet = $state<SheetState>("open");
   let drag = $state(0);   // px the finger has moved it from its place
   let dragging = $state(false);
+  let grab: { id: number; y: number; from: SheetState; range: number; moved: boolean } | null = null;
   let card: HTMLElement | undefined = $state();
   let cardH = $state(0), topH = $state(0);
   // How far it travels to peek: all but its padding (the bottom one holds the safe area) and its top.
@@ -49,9 +50,12 @@
     const s = app.selection;
     return s ? `${s.kind}/${s.line}/${s.kind === "vehicle" ? s.id : s.variant}` : "";
   });
-  $effect(() => { void selKey; untrack(() => { sheet = "open"; drag = 0; }); });
+  $effect(() => {
+    void selKey;
+    // A finger still down on the old sheet must not move, or settle, the new one.
+    untrack(() => { sheet = "open"; drag = 0; dragging = false; grab = null; });
+  });
 
-  let grab: { id: number; y: number; from: SheetState; range: number; moved: boolean } | null = null;
   function down(e: PointerEvent) {
     if (!narrow.current || e.button !== 0 || grab || (e.target as Element).closest(".close")) return;
     grab = { id: e.pointerId, y: e.clientY, from: sheet, range: measure(), moved: false };

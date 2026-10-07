@@ -143,16 +143,16 @@ describe("termini", () => {
     L: { loop: [0, 1, 0] },
     Z: { gone: [] },
   }, names);
-  const trip = (line: string, ids: string[]) => ({ line, walk: 0, stops: 1, variants: ids.map(id => ({ id, i: 0, j: 1, from: 0, to: 1, walk: 0, stops: 1 })) });
 
   it("is where each direction ends, once", () => {
-    expect(termini(ix, trip("A", ["up", "up2", "other"]))).toEqual(["ΤΕΡΜΑ", "ΑΛΛΟ"]);
+    expect(termini(ix, "A", ["up", "up2", "other"])).toEqual(["ΤΕΡΜΑ", "ΑΛΛΟ"]);
   });
   it("is the first stop again for a loop", () => {
-    expect(termini(ix, trip("L", ["loop"]))).toEqual(["ΑΡΧΗ"]);
+    expect(termini(ix, "L", ["loop"])).toEqual(["ΑΡΧΗ"]);
   });
-  it("leaves out a variant the index does not know", () => {
-    expect(termini(ix, trip("A", ["nope", "up"]))).toEqual(["ΤΕΡΜΑ"]);
-    expect(termini(ix, trip("Z", ["gone"]))).toEqual([]);
+  it("leaves out a variant or line the index does not know", () => {
+    expect(termini(ix, "A", ["nope", "up"])).toEqual(["ΤΕΡΜΑ"]);
+    expect(termini(ix, "Z", ["gone"])).toEqual([]);
+    expect(termini(ix, "Q", ["up"])).toEqual([]);
   });
 });

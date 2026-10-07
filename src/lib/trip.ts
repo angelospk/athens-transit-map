@@ -116,11 +116,11 @@ export function findTrips(ix: TripIndex, from: Pt[], to: Pt[], radius = WALK_M, 
   return out.sort((a, b) => a.walk - b.walk || a.stops - b.stops || byLine(a.line, b.line));
 }
 
-// Where the variants of a result end (the stop names), once each: the way the line goes.
-export function termini(ix: TripIndex, t: TripLine): string[] {
+// Where the given variants of a line end (the stop names), once each: the way the line goes.
+export function termini(ix: TripIndex, line: string, variantIds: string[]): string[] {
   const out: string[] = [];
-  for (const v of t.variants) {
-    const k = ix.l[t.line]?.[v.id]?.at(-1);
+  for (const id of variantIds) {
+    const k = ix.l[line]?.[id]?.at(-1);
     const name = k == null ? undefined : ix.s[k]?.[0];
     if (name && !out.includes(name)) out.push(name);
   }

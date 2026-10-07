@@ -201,7 +201,9 @@
   const metres = (m: number) => (m < 50 ? "δίπλα" : `≈ ${Math.round(m / 50) * 50} μ.`);
   const icon = (p: Place) => ({ area: "◎", stop: "🚏", me: "📍", street: "⌖", poi: "•" })[p.kind ?? "street"];
   const shown = $derived(trips ? Math.min(trips.length, MAX_LINES) : 0);
-  const going = (t: TripLine) => (data ? termini(data.ix, t).join(" · ") : "");
+  // Where a result goes: the variants that make the trip. The summary follows the direction shown on the map.
+  const going = (t: TripLine) => (data ? termini(data.ix, t.line, t.variants.map(v => v.id)).join(" · ") : "");
+  const goingNow = (t: TripLine) => (data ? termini(data.ix, t.line, app.focus[t.line] ?? t.variants.map(v => v.id)).join(" · ") : "");
   // The lines of the trip that are on the map, for the folded summary: which, and where each goes.
   const onMap = $derived((trips ?? []).filter(t => app.selected.includes(t.line)));
 
@@ -238,6 +240,7 @@
 <div class="trip" role="dialog" tabindex="-1" aria-labelledby="trip-h" {@attach focusIn}
   onkeydown={e => { if (e.key === "Escape" && !openField) { e.stopPropagation(); close(); } }}>
   {#if folded && from && to && trips}
+    <span id="trip-h" class="sr">Διαδρομή χωρίς αλλαγή</span>
     <div class="row">
       <button type="button" class="summary" aria-expanded="false" onclick={() => (folded = false)}>
         <b>{from.label} → {to.label}</b>
@@ -246,7 +249,7 @@
           <span class="lines">
             {#each onMap as t (t.line)}
               {@const info = app.lineInfo.get(t.line)}
-              <span class="ln" style:--c={info?.color ?? "#3b5bdb"}><b>{t.line}</b>{#if going(t)}<i>→ {going(t)}</i>{/if}</span>
+              <span class="ln" style:--c={info?.color ?? "#3b5bdb"}><b>{t.line}</b>{#if goingNow(t)}<i>→ {goingNow(t)}</i>{/if}</span>
             {/each}
           </span>
         {/if}
@@ -365,6 +368,7 @@
     background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
     backdrop-filter: blur(8px); box-sizing: border-box; max-height: calc(100dvh - 120px - env(safe-area-inset-top));
     overflow-y: auto; overscroll-behavior: contain; }
+  .sr { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .row { display: flex; align-items: center; gap: 4px; }
   h3 { flex: 1; margin: 0; font-size: 14px; }
   .icon { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border: 0; border-radius: 8px; background: none;
