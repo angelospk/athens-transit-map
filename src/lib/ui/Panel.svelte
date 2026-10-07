@@ -3,6 +3,7 @@
   import { clock, duration, fmtMinutes } from "../format";
   import { STALE_S, type AppState } from "../state.svelte";
   import LinePicker from "./LinePicker.svelte";
+  import StatsSheet from "./StatsSheet.svelte";
   import StatusBanner from "./StatusBanner.svelte";
 
   let { app }: { app: AppState } = $props();
@@ -12,6 +13,7 @@
   // One popover at a time: map layers, or GPS age.
   let pop = $state<"layers" | "ages" | null>(null);
   const toggle = (p: "layers" | "ages") => (pop = pop === p ? null : p);
+  let statsOpen = $state(false);
 
   const cityAge = $derived(app.city ? Math.max(0, app.serverNow / 1000 - app.city.updated_at) : null);
   const cityMissing = $derived(app.cityState === "unknown");
@@ -54,6 +56,12 @@
         <i></i><span>{badge.text}</span>
       </span>
     {/if}
+    <button type="button" class="tool" class:on={statsOpen} aria-haspopup="dialog" aria-label="Στατιστικά δικτύου"
+      title="Στατιστικά δικτύου" onclick={() => { pop = null; statsOpen = true; }}>
+      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+        <circle cx="10" cy="10" r="7.6" /><path d="M10 9v5" /><circle cx="10" cy="6.2" r=".5" fill="currentColor" />
+      </svg>
+    </button>
     <button type="button" class="tool" class:on={pop === "layers"} class:filtering={app.only.fresh || app.only.onTime} aria-expanded={pop === "layers"} aria-controls="pop-layers"
       aria-label="Επίπεδα χάρτη" title="Επίπεδα χάρτη" onclick={() => toggle("layers")}>
       <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
@@ -187,6 +195,7 @@
     Δεδομένα ΟΑΣΑ
   </div>
 </section>
+<StatsSheet bind:open={statsOpen} />
 
 <style>
   .panel { position: absolute; z-index: 5; top: calc(12px + env(safe-area-inset-top)); left: 12px; width: 344px;
