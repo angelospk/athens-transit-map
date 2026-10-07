@@ -186,29 +186,32 @@
         "line-width": 8, "line-opacity": ["*", 0.55, ["get", "alpha"]] } }, before);
     trail("trails-city", false, "city-dot");
     m.addImage("route-arrow", arrowImage(), { pixelRatio: 2 });
+    // The detailed lines' routes go under the city vehicles: a city vehicle just selected is still drawn
+    // by the city layer while its line loads, and the highlighted route must not cover it.
+    const under = "city-dot";
     m.addSource("routes", { type: "geojson", data: EMPTY });
     m.addSource("highlight", { type: "geojson", data: EMPTY });
     m.addSource("stops", { type: "geojson", data: EMPTY });
     m.addLayer({ id: "routes", type: "line", source: "routes",
       layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": ["get", "color"], "line-width": 4, "line-opacity": 0.6, "line-offset": LANE_PX } });
+      paint: { "line-color": ["get", "color"], "line-width": 4, "line-opacity": 0.6, "line-offset": LANE_PX } }, under);
     m.addLayer({ id: "route-arrows", type: "symbol", source: "routes",
       layout: { "symbol-placement": "line", "symbol-spacing": 120, "icon-image": "route-arrow",
         "icon-rotation-alignment": "map", "icon-keep-upright": false, "icon-offset": [0, LANE_PX],
-        "icon-allow-overlap": false, "icon-ignore-placement": true } });
+        "icon-allow-overlap": false, "icon-ignore-placement": true } }, under);
     // Invisible, wide copy so thin lines are easy to hit with a finger.
-    m.addLayer({ id: "routes-hit", type: "line", source: "routes", paint: { "line-width": 18, "line-opacity": 0 } });
+    m.addLayer({ id: "routes-hit", type: "line", source: "routes", paint: { "line-width": 18, "line-opacity": 0 } }, under);
     m.addLayer({ id: "highlight-casing", type: "line", source: "highlight",
       layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": "#ffffff", "line-width": 10, "line-opacity": 0.9, "line-offset": LANE_PX } });
+      paint: { "line-color": "#ffffff", "line-width": 10, "line-opacity": 0.9, "line-offset": LANE_PX } }, under);
     m.addLayer({ id: "highlight", type: "line", source: "highlight",
       layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": ["get", "color"], "line-width": 6, "line-offset": LANE_PX } });
+      paint: { "line-color": ["get", "color"], "line-width": 6, "line-offset": LANE_PX } }, under);
     m.addLayer({ id: "highlight-arrows", type: "symbol", source: "highlight",
       layout: { "symbol-placement": "line", "symbol-spacing": 80, "icon-image": "route-arrow",
         "icon-rotation-alignment": "map", "icon-keep-upright": false, "icon-offset": [0, LANE_PX],
-        "icon-allow-overlap": true, "icon-ignore-placement": true } });
-    trail("trails-line", true);
+        "icon-allow-overlap": true, "icon-ignore-placement": true } }, under);
+    trail("trails-line", true, under);
     m.addLayer({ id: "stops", type: "circle", source: "stops",
       paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 3, 16, 6], "circle-color": "#ffffff",
         "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2 } });
