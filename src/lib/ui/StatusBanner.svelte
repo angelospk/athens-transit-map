@@ -1,11 +1,11 @@
 <script lang="ts">
+  import { GTFS_PAGE } from "../sources";
   import { STALE_S, type AppState } from "../state.svelte";
 
   let { app }: { app: AppState } = $props();
 
   // YYYY-MM-DD in Athens; GTFS end dates are inclusive.
   const today = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Athens" });
-  const GTFS_PAGE = "https://data.gov.gr/dataset/fb049bb1-aea6-4443-95fa-8b941dd6a057";
   // "2026-10-06" -> "6/10"
   const dayMonth = (d: string) => d.slice(5).split("-").reverse().map(Number).join("/");
 

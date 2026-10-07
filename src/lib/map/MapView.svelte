@@ -12,6 +12,7 @@
   import { shapeLength, stopOffsets } from "../predict";
   import type { Variant } from "../types";
   import type { AppState } from "../state.svelte";
+  import InfoSheet from "../ui/InfoSheet.svelte";
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
 
@@ -470,6 +471,15 @@
     m.touchZoomRotate.disableRotation();
     m.addControl(new NavigationControl({ showCompass: false }), "top-right");
     m.addControl({ onAdd: () => locateCtl, onRemove: () => locateCtl.remove() }, "top-right");
+    // The credits stay on the map as before; the ⓘ opens the info sheet (it lists them too) instead of toggling them.
+    // Capture + stopImmediatePropagation: MapLibre's own click handler must not run (it would collapse them).
+    const credit = node.querySelector<HTMLElement>(".maplibregl-ctrl-attrib-button");
+    if (credit) {
+      credit.title = "Πηγές δεδομένων";
+      credit.setAttribute("aria-label", "Πηγές δεδομένων");
+      credit.setAttribute("aria-haspopup", "dialog");
+      credit.addEventListener("click", e => { e.preventDefault(); e.stopImmediatePropagation(); infoOpen = true; }, true);
+    }
     m.on("dragstart", () => (follow = false));   // only user gestures fire it
 
     const popup = new Popup({ closeButton: false, offset: 10, maxWidth: "240px" });
@@ -664,9 +674,12 @@
     locateBtn.setAttribute("aria-label", label);
     locateBtn.setAttribute("aria-pressed", String(s !== "off" && s !== "denied"));
   });
+
+  let infoOpen = $state(false);
 </script>
 
 <div class="map" class:no-ages={!app.showAges && app.motion} {@attach setup}></div>
+<InfoSheet bind:open={infoOpen} motion={app.motion} />
 {#if failed}
   <div class="nogl" role="alert">
     Ο χάρτης δεν μπορεί να εμφανιστεί: ο browser δεν υποστηρίζει WebGL2. Δοκίμασε άλλον browser ή ενεργοποίησε την
