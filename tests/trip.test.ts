@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findTrips, parsePhoton, places, searchPlaces, suggest, type Place, type Pt, type TripIndex } from "../src/lib/trip";
+import { findTrips, parsePhoton, places, searchPlaces, suggest, termini, type Place, type Pt, type TripIndex } from "../src/lib/trip";
 
 // ~111 m per 0.001° of latitude: stops on a north-south street, 0.001° apart.
 const at = (k: number): Pt => [38 + k * 0.001, 23.7];
@@ -133,5 +133,26 @@ describe("suggest", () => {
   it("drops an area that a stop place of the same name already covers", () => {
     const r = suggest([stop("ΑΜΠΕΛΟΚΗΠΟΙ", 37.987)], [geo("Αμπελόκηποι", 37.989, "area"), geo("Αμπελόκηποι", 37.5, "area")]);
     expect(r.map(p => p.pts[0][0])).toEqual([37.5, 37.987]);   // the far one is another place
+  });
+});
+
+describe("termini", () => {
+  const names = ["ΑΡΧΗ", "ΜΕΣΗ", "ΤΕΡΜΑ", "ΑΛΛΟ", "ΑΛΛΟΥ"];
+  const ix = index({
+    A: { up: [0, 1, 2], up2: [0, 1, 2], other: [0, 1, 3] },   // two variants end at ΤΕΡΜΑ
+    L: { loop: [0, 1, 0] },
+    Z: { gone: [] },
+  }, names);
+  const trip = (line: string, ids: string[]) => ({ line, walk: 0, stops: 1, variants: ids.map(id => ({ id, i: 0, j: 1, from: 0, to: 1, walk: 0, stops: 1 })) });
+
+  it("is where each direction ends, once", () => {
+    expect(termini(ix, trip("A", ["up", "up2", "other"]))).toEqual(["ΤΕΡΜΑ", "ΑΛΛΟ"]);
+  });
+  it("is the first stop again for a loop", () => {
+    expect(termini(ix, trip("L", ["loop"]))).toEqual(["ΑΡΧΗ"]);
+  });
+  it("leaves out a variant the index does not know", () => {
+    expect(termini(ix, trip("A", ["nope", "up"]))).toEqual(["ΤΕΡΜΑ"]);
+    expect(termini(ix, trip("Z", ["gone"]))).toEqual([]);
   });
 });

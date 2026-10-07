@@ -7,12 +7,12 @@
 </script>
 
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import { fetchLines } from "../api";
   import { MAX_LINES } from "../selection";
   import { encodeAlert } from "../tglink";
   import type { AppState } from "../state.svelte";
-  import { centre, distM, findTrips, geocode, loadTripIndex, places, searchPlaces, suggest, toggleTripLine, type TripIndex } from "../trip";
+  import { centre, distM, findTrips, geocode, loadTripIndex, places, searchPlaces, suggest, termini, toggleTripLine, type TripIndex, type TripLine } from "../trip";
 
   let { app, onclose }: { app: AppState; onclose: () => void } = $props();
 
@@ -201,6 +201,16 @@
   const metres = (m: number) => (m < 50 ? "δίπλα" : `≈ ${Math.round(m / 50) * 50} μ.`);
   const icon = (p: Place) => ({ area: "◎", stop: "🚏", me: "📍", street: "⌖", poi: "•" })[p.kind ?? "street"];
   const shown = $derived(trips ? Math.min(trips.length, MAX_LINES) : 0);
+  const going = (t: TripLine) => (data ? termini(data.ix, t).join(" · ") : "");
+  // The lines of the trip that are on the map, for the folded summary: which, and where each goes.
+  const onMap = $derived((trips ?? []).filter(t => app.selected.includes(t.line)));
+
+  // New results, or the planner opened again: bring the list into view (not while a suggestion list is open).
+  let resultsEl: HTMLElement | undefined = $state();
+  $effect(() => {
+    if (!trips?.length || folded || openField) return;
+    void tick().then(() => resultsEl?.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }));
+  });
 
   function onkeydown(f: Field, e: KeyboardEvent) {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -232,6 +242,14 @@
       <button type="button" class="summary" aria-expanded="false" onclick={() => (folded = false)}>
         <b>{from.label} → {to.label}</b>
         <small>{trips.length} {trips.length === 1 ? "γραμμή" : "γραμμές"}{#if trips.length > MAX_LINES} · {MAX_LINES} στον χάρτη{/if}{#if app.alert} · 🔔{/if}</small>
+        {#if onMap.length}
+          <span class="lines">
+            {#each onMap as t (t.line)}
+              {@const info = app.lineInfo.get(t.line)}
+              <span class="ln" style:--c={info?.color ?? "#3b5bdb"}><b>{t.line}</b>{#if going(t)}<i>→ {going(t)}</i>{/if}</span>
+            {/each}
+          </span>
+        {/if}
       </button>
       <button type="button" class="icon" aria-label="Κλείσιμο διαδρομής" title="Κλείσιμο" onclick={close}>×</button>
     </div>
@@ -292,7 +310,7 @@
     {:else if trips && !trips.length}
       <p class="note">Καμία γραμμή δεν πάει χωρίς αλλαγή. Δοκίμασε περισσότερο περπάτημα ή κοντινή περιοχή.</p>
     {:else if trips}
-      <ol class="results">
+      <ol class="results" bind:this={resultsEl}>
         {#each trips as t, k (t.line)}
           {@const info = app.lineInfo.get(t.line)}
           {@const v = t.variants[0]}
@@ -301,7 +319,7 @@
               aria-pressed={app.selected.includes(t.line)} title={info?.name}
               onclick={() => toggleTripLine(app, t)}>{t.line}</button>
             <span>{stop(v.from)} → {stop(v.to)}<br />
-              <small>{t.stops} {t.stops === 1 ? "στάση" : "στάσεις"} · περπάτημα {metres(t.walk)}{#if k >= MAX_LINES} · εκτός χάρτη (έως {MAX_LINES}){/if}</small></span>
+              <small>{#if going(t)}προς {going(t)} · {/if}{t.stops} {t.stops === 1 ? "στάση" : "στάσεις"} · περπάτημα {metres(t.walk)}{#if k >= MAX_LINES} · εκτός χάρτη (έως {MAX_LINES}){/if}</small></span>
           </li>
         {/each}
       </ol>
@@ -357,6 +375,10 @@
   .summary b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
   .summary small { color: var(--muted); }
   .summary:hover { background: var(--control); }
+  .lines { display: flex; flex-wrap: wrap; gap: 4px; max-width: 100%; margin-top: 4px; }
+  .ln { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 0 8px; border: 2px solid var(--c);
+    border-radius: 12px; font-size: 12px; line-height: 20px; }
+  .ln i { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: normal; color: var(--muted); }
   .ends { position: relative; display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding-right: 38px; }
   .field { display: flex; align-items: center; gap: 6px; }
   .dot { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: #222; color: #fff;
