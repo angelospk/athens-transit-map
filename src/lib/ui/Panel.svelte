@@ -89,7 +89,7 @@
 <svelte:window onclick={e => { if (pop && pop !== "trip" && !(e.target as Element).closest?.(".pop, .tool")) pop = null; }}
   onkeydowncapture={e => { if (e.key === "Escape" && pop && pop !== "trip") { pop = null; e.stopPropagation(); } }} />
 
-<section class="panel" aria-label="Πίνακας ελέγχου" bind:clientWidth={boxW} bind:clientHeight={boxH}>
+<section class="panel" class:raised={pop === "layers"} aria-label="Πίνακας ελέγχου" bind:clientWidth={boxW} bind:clientHeight={boxH}>
   <!-- Decorative: on the border. Fills clockwise over the refresh cycle; amber and full when nothing has come for a while. -->
   <svg class="ring" width={boxW + 2} height={boxH + 2} aria-hidden="true">
     {#if stale}
@@ -266,6 +266,7 @@
   .panel { position: absolute; z-index: 5; top: calc(12px + env(safe-area-inset-top)); left: 12px; width: 344px;
     max-width: calc(100% - 64px); padding: 12px 14px; background: var(--panel); border: 1px solid var(--border);
     border-radius: 14px; box-shadow: var(--shadow); backdrop-filter: blur(8px); }
+  .panel.raised { z-index: 8; }   /* the map menu over the info card */
   .ring { position: absolute; top: -1px; left: -1px; pointer-events: none; overflow: visible; }
   .ring rect { fill: none; stroke-width: 2; }
   .ring .fill { stroke: var(--accent); stroke-dasharray: 100; stroke-dashoffset: 100;
@@ -286,8 +287,8 @@
   .tool.filtering::after { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px;
     border-radius: 50%; background: var(--accent); }
   .pop { position: absolute; z-index: 7; top: calc(100% + 6px); left: 0; right: 0; padding: 12px 14px; font-size: 13px;
-    background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
-    backdrop-filter: blur(8px); box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; }
+    background: var(--bg); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
+    box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; }
   .pop.over { top: 0; }
   .pop p { margin: 0 0 8px; }
   .pop h3 { margin: 0 0 8px; font-size: 14px; }
