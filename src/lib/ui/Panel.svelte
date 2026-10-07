@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { directionGroups, otherDirection } from "../directions";
+  import { directionGroups, focusGroup, otherDirection } from "../directions";
   import { clock, duration, fmtMinutes } from "../format";
   import { STALE_S, type AppState } from "../state.svelte";
   import LinePicker from "./LinePicker.svelte";
@@ -11,9 +11,12 @@
 
   // Phones start compact: the map matters more than the stats at a bus stop.
   let collapsed = $state(matchMedia("(max-width: 719px)").matches);
-  // One popover at a time: map layers, or GPS age.
-  let pop = $state<"layers" | "ages" | null>(null);
-  const toggle = (p: "layers" | "ages") => {
+  // One popover at a time: map layers, GPS age, or the trip planner (loaded on first open).
+  let pop = $state<"layers" | "ages" | "trip" | null>(null);
+  let tripButton: HTMLButtonElement | undefined = $state();
+  const closeTrip = () => { pop = null; tripButton?.focus(); };
+  $effect(() => { if (pop !== "trip") app.tripEnds = null; });   // its A and B leave the map with it
+  const toggle = (p: "layers" | "ages" | "trip") => {
     pop = pop === p ? null : p;
     if (pop !== "layers") return;
     app.loadMetro();   // again, if the first load failed
@@ -42,7 +45,7 @@
   // "040: μόνο → ΣΥΝΤΑΓΜΑ" for every line shown in one direction.
   const focused = $derived(Object.entries(app.focus).map(([line, variants]) => {
     const groups = app.statics[line] ? directionGroups(app.statics[line]) : [];
-    const g = groups.find(x => x.variants.join() === variants.join());
+    const g = focusGroup(groups, variants);
     return { line, to: g?.to ?? "μία κατεύθυνση", other: otherDirection(groups, variants) };
   }));
 
@@ -66,8 +69,9 @@
 </script>
 
 <!-- Escape closes an open popover first (capture: before the info card's handler). -->
-<svelte:window onclick={e => { if (pop && !(e.target as Element).closest?.(".pop, .tool")) pop = null; }}
-  onkeydowncapture={e => { if (e.key === "Escape" && pop) { pop = null; e.stopPropagation(); } }} />
+<!-- The trip planner stays open while the map is used; it closes itself (×, Escape). -->
+<svelte:window onclick={e => { if (pop && pop !== "trip" && !(e.target as Element).closest?.(".pop, .tool")) pop = null; }}
+  onkeydowncapture={e => { if (e.key === "Escape" && pop && pop !== "trip") { pop = null; e.stopPropagation(); } }} />
 
 <section class="panel" aria-label="Πίνακας ελέγχου">
   <div class="head">
@@ -77,6 +81,12 @@
         <i></i><span>{badge.text}</span>
       </span>
     {/if}
+    <button type="button" class="tool" class:on={pop === "trip"} aria-expanded={pop === "trip"} bind:this={tripButton}
+      aria-label="Διαδρομή: ποιες γραμμές με πάνε" title="Διαδρομή: ποιες γραμμές με πάνε" onclick={() => toggle("trip")}>
+      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+        <circle cx="10" cy="10" r="7.6" /><path d="M12.8 7.2l-1.6 4-4 1.6 1.6-4z" />
+      </svg>
+    </button>
     <button type="button" class="tool" class:on={statsOpen} aria-haspopup="dialog" aria-label="Στατιστικά δικτύου"
       title="Στατιστικά δικτύου" onclick={() => { pop = null; statsOpen = true; }}>
       <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
@@ -104,7 +114,15 @@
     </button>
   </div>
 
-  {#if pop === "layers"}
+  {#if pop === "trip"}
+    {#await import("./TripPlanner.svelte")}
+      <div class="pop"><p class="hint">Φόρτωση…</p></div>
+    {:then m}
+      <m.default {app} onclose={closeTrip} />
+    {:catch}
+      <div class="pop"><p class="hint">Δεν φόρτωσε. Έλεγξε τη σύνδεση και πάτα ξανά την πυξίδα.</p></div>
+    {/await}
+  {:else if pop === "layers"}
     <div class="pop" id="pop-layers" role="dialog" aria-labelledby="pop-layers-h" {@attach fitHeight}>
       <h3 id="pop-layers-h">Τι δείχνει ο χάρτης</h3>
       <section>

@@ -31,8 +31,12 @@ export const isHidden = (variant: string | null, focus: Set<string> | undefined,
 export const groupOf = (groups: DirectionGroup[], variant: string | null | undefined) =>
   variant ? groups.find(g => g.variants.includes(variant)) : undefined;
 
+// The direction group holding every focused variant: the whole group, or a trip's part of it.
+export const focusGroup = (groups: DirectionGroup[], focus: string[]) =>
+  focus.length ? groups.find(g => focus.every(v => g.variants.includes(v))) : undefined;
+
 export function otherDirection(groups: DirectionGroup[], focus: string[] | undefined): DirectionGroup | null {
   if (groups.length !== 2 || !focus) return null;
-  const i = groups.findIndex(g => g.variants.join() === focus.join());
-  return i < 0 ? null : groups[1 - i];
+  const g = focusGroup(groups, focus);
+  return g ? groups[1 - groups.indexOf(g)] : null;
 }

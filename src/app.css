@@ -57,6 +57,14 @@ button, input { font: inherit; color: inherit; }
 @keyframes me-pulse { 0% { scale: .6; opacity: .9; } 100% { scale: 1.6; opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .me::before { animation: none; } }
 
+/* Trip planner: start (A) and end (B). The pin turns inside the marker: MapLibre positions the
+   marker with `transform`, which a `rotate` on the same element would turn too. */
+.trip-end { padding-bottom: 4px; pointer-events: none; }
+.trip-end i { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50% 50% 50% 0; rotate: -45deg;
+  background: #222; color: #fff; font: normal 700 13px system-ui, sans-serif; border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
+.trip-end b { rotate: 45deg; }
+
 .maplibregl-ctrl-group button.locate { display: grid; place-items: center; color: #333; }
 .locate .core { fill: none; }
 .locate[data-state="searching"] { animation: locating 1s ease-in-out infinite alternate; }

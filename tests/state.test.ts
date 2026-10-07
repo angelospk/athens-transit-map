@@ -193,3 +193,83 @@ describe("AppState metro lines and favourites", () => {
     vi.stubGlobal("fetch", () => new Promise(() => {}));
   });
 });
+
+describe("AppState trip", () => {
+  vi.stubGlobal("fetch", () => new Promise(() => {}));
+  const trip = (...ids: string[]) => ids.map(id => ({ id, variants: [`${id}-v`] }));
+
+  it("replaces the picks with the trip's lines, each focused on its serving variants", () => {
+    const app = new AppState();
+    app.selected = ["040", "550"];
+    app.setFocus("550", ["x"]);
+    app.selectRoute("040", "5512");
+    app.selectCityVehicle("Α1", "5");
+    app.metroStation = "ΟΜΟΝΟΙΑ";
+    const left = app.showTrip(trip("550", "Β2"));
+    expect(left).toEqual([]);
+    expect(app.selected).toEqual(["550", "Β2"]);
+    expect(app.focus).toEqual({ "550": ["550-v"], "Β2": ["Β2-v"] });
+    expect(app.tempLine).toBeNull();
+    expect(app.selection).toBeNull();
+    expect(app.metroStation).toBeNull();
+  });
+
+  it("keeps the first 5 lines and returns the rest", () => {
+    const app = new AppState();
+    expect(app.showTrip(trip("1", "2", "3", "4", "5", "6", "7"))).toEqual(["6", "7"]);
+    expect(app.selected).toEqual(["1", "2", "3", "4", "5"]);
+    expect(app.notice).toMatch(/6, 7/);
+  });
+
+  it("keeps a temporary line that the trip uses, now as a pick", () => {
+    const app = new AppState();
+    app.selectCityVehicle("Α1", "5");
+    app.showTrip(trip("Α1"));
+    expect(app.selected).toEqual(["Α1"]);
+    expect(app.tempLine).toBeNull();
+  });
+
+  it("changes nothing for a trip with no lines", () => {
+    const app = new AppState();
+    app.selected = ["040"];
+    app.showTrip([]);
+    expect(app.selected).toEqual(["040"]);
+  });
+
+  it("frames only the latest trip's lines", async () => {
+    vi.stubGlobal("fetch", () => Promise.reject(new Error("offline")));
+    const app = new AppState();
+    const fits: string[][] = [];
+    app.fit = ids => fits.push(ids);
+    app.showTrip(trip("T1"));
+    app.showTrip(trip("T2"));
+    await new Promise(r => setTimeout(r, 0));
+    expect(fits).toEqual([["T2"]]);
+    vi.stubGlobal("fetch", () => new Promise(() => {}));
+  });
+});
+
+describe("trip result buttons", () => {
+  vi.stubGlobal("fetch", () => new Promise(() => {}));
+  const t = (line: string) => ({ line, walk: 0, stops: 1, variants: [{ id: `${line}-v`, i: 0, j: 1, from: 0, to: 1, walk: 0, stops: 1 }] });
+
+  it("shows a line again in the trip's direction, and hides it", async () => {
+    const { toggleTripLine } = await import("../src/lib/trip");
+    const app = new AppState();
+    app.showTrip([{ id: "R1", variants: ["R1-v"] }]);
+    toggleTripLine(app, t("R1"));
+    expect(app.selected).toEqual([]);
+    toggleTripLine(app, t("R1"));
+    expect(app.selected).toEqual(["R1"]);
+    expect(app.focus).toEqual({ R1: ["R1-v"] });
+  });
+
+  it("leaves the picks and focus alone when the line limit is reached", async () => {
+    const { toggleTripLine } = await import("../src/lib/trip");
+    const app = new AppState();
+    app.showTrip(["1", "2", "3", "4", "5"].map(id => ({ id, variants: [] })));
+    toggleTripLine(app, t("6"));
+    expect(app.selected).toHaveLength(5);
+    expect(app.focus["6"]).toBeUndefined();
+  });
+});

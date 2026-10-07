@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { directionGroups, groupOf, isHidden, otherDirection } from "../src/lib/directions";
+import { directionGroups, focusGroup, groupOf, isHidden, otherDirection } from "../src/lib/directions";
 import s040 from "../src/fixtures/lines-040.json";
 import type { LineStatic } from "../src/lib/types";
 
@@ -51,5 +51,11 @@ describe("groupOf and otherDirection", () => {
     expect(otherDirection(g, undefined)).toBeNull();
     expect(otherDirection(g, ["9"])).toBeNull();
     expect(otherDirection([...g, { to: "C", variants: ["4"] }], ["3"])).toBeNull();
+  });
+  it("names the direction of a part of a group, in any order (a trip's variants)", () => {
+    expect(focusGroup(g, ["2"])?.to).toBe("A");
+    expect(focusGroup(g, ["2", "1"])?.to).toBe("A");
+    expect(focusGroup(g, ["1", "3"])).toBeUndefined();   // both directions
+    expect(otherDirection(g, ["2"])?.to).toBe("B");
   });
 });

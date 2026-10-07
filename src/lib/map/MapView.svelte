@@ -571,6 +571,19 @@
     (map!.getSource("metro") as GeoJSONSource).setData(data ? metroFC(data, app.metroLines, app.metroStation) : EMPTY);
   });
 
+  // The trip planner's start (A) and end (B).
+  $effect(() => {
+    const ends = app.tripEnds, m = map;
+    if (!ends || !m) return;
+    const pins = ([["from", "A"], ["to", "B"]] as const).map(([k, label]) => {
+      const el = document.createElement("div");
+      el.className = "trip-end";
+      el.innerHTML = `<i><b>${label}</b></i>`;
+      return new Marker({ element: el, anchor: "bottom" }).setLngLat([ends[k][1], ends[k][0]]).addTo(m);
+    });
+    return () => pins.forEach(p => p.remove());
+  });
+
   // New city data, or a change of the lines drawn in detail: hand the vehicles to the fleet.
   $effect(() => {
     const city = app.city, on = app.cityOn, own = app.cityExclude;

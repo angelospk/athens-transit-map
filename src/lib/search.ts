@@ -4,7 +4,7 @@ import { normalizeLineId } from "./selection";
 import type { LineInfo } from "./types";
 
 // Case-, accent- and final-sigma-insensitive Greek matching.
-const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase("el").replace(/ς/g, "σ");
+export const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase("el").replace(/ς/g, "σ");
 const noZeros = (id: string) => id.replace(/^0+(?=.)/, "");
 const byId = (a: LineInfo, b: LineInfo) => a.id.localeCompare(b.id, "el", { numeric: true });
 

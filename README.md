@@ -28,6 +28,13 @@ The UI follows the viewer of [foivospro/athens-gtfs-realtime](https://github.com
   Pin a line in the layers menu or on a tapped station's card to draw its track. Rebuild
   `public/metro.json` with `bun scripts/metro.ts <unzipped GTFS dir>`, then `bun scripts/metro-osm.ts`:
   the feed has no shapes, so the tracks come from OpenStreetMap route relations (© OSM contributors, ODbL).
+- Trip planner (🧭 in the panel): from where to where (my location, a stop name, or an address), and the
+  map shows every line that goes there with no change, each in the right direction, with A and B pins (max 5
+  lines; the list names the rest). Stop names come from `public/trips.json` (every stop and each variant's stop
+  order); rebuild it with `bun scripts/trips.ts` when OASA publishes a new GTFS (the planner says when it is
+  older than the line list). Addresses and areas with no stop of that name come from OpenStreetMap's
+  [Nominatim](https://nominatim.org) (only on Enter, at most one request a second; `VITE_GEOCODE_URL` changes it).
+  The planner, its index and its geocoder load on the first 🧭 tap, not with the map.
 - Favourite lines: ☆ in the search list (or `*` on the active row); the ★ chips under the search show or
   hide each one, "Όλες" shows them all (up to 5).
 - My location (button under the zoom): a blue dot with its accuracy, the map follows it until you drag.
@@ -67,6 +74,7 @@ bun run build      # static site in dist/
 |---|---|---|
 | `VITE_API_BASE` | `https://transit.haroldpoi.dev` | Live API (`/v1/lines/{id}`, `/v1/status`) |
 | `VITE_STATIC_BASE` | `https://angelospk.github.io/athens-transit-rt/static/v1` | Static data (`lines.json`, `lines/{id}.json`) |
+| `VITE_GEOCODE_URL` | `https://nominatim.openstreetmap.org/search` | Address search of the trip planner (Nominatim API) |
 | `VITE_MOCK` | unset | `1` = answer every request from `src/fixtures/` (moving vehicles, 30 s cycle) |
 
 Mock code and fixtures are not included in production builds.

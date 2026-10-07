@@ -76,6 +76,8 @@ export class AppState {
   metroStation = $state<string | null>(null);
   // Starred bus lines: a chip row under the search, to show several at once.
   favorites = $state.raw<string[]>(stored("favorites", [], isIds));
+  // The trip planner's start and end ([lat, lon]), marked on the map while the planner is open.
+  tripEnds = $state.raw<{ from: [number, number]; to: [number, number] } | null>(null);
 
   // Set by MapView: frame the given lines once their shapes are loaded.
   fit: (ids: string[]) => void = () => {};
@@ -250,6 +252,28 @@ export class AppState {
     }
     if (fit.length < add.length)
       this.say(`Έως ${MAX_LINES} γραμμές ταυτόχρονα: έδειξα ${fit.length} από τις ${add.length} αγαπημένες.`);
+  }
+
+  // A trip from the planner replaces the picks: its first 5 lines, each shown only on the variants
+  // that make the trip. Returns the lines left out. An empty trip changes nothing.
+  private tripGen = 0;
+  showTrip(lines: { id: string; variants: string[] }[]): string[] {
+    if (!lines.length) return [];
+    const keep = lines.slice(0, MAX_LINES), ids = keep.map(l => l.id), left = lines.slice(MAX_LINES).map(l => l.id);
+    this.metroStation = null;
+    this.selection = null;
+    if (this.tempLine && ids.includes(this.tempLine)) this.tempLine = null;   // now a pick
+    this.dropTemp();
+    for (const id of this.selected) if (!ids.includes(id)) this.closeLine(id);
+    const added = ids.filter(id => !this.selected.includes(id));
+    this.selected = ids;
+    this.writeUrl();
+    for (const id of added) this.startLine(id);
+    for (const l of keep) this.setFocus(l.id, l.variants);
+    const gen = ++this.tripGen;
+    void Promise.allSettled(ids.map(fetchLineStatic)).then(() => { if (gen === this.tripGen) this.fit(ids); });
+    if (left.length) this.say(`Έως ${MAX_LINES} γραμμές ταυτόχρονα. Εκτός: ${left.join(", ")}.`);
+    return left;
   }
 
   // Loads the metro data once; after a failure, the next call tries again (the layers menu calls it).
