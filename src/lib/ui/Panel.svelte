@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
   import { directionGroups, focusGroup, otherDirection } from "../directions";
   import { clock, duration, fmtMinutes } from "../format";
+  import { refreshCycle, ringAt } from "../refresh";
   import { STALE_S, type AppState } from "../state.svelte";
   import LinePicker from "./LinePicker.svelte";
   import MetroToggles from "./MetroToggles.svelte";
@@ -62,6 +64,17 @@
   });
 
   // With motion off, ages are always shown: they are all that says how old a position is.
+  // The ring round the panel fills over the refresh cycle of the feed the numbers come from. `from` and
+  // `to` are numbers so that another line's update, which leaves the cycle as it was, does not restart it.
+  const cycle = $derived(refreshCycle(app.selected.length || !app.cityOn
+    ? app.selected.flatMap(l => (app.live[l] ? [app.live[l]] : [])) : app.city ? [app.city] : []));
+  const from = $derived(cycle?.from), to = $derived(cycle?.to);
+  // Where in the cycle it is now is read once per cycle, not every second; and again when the ring
+  // comes back from the stale state (it was not drawn, so its animation lost time).
+  const stale = $derived(badge?.cls === "stale");
+  const ring = $derived(from == null || to == null || stale ? null : untrack(() => ringAt({ from, to }, app.serverNow / 1000)));
+  let boxW = $state(0), boxH = $state(0);
+
   const ages = $derived(app.showAges || !app.motion);
 
   const oldest = $derived.by(() => {
@@ -75,7 +88,18 @@
 <svelte:window onclick={e => { if (pop && pop !== "trip" && !(e.target as Element).closest?.(".pop, .tool")) pop = null; }}
   onkeydowncapture={e => { if (e.key === "Escape" && pop && pop !== "trip") { pop = null; e.stopPropagation(); } }} />
 
-<section class="panel" aria-label="Πίνακας ελέγχου">
+<section class="panel" aria-label="Πίνακας ελέγχου" bind:clientWidth={boxW} bind:clientHeight={boxH}>
+  <!-- Decorative: on the border. Fills clockwise over the refresh cycle; amber and full when nothing has come for a while. -->
+  <svg class="ring" width={boxW + 2} height={boxH + 2} aria-hidden="true">
+    {#if stale}
+      <rect class="late" x="1" y="1" width={boxW} height={boxH} rx="13" />
+    {:else if ring}
+      {#key `${from}-${to}`}
+        <rect class="fill" x="1" y="1" width={boxW} height={boxH} rx="13" pathLength="100"
+          style:--dur="{ring.dur}s" style:--delay="-{ring.elapsed}s" />
+      {/key}
+    {/if}
+  </svg>
   <div class="head">
     <h1>Λεωφορεία ΟΑΣΑ</h1>
     {#if badge}
@@ -235,6 +259,12 @@
   .panel { position: absolute; z-index: 5; top: calc(12px + env(safe-area-inset-top)); left: 12px; width: 344px;
     max-width: calc(100% - 64px); padding: 12px 14px; background: var(--panel); border: 1px solid var(--border);
     border-radius: 14px; box-shadow: var(--shadow); backdrop-filter: blur(8px); }
+  .ring { position: absolute; top: -1px; left: -1px; pointer-events: none; overflow: visible; }
+  .ring rect { fill: none; stroke-width: 2; }
+  .ring .fill { stroke: var(--accent); stroke-dasharray: 100; stroke-dashoffset: 100;
+    animation: ring var(--dur) linear var(--delay) forwards; }
+  .ring .late { stroke: var(--late2); opacity: .8; }
+  @keyframes ring { to { stroke-dashoffset: 0; } }
   h1 { font-size: 15px; margin: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .head { display: flex; align-items: center; gap: 8px; }
   .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted);
