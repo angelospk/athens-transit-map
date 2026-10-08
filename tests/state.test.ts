@@ -429,19 +429,6 @@ describe("AppState lines without vehicles", () => {
   });
 });
 
-describe("AppState help hint", () => {
-  vi.stubGlobal("fetch", () => new Promise(() => {}));
-
-  it("shows the ? until it is pressed once, and then never again", () => {
-    localStorage.removeItem("helpSeen");
-    const app = new AppState();
-    expect(app.helpSeen).toBe(false);
-    app.markHelpSeen();
-    expect(app.helpSeen).toBe(true);
-    expect(new AppState().helpSeen).toBe(true);
-  });
-});
-
 describe("AppState theme", () => {
   vi.stubGlobal("fetch", () => new Promise(() => {}));
   // In beforeEach: a stub made while the file is collected would replace the one of the tests above.
@@ -465,6 +452,23 @@ describe("AppState theme", () => {
     mem.clear();
     mem.set("theme", '"sepia"');
     expect(new AppState().theme).toBe("system");
+  });
+});
+
+describe("AppState other vehicles while one is selected", () => {
+  vi.stubGlobal("fetch", () => new Promise(() => {}));
+  const mem = new Map<string, string>();
+  beforeEach(() => vi.stubGlobal("localStorage", {
+    getItem: (k: string) => mem.get(k) ?? null,
+    setItem: (k: string, v: string) => void mem.set(k, v),
+    removeItem: (k: string) => void mem.delete(k),
+  }));
+
+  it("hides them by default, and keeps a choice made before", () => {
+    mem.clear();
+    expect(new AppState().others).toBe("hide");
+    mem.set("others", '"dim"');
+    expect(new AppState().others).toBe("dim");
   });
 });
 

@@ -22,6 +22,18 @@ describe("layers", () => {
     const fc = stopsFC(line, variant);
     expect(fc.features.map(f => f.properties!.id)).toEqual(line.data.variants[variant].stops);
   });
+  it("with `all`, builds the stops of every direction once each", () => {
+    const ids = Object.values(line.data.variants).flatMap(v => v.stops.filter(id => line.data.stops[id]));
+    const fc = stopsFC(line, variant, true);
+    expect(fc.features.map(f => f.properties!.id)).toEqual([...new Set(ids)]);
+    expect(fc.features.length).toBeGreaterThan(stopsFC(line, variant).features.length);
+  });
+  it("with `all`, needs no valid variant, only the line", () => {
+    const n = stopsFC(line, variant, true).features.length;
+    expect(stopsFC(line, null, true).features).toHaveLength(n);
+    expect(stopsFC(line, "nope", true).features).toHaveLength(n);
+    expect(stopsFC(undefined, variant, true).features).toEqual([]);
+  });
   it("is empty for a null or unknown variant", () => {
     expect(variantFC(line, null).features).toEqual([]);
     expect(stopsFC(line, "nope").features).toEqual([]);

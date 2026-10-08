@@ -679,7 +679,8 @@
     const h = app.highlight;
     const line = h ? drawn.find(d => d.id === h.line) : undefined;
     (map!.getSource("highlight") as GeoJSONSource).setData(variantFC(line, h?.variant));
-    (map!.getSource("stops") as GeoJSONSource).setData(stopsFC(line, h?.variant));
+    // No direction focused ("Όλες"): the stops of every direction, not only of the one clicked.
+    (map!.getSource("stops") as GeoJSONSource).setData(stopsFC(line, h?.variant, !!h && !app.focus[h.line]));
   });
 
   // New data of the detailed lines (or a direction focus): hand it to the fleet, line by line.

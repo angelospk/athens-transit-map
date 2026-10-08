@@ -57,7 +57,7 @@
   });
 
   function down(e: PointerEvent) {
-    if (!narrow.current || e.button !== 0 || grab || (e.target as Element).closest(".close, .pin")) return;
+    if (!narrow.current || e.button !== 0 || grab || (e.target as Element).closest(".close, .pin, .star")) return;
     grab = { id: e.pointerId, y: e.clientY, from: sheet, range: measure(), moved: false };
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
   }
@@ -126,6 +126,7 @@
   {@const line = vehicle?.line ?? route!.line}
   {@const info = vehicle?.info ?? route?.info}
   {@const pinned = app.selected.includes(line)}
+  {@const starred = app.favorites.includes(line)}
   <section class="card" class:dragging class:peek={narrow.current && sheet === "peek"} aria-live="polite" aria-label="Λεπτομέρειες" bind:this={card} bind:offsetHeight={cardH}
     style:transform={shift ? `translateY(${shift}px)` : undefined}>
     <!-- svelte-ignore a11y_no_static_element_interactions (the keyboard goes through the grab button) -->
@@ -137,6 +138,9 @@
       <header>
         <span class="pill" style:--c={info?.color ?? "#3b5bdb"} style:--t={info?.text_color ?? "#fff"}>{line}</span>
         <h2>{info?.name ?? ""}</h2>
+        <button type="button" class="star" class:on={starred} aria-pressed={starred} title={starred ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
+          aria-label={starred ? `Αφαίρεση της γραμμής ${line} από τις αγαπημένες` : `Προσθήκη της γραμμής ${line} στις αγαπημένες`}
+          onclick={() => app.toggleFavorite(line)}>{starred ? "★" : "☆"}</button>
         <!-- Keeps the line on the bar of the panel; the card can then be closed without losing it. -->
         <button type="button" class="pin" class:on={pinned} aria-pressed={pinned} title={pinned ? "Ξεκαρφίτσωμα: βγάλε τη γραμμή από τον χάρτη" : "Καρφίτσωμα: κράτα τη γραμμή στον χάρτη"}
           aria-label={pinned ? `Ξεκαρφίτσωμα της γραμμής ${line}` : `Καρφίτσωμα της γραμμής ${line}`} onclick={() => app.toggleLine(line)}>
@@ -214,6 +218,10 @@
     border-radius: 8px; }
   .pin:hover { background: var(--control); }
   .pin.on { color: var(--accent); }
+  .star { width: 36px; height: 36px; margin: -8px -2px -8px 0; border: 0; background: none; color: var(--muted); font-size: 20px;
+    cursor: pointer; border-radius: 8px; }
+  .star:hover { background: var(--control); }
+  .star.on { color: #f59f00; }
   table { border-collapse: collapse; font-size: 13px; }
   th { padding: 2px 10px 2px 0; color: var(--muted); font-weight: 400; text-align: left; vertical-align: top; white-space: nowrap; }
   td { padding: 2px 0; font-variant-numeric: tabular-nums; }

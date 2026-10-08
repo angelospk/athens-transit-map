@@ -364,10 +364,9 @@
 </div>
 
 <style>
-  .trip { position: absolute; z-index: 6; top: calc(100% + 6px); left: 0; right: 0; padding: 8px 12px 10px; font-size: 13px;
+  .trip { min-height: 0; padding: 8px 12px 10px; font-size: 13px;
     background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
-    backdrop-filter: blur(8px); box-sizing: border-box; max-height: calc(100dvh - 120px - env(safe-area-inset-top));
-    overflow-y: auto; overscroll-behavior: contain; }
+    backdrop-filter: blur(8px); box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; }
   .sr { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .row { display: flex; align-items: center; gap: 4px; }
   h3 { flex: 1; margin: 0; font-size: 14px; }
