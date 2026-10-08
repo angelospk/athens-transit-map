@@ -114,6 +114,8 @@ export class AppState {
   private tileSeq = 0;               // only the last view change publishes
   private tileCtrl: AbortController | null = null;   // the view change in flight
   private tileRetryAt = -Infinity;    // after a failed view change, the poller does the retrying
+  private mapMoving = false;          // between the map's movestart and the view it reports once it rests
+  private refreshHeld = new Set<() => void>();   // scheduled refreshes that wait for the map to rest
   private noticeTimer: ReturnType<typeof setTimeout> | undefined;
 
   lineInfo = $derived(new Map(this.lines.map(l => [l.id, l])));
@@ -434,10 +436,35 @@ export class AppState {
 
   // The map reports its view when it loads and after every move. No tiles are fetched before the first view.
   setCityView(view: View, zoom: number) {
+    this.mapMoving = false;
     const missing = this.cityTiles.want(viewTiles(view, zoom));
+    const held = [...this.refreshHeld];
+    this.refreshHeld.clear();
+    if (held.length) {   // the refresh that waited loads every tile of the view: the load of the last view is not needed
+      this.tileSeq++;
+      this.tileCtrl?.abort();
+      for (const go of held) go();
+    }
     if (!this.cityOn) return;
     if (!this.cityPoller) return this.startCity();   // its first fetch loads the whole set
-    this.loadMissing(missing);
+    if (!held.length) this.loadMissing(missing);
+  }
+
+  // The map started to move: no tile is asked for until it reports its view again.
+  setCityMoving() {
+    this.mapMoving = true;
+  }
+
+  // The poller's fetch: a refresh that falls due while the map moves waits until it rests.
+  private async cityFetch(line: string, signal: AbortSignal) {
+    if (this.mapMoving) {
+      await new Promise<void>(go => {
+        this.refreshHeld.add(go);
+        signal.addEventListener("abort", () => { this.refreshHeld.delete(go); go(); }, { once: true });
+      });
+      if (signal.aborted) return { status: 0, body: null };
+    }
+    return fetchCity(this.cityTiles)(line, signal);
   }
 
   private loadMissing(missing: Tile[]) {
@@ -468,7 +495,7 @@ export class AppState {
     if (!this.cityTiles.tiles.length) return;
     this.cityPoller ??= new LinePoller<CityLive>({
       line: "*",
-      fetchLine: fetchCity(this.cityTiles),
+      fetchLine: (l, signal) => this.cityFetch(l, signal),
       validate: isCityLive,
       clock: this.clock,
       onData: () => this.publishCity(),

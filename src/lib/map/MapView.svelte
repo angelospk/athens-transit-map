@@ -2,6 +2,7 @@
   import { Map as MlMap, Marker, NavigationControl, Popup, setWorkerUrl, type ExpressionSpecification, type GeoJSONSource } from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
   import workerUrl from "virtual:maplibre-worker";
+  import { debounce, throttle } from "../debounce";
   import { ageLabel, dayMonth, gtfsEnded, isStalePos, passes } from "../format";
   import { untrack } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
@@ -22,6 +23,8 @@
 
   let { app }: { app: AppState } = $props();
 
+  const FOLLOW_VIEW_MS = 2000;   // following the user: the view is reported this often
+  const VIEW_SETTLE_MS = 300;   // the map must rest this long before the city layer asks for tiles
   const DEFAULT_COLOR = "#3b5bdb";
   const DELAY_CLASSES = ["ontime", "late1", "late2", "late3", "none"];
   const STYLE = (dark: boolean) => `https://tiles.openfreemap.org/styles/${dark ? "dark" : "positron"}`;
@@ -430,7 +433,7 @@
       const r = me.mover.step(Date.now() / 1000);
       me.marker.setLngLat(r.pos);
       if (me.mover.fixing) fixing = true;
-      if (follow && !m.isMoving()) m.setCenter(r.pos);   // not during the fly-to or a gesture
+      if (follow && !m.isMoving()) m.setCenter(r.pos, { follow: true });   // not during the fly-to or a gesture
     }
     // Corrections and trails: 30 fps close up; zoomed out, where they are a few pixels and every frame
     // steps the whole city, 4 fps.
@@ -529,10 +532,15 @@
       credit.addEventListener("click", e => { e.preventDefault(); e.stopImmediatePropagation(); void openInfo(); }, true);
     }
     m.on("dragstart", () => (follow = false));   // only user gestures fire it
-    // The city layer loads the tiles of the view (once the map stops moving, and at first).
+    // The city layer loads the tiles of the view: at first, and 300 ms after the map stops moving (never during a move).
     const reportView = () => { const b = m.getBounds(); app.setCityView({ north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() }, m.getZoom()); };
+    const reportSoon = debounce(reportView, VIEW_SETTLE_MS);
     m.on("load", reportView);
-    m.on("moveend", reportView);
+    // Follow mode moves the map every frame: it never rests, so its view is reported on a clock instead.
+    const reportFollow = throttle(reportView, FOLLOW_VIEW_MS);
+    const ticked = (e: object) => "follow" in e;
+    m.on("movestart", e => { if (ticked(e)) return; reportSoon.cancel(); reportFollow.cancel(); app.setCityMoving(); });
+    m.on("moveend", e => (ticked(e) ? reportFollow() : reportSoon()));
 
     const popup = new Popup({ closeButton: false, offset: 10, maxWidth: "240px" });
     m.on("load", () => {
@@ -598,6 +606,8 @@
       app.fit = () => {};
       disposed = true;
       cancelAnimationFrame(raf);
+      reportSoon.cancel();
+      reportFollow.cancel();
       document.removeEventListener("visibilitychange", onVisible);
       locator.stop();
       dropMe();
