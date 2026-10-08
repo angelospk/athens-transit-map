@@ -7,6 +7,7 @@ import { cityKey, cleanCity, isCityLive } from "./city";
 import { loadMetro, type MetroData } from "./metro";
 import { LinePoller, type PollState } from "./poller";
 import { ClockOffset } from "./schedule";
+import { isTheme, type Theme } from "./theme";
 import { MAX_LINES, selectionIds, serializeSelection, splitKnown, toggle } from "./selection";
 import { hitText, type AlertHit, type AlertSpec } from "./alerts";
 import type { CityLive, CityVehicle, LineInfo, LineLive, LineStatic, Status, Vehicle } from "./types";
@@ -78,8 +79,11 @@ export class AppState {
     v => !!v && isBool((v as Only).fresh) && isBool((v as Only).onTime)));
   // A line shown in detail because its vehicle was clicked on the city layer; not one of the picks.
   tempLine = $state<string | null>(null);
-  // Metro, ISAP and tram (static): stations always, the pinned lines' tracks. metroStation: the
+  // Light, dark, or the device's setting.
+  theme = $state<Theme>(stored("theme", "system", isTheme));
+  // Metro, ISAP and tram (static): the stations (a switch) and the pinned lines' tracks. metroStation: the
   // tapped station, whose card pins its lines.
+  metroStations = $state(stored("metroStations", true, isBool));
   metroLines = $state.raw<string[]>(stored("metroLines", [], isIds));
   metro = $state.raw<MetroData | null>(null);
   metroStation = $state<string | null>(null);
@@ -250,10 +254,28 @@ export class AppState {
     store("metroLines", ids);
   }
 
+  setMetroStations(on: boolean) {
+    this.metroStations = on;
+    store("metroStations", on);
+    if (!on) this.metroStation = null;
+  }
+
+  // From a station's card: the stations go away, so the user is told where they come back.
+  hideStations() {
+    this.setMetroStations(false);
+    this.say("Οι σταθμοί κρύφτηκαν. Ξαναφαίνονται στα Επίπεδα χάρτη (άνοιξε τον πίνακα με το βέλος).");
+  }
+
   // A station tapped on the map (null: none). Its card replaces a vehicle's or route's.
   selectStation(name: string | null) {
+    if (name && !this.metroStations) return;
     if (name) this.clearSelection();
     this.metroStation = name;
+  }
+
+  setTheme(t: Theme) {
+    this.theme = t;
+    store("theme", t);
   }
 
   toggleFavorite(id: string) {

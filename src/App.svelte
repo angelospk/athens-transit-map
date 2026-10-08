@@ -4,9 +4,11 @@
   import Panel from "./lib/ui/Panel.svelte";
   import InfoCard from "./lib/ui/InfoCard.svelte";
   import StationCard from "./lib/ui/StationCard.svelte";
+  import { applyTheme } from "./lib/theme";
 
   const app = new AppState();
   app.init();
+  $effect(() => applyTheme(app.theme));
   if (import.meta.env.DEV) Object.assign(window, { __app: app });
 </script>
 

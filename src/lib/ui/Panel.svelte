@@ -24,6 +24,10 @@
   let foldButton: HTMLButtonElement | undefined = $state();
   const helpButtons: { bar?: HTMLButtonElement; body?: HTMLButtonElement } = $state({});
   let focusOpen = $state(false);   // the direction rows of several lines, under their one summary row
+  // Folded, the search field is hidden; the magnifier shows it (and the list under it) until a line is picked.
+  let searching = $state(false);
+  // The bar shrinks to its chips and buttons when nothing is open under it.
+  const compact = $derived(collapsed && !searching && !pop && !tripOnly);
 
   // Focus returns to what opened a popover when that is on the screen (the compass, the map-menu and
   // ? buttons live in the dropdown, which may be closed now); else to the chevron.
@@ -45,9 +49,17 @@
   };
   // The chevron: opens and closes the dropdown. From the planner (a phone) it goes back to the dropdown.
   function fold() {
+    searching = false;
     if (tripOnly) { pop = null; collapsed = false; return; }
     collapsed = !collapsed;
     if (collapsed && pop && pop !== "trip") pop = null;
+  }
+  // A press anywhere outside the panel folds it: the map matters more. The trip planner stays open while the map is used.
+  function dismiss(e: PointerEvent) {
+    if (pop === "trip" || (e.target as Element | null)?.closest?.(".panel")) return;
+    searching = false;
+    collapsed = true;
+    pop = null;
   }
   // Escape: a popover first, then the dropdown (when focus is in it; the search closes its own list).
   function onEscape(e: KeyboardEvent) {
@@ -123,10 +135,11 @@
 
 <!-- Escape is handled in capture, before the info card's handler. The trip planner stays open while the map is
      used; it closes itself (×, Escape). -->
+<svelte:document onpointerdown={dismiss} />
 <svelte:window onclick={e => { if (pop && pop !== "trip" && !(e.target as Element).closest?.(".pop, .tool")) pop = null; }}
   onkeydowncapture={onEscape} />
 
-<section class="panel" class:raised={pop === "layers" || pop === "help"} aria-label="Πίνακας ελέγχου" bind:clientWidth={boxW} bind:clientHeight={boxH}>
+<section class="panel" class:compact class:raised={pop === "layers" || pop === "help"} aria-label="Πίνακας ελέγχου" bind:clientWidth={boxW} bind:clientHeight={boxH}>
   <!-- Decorative: on the border. Fills clockwise over the refresh cycle; amber and full when nothing has come for a while. -->
   <svg class="ring" width={boxW + 2} height={boxH + 2} aria-hidden="true">
     {#if stale}
@@ -145,7 +158,7 @@
     {#if tripOnly}
       <div class="tripbar"><span>Διαδρομή χωρίς αλλαγή</span>{@render tail()}</div>
     {:else}
-      <LinePicker {app} expanded={!collapsed} {tail} />
+      <LinePicker {app} expanded={!collapsed} searchOpen={searching} onsearch={() => (searching = true)} onclose={() => (searching = false)} {tail} />
     {/if}
   </div>
 
@@ -210,12 +223,24 @@
       </section>
       <section>
         <h4>Μετρό, ΗΣΑΠ και τραμ</h4>
-        <p class="hint">Οι σταθμοί φαίνονται πάντα. Διάλεξε ποιες γραμμές, εδώ ή σε έναν σταθμό. Χωρίς ζωντανά δεδομένα.</p>
+        <label class="switch">
+          <input type="checkbox" checked={app.metroStations} onchange={e => app.setMetroStations(e.currentTarget.checked)} />
+          <span>Σταθμοί<br /><small>Οι κουκκίδες των σταθμών στον χάρτη.</small></span>
+        </label>
+        <p class="hint">Διάλεξε ποιες γραμμές θα φαίνονται, εδώ ή σε έναν σταθμό. Χωρίς ζωντανά δεδομένα.</p>
         {#if app.metro}
           <MetroToggles {app} ids={app.metro.lines.map(l => l.id)} />
         {:else}
           <p class="hint">Φόρτωση…</p>
         {/if}
+      </section>
+      <section>
+        <h4>Θέμα</h4>
+        <div class="seg" role="radiogroup" aria-label="Θέμα">
+          {#each [["system", "Συσκευής"], ["light", "Φωτεινό"], ["dark", "Σκοτεινό"]] as const as [v, label] (v)}
+            <button type="button" role="radio" aria-checked={app.theme === v} onclick={() => app.setTheme(v)}>{label}</button>
+          {/each}
+        </div>
       </section>
     </div>
   {/if}
@@ -314,6 +339,14 @@
 
   {#snippet tail()}
     {@render help("bar")}
+    {#if collapsed && !tripOnly && app.selected.length}
+      <button type="button" class="tool" class:on={searching} aria-expanded={searching}
+        aria-label="Αναζήτηση γραμμής" title="Αναζήτηση γραμμής" onclick={() => (searching = !searching)}>
+        <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <circle cx="8.5" cy="8.5" r="5.5" /><path d="M12.6 12.6L17 17" />
+        </svg>
+      </button>
+    {/if}
     <button type="button" class="fold" aria-expanded={tripOnly ? false : !collapsed} aria-controls="panel-body" bind:this={foldButton}
       aria-label={tripOnly ? "Σύμπτυξη διαδρομής" : collapsed ? "Εμφάνιση λεπτομερειών" : "Απόκρυψη λεπτομερειών"} onclick={fold}>
       <svg viewBox="0 0 12 8" width="14" height="10" aria-hidden="true" class={{ up: !collapsed && !tripOnly }}>
@@ -340,6 +373,7 @@
   .panel { position: absolute; z-index: 5; top: calc(12px + env(safe-area-inset-top)); left: 12px; width: 344px;
     max-width: calc(100% - 64px); padding: 12px 14px; background: var(--panel); border: 1px solid var(--border);
     border-radius: 14px; box-shadow: var(--shadow); backdrop-filter: blur(8px); }
+  .panel.compact { width: fit-content; max-width: min(344px, calc(100% - 64px)); }
   .panel.raised { z-index: 8; }   /* the map menu over the info card */
   .ring { position: absolute; top: -1px; left: -1px; pointer-events: none; overflow: visible; }
   .ring rect { fill: none; stroke-width: 2; }
@@ -373,15 +407,6 @@
   .pop .age { margin-right: 4px; padding: 0 4px; border-radius: 6px; background: var(--control); font-size: 11px;
     font-variant-numeric: tabular-nums; }
   .hint { color: var(--muted); font-size: 12px; }
-  .switch { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; margin: 4px 0 10px; }
-  .switch input { appearance: none; flex: none; width: 34px; height: 20px; margin: 1px 0 0; border-radius: 10px;
-    background: var(--border); position: relative; cursor: pointer; transition: background .15s; }
-  .switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
-    background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .3); transition: transform .15s; }
-  .switch input:checked { background: var(--accent); }
-  .switch input:checked::after { transform: translateX(14px); }
-  .switch input:disabled { opacity: .5; }
-  .switch small { color: var(--muted); }
   .field > span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
   .seg { display: flex; padding: 2px; border-radius: 9px; background: var(--control); margin-bottom: 10px; }
   .seg button { flex: 1; min-height: 30px; border: 0; border-radius: 7px; background: none; cursor: pointer; font-size: 12px; }
@@ -417,6 +442,7 @@
   [hidden] { display: none !important; }
   @media (max-width: 719px) {
     .panel { left: 8px; right: 60px; width: auto; max-width: none; padding: 10px 12px; }
+    .panel.compact { right: auto; max-width: calc(100% - 68px); }
     .stats b { font-size: 16px; }
   }
 </style>

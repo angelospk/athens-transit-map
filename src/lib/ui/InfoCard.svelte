@@ -57,7 +57,7 @@
   });
 
   function down(e: PointerEvent) {
-    if (!narrow.current || e.button !== 0 || grab || (e.target as Element).closest(".close")) return;
+    if (!narrow.current || e.button !== 0 || grab || (e.target as Element).closest(".close, .pin")) return;
     grab = { id: e.pointerId, y: e.clientY, from: sheet, range: measure(), moved: false };
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
   }
@@ -125,6 +125,7 @@
 {#if vehicle || route}
   {@const line = vehicle?.line ?? route!.line}
   {@const info = vehicle?.info ?? route?.info}
+  {@const pinned = app.selected.includes(line)}
   <section class="card" class:dragging class:peek={narrow.current && sheet === "peek"} aria-live="polite" aria-label="Λεπτομέρειες" bind:this={card} bind:offsetHeight={cardH}
     style:transform={shift ? `translateY(${shift}px)` : undefined}>
     <!-- svelte-ignore a11y_no_static_element_interactions (the keyboard goes through the grab button) -->
@@ -136,6 +137,13 @@
       <header>
         <span class="pill" style:--c={info?.color ?? "#3b5bdb"} style:--t={info?.text_color ?? "#fff"}>{line}</span>
         <h2>{info?.name ?? ""}</h2>
+        <!-- Keeps the line on the bar of the panel; the card can then be closed without losing it. -->
+        <button type="button" class="pin" class:on={pinned} aria-pressed={pinned} title={pinned ? "Ξεκαρφίτσωμα: βγάλε τη γραμμή από τον χάρτη" : "Καρφίτσωμα: κράτα τη γραμμή στον χάρτη"}
+          aria-label={pinned ? `Ξεκαρφίτσωμα της γραμμής ${line}` : `Καρφίτσωμα της γραμμής ${line}`} onclick={() => app.toggleLine(line)}>
+          <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill={pinned ? "currentColor" : "none"} stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round">
+            <path d="M7 2.5h6l-.8 5 2.3 2.7v1.3H5.5V10.2l2.3-2.7z" /><path d="M10 11.5v6" />
+          </svg>
+        </button>
         <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.clearSelection()}>×</button>
       </header>
     </div>
@@ -202,6 +210,10 @@
   .close { width: 36px; height: 36px; margin: -8px -10px -8px 0; border: 0; background: none; font-size: 22px;
     color: var(--muted); cursor: pointer; border-radius: 8px; }
   .close:hover { background: var(--control); }
+  .pin { width: 36px; height: 36px; margin: -8px -4px -8px 0; border: 0; background: none; color: var(--muted); cursor: pointer;
+    border-radius: 8px; }
+  .pin:hover { background: var(--control); }
+  .pin.on { color: var(--accent); }
   table { border-collapse: collapse; font-size: 13px; }
   th { padding: 2px 10px 2px 0; color: var(--muted); font-weight: 400; text-align: left; vertical-align: top; white-space: nowrap; }
   td { padding: 2px 0; font-variant-numeric: tabular-nums; }

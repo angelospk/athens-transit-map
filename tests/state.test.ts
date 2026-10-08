@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppState } from "../src/lib/state.svelte";
 
 vi.stubGlobal("history", { state: null, replaceState: () => {} });
@@ -53,6 +53,19 @@ describe("AppState city focus (temporary line)", () => {
     expect(app.selected).toEqual(["Α1"]);
     expect(app.tempLine).toBeNull();
     expect(app.selection).toEqual({ kind: "vehicle", line: "Α1", id: "5" });
+  });
+
+  it("keeps a pinned line on the map after its card is closed, and unpins it with the same button", () => {
+    const app = new AppState();
+    app.selectCityVehicle("Α1", "5");
+    app.toggleLine("Α1");   // the card's pin
+    app.clearSelection();   // the card's ×
+    expect(app.selected).toEqual(["Α1"]);
+    expect(app.tempLine).toBeNull();
+    app.selectVehicle("Α1", "5");
+    app.toggleLine("Α1");   // pressed again
+    expect(app.selected).toEqual([]);
+    expect(app.selection).toBeNull();
   });
 
   it("unfocuses when the vehicle leaves its line's data or the city layer is turned off", () => {
@@ -426,5 +439,68 @@ describe("AppState help hint", () => {
     app.markHelpSeen();
     expect(app.helpSeen).toBe(true);
     expect(new AppState().helpSeen).toBe(true);
+  });
+});
+
+describe("AppState theme", () => {
+  vi.stubGlobal("fetch", () => new Promise(() => {}));
+  // In beforeEach: a stub made while the file is collected would replace the one of the tests above.
+  const mem = new Map<string, string>();
+  beforeEach(() => vi.stubGlobal("localStorage", {
+    getItem: (k: string) => mem.get(k) ?? null,
+    setItem: (k: string, v: string) => void mem.set(k, v),
+    removeItem: (k: string) => void mem.delete(k),
+  }));
+
+  it("follows the device by default, and remembers a choice", () => {
+    mem.clear();
+    const app = new AppState();
+    expect(app.theme).toBe("system");
+    app.setTheme("dark");
+    expect(app.theme).toBe("dark");
+    expect(new AppState().theme).toBe("dark");
+  });
+
+  it("ignores a stored value that is not a theme", () => {
+    mem.clear();
+    mem.set("theme", '"sepia"');
+    expect(new AppState().theme).toBe("system");
+  });
+});
+
+describe("AppState metro stations switch", () => {
+  vi.stubGlobal("fetch", () => new Promise(() => {}));
+  const mem = new Map<string, string>();
+  beforeEach(() => vi.stubGlobal("localStorage", {
+    getItem: (k: string) => mem.get(k) ?? null,
+    setItem: (k: string, v: string) => void mem.set(k, v),
+    removeItem: (k: string) => void mem.delete(k),
+  }));
+
+  it("shows the stations by default and remembers the switch", () => {
+    mem.clear();
+    const app = new AppState();
+    expect(app.metroStations).toBe(true);
+    app.setMetroStations(false);
+    expect(new AppState().metroStations).toBe(false);
+  });
+
+  it("hiding them from a station's card closes the card and says where to turn them back on", () => {
+    mem.clear();
+    const app = new AppState();
+    app.selectStation("ΟΜΟΝΟΙΑ");
+    app.hideStations();
+    expect(app.metroStations).toBe(false);
+    expect(app.metroStation).toBeNull();
+    expect(app.notice).toContain("Επίπεδα χάρτη");
+  });
+
+  it("turning them off in the layers menu says nothing, and a hidden station cannot be selected", () => {
+    mem.clear();
+    const app = new AppState();
+    app.setMetroStations(false);
+    expect(app.notice).toBeNull();
+    app.selectStation("ΟΜΟΝΟΙΑ");
+    expect(app.metroStation).toBeNull();
   });
 });

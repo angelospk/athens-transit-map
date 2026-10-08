@@ -1,12 +1,15 @@
 <script lang="ts">
-  import type { Snippet } from "svelte";
+  import { tick, type Snippet } from "svelte";
   import { searchLines } from "../search";
   import { MAX_LINES } from "../selection";
   import type { AppState } from "../state.svelte";
 
   // expanded: the panel's dropdown is open, which is where the quick picks (favourites, popular) show.
+  // Folded, the search field is hidden until searchOpen (the panel's magnifier, or the field below, was pressed);
+  // onsearch asks the panel to open it, onclose says the search is over (a line was picked, or Escape).
   // tail: buttons of the panel, at the right of the first row (the chips, or the search with no chips).
-  let { app, expanded = true, tail }: { app: AppState; expanded?: boolean; tail?: Snippet } = $props();
+  let { app, expanded = true, searchOpen = false, onsearch, onclose, tail }:
+    { app: AppState; expanded?: boolean; searchOpen?: boolean; onsearch?: () => void; onclose?: () => void; tail?: Snippet } = $props();
 
   const QUICK = ["040", "550", "Α1", "Χ95", "2"];
 
@@ -17,6 +20,15 @@
   let list: HTMLUListElement | undefined = $state();
 
   const results = $derived(searchLines(app.lines, query));
+  const showInput = $derived(expanded || searchOpen);
+
+  // The field is gone (the panel folded, the search ended): so is its list.
+  $effect(() => { if (!showInput) open = false; });
+
+  // Opened by the magnifier: the field takes focus, which drops the list.
+  $effect(() => {
+    if (searchOpen && !expanded) void tick().then(() => input?.focus());
+  });
 
   const full = $derived(app.selected.length >= MAX_LINES);
   const quick = $derived(QUICK.filter(id => app.lineInfo.has(id) && !app.selected.includes(id)));
@@ -32,6 +44,7 @@
     query = "";
     open = false;
     input?.blur();   // show the map on phones
+    onclose?.();
   }
 
   function move(to: number) {
@@ -55,6 +68,7 @@
       app.toggleFavorite(results[active].id);
     } else if (e.key === "Escape") {
       open = false;
+      onclose?.();
     } else if (e.key === "Tab") {
       open = false;
     }
@@ -72,7 +86,7 @@
 
 <svelte:document onpointerdown={e => { if (open && !(e.target as Element).closest?.(".picker")) open = false; }} />
 
-<div class="picker" class:chipped={app.selected.length > 0}>
+<div class="picker" class:chipped={app.selected.length > 0} class:folded={!showInput}>
   {#if app.selected.length}
     <ul class="chips" aria-label="Επιλεγμένες γραμμές">
       {#each app.selected as id (id)}
@@ -96,6 +110,14 @@
   {/if}
   {#if tail}<div class="tail">{@render tail()}</div>{/if}
 
+  {#if !showInput && !app.selected.length}
+    <button type="button" class="find" onclick={onsearch}>
+      <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+        <circle cx="8.5" cy="8.5" r="5.5" /><path d="M12.6 12.6L17 17" />
+      </svg>Γραμμή ή περιοχή
+    </button>
+  {/if}
+  {#if showInput}
   <input
     bind:this={input}
     bind:value={query}
@@ -114,6 +136,7 @@
     oninput={() => { open = true; active = 0; }}
     {onkeydown}
   />
+  {/if}
 
   {#if expanded && favs.length && !open}
     <!-- Starred lines: each chip shows or hides its line, so several are a tap each. -->
@@ -138,7 +161,7 @@
     <div class="tip">Πάτα ☆ σε μια γραμμή της λίστας για να μπει στις αγαπημένες.</div>
   {/if}
 
-  {#if open}
+  {#if open && showInput}
     <ul id="line-list" class="list" role="listbox" aria-label="Γραμμές" aria-multiselectable="true" bind:this={list}>
       {#if app.linesFailed}
         <li class="empty">Δεν φορτώθηκε η λίστα γραμμών. Δοκίμασε ξανά σε λίγο.</li>
@@ -176,9 +199,13 @@
 <style>
   .picker { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 4px; align-items: start; }
   .chips { grid-column: 1; grid-row: 1; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; padding: 0; list-style: none; }
+  .folded .chips { margin-bottom: 0; }   /* nothing under them */
   /* The panel's buttons: beside the chips, or, with no chips, beside the search. */
   .tail { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 2px; margin: -4px -6px 0 0; }
-  .picker:not(.chipped) input { grid-column: 1; grid-row: 1; }
+  .picker:not(.chipped) input, .find { grid-column: 1; grid-row: 1; }
+  .find { display: inline-flex; align-items: center; justify-self: start; gap: 6px; min-height: 36px; padding: 0 12px;
+    border: 0; border-radius: 18px; background: var(--control); color: var(--muted); font-size: 13px; cursor: pointer; }
+  .find:hover { background: var(--control-hover); }
   .quick, .tip { grid-column: 1 / -1; }
   .chip { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 0 10px; border: 0;
     border-radius: 16px; background: var(--c); color: var(--t); font-weight: 700; cursor: pointer; }

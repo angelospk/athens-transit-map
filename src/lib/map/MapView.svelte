@@ -4,12 +4,14 @@
   import workerUrl from "virtual:maplibre-worker";
   import { ageLabel, dayMonth, gtfsEnded, isStalePos, passes } from "../format";
   import { untrack } from "svelte";
+  import { MediaQuery } from "svelte/reactivity";
   import type { LngLat } from "../glide";
   import { vehicleHeading } from "../heading";
   import { metroFC } from "../metro";
   import { Locator, userPlan, type Fix, type LocState } from "../locate";
   import { Mover, planOnto } from "../motion";
   import { shapeLength, stopOffsets } from "../predict";
+  import { resolveDark } from "../theme";
   import type { Variant } from "../types";
   import type { AppState } from "../state.svelte";
   import OldTimetable from "../ui/OldTimetable.svelte";
@@ -28,8 +30,17 @@
   const M_PER_PX_Z0 = 156_543.03 * COS_LAT;   // metres per pixel at zoom 0, at Athens
 
   let map = $state.raw<MlMap>();
+  // The map has its style and our layers; false while a new style (the other theme) loads.
   let loaded = $state(false);
   let failed = $state(false);
+
+  // The base map follows the theme. A new style drops our sources, layers and images: they are added again
+  // (addAll) once it has loaded, and `loaded` going false then true makes the effects below send their data again.
+  const systemDark = new MediaQuery("(prefers-color-scheme: dark)");
+  const dark = $derived(resolveDark(app.theme, systemDark.current));
+  let styleDark = untrack(() => dark);   // the theme of the style on the map
+  let styleGen = 0;
+  let started = false;                    // the first style has loaded
 
   // Every vehicle's motion, shared by the city layer and the detailed lines (fleet.ts).
   const fleet = new Fleet();
@@ -174,6 +185,40 @@
       paint: { "text-color": "#333333", "text-halo-color": "#ffffff", "text-halo-width": 1.5 } });
   }
 
+  // My location's accuracy circle: a circle in map metres, px = metres · 2^zoom / metres-per-pixel at zoom 0.
+  function addMeAcc(m: MlMap) {
+    m.addSource("me-acc", { type: "geojson", data: EMPTY });
+    m.addLayer({ id: "me-acc", type: "circle", source: "me-acc",
+      paint: { "circle-radius": ["interpolate", ["exponential", 2], ["zoom"],
+        0, ["/", ["get", "acc"], M_PER_PX_Z0], 22, ["/", ["*", ["get", "acc"], 2 ** 22], M_PER_PX_Z0]],
+      "circle-color": "#1a73e8", "circle-opacity": 0.12, "circle-stroke-color": "#1a73e8", "circle-stroke-opacity": 0.35,
+      "circle-stroke-width": 1 } }, "city-dot");
+  }
+
+  function showAcc(m: MlMap, f: Fix) {
+    (m.getSource("me-acc") as GeoJSONSource | undefined)?.setData({ type: "FeatureCollection",
+      features: [{ type: "Feature", properties: { acc: f.acc }, geometry: { type: "Point", coordinates: f.pos } }] });
+  }
+
+  function addAll(m: MlMap) {
+    addLayers(m);
+    addMeAcc(m);
+    if (me) showAcc(m, me.fix);
+    nextDue = 0;   // the city layer and the trails start empty: draw them now
+    cityWasEmpty = trailsWereEmpty = true;
+    started = true;
+    loaded = true;
+  }
+
+  // The other theme: the base map's style is swapped. diff: false builds the style anew, so `style.load` fires.
+  function restyle(m: MlMap, d: boolean) {
+    styleDark = d;
+    loaded = false;
+    const gen = ++styleGen;
+    m.once("style.load", () => { if (gen === styleGen) addAll(m); });   // a style replaced before it loaded never fires
+    m.setStyle(STYLE(d), { diff: false });
+  }
+
   function addLayers(m: MlMap) {
     addMetroLayers(m);
     addCityLayers(m);
@@ -282,8 +327,7 @@
     me.fix = f;
     me.el.classList.toggle("moving", plan.geom.length > 1);
     if (f.heading != null && Number.isFinite(f.heading)) me.el.style.setProperty("--h", `${f.heading}deg`);
-    (m.getSource("me-acc") as GeoJSONSource | undefined)?.setData({ type: "FeatureCollection",
-      features: [{ type: "Feature", properties: { acc: f.acc }, geometry: { type: "Point", coordinates: f.pos } }] });
+    showAcc(m, f);
     if (flyOnFix) {
       flyOnFix = false;
       m.flyTo({ center: f.pos, zoom: Math.max(m.getZoom(), 15.5), duration: 1200 });
@@ -461,7 +505,7 @@
     try {
       m = new MlMap({
         container: node,
-        style: STYLE(matchMedia("(prefers-color-scheme: dark)").matches),
+        style: STYLE(styleDark),
         center: [23.73, 37.98],
         zoom: 11.5,
         attributionControl: { compact: true },
@@ -492,15 +536,8 @@
       const attrib = node.querySelector(".maplibregl-ctrl-attrib");
       attrib?.classList.remove("maplibregl-compact-show");
       attrib?.removeAttribute("open");
-      addLayers(m);
-      m.addSource("me-acc", { type: "geojson", data: EMPTY });
-      // Accuracy circle in map metres: px = metres · 2^zoom / metres-per-pixel at zoom 0.
-      m.addLayer({ id: "me-acc", type: "circle", source: "me-acc",
-        paint: { "circle-radius": ["interpolate", ["exponential", 2], ["zoom"],
-          0, ["/", ["get", "acc"], M_PER_PX_Z0], 22, ["/", ["*", ["get", "acc"], 2 ** 22], M_PER_PX_Z0]],
-        "circle-color": "#1a73e8", "circle-opacity": 0.12, "circle-stroke-color": "#1a73e8", "circle-stroke-opacity": 0.35,
-        "circle-stroke-width": 1 } }, "city-dot");
-      loaded = true;
+      addAll(m);
+      if (untrack(() => dark) !== styleDark) restyle(m, untrack(() => dark));   // the theme changed while the map loaded
     });
     raf = requestAnimationFrame(frame);
     const onVisible = () => {
@@ -520,6 +557,7 @@
     } catch { /* storage blocked */ }
     // One dispatcher: DOM marker (its own handler) → city vehicle → stop → route → empty map.
     m.on("click", e => {
+      if (!loaded) return;   // the style is being replaced: our layers are not there to hit
       if ((e.originalEvent.target as Element | null)?.closest?.(".bus")) return;
       const city = nearestCity(m, e.point);
       if (city) {
@@ -569,6 +607,11 @@
   }
 
   $effect(() => {
+    const m = map, d = dark;
+    if (m && started && d !== styleDark) restyle(m, d);
+  });
+
+  $effect(() => {
     if (loaded) (map!.getSource("routes") as GeoJSONSource).setData(routesFC(drawn));
   });
 
@@ -576,6 +619,13 @@
     if (!loaded) return;
     const data = app.metro;
     (map!.getSource("metro") as GeoJSONSource).setData(data ? metroFC(data, app.metroLines, app.metroStation) : EMPTY);
+  });
+
+  // The stations are a switch in the layers menu (and on a station's card); the pinned lines' tracks stay.
+  $effect(() => {
+    if (!loaded) return;
+    const vis = app.metroStations ? "visible" : "none";
+    for (const id of ["metro-station", "metro-label"]) map!.setLayoutProperty(id, "visibility", vis);
   });
 
   // The trip planner's start (A) and end (B).
