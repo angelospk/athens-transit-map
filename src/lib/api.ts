@@ -2,7 +2,8 @@
 
 import { API_BASE, STATIC_BASE } from "./config";
 import type { FetchResult } from "./poller";
-import type { LineStatic, LinesIndex, Status } from "./types";
+import { loadTiles, tileKey, tileOf, tileUrlPath, type CityTiles, type Tile } from "./tiles";
+import type { CityLive, LineStatic, LinesIndex, Status } from "./types";
 
 // No cache-busting: all users should share the Cloudflare / browser cache.
 export async function getJSON(url: string, signal?: AbortSignal): Promise<FetchResult> {
@@ -26,12 +27,20 @@ export async function fetchLine(line: string, signal: AbortSignal): Promise<Fetc
   return getJSON(lineUrl(line), signal);
 }
 
-export const cityUrl = `${API_BASE}/v1/vehicles`;
+export const tileUrl = (t: Tile) => `${API_BASE}${tileUrlPath(t)}`;
 
-export async function fetchCity(_: string, signal: AbortSignal): Promise<FetchResult> {
-  if (import.meta.env.VITE_MOCK === "1") return (await import("./mock")).mockCity();
-  return getJSON(cityUrl, signal);
+export async function fetchTile(t: Tile, signal?: AbortSignal): Promise<FetchResult> {
+  if (import.meta.env.VITE_MOCK === "1") {
+    const r = await (await import("./mock")).mockCity();   // the mock city, cut into the tile
+    const b = r.body as CityLive;
+    return { ...r, body: { ...b, vehicles: b.vehicles.filter(v => tileKey(tileOf(v.lat, v.lon, t.z)) === tileKey(t)) } };
+  }
+  return getJSON(tileUrl(t), signal);
 }
+
+// The city layer: the tiles of the current view (tiles.ts), refreshed all together.
+export const fetchCity = (tiles: CityTiles) => (_: string, signal: AbortSignal) =>
+  loadTiles(tiles, tiles.tiles, fetchTile, signal);
 
 export async function fetchStatus(): Promise<Status | null> {
   if (import.meta.env.VITE_MOCK === "1") return (await import("./mock")).mockStatus();

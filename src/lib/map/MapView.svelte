@@ -529,6 +529,10 @@
       credit.addEventListener("click", e => { e.preventDefault(); e.stopImmediatePropagation(); void openInfo(); }, true);
     }
     m.on("dragstart", () => (follow = false));   // only user gestures fire it
+    // The city layer loads the tiles of the view (once the map stops moving, and at first).
+    const reportView = () => { const b = m.getBounds(); app.setCityView({ north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() }, m.getZoom()); };
+    m.on("load", reportView);
+    m.on("moveend", reportView);
 
     const popup = new Popup({ closeButton: false, offset: 10, maxWidth: "240px" });
     m.on("load", () => {

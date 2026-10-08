@@ -15,7 +15,7 @@ The UI follows the viewer of [foivospro/athens-gtfs-realtime](https://github.com
 
 ## Features
 
-- City layer: every live vehicle from `GET /v1/vehicles` (one cached snapshot for all users, ~30 s),
+- City layer: the live vehicles of the map view, `GET /v1/vehicles/tiles/{z}/{x}/{y}` (cached snapshot for all users, ~30 s),
   drawn by the GPU. Click a vehicle: its line is shown in detail until you click empty map or press Esc;
   the other vehicles stay, fade or hide (layers button). Off switch in the layers button.
 - Vehicles move along their route between updates, at the speed the backend measured over their last
