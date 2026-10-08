@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Bot, type BotDeps, type BotState, type Fetched } from "../bot/bot";
+import { Bot, type BotDeps, type BotState, type Fetched, type PushSub } from "../bot/bot";
 import { encodeAlert } from "../src/lib/tglink";
 import type { TripIndex } from "../src/lib/trip";
 
@@ -19,6 +19,8 @@ function setup(opts: { saved?: BotState; trips?: TripIndex; staticVer?: string; 
     () => ({ ok: true, result: { message_id: 7 } });
   const live: { vehicles: object[] } = { vehicles: [] };
   const gets: string[] = [];
+  const pushed: { sub: PushSub; data: Record<string, unknown> }[] = [];
+  let pushReply = () => 201;
   const deps: BotDeps = {
     urls: URLS,
     now: () => now,
@@ -28,6 +30,7 @@ function setup(opts: { saved?: BotState; trips?: TripIndex; staticVer?: string; 
       saved = JSON.parse(JSON.stringify(s));
     },
     tg: async (method, body) => { sent.push({ method, body }); return tgReply(method); },
+    push: async (sub, data) => { pushed.push({ sub, data: JSON.parse(data) }); return pushReply(); },
     get: async (url): Promise<Fetched> => {
       gets.push(url);
       if (url === URLS.trips) { await opts.gate; return { status: 200, body: opts.trips ?? ix }; }
@@ -40,7 +43,8 @@ function setup(opts: { saved?: BotState; trips?: TripIndex; staticVer?: string; 
   };
   const bot = new Bot(deps, saved);
   return {
-    bot, sent, gets, live,
+    bot, sent, gets, live, pushed,
+    failPush: (f: () => number) => void (pushReply = f),
     saved: () => saved,
     texts: () => sent.filter(s => s.method === "sendMessage").map(s => s.body.text as string),
     advance: (ms: number) => void (now += ms),
@@ -195,5 +199,113 @@ describe("Bot alerts", () => {
     await t.bot.flush();
     expect(t.texts().filter(x => x.startsWith("⌛"))).toHaveLength(1);
     expect(t.saved()?.alerts).toEqual([]);
+  });
+});
+
+describe("Bot web push", () => {
+  const sub = (endpoint = "https://web.push.apple.com/QAbc-_1"): PushSub =>
+    ({ endpoint, keys: { p256dh: "B" + "A".repeat(86), auth: "A".repeat(22) } });
+  const post = (t: ReturnType<typeof setup>, body: unknown) => t.bot.web({ method: "POST", path: "/alerts", body });
+
+  it("starts an alert for a push subscription and pushes each hit, not to Telegram", async () => {
+    const t = setup();
+    const r = await post(t, { p: payload, sub: sub() });
+    expect(r.status).toBe(201);
+    const { id, until } = r.body as { id: string; until: number };
+    expect(id).toMatch(/^[0-9a-f]{32}$/);   // the id is all it takes to stop the alert
+    expect(until).toBe(T0 / 1000 + 7200);
+    expect(t.saved()?.alerts[0]).toMatchObject({ id, push: sub() });
+    t.live.vehicles = [bus("s2")];
+    await t.bot.tick();
+    await t.bot.flush();
+    expect(t.sent).toEqual([]);
+    expect(t.pushed).toEqual([{ sub: sub(), data: { title: "Λεωφορείο", body: "🚌 Το 622 είναι 3 στάσεις πριν από ΣΤΑΣΗ 4 (καθυστέρηση 3′).", tag: id } }]);
+  });
+
+  it("refuses other push hosts, bad keys, bad links and links from other stop data", async () => {
+    const t = setup();
+    const bad = [
+      { p: payload, sub: sub("https://evil.example/x") },
+      { p: payload, sub: sub("http://fcm.googleapis.com/x") },
+      { p: payload, sub: { ...sub(), keys: { p256dh: "short", auth: "A".repeat(22) } } },
+      { p: "zzz", sub: sub() },
+      null,
+    ];
+    for (const b of bad) expect((await post(t, b)).status).toBe(400);
+    expect((await post(t, { p: payload.replace(/^1.../, "1aaa"), sub: sub() })).status).toBe(409);
+    for (const host of ["fcm.googleapis.com", "updates.push.services.mozilla.com", "db5p.notify.windows.com"])
+      { t.advance(3000); expect((await post(t, { p: payload, sub: sub(`https://${host}/x`) })).status).toBe(201); }
+    expect(t.saved()?.alerts).toHaveLength(3);
+  });
+
+  it("keeps 5 alerts per subscription and stops one by its id", async () => {
+    const t = setup();
+    const ids: string[] = [];
+    for (let k = 0; k < 6; k++) { ids.push(((await post(t, { p: payload, sub: sub() })).body as { id: string }).id); t.advance(3000); }
+    expect(t.saved()?.alerts.map(a => a.id)).toEqual(ids.slice(1));
+    expect((await t.bot.web({ method: "DELETE", path: `/alerts/${ids[3]}`, body: null })).status).toBe(204);
+    expect((await t.bot.web({ method: "DELETE", path: "/alerts/nope", body: null })).status).toBe(204);
+    expect(t.saved()?.alerts.map(a => a.id)).toEqual([ids[1], ids[2], ids[4], ids[5]]);
+  });
+
+  it("drops a subscription's alerts when the push service says it is gone", async () => {
+    const t = setup();
+    await post(t, { p: payload, sub: sub() });
+    t.advance(3000);
+    await post(t, { p: payload, sub: sub("https://fcm.googleapis.com/other") });
+    t.failPush(() => 410);
+    t.live.vehicles = [bus("s2")];
+    await t.bot.tick();
+    await t.bot.flush();
+    expect(t.saved()?.alerts.map(a => a.push?.endpoint)).toEqual([]);   // both hit and both are gone
+  });
+
+  it("ends a push alert after 2 hours without a push", async () => {
+    const t = setup();
+    await post(t, { p: payload, sub: sub() });
+    t.advance(2 * 3600_000 + 1000);
+    await t.bot.tick();
+    await t.bot.flush();
+    expect(t.pushed).toEqual([]);
+    expect(t.saved()?.alerts).toEqual([]);
+  });
+
+  it("sends nothing more for an alert stopped while its push waited in the queue", async () => {
+    const t = setup();
+    const { id } = (await post(t, { p: payload, sub: sub() })).body as { id: string };
+    t.live.vehicles = [bus("s2")];
+    await t.bot.tick();   // a hit is queued, not sent yet
+    await t.bot.web({ method: "DELETE", path: `/alerts/${id}`, body: null });
+    await t.bot.flush();
+    expect(t.pushed).toEqual([]);
+  });
+
+  it("keeps the older alerts when a new one could not be saved", async () => {
+    let fail = false;
+    const t = setup({ failSave: () => fail });
+    const ids: string[] = [];
+    for (let k = 0; k < 5; k++) { ids.push(((await post(t, { p: payload, sub: sub() })).body as { id: string }).id); t.advance(3000); }
+    fail = true;
+    expect((await post(t, { p: payload, sub: sub() })).status).toBe(503);
+    fail = false;
+    t.live.vehicles = [bus("s2", { position_at: (T0 + 15_000) / 1000 })];
+    await t.bot.tick();
+    await t.bot.flush();
+    expect(t.pushed.map(x => x.data.tag)).toEqual(ids);   // the oldest one too: it was not given up
+  });
+
+  it("says when a stop could not be saved, so the page tries again", async () => {
+    let fail = false;
+    const t = setup({ failSave: () => fail });
+    const { id } = (await post(t, { p: payload, sub: sub() })).body as { id: string };
+    fail = true;
+    expect((await t.bot.web({ method: "DELETE", path: `/alerts/${id}`, body: null })).status).toBe(503);
+    fail = false;
+    expect((await t.bot.web({ method: "DELETE", path: `/alerts/${id}`, body: null })).status).toBe(204);
+    expect(t.saved()?.alerts).toEqual([]);
+  });
+
+  it("answers 404 to other paths", async () => {
+    expect((await setup().bot.web({ method: "GET", path: "/x", body: null })).status).toBe(404);
   });
 });

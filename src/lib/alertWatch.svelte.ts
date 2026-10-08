@@ -1,5 +1,6 @@
 // Runs the app's stop alert (alerts.ts) on every new line data; loaded with the first alert. Each hit:
-// a card in the panel until dismissed, a system notification when allowed, a vibration.
+// a card in the panel until dismissed, a system notification when allowed (not for a push alert: the bot
+// sends that one), a vibration.
 
 import { untrack } from "svelte";
 import { AlertWatch } from "./alerts";
@@ -12,14 +13,14 @@ export function watchAlerts(app: AppState) {
       const a = app.alert, live = app.live, statics = app.statics;
       if (!a) return;
       for (const h of watch.check(a, live, statics, untrack(app.serverMs) / 1000))
-        void notify(untrack(() => app.alertHit(h, statics[h.line]?.stops[h.stop]?.name ?? a.label)));
+        void notify(untrack(() => app.alertHit(h, statics[h.line]?.stops[h.stop]?.name ?? a.label)), !!a.push);
     });
   });
 }
 
-async function notify(text: string) {
+async function notify(text: string, pushed: boolean) {
   navigator.vibrate?.([200, 100, 200]);
-  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  if (pushed || typeof Notification === "undefined" || Notification.permission !== "granted") return;
   const opts = { body: text, tag: text, icon: `${import.meta.env.BASE_URL}favicon.svg` };
   try {
     // The worker registered with the alert may still be starting: wait for it a little.

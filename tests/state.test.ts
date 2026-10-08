@@ -484,3 +484,44 @@ describe("AppState metro stations", () => {
     expect(app.selection).toBeNull();
   });
 });
+
+describe("AppState push alert", () => {
+  const mem = new Map<string, string>();
+  const reqs: string[] = [];
+  const spec = (push?: string) => ({ n: 3, until: Date.now() / 1000 + 3600, label: "ΣΤΑΣΗ", lines: [{ line: "622", variants: [{ id: "A", i: 4 }] }], ...(push ? { push } : {}) });
+  const fresh = () => {
+    vi.stubGlobal("localStorage", { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) });
+    vi.stubGlobal("fetch", (url: string, init: RequestInit = {}) => { reqs.push(`${init.method ?? "GET"} ${url}`); return new Promise(() => {}); });
+    return new AppState();
+  };
+
+  it("shows a push alert even with its lines off the map, and keeps it through a reload until it ends", () => {
+    mem.clear();
+    const app = fresh();
+    app.setAlert(spec("abc"));
+    expect(app.alert?.push).toBe("abc");
+    expect(fresh().alert?.push).toBe("abc");
+    mem.set("pushAlert", JSON.stringify({ ...spec("old"), until: Date.now() / 1000 - 1 }));
+    expect(fresh().alert).toBeNull();
+  });
+
+  it("stops the server's alert when cancelled or replaced by a new trip", () => {
+    mem.clear();
+    reqs.length = 0;
+    const app = fresh();
+    app.setAlert(spec("abc"));
+    app.setAlert(null);
+    expect(reqs.filter(r => r.startsWith("DELETE"))).toEqual([expect.stringMatching(/\/alerts\/abc$/)]);
+    expect(mem.get("pushAlert") ?? "null").toBe("null");
+    app.setAlert(spec("def"));
+    app.showTrip([{ id: "550", variants: ["x"] }]);
+    expect(reqs.filter(r => r.startsWith("DELETE")).at(-1)).toMatch(/\/alerts\/def$/);
+  });
+
+  it("keeps the old rule for an in-page alert: only lines on the map", () => {
+    mem.clear();
+    const app = fresh();
+    app.setAlert(spec());
+    expect(app.alert).toBeNull();
+  });
+});

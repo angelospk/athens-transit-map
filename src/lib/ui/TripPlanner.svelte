@@ -10,6 +10,7 @@
   import { tick, untrack } from "svelte";
   import { fetchLines } from "../api";
   import { MAX_LINES } from "../selection";
+  import { canPush, startPush, stopPush } from "../push";
   import { encodeAlert } from "../tglink";
   import type { AppState } from "../state.svelte";
   import { alertTargets, boardings, centre, distM, findTrips, geocode, loadTripIndex, places, searchPlaces, suggest, termini, toggleTripLine, type TripIndex, type TripLine } from "../trip";
@@ -185,15 +186,29 @@
   const targets = $derived(trips ? alertTargets(trips, app.selected, board, off) : []);
   const setTicked = (line: string, on: boolean) => { off = on ? off.filter(l => l !== line) : [...off, line]; };
 
-  // Stop alert for the chosen lines, at the chosen stop. The permission prompt comes first, from the
-  // tap itself (browsers ignore it later).
+  // The chosen alert as a link payload (src/lib/tglink.ts): for Telegram and for web push.
+  const payload = $derived(data && !data.stale ? encodeAlert(data.ix, n, targets) : null);
+
+  // Stop alert for the chosen lines, at the chosen stop: in the page, and as web push where the browser
+  // has it (then it comes with the page closed). The permission prompt comes first, from the tap itself
+  // (browsers ignore it later).
   const canNotify = typeof Notification !== "undefined";
+  // iPhones give web push only to a web app opened from the Home Screen.
+  const iosTab = typeof navigator !== "undefined" && (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) &&
+    !matchMedia("(display-mode: standalone)").matches && !(navigator as { standalone?: boolean }).standalone;
+  // One alert at a time: a second tap while the first waits (permission, server) does nothing.
+  let pushing = $state(false);
   async function alertMe() {
-    const t = trips, d = data, f = from;
+    if (pushing) return;
+    pushing = true;
+    try { await startAlert(); } finally { pushing = false; }
+  }
+  async function startAlert() {
+    const t = trips, d = data, f = from, p = payload;
     if (!t || !d || !f) return;
     if (canNotify && Notification.permission === "default") await Notification.requestPermission().catch(() => {});
     // Registered before the alert starts: phones show notifications only through it.
-    await navigator.serviceWorker?.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => null);
+    const reg = await navigator.serviceWorker?.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => null);
     if (closed || t !== trips) return;   // the trip changed while the browser asked
     const ix = d.ix;
     const lines = targets.map(l => ({ line: l.line, variants: l.variants.map(v => ({ id: v.id, i: v.i, name: ix.s[v.from][0] })) }));
@@ -202,17 +217,20 @@
       return;
     }
     err = null;
-    app.setAlert({ n, until: Math.floor(app.serverMs() / 1000) + ALERT_S, label: board?.name ?? f.label, lines });
+    let push: { id: string; until: number } | null = null;
+    if (reg && p && canPush() && Notification.permission === "granted") {
+      const ready = await Promise.race([navigator.serviceWorker.ready, new Promise<null>(r => setTimeout(r, 5000, null))]);
+      push = ready && (await startPush(ready, p));
+      if (closed || t !== trips || p !== payload) { if (push) void stopPush(push.id); return; }
+      if (!push) err = "Η ειδοποίηση δουλεύει μόνο με τη σελίδα ανοιχτή: ο server ειδοποιήσεων δεν απάντησε.";
+    }
+    app.setAlert({ n, until: push?.until ?? Math.floor(app.serverMs() / 1000) + ALERT_S, label: board?.name ?? f.label, lines, ...(push ? { push: push.id } : {}) });
     alertOpen = false;
   }
 
   // The same alert in Telegram (src/lib/tglink.ts).
   const BOT = "oasa_bus_bot";
-  const tgLink = $derived.by(() => {
-    if (!data || data.stale) return null;
-    const p = encodeAlert(data.ix, n, targets);
-    return p && `https://t.me/${BOT}?start=${p}`;
-  });
+  const tgLink = $derived(payload && `https://t.me/${BOT}?start=${payload}`);
 
   const stop = (k: number) => data?.ix.s[k][0] ?? "";
   const metres = (m: number) => (m < 50 ? "δίπλα" : `≈ ${Math.round(m / 50) * 50} μ.`);
@@ -345,7 +363,7 @@
         <div class="alert">
           {#if app.alert}
             {@const a = app.alert}
-            <span>🔔 {a.lines.map(l => l.line).join(", ")}: έως {a.n} {a.n === 1 ? "στάση" : "στάσεις"} πριν από {a.label}.</span>
+            <span>🔔 {a.lines.map(l => l.line).join(", ")}: έως {a.n} {a.n === 1 ? "στάση" : "στάσεις"} πριν από {a.label}{a.push ? ", και με κλειστή σελίδα" : ""}.</span>
             <button type="button" class="link" onclick={() => app.setAlert(null)}>Ακύρωση</button>
             {#if tgLink}<a class="bell tg" href={tgLink} target="_blank" rel="noopener">Στο Telegram</a>{/if}
           {:else if data.stale}
@@ -382,11 +400,16 @@
               {/each}
             </fieldset>
             <div class="go">
-              <button type="button" class="bell" disabled={!targets.length} onclick={alertMe}>Εδώ</button>
+              <button type="button" class="bell" disabled={!targets.length || pushing} onclick={alertMe}>{pushing ? "…" : "Εδώ"}</button>
               {#if tgLink}<a class="bell tg" href={tgLink} target="_blank" rel="noopener">Στο Telegram</a>{/if}
             </div>
-            <p class="note">Για 2 ώρες. Εδώ: όσο η σελίδα είναι ανοιχτή{canNotify ? "" : ", μόνο μέσα στη σελίδα"}.
+            <p class="note">Για 2 ώρες.
+              {#if canPush()}Εδώ: και με κλειστή σελίδα ή κλειδωμένη οθόνη.
+              {:else}Εδώ: όσο η σελίδα είναι ανοιχτή{canNotify ? "" : ", μόνο μέσα στη σελίδα"}.{/if}
               Telegram: και με κλειδωμένη οθόνη, από το @{BOT}.</p>
+            {#if iosTab}
+              <p class="note">iPhone, για ειδοποίηση εδώ με κλειδωμένη οθόνη: Κοινοποίηση → «Προσθήκη στην οθόνη Αφετηρίας», και άνοιξε τον χάρτη από το εικονίδιο.</p>
+            {/if}
           </div>
         {/if}
       {/if}

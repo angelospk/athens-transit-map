@@ -1,7 +1,13 @@
 # Stop alerts (trip planner, phase 2)
 
 Status 2026-10-07: option A built (`src/lib/alerts.ts`, `src/lib/alertWatch.svelte.ts`, `public/sw.js`).
-Option C (Telegram) built 2026-10-08 (`bot/`, `src/lib/tglink.ts`; payload format in tglink.ts); B (Web Push) is not planned while C covers iPhones.
+Option C (Telegram) built 2026-10-08 (`bot/`, `src/lib/tglink.ts`; payload format in tglink.ts).
+Option B (Web Push) built 2026-10-08, not in the Go backend but in the same bot on the VPS: the page posts the
+Telegram payload with its push subscription to `push.haroldpoi.dev` (`bot/main.ts`, `Bot.web()`), the bot runs
+the same pollers and rule and pushes each hit (`web-push`, TTL 2 min). Push hosts are allowlisted; the alert id
+(random 128 bit) is the only way to stop it. Page: `src/lib/push.ts`, `public/sw.js` (push handler), manifest
+and icons for an iPhone Home Screen app (iOS gives web push only there). The planner lets you choose the stop
+(each line's own, or one of the 4 nearest that serve the trip) and the lines.
 
 Goal: pick a stop near you; get a phone notification shortly before a bus that goes where you want
 reaches it. Settings: how early (stops before, e.g. 3), which lines.

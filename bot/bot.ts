@@ -1,7 +1,8 @@
-// @oasa_bus_bot: stop alerts in Telegram, no account. The page's 🔔 gives a link with the lines, variants
+// @oasa_bus_bot: stop alerts in Telegram or as web push, no account. The page's 🔔 gives a link with the lines, variants
 // and boarding stops (src/lib/tglink.ts); the bot watches those lines' live data and writes when a bus
 // is within n stops (src/lib/alerts.ts, the page's rule). One-off: an alert ends after 2 hours.
-// Design: docs/superpowers/specs/2026-10-07-stop-alerts-design.md (option C). IO comes in through
+// Web push: the page sends the same link with its push subscription (POST /alerts, see web()).
+// Design: docs/superpowers/specs/2026-10-07-stop-alerts-design.md (options B and C). IO comes in through
 // BotDeps, so the logic runs in tests; bot/main.ts wires it to Telegram and the network.
 //
 // Delivery is at most once: state (alerts, fired trips, update offset) is saved before messages go out,
@@ -22,10 +23,14 @@ export interface BotDeps {
   sleep(ms: number): Promise<void>;
   save(s: BotState): void;
   tg(method: string, body: Record<string, unknown>): Promise<TgResult>;
+  push(sub: PushSub, data: string): Promise<number>;   // the push service's HTTP status, 0 if unreachable
   get(url: string): Promise<Fetched>;
 }
+// A browser's push subscription (PushSubscription.toJSON()): all the bot keeps of the device.
+export interface PushSub { endpoint: string; keys: { p256dh: string; auth: string } }
+// To one Telegram chat or one push subscription.
 export interface SavedAlert {
-  id: string; chat: number; ver: string; spec: AlertSpec; label: string;
+  id: string; chat?: number; push?: PushSub; ver: string; spec: AlertSpec; label: string;
   watch: ReturnType<AlertWatch["snapshot"]>;
 }
 export interface BotState { offset: number; alerts: SavedAlert[] }
@@ -43,6 +48,10 @@ const FORCE_GAP_MS = 60_000;   // a link newer than the bot's data reloads it, a
 const START_GAP_MS = 2000;     // one new alert per chat this often
 const SEND_GAP_MS = 40;        // Telegram: about 30 messages a second in all
 const MIN_POLL_MS = 5000;      // the contract's floor per line
+// Push services of the browsers: the bot sends only there, never to any other URL it is given.
+const PUSH_HOSTS = [/^fcm\.googleapis\.com$/, /^android\.googleapis\.com$/, /(^|\.)push\.apple\.com$/, /(^|\.)push\.services\.mozilla\.com$/, /\.notify\.windows\.com$/];
+
+type Made = { ok: true; a: SavedAlert; n: number } | { ok: false; why: "data" | "bad" | "old" | "updating" | "soon" | "busy" };
 
 const HELP = "Γεια! Σου γράφω όταν το λεωφορείο σου πλησιάζει τη στάση σου.\n\n" +
   "Άνοιξε τον χάρτη https://bus.haroldpoi.dev, πάτα 🧭, διάλεξε από πού και προς τα πού, και μετά «Στο Telegram».\n\n" +
@@ -58,7 +67,7 @@ export class Bot {
   private loading: Promise<void> | null = null;
   private statics = new Map<string, LineStatic>();
   private lines = new Map<string, { next: number; busy: boolean; errors: number }>();
-  private lastStart = new Map<number, number>();
+  private lastStart = new Map<number | string, number>();
   private queue: { method: string; body: Record<string, unknown> }[] = [];
   private draining: Promise<void> | null = null;
 
@@ -92,7 +101,7 @@ export class Bot {
     const over = this.state.alerts.filter(a => now > a.spec.until * 1000);
     if (over.length) {
       this.remove(a => over.includes(a));
-      if (this.save()) for (const a of over)
+      if (this.save()) for (const a of over) if (a.chat != null)   // a push alert ends quietly: the page shows its end
         this.send(a.chat, `⌛ Τέλος ειδοποίησης για ${lineList(a)} (2 ώρες). Για νέα, πάτα πάλι 🔔 στον χάρτη.`);
     }
     if (!this.state.alerts.length) return;
@@ -110,6 +119,7 @@ export class Bot {
   private async drain() {
     while (this.queue.length) {
       const m = this.queue.shift()!;
+      if (m.method === "push") { await this.pushOne(m.body.sub as PushSub, m.body.data as string); continue; }
       let r = await this.d.tg(m.method, m.body);
       if (!r.ok && r.error_code === 429) {   // too fast: wait as told, try once more
         await this.d.sleep((r.parameters?.retry_after ?? 5) * 1000);
@@ -139,42 +149,87 @@ export class Bot {
   }
 
   private async start(chat: number, payload: string) {
+    const m = await this.create(payload, chat, { chat });
+    if (!m.ok) {
+      if (m.why !== "soon") this.send(chat, {
+        data: "Δεν φορτώνουν τα δεδομένα των στάσεων. Δοκίμασε σε λίγο.",
+        old: "Ο σύνδεσμος είναι από παλιότερα δεδομένα στάσεων. Φτιάξε νέο από τον χάρτη.",
+        bad: "Ο σύνδεσμος δεν είναι σωστός. Φτιάξε νέο από τον χάρτη: 🧭 → «Στο Telegram».",
+        updating: "Τα δεδομένα του ΟΑΣΑ ενημερώνονται. Δοκίμασε ξανά αργότερα.",
+        busy: "Πολλές ειδοποιήσεις αυτή τη στιγμή. Δοκίμασε σε λίγο.",
+      }[m.why]);
+      return;
+    }
+    const { a, n } = m, spec = a.spec;
+    const at = [...new Set(spec.lines.flatMap(l => l.variants.map(v => `• ${l.line} στη στάση ${v.name}`)))].join("\n");
+    this.send(chat, `🔔 Θα σου γράψω όταν ένα λεωφορείο είναι ${n === 1 ? "στην προηγούμενη στάση" : `έως ${n} στάσεις πριν`}:\n${at}\n` +
+      `Έως ${clock(spec.until).slice(0, 5)}.`, a.id);
+  }
+
+  // The page's push API, behind bot/main.ts (which adds CORS, size and rate limits):
+  //   POST /alerts {p: link payload, sub: PushSubscription} → 201 {id, until}; DELETE /alerts/{id} → 204.
+  // The id is random and is the only way to stop an alert from outside.
+  async web(req: { method: string; path: string; body: unknown }): Promise<{ status: number; body?: unknown }> {
+    if (req.method === "POST" && req.path === "/alerts") {
+      const b = req.body as { p?: unknown; sub?: unknown } | null;
+      const sub = pushSub(b?.sub);
+      if (!sub || typeof b?.p !== "string") return { status: 400, body: { error: "bad" } };
+      const m = await this.create(b.p, sub.endpoint, { push: sub });
+      if (!m.ok) return { status: { data: 503, updating: 503, bad: 400, old: 409, soon: 429, busy: 503 }[m.why], body: { error: m.why } };
+      return { status: 201, body: { id: m.a.id, until: m.a.spec.until } };
+    }
+    const id = req.method === "DELETE" && /^\/alerts\/([^/]{1,64})$/.exec(req.path)?.[1];
+    if (id) {
+      const before = this.state.alerts;
+      if (before.some(a => a.id === id && a.push)) {
+        this.state.alerts = before.filter(a => a.id !== id);
+        // Not saved: a restart would bring it back, so it stays, and the page tries again.
+        if (!this.save()) { this.state.alerts = before; return { status: 503, body: { error: "save" } }; }
+        this.watches.delete(id);
+        this.queue = this.queue.filter(q => q.body.alert !== id);   // its pushes not sent yet
+      }
+      return { status: 204 };
+    }
+    return { status: 404, body: { error: "not found" } };
+  }
+
+  // A new alert from a link payload, for one chat or push subscription (owner: what the limits count).
+  private async create(payload: string, owner: number | string, to: { chat: number } | { push: PushSub }): Promise<Made> {
     await this.loadData();
-    if (!this.ix) return this.send(chat, "Δεν φορτώνουν τα δεδομένα των στάσεων. Δοκίμασε σε λίγο.");
+    if (!this.ix) return { ok: false, why: "data" };
     let d = decodeAlert(this.ix, payload);
     if (!d.ok && d.why === "old" && this.d.now() - this.forcedAt > FORCE_GAP_MS) {   // the page may be newer than the bot
       this.forcedAt = this.d.now();
       await this.loadData(true);
       d = decodeAlert(this.ix, payload);
     }
-    if (!d.ok) return this.send(chat, d.why === "old"
-      ? "Ο σύνδεσμος είναι από παλιότερα δεδομένα στάσεων. Φτιάξε νέο από τον χάρτη."
-      : "Ο σύνδεσμος δεν είναι σωστός. Φτιάξε νέο από τον χάρτη: 🧭 → «Στο Telegram».");
+    if (!d.ok) return { ok: false, why: d.why };
     const ix = this.ix;
-    if (this.staticVer !== ix.v) return this.send(chat, "Τα δεδομένα του ΟΑΣΑ ενημερώνονται. Δοκίμασε ξανά αργότερα.");
+    if (this.staticVer !== ix.v) return { ok: false, why: "updating" };
     const now = this.d.now();
-    if (now - (this.lastStart.get(chat) ?? -Infinity) < START_GAP_MS) return;
-    // The oldest alerts of this chat make room; then the limits for everyone.
-    const mine = this.state.alerts.filter(a => a.chat === chat);
+    if (now - (this.lastStart.get(owner) ?? -Infinity) < START_GAP_MS) return { ok: false, why: "soon" };
+    // The oldest alerts of this owner make room; then the limits for everyone.
+    const mine = this.state.alerts.filter(a => owns(a, owner));
     const drop = new Set(mine.slice(0, Math.max(0, mine.length - PER_CHAT + 1)));
     const rest = this.state.alerts.filter(a => !drop.has(a));
     const lines = new Set([...rest.flatMap(a => a.spec.lines.map(l => l.line)), ...d.lines.map(l => l.line)]);
-    if (rest.length >= MAX_ALERTS || lines.size > MAX_LINES)
-      return this.send(chat, "Πολλές ειδοποιήσεις αυτή τη στιγμή. Δοκίμασε σε λίγο.");
-    this.lastStart.set(chat, now);
+    if (rest.length >= MAX_ALERTS || lines.size > MAX_LINES) return { ok: false, why: "busy" };
+    this.lastStart.set(owner, now);
+    const before = this.state.alerts;
     this.remove(a => drop.has(a));
     const name = (line: string, id: string, i: number) => ix.s[ix.l[line][id][i]][0];
     const spec: AlertSpec = {
       n: d.n, until: Math.floor((now + ALERT_MS) / 1000),
       lines: d.lines.map(l => ({ line: l.line, variants: l.variants.map(v => ({ ...v, name: name(l.line, v.id, v.i) })) })),
     };
-    const a: SavedAlert = { id: Math.random().toString(36).slice(2, 10), chat, ver: ix.v, spec, label: spec.lines[0].variants[0].name!,
-      watch: new AlertWatch().snapshot() };
+    const id = "push" in to ? crypto.randomUUID().replaceAll("-", "") : Math.random().toString(36).slice(2, 10);
+    const a: SavedAlert = { id, ...to, ver: ix.v, spec, label: spec.lines[0].variants[0].name!, watch: new AlertWatch().snapshot() };
     this.state.alerts.push(a);
     this.watches.set(a.id, new AlertWatch());
-    const at = [...new Set(spec.lines.flatMap(l => l.variants.map(v => `• ${l.line} στη στάση ${v.name}`)))].join("\n");
-    this.send(chat, `🔔 Θα σου γράψω όταν ένα λεωφορείο είναι ${d.n === 1 ? "στην προηγούμενη στάση" : `έως ${d.n} στάσεις πριν`}:\n${at}\n` +
-      `Έως ${clock(spec.until).slice(0, 5)}.`, a.id);
+    // Telegram saves it with the update offset (handle()); a push alert is answered now, so saved now.
+    // On a failed save all is as before (the dropped alerts' watches come back from their snapshots).
+    if ("push" in to && !this.save()) { this.watches.delete(a.id); this.state.alerts = before; return { ok: false, why: "busy" }; }
+    return { ok: true, a, n: d.n };
   }
 
   private onCallback(q: Callback) {
@@ -207,7 +262,7 @@ export class Bot {
       const old = this.state.alerts.filter(a => a.ver !== this.ix!.v || this.staticVer !== this.ix!.v);
       if (old.length) {
         this.remove(a => old.includes(a));
-        if (this.save()) for (const a of old) this.send(a.chat, `Τα δρομολόγια του ΟΑΣΑ άλλαξαν: η ειδοποίηση για ${lineList(a)} σταμάτησε. Φτιάξε νέα από τον χάρτη.`);
+        if (this.save()) for (const a of old) this.tell(a, `Τα δρομολόγια του ΟΑΣΑ άλλαξαν: η ειδοποίηση για ${lineList(a)} σταμάτησε. Φτιάξε νέα από τον χάρτη.`);
       }
     })().catch(e => console.error("data:", (e as Error).message)).finally(() => (this.loading = null));
     return this.loading;
@@ -244,16 +299,32 @@ export class Bot {
   }
 
   private check(line: string, live: LineLive, stat: LineStatic, nowS: number) {
-    const out: { chat: number; text: string; id: string }[] = [];
+    const out: { a: SavedAlert; text: string }[] = [];
     for (const a of this.state.alerts) {   // read now: alerts stopped during the request are gone
       if (!a.spec.lines.some(l => l.line === line)) continue;
       const w = this.watches.get(a.id) ?? new AlertWatch(a.watch);
       this.watches.set(a.id, w);
       for (const h of w.check(a.spec, { [line]: live }, { [line]: stat }, nowS))
-        out.push({ chat: a.chat, id: a.id, text: `🚌 ${hitText(h, stat.stops[h.stop]?.name.trim() ?? a.label)}` });
+        out.push({ a, text: `🚌 ${hitText(h, stat.stops[h.stop]?.name.trim() ?? a.label)}` });
       a.watch = w.snapshot();
     }
-    if (out.length && this.save()) for (const m of out) this.send(m.chat, m.text, m.id);
+    if (out.length && this.save()) for (const m of out) this.tell(m.a, m.text);
+  }
+
+  // To the alert's chat (with its stop buttons) or push subscription.
+  private tell(a: SavedAlert, text: string) {
+    if (a.push) this.queue.push({ method: "push", body: { alert: a.id, sub: a.push, data: JSON.stringify({ title: "Λεωφορείο", body: text, tag: a.id }) } });
+    else if (a.chat != null) this.send(a.chat, text, a.id);
+  }
+
+  // 404/410: the browser dropped the subscription, so its alerts go.
+  private async pushOne(sub: PushSub, data: string) {
+    const status = await this.d.push(sub, data);
+    if (status === 404 || status === 410) {
+      this.remove(a => a.push?.endpoint === sub.endpoint);
+      this.queue = this.queue.filter(q => (q.body.sub as PushSub | undefined)?.endpoint !== sub.endpoint);
+      this.save();
+    } else if (status < 200 || status >= 300) console.error(`push: ${status || "network"}`);
   }
 
   private send(chat: number, text: string, alertId?: string) {
@@ -278,6 +349,20 @@ export class Bot {
       return false;
     }
   }
+}
+
+const owns = (a: SavedAlert, owner: number | string) => (typeof owner === "number" ? a.chat === owner : a.push?.endpoint === owner);
+
+// A subscription the bot may send to: https, a known push service, keys of the right size.
+function pushSub(x: unknown): PushSub | null {
+  const s = x as PushSub | null;
+  if (!s || typeof s.endpoint !== "string" || s.endpoint.length > 1024 || !s.keys) return null;
+  const { p256dh, auth } = s.keys;
+  if (typeof p256dh !== "string" || !/^[A-Za-z0-9_-]{87}$/.test(p256dh) || typeof auth !== "string" || !/^[A-Za-z0-9_-]{22}$/.test(auth)) return null;
+  let u: URL;
+  try { u = new URL(s.endpoint); } catch { return null; }
+  if (u.protocol !== "https:" || u.port || u.username || !PUSH_HOSTS.some(h => h.test(u.hostname))) return null;
+  return { endpoint: s.endpoint, keys: { p256dh, auth } };
 }
 
 const lineList = (a: SavedAlert) => a.spec.lines.map(l => l.line).join(", ");

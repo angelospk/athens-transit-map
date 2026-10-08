@@ -11,6 +11,7 @@ import { CityTiles, loadTiles, viewTiles, type Tile, type View } from "./tiles";
 import { isTheme, type Theme } from "./theme";
 import { MAX_LINES, selectionIds, serializeSelection, splitKnown, toggle } from "./selection";
 import { hitText, type AlertHit, type AlertSpec } from "./alerts";
+import { retryStops, stopPush } from "./push";
 import type { CityLive, CityVehicle, LineInfo, LineLive, LineStatic, Status, Vehicle } from "./types";
 
 export const STALE_S = 120;
@@ -39,8 +40,13 @@ function store(key: string, v: unknown) {
 const isBool = (v: unknown) => typeof v === "boolean";
 const isIds = (v: unknown) => Array.isArray(v) && v.every(x => typeof x === "string");
 
-// A stop alert from the trip planner; label: the boarding stop's name.
-export type StopAlert = AlertSpec & { label: string };
+// A stop alert from the trip planner; label: the boarding stop's name; push: the bot's id for the same
+// alert as web push (src/lib/push.ts).
+export type StopAlert = AlertSpec & { label: string; push?: string };
+const isPushAlert = (v: unknown) => {
+  const a = v as StopAlert | null;
+  return !!a && typeof a.push === "string" && typeof a.until === "number" && a.until > Date.now() / 1000 && Array.isArray(a.lines) && typeof a.n === "number";
+};
 export interface ShownHit { id: number; text: string }
 
 export interface PlacedVehicle { line: string; v: Vehicle; faded: boolean }   // faded: direction unknown under focus
@@ -90,10 +96,11 @@ export class AppState {
   favorites = $state.raw<string[]>(stored("favorites", [], isIds));
   // Stop alert: the planner's lines that are still picked (a line taken off the map stops alerting; put
   // back, it alerts again until the alert ends); null once over. hits: arrivals shown until dismissed.
-  private alertSpec = $state.raw<StopAlert | null>(null);
+  // A push alert keeps all its lines (the bot watches them) and is kept through a reload.
+  private alertSpec = $state.raw<StopAlert | null>(stored("pushAlert", null, isPushAlert));
   alert = $derived.by((): StopAlert | null => {
     const a = this.alertSpec;
-    const lines = a?.lines.filter(l => this.selected.includes(l.line)) ?? [];
+    const lines = a?.push ? a.lines : a?.lines.filter(l => this.selected.includes(l.line)) ?? [];
     if (!a || !lines.length || this.serverNow / 1000 > a.until) return null;
     return lines.length === a.lines.length ? a : { ...a, lines };
   });
@@ -297,7 +304,7 @@ export class AppState {
   private tripGen = 0;
   showTrip(lines: { id: string; variants: string[] }[]): string[] {
     if (!lines.length) return [];
-    this.alertSpec = null;   // a new trip: the old alert no longer fits
+    this.setAlert(null);   // a new trip: the old alert no longer fits
     const keep = lines.slice(0, MAX_LINES), ids = keep.map(l => l.id), left = lines.slice(MAX_LINES).map(l => l.id);
     this.metroStation = null;
     this.selection = null;
@@ -315,9 +322,17 @@ export class AppState {
     return left;
   }
 
+  constructor() {
+    if (this.alertSpec) this.setAlert(this.alertSpec);   // a push alert from before the reload
+    void retryStops();   // stops of push alerts the server did not confirm
+  }
+
   // The watcher loads with the first alert and then follows app.alert.
   setAlert(a: StopAlert | null) {
+    const old = this.alertSpec;
+    if (old?.push && old.push !== a?.push) void stopPush(old.push);
     this.alertSpec = a;
+    store("pushAlert", a?.push ? a : null);
     if (!a || this.alertsStarted) return;
     this.alertsStarted = true;
     import("./alertWatch.svelte").then(m => m.watchAlerts(this), () => {

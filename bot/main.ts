@@ -3,11 +3,16 @@
 //
 // Env: TELEGRAM_TOKEN (required), STATE_DIR (default ~/.local/state/oasa-bus-bot), and the data URLs
 // TRIPS_URL, STATIC_BASE, API_BASE. Never log the token: it is in every Telegram URL.
+// Web push (off without the keys): VAPID_PUBLIC, VAPID_PRIVATE (`npx web-push generate-vapid-keys`),
+// PUSH_PORT (default 8188, on 127.0.0.1 behind the Cloudflare tunnel), ORIGINS (default the map's).
 
+import { createServer } from "node:http";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { Bot, type BotState, type Fetched, type TgResult } from "./bot";
+import webpush from "web-push";
+import { pushApi } from "./http";
+import { Bot, type BotState, type Fetched, type PushSub, type TgResult } from "./bot";
 
 const token = process.env.TELEGRAM_TOKEN?.trim();
 if (!token) {
@@ -52,6 +57,19 @@ async function get(url: string): Promise<Fetched> {
   }
 }
 
+const vapid = { pub: process.env.VAPID_PUBLIC?.trim(), priv: process.env.VAPID_PRIVATE?.trim() };
+if (vapid.pub && vapid.priv) webpush.setVapidDetails("https://bus.haroldpoi.dev", vapid.pub, vapid.priv);
+
+// TTL 2 min: a late "the bus is coming" is worse than none.
+async function push(sub: PushSub, data: string): Promise<number> {
+  if (!vapid.pub) return 0;
+  try {
+    return (await webpush.sendNotification(sub, data, { TTL: 120, urgency: "high", timeout: 15_000 })).statusCode;
+  } catch (e) {
+    return (e as { statusCode?: number }).statusCode ?? 0;
+  }
+}
+
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 const strip = (s: string) => s.replace(/\/+$/, "");
 
@@ -61,8 +79,13 @@ const bot = new Bot({
     static: strip(process.env.STATIC_BASE || "https://angelospk.github.io/athens-transit-rt/static/v1"),
     api: strip(process.env.API_BASE || "https://transit.haroldpoi.dev"),
   },
-  now: Date.now, sleep, save, tg, get,
+  now: Date.now, sleep, save, tg, get, push,
 }, load());
+
+const ORIGINS = (process.env.ORIGINS || "https://bus.haroldpoi.dev").split(",").map(s => s.trim());
+if (vapid.pub && vapid.priv)
+  createServer(pushApi(bot, { key: vapid.pub, origins: ORIGINS }, () => void bot.flush())).listen(Number(process.env.PUSH_PORT) || 8188, "127.0.0.1");
+else console.log("web push off: no VAPID keys");
 
 async function updates() {
   for (;;) {
