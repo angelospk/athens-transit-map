@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { linkTransfers, metroFC, type MetroData } from "../src/lib/metro";
+import { linkTransfers, metroFC, termini, type MetroData } from "../src/lib/metro";
 
 const data: MetroData = {
   source: "test",
@@ -53,5 +53,17 @@ describe("linkTransfers", () => {
       { name: "ΑΚΡΟΠΟΛΗ", lon: 23.7290, lat: 37.9687, lines: ["M2"] },            // ~900 m
     ];
     expect(linkTransfers(st).map(s => s.lines)).toEqual([["M2", "M3", "T6"], ["T6", "M2", "M3"], ["M2"]]);
+  });
+});
+
+describe("termini", () => {
+  it("names the stations of the line nearest to the two ends of its track", () => {
+    expect(termini(data, "M1")).toEqual(["ΠΕΙΡΑΙΑΣ", "ΟΜΟΝΟΙΑ"]);
+  });
+
+  it("skips stations of other lines, and is null for an unknown line", () => {
+    // T6 starts 1 km from ΣΥΝΤΑΓΜΑ (an M2 station here) and has only one station: both ends are it.
+    expect(termini(data, "T6")).toEqual(["Πικροδάφνη", "Πικροδάφνη"]);
+    expect(termini(data, "X")).toBeNull();
   });
 });

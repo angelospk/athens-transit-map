@@ -168,7 +168,8 @@
         "circle-stroke-color": color("accent"), "circle-stroke-width": 3 } });
   }
 
-  // Metro, ISAP and tram, under everything else: every station, the pinned lines' tracks.
+  // Metro, ISAP and tram: the pinned lines' tracks under everything else; every station (moved over the
+  // city vehicles in addLayers, so they always show).
   function addMetroLayers(m: MlMap) {
     const sel = (a: unknown, b: unknown) => ["case", ["get", "sel"], a, b] as ExpressionSpecification;
     const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#3b5bdb";
@@ -178,9 +179,9 @@
       layout: { "line-join": "round", "line-cap": "round" },
       paint: { "line-color": ["get", "color"], "line-width": byZoom([10, 2, 14, 4, 17, 6]), "line-opacity": 0.85 } });
     m.addLayer({ id: "metro-station", type: "circle", source: "metro", filter: ["==", ["get", "kind"], "station"],
-      paint: { "circle-radius": byZoom([10, sel(5, 2.5), 14, sel(8, ["case", ["get", "hub"], 6, 4.5]), 17, ["case", ["get", "hub"], 9, 7]]),
+      paint: { "circle-radius": byZoom([10, sel(6, ["case", ["get", "hub"], 4.5, 3.5]), 14, sel(9, ["case", ["get", "hub"], 7, 6]), 17, ["case", ["get", "hub"], 10, 8]]),
         "circle-color": "#ffffff", "circle-stroke-color": sel(accent, ["case", ["get", "hub"], "#222222", ["get", "color"]]),
-        "circle-stroke-width": byZoom([10, sel(2.5, 1), 14, sel(3, 2)]) } });
+        "circle-stroke-width": byZoom([10, sel(3, 2), 14, sel(3.5, 3)]) } });
     m.addLayer({ id: "metro-label", type: "symbol", source: "metro", minzoom: 13,
       filter: ["==", ["get", "kind"], "station"],
       layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Bold"], "text-size": 11,
@@ -225,6 +226,7 @@
   function addLayers(m: MlMap) {
     addMetroLayers(m);
     addCityLayers(m);
+    for (const id of ["metro-station", "metro-label"]) m.moveLayer(id);
     // Trails of corrections (the route a vehicle glided along) and, with motion off, of moves to a
     // new fix. Always under the vehicle: city dots' trails under the dots, detailed lines' trails
     // over the route lines (their vehicles are DOM markers, above the map).
@@ -266,10 +268,9 @@
         "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2 } });
   }
 
-  // The metro station under a click, with a finger-sized margin; the nearest if several.
-  function nearestStation(m: MlMap, p: { x: number; y: number }) {
-    if (m.getLayoutProperty("metro-station", "visibility") === "none") return null;
-    const r = 10, hits = m.queryRenderedFeatures([[p.x - r, p.y - r], [p.x + r, p.y + r]], { layers: ["metro-station"] });
+  // The metro station under a click, with a finger-sized margin r; the nearest if several.
+  function nearestStation(m: MlMap, p: { x: number; y: number }, r = 10) {
+    const hits = m.queryRenderedFeatures([[p.x - r, p.y - r], [p.x + r, p.y + r]], { layers: ["metro-station"] });
     const d = (f: (typeof hits)[number]) => {
       const q = m.project((f.geometry as GeoJSON.Point).coordinates as [number, number]);
       return Math.hypot(q.x - p.x, q.y - p.y);
@@ -567,10 +568,16 @@
           if (r.state === "granted" && !disposed) locator.start();
         }, () => {});
     } catch { /* storage blocked */ }
-    // One dispatcher: DOM marker (its own handler) → city vehicle → stop → route → empty map.
+    // One dispatcher: DOM marker (its own handler) → station right under the finger (drawn over the city
+    // vehicles, under a picked line's stops) → city vehicle → stop → station near the finger → route → empty map.
     m.on("click", e => {
       if (!loaded) return;   // the style is being replaced: our layers are not there to hit
       if ((e.originalEvent.target as Element | null)?.closest?.(".bus")) return;
+      const onStation = nearestStation(m, e.point, 3);
+      if (onStation && !m.queryRenderedFeatures(e.point, { layers: ["stops"] }).length) {   // a line's stop is drawn over it
+        popup.remove();
+        return app.selectStation(String(onStation.properties.name));
+      }
       const city = nearestCity(m, e.point);
       if (city) {
         popup.remove();
@@ -633,13 +640,6 @@
     if (!loaded) return;
     const data = app.metro;
     (map!.getSource("metro") as GeoJSONSource).setData(data ? metroFC(data, app.metroLines, app.metroStation) : EMPTY);
-  });
-
-  // The stations are a switch in the layers menu (and on a station's card); the pinned lines' tracks stay.
-  $effect(() => {
-    if (!loaded) return;
-    const vis = app.metroStations ? "visible" : "none";
-    for (const id of ["metro-station", "metro-label"]) map!.setLayoutProperty(id, "visibility", vis);
   });
 
   // The trip planner's start (A) and end (B).

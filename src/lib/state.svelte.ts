@@ -81,9 +81,8 @@ export class AppState {
   tempLine = $state<string | null>(null);
   // Light, dark, or the device's setting.
   theme = $state<Theme>(stored("theme", "system", isTheme));
-  // Metro, ISAP and tram (static): the stations (a switch) and the pinned lines' tracks. metroStation: the
-  // tapped station, whose card pins its lines.
-  metroStations = $state(stored("metroStations", true, isBool));
+  // Metro, ISAP and tram (static): every station, and the pinned lines' tracks. metroStation: the tapped
+  // station, whose card pins its lines.
   metroLines = $state.raw<string[]>(stored("metroLines", [], isIds));
   metro = $state.raw<MetroData | null>(null);
   metroStation = $state<string | null>(null);
@@ -262,21 +261,8 @@ export class AppState {
     store("metroLines", ids);
   }
 
-  setMetroStations(on: boolean) {
-    this.metroStations = on;
-    store("metroStations", on);
-    if (!on) this.metroStation = null;
-  }
-
-  // From a station's card: the stations go away, so the user is told where they come back.
-  hideStations() {
-    this.setMetroStations(false);
-    this.say("Οι σταθμοί κρύφτηκαν. Ξαναφαίνονται στα Επίπεδα χάρτη (άνοιξε τον πίνακα με το βέλος).");
-  }
-
   // A station tapped on the map (null: none). Its card replaces a vehicle's or route's.
   selectStation(name: string | null) {
-    if (name && !this.metroStations) return;
     if (name) this.clearSelection();
     this.metroStation = name;
   }

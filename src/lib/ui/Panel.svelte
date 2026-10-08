@@ -249,14 +249,16 @@
         <HelpPop />
       </div>
     {:else if pop === "layers"}
-      <div class="pop" id="pop-layers" role="dialog" aria-label="Επίπεδα χάρτη">
+      <div class="pop" id="pop-layers" role="dialog" aria-label="Τι δείχνει ο χάρτης">
+        <h3>Τι δείχνει ο χάρτης</h3>
         <section>
-          <h4>Θέμα</h4>
-          <div class="seg" role="radiogroup" aria-label="Θέμα">
-            {#each [["system", "Συσκευής"], ["light", "Φωτεινό"], ["dark", "Σκοτεινό"]] as const as [v, label] (v)}
-              <button type="button" role="radio" aria-checked={app.theme === v} onclick={() => app.setTheme(v)}>{label}</button>
-            {/each}
-          </div>
+          <h4>Μετρό, ΗΣΑΠ και τραμ</h4>
+          <p class="hint">Οι σταθμοί φαίνονται πάντα· πάτα έναν για τις γραμμές του. Άνοιξε μια γραμμή για να φαίνεται η διαδρομή της.</p>
+          {#if app.metro}
+            <MetroToggles {app} ids={app.metro.lines.map(l => l.id)} />
+          {:else}
+            <p class="hint">Φόρτωση…</p>
+          {/if}
         </section>
         <section>
           <h4>Λεωφορεία</h4>
@@ -275,7 +277,7 @@
           </div>
         </section>
         <section>
-          <h4>Φίλτρα <small>· κρύβουν λεωφορεία</small></h4>
+          <h4>Φίλτρα λεωφορείων <small>· κρύβουν όσα δεν ταιριάζουν</small></h4>
           <label class="switch">
             <input type="checkbox" checked={app.only.fresh} onchange={e => app.setOnly({ fresh: e.currentTarget.checked })} />
             <span>Μόνο με πρόσφατη θέση<br /><small>Έστειλαν θέση τα τελευταία 1½ λεπτά.</small></span>
@@ -286,7 +288,7 @@
           </label>
         </section>
         <section>
-          <h4>Κίνηση</h4>
+          <h4>Κίνηση λεωφορείων</h4>
           <label class="switch">
             <input type="checkbox" checked={app.motion} onchange={e => app.setMotion(e.currentTarget.checked)} />
             <span>Κίνηση ανάμεσα στις θέσεις<br /><small>Κλειστό: το όχημα μένει εκεί που έστειλε θέση.</small></span>
@@ -304,17 +306,12 @@
           </details>
         </section>
         <section>
-          <h4>Μετρό, ΗΣΑΠ και τραμ</h4>
-          <label class="switch">
-            <input type="checkbox" checked={app.metroStations} onchange={e => app.setMetroStations(e.currentTarget.checked)} />
-            <span>Σταθμοί<br /><small>Οι κουκκίδες των σταθμών στον χάρτη.</small></span>
-          </label>
-          <p class="hint">Διάλεξε ποιες γραμμές θα φαίνονται, εδώ ή σε έναν σταθμό. Χωρίς ζωντανά δεδομένα.</p>
-          {#if app.metro}
-            <MetroToggles {app} ids={app.metro.lines.map(l => l.id)} />
-          {:else}
-            <p class="hint">Φόρτωση…</p>
-          {/if}
+          <h4>Θέμα χάρτη</h4>
+          <div class="seg" role="radiogroup" aria-label="Θέμα">
+            {#each [["system", "Συσκευής"], ["light", "Φωτεινό"], ["dark", "Σκοτεινό"]] as const as [v, label] (v)}
+              <button type="button" role="radio" aria-checked={app.theme === v} onclick={() => app.setTheme(v)}>{label}</button>
+            {/each}
+          </div>
         </section>
       </div>
     {/if}
@@ -323,7 +320,7 @@
 
 <div class="rail" role="toolbar" aria-label="Εργαλεία χάρτη">
   <button type="button" class="tool" class:on={pop === "layers"} class:filtering={app.only.fresh || app.only.onTime} aria-expanded={pop === "layers"} aria-controls="pop-layers"
-    bind:this={layersButton} aria-label="Επίπεδα χάρτη" data-tip="Επίπεδα χάρτη: θέμα, ποια οχήματα φαίνονται, στάσεις και μετρό" onclick={() => toggle("layers")}>
+    bind:this={layersButton} aria-label="Τι δείχνει ο χάρτης" data-tip="Τι δείχνει ο χάρτης: γραμμές μετρό, ποια λεωφορεία, φίλτρα, θέμα" onclick={() => toggle("layers")}>
     <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
       <path d="M2 10S5 4.8 10 4.8 18 10 18 10 15 15.2 10 15.2 2 10 2 10z" /><circle cx="10" cy="10" r="2.5" />
     </svg>
@@ -391,6 +388,7 @@
   .pop { min-height: 0; padding: 12px 14px; font-size: 13px; background: var(--bg); border: 1px solid var(--border);
     border-radius: 14px; box-shadow: var(--shadow); box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; }
   .pop p { margin: 0 0 8px; }
+  .pop h3 { margin: 0 0 10px; font-size: 15px; }
   .pop h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
   .pop section + section { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--border); }
   .pop .age { margin-right: 4px; padding: 0 4px; border-radius: 6px; background: var(--control); font-size: 11px;

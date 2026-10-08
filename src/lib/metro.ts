@@ -21,6 +21,15 @@ export function linkTransfers(stations: MetroStation[]): MetroStation[] {
   });
 }
 
+// "ΠΕΙΡΑΙΑΣ – ΚΗΦΙΣΙΑ": the line's stations nearest to the two ends of its first track, or null.
+export function termini(data: MetroData, id: string): [string, string] | null {
+  const line = data.lines.find(l => l.id === id), path = line?.paths[0];
+  const own = data.stations.filter(s => s.lines.includes(id));
+  if (!path?.length || !own.length) return null;
+  const nearest = (p: LngLat) => own.reduce((a, b) => (distanceM(p, [b.lon, b.lat]) < distanceM(p, [a.lon, a.lat]) ? b : a)).name;
+  return [nearest(path[0]), nearest(path[path.length - 1])];
+}
+
 export async function loadMetro(): Promise<MetroData> {
   const r = await fetch(`${import.meta.env.BASE_URL}metro.json`);
   if (!r.ok) throw new Error(`metro.json: HTTP ${r.status}`);

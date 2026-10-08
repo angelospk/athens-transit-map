@@ -472,39 +472,15 @@ describe("AppState other vehicles while one is selected", () => {
   });
 });
 
-describe("AppState metro stations switch", () => {
+describe("AppState metro stations", () => {
   vi.stubGlobal("fetch", () => new Promise(() => {}));
-  const mem = new Map<string, string>();
-  beforeEach(() => vi.stubGlobal("localStorage", {
-    getItem: (k: string) => mem.get(k) ?? null,
-    setItem: (k: string, v: string) => void mem.set(k, v),
-    removeItem: (k: string) => void mem.delete(k),
-  }));
 
-  it("shows the stations by default and remembers the switch", () => {
-    mem.clear();
+  it("can always be tapped, even after the old switch was turned off: its card replaces a route's", () => {
+    vi.stubGlobal("localStorage", { getItem: (k: string) => (k === "metroStations" ? "false" : null), setItem() {}, removeItem() {} });
     const app = new AppState();
-    expect(app.metroStations).toBe(true);
-    app.setMetroStations(false);
-    expect(new AppState().metroStations).toBe(false);
-  });
-
-  it("hiding them from a station's card closes the card and says where to turn them back on", () => {
-    mem.clear();
-    const app = new AppState();
+    app.selectRoute("040", "5512");
     app.selectStation("ΟΜΟΝΟΙΑ");
-    app.hideStations();
-    expect(app.metroStations).toBe(false);
-    expect(app.metroStation).toBeNull();
-    expect(app.notice).toContain("Επίπεδα χάρτη");
-  });
-
-  it("turning them off in the layers menu says nothing, and a hidden station cannot be selected", () => {
-    mem.clear();
-    const app = new AppState();
-    app.setMetroStations(false);
-    expect(app.notice).toBeNull();
-    app.selectStation("ΟΜΟΝΟΙΑ");
-    expect(app.metroStation).toBeNull();
+    expect(app.metroStation).toBe("ΟΜΟΝΟΙΑ");
+    expect(app.selection).toBeNull();
   });
 });

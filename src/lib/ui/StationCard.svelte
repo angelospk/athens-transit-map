@@ -2,7 +2,7 @@
   import type { AppState } from "../state.svelte";
   import MetroToggles from "./MetroToggles.svelte";
 
-  // The tapped metro/tram station: its lines, each pinnable to the map.
+  // The tapped metro/tram station: its lines, each with the switch that draws it on the map.
   let { app }: { app: AppState } = $props();
 
   const station = $derived(app.metroStation ? app.metro?.stations.find(s => s.name === app.metroStation) : undefined);
@@ -16,13 +16,8 @@
       <h2>{station.name}</h2>
       <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.selectStation(null)}>×</button>
     </header>
-    <p>Πάτα μια γραμμή για να φαίνεται στον χάρτη. Το ίδιο ρυθμίζεται και στα επίπεδα χάρτη.</p>
+    <p>Άνοιξε μια γραμμή για να φαίνεται η διαδρομή της στον χάρτη. Είναι οι ίδιοι διακόπτες με το 👁 → Μετρό.</p>
     <MetroToggles {app} ids={station.lines} />
-    <!-- Off: the stations go from the map and this card closes (app.hideStations says where to turn them back on). -->
-    <label class="switch">
-      <input type="checkbox" checked={app.metroStations} onchange={e => { if (!e.currentTarget.checked) app.hideStations(); }} />
-      <span>Εμφάνιση σταθμών μετρό και τραμ</span>
-    </label>
   </section>
 {/if}
 
@@ -36,7 +31,6 @@
   .close { width: 36px; height: 36px; margin: -8px -10px -8px 0; border: 0; background: none; font-size: 22px;
     color: var(--muted); cursor: pointer; border-radius: 8px; }
   .close:hover { background: var(--control); }
-  .switch { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--border); font-size: 13px; }
   @media (max-width: 719px) {
     .card { left: 0; right: 0; bottom: 0; width: auto; border-radius: 16px 16px 0 0; border-width: 1px 0 0;
       padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); }
