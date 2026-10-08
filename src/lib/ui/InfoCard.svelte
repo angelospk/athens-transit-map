@@ -214,11 +214,11 @@
   .close { width: 36px; height: 36px; margin: -8px -10px -8px 0; border: 0; background: none; font-size: 22px;
     color: var(--muted); cursor: pointer; border-radius: 8px; }
   .close:hover { background: var(--control); }
-  .pin { width: 36px; height: 36px; margin: -8px -4px -8px 0; border: 0; background: none; color: var(--muted); cursor: pointer;
-    border-radius: 8px; }
+  .pin { display: grid; place-items: center; width: 36px; height: 36px; margin: -8px -4px -8px 0; border: 0; background: none;
+    color: var(--muted); cursor: pointer; border-radius: 8px; }
   .pin:hover { background: var(--control); }
   .pin.on { color: var(--accent); }
-  .star { width: 36px; height: 36px; margin: -8px -2px -8px 0; border: 0; background: none; color: var(--muted); font-size: 20px;
+  .star { width: 36px; height: 36px; margin: -8px -4px -8px 0; border: 0; background: none; color: var(--muted); font-size: 20px;
     cursor: pointer; border-radius: 8px; }
   .star:hover { background: var(--control); }
   .star.on { color: #f59f00; }
