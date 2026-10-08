@@ -323,21 +323,21 @@
 
 <div class="rail" role="toolbar" aria-label="Εργαλεία χάρτη">
   <button type="button" class="tool" class:on={pop === "layers"} class:filtering={app.only.fresh || app.only.onTime} aria-expanded={pop === "layers"} aria-controls="pop-layers"
-    bind:this={layersButton} aria-label="Επίπεδα χάρτη" title="Επίπεδα χάρτη" onclick={() => toggle("layers")}>
+    bind:this={layersButton} aria-label="Επίπεδα χάρτη" data-tip="Επίπεδα χάρτη: θέμα, ποια οχήματα φαίνονται, στάσεις και μετρό" onclick={() => toggle("layers")}>
     <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
-      <path d="M1.8 10S5 4.6 10 4.6 18.2 10 18.2 10 15 15.4 10 15.4 1.8 10 1.8 10z" /><circle cx="10" cy="10" r="2.5" />
+      <path d="M2 10S5 4.8 10 4.8 18 10 18 10 15 15.2 10 15.2 2 10 2 10z" /><circle cx="10" cy="10" r="2.5" />
     </svg>
   </button>
   <button type="button" class="tool" class:on={pop === "trip"} class:pinned={!!app.tripEnds && pop !== "trip"} aria-expanded={pop === "trip"} bind:this={tripButton}
-    aria-label="Διαδρομή: ποιες γραμμές με πάνε" title="Διαδρομή: ποιες γραμμές με πάνε" onclick={() => toggle("trip")}>
+    aria-label="Διαδρομή: ποιες γραμμές με πάνε" data-tip="Διαδρομή: διάλεξε Α και Β και δες ποιες γραμμές σε πάνε" onclick={() => toggle("trip")}>
     <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
-      <circle cx="10" cy="10" r="7.6" /><path d="M12.8 7.2l-1.6 4-4 1.6 1.6-4z" />
+      <circle cx="10" cy="10" r="8" /><path d="M12.8 7.2l-1.6 4-4 1.6 1.6-4z" />
     </svg>
   </button>
   <button type="button" class="tool" class:on={pop === "help"} aria-expanded={pop === "help"} aria-controls="pop-help"
-    aria-label="Τι σημαίνει κάθε σύμβολο" title="Τι σημαίνει κάθε σύμβολο" onclick={() => toggle("help")} bind:this={helpButton}>
+    aria-label="Τι σημαίνει κάθε σύμβολο" data-tip="Τι σημαίνει κάθε σύμβολο και χρώμα στον χάρτη" onclick={() => toggle("help")} bind:this={helpButton}>
     <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="10" cy="10" r="7.6" /><path d="M7.8 7.9a2.3 2.3 0 1 1 3.3 2.1c-.7.4-1.1.8-1.1 1.6" /><circle cx="10" cy="14.2" r=".5" fill="currentColor" />
+      <circle cx="10" cy="10" r="8" /><path d="M7.8 7.9a2.3 2.3 0 1 1 3.3 2.1c-.7.4-1.1.8-1.1 1.6" /><circle cx="10" cy="14.2" r=".5" fill="currentColor" />
     </svg>
   </button>
 </div>
@@ -368,10 +368,24 @@
   .tool.filtering::after, .tool.pinned::after { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px;
     border-radius: 50%; background: var(--accent); }
   /* The map buttons (right, under the zoom and locate buttons) and the popover that opens beside them. */
-  .rail { position: absolute; z-index: 5; top: calc(116px + env(safe-area-inset-top)); right: 10px; display: flex; flex-direction: column;
-    gap: 2px; padding: 3px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow);
-    backdrop-filter: blur(8px); }
-  .popwrap { position: absolute; z-index: 5; top: calc(116px + env(safe-area-inset-top)); right: 64px; width: 344px; max-width: calc(100% - 76px);
+  /* The same look and size as MapLibre's zoom and locate buttons above it (white in dark too). */
+  .rail { position: absolute; z-index: 5; top: calc(116px + env(safe-area-inset-top)); right: 10px; width: 29px; display: flex;
+    flex-direction: column; background: #fff; border-radius: 4px; box-shadow: 0 0 0 2px rgba(0, 0, 0, .1); }
+  .rail .tool { width: 29px; height: 29px; border-radius: 0; color: #333; }
+  .rail .tool + .tool { border-top: 1px solid #ddd; }
+  .rail .tool:first-child { border-radius: 4px 4px 0 0; }
+  .rail .tool:last-child { border-radius: 0 0 4px 4px; }
+  .rail .tool:hover, .rail .tool.on { background: rgba(0, 0, 0, .08); color: #333; }
+  .rail .tool.on { color: var(--accent); }
+  .rail .tool.filtering::after, .rail .tool.pinned::after { top: 3px; right: 3px; }
+  /* What a button does: beside it, on hover or keyboard focus (no tooltip on a touch screen; the popover itself opens). */
+  .rail .tool::before { content: attr(data-tip); position: absolute; right: calc(100% + 10px); top: 50%; translate: 0 -50%; width: max-content;
+    max-width: 220px; padding: 6px 9px; border-radius: 8px; background: var(--panel); color: var(--fg); border: 1px solid var(--border);
+    box-shadow: var(--shadow); font-size: 12px; line-height: 1.35; white-space: normal; text-align: left; pointer-events: none;
+    opacity: 0; transition: opacity .12s; }
+  @media (hover: hover) { .rail .tool:not(.on):hover::before { opacity: 1; transition-delay: .35s; } }
+  .rail .tool:not(.on):focus-visible::before { opacity: 1; }
+  .popwrap { position: absolute; z-index: 5; top: calc(116px + env(safe-area-inset-top)); right: 52px; width: 344px; max-width: calc(100% - 64px);
     max-height: calc(100dvh - 128px - env(safe-area-inset-top)); display: flex; flex-direction: column; }
   .popwrap.raised { z-index: 8; }   /* the map menu over the info card */
   .pop { min-height: 0; padding: 12px 14px; font-size: 13px; background: var(--bg); border: 1px solid var(--border);
@@ -418,6 +432,7 @@
   @media (max-width: 719px) {
     .panel { left: 8px; right: 60px; width: auto; max-width: none; padding: 10px 12px; }
     .panel.compact { right: auto; max-width: calc(100% - 68px); }
+    .rail { top: calc(50px + env(safe-area-inset-top)); }   /* no zoom buttons above it */
     .popwrap { top: calc(12px + env(safe-area-inset-top)); left: 8px; right: 60px; width: auto; max-width: none;
       max-height: calc(100dvh - 24px - env(safe-area-inset-top)); }
     .stats b { font-size: 16px; }
