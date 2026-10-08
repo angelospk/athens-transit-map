@@ -1,4 +1,4 @@
-// City layer data: every live vehicle from /v1/vehicles (docs/superpowers/specs/2026-10-06-city-layer-design.md).
+// City layer data: the live vehicles of the map view, from /v1/vehicles/tiles (tiles.ts; docs/superpowers/specs/2026-10-06-city-layer-design.md).
 // Motion lives in motion.ts and map/fleet.ts.
 
 import type { CityLive, CityVehicle } from "./types";

@@ -2,11 +2,12 @@
 
 import { isHidden } from "./directions";
 import type { Only } from "./format";
-import { fetchCity, fetchLine, fetchLines, fetchLineStatic, fetchStatus } from "./api";
-import { cityKey, cleanCity, isCityLive } from "./city";
+import { fetchCity, fetchLine, fetchLines, fetchLineStatic, fetchStatus, fetchTile } from "./api";
+import { cityKey, isCityLive } from "./city";
 import { loadMetro, type MetroData } from "./metro";
 import { LinePoller, type PollState } from "./poller";
-import { ClockOffset } from "./schedule";
+import { BACKOFF_MS, ClockOffset } from "./schedule";
+import { CityTiles, loadTiles, viewTiles, type Tile, type View } from "./tiles";
 import { isTheme, type Theme } from "./theme";
 import { MAX_LINES, selectionIds, serializeSelection, splitKnown, toggle } from "./selection";
 import { hitText, type AlertHit, type AlertSpec } from "./alerts";
@@ -16,6 +17,7 @@ export const STALE_S = 120;
 // A picked line whose feed has no vehicles for this many updates in a row is taken off the map.
 const EMPTY_DROPS = 2;
 const STATUS_EVERY_MS = 60_000;
+const TILE_TIMEOUT_MS = 15_000;
 
 export type Selection =
   | { kind: "vehicle"; line: string; id: string }
@@ -64,7 +66,7 @@ export class AppState {
   focus = $state.raw<Record<string, string[]>>({});
   notice = $state<string | null>(null);
   now = $state(Date.now());
-  // City layer (/v1/vehicles): every live vehicle; null before data or when the server lacks it.
+  // City layer (/v1/vehicles/tiles): the live vehicles of the map view; null before data or when the server lacks it.
   city = $state.raw<CityLive | null>(null);
   cityState = $state<PollState | null>(null);
   cityOn = $state(stored("cityOn", true, isBool));
@@ -110,6 +112,10 @@ export class AppState {
   private clock = new ClockOffset();
   private pollers = new Map<string, LinePoller>();
   private cityPoller: LinePoller<CityLive> | null = null;
+  private cityTiles = new CityTiles();
+  private tileSeq = 0;               // only the last view change publishes
+  private tileCtrl: AbortController | null = null;   // the view change in flight
+  private tileRetryAt = -Infinity;    // after a failed view change, the poller does the retrying
   private noticeTimer: ReturnType<typeof setTimeout> | undefined;
 
   lineInfo = $derived(new Map(this.lines.map(l => [l.id, l])));
@@ -241,6 +247,8 @@ export class AppState {
     if (on) this.startCity();
     else {
       this.cityPoller?.stop();
+      this.tileSeq++;   // a late answer must not show
+      this.tileCtrl?.abort();
       if (this.tempLine && this.selection?.line === this.tempLine) this.clearSelection();
     }
   }
@@ -432,16 +440,46 @@ export class AppState {
     if (!this.selected.includes(t)) this.closeLine(t);
   }
 
+  // The map reports its view when it loads and after every move. No tiles are fetched before the first view.
+  setCityView(view: View, zoom: number) {
+    const missing = this.cityTiles.want(viewTiles(view, zoom));
+    if (!this.cityOn) return;
+    if (!this.cityPoller) return this.startCity();   // its first fetch loads the whole set
+    this.loadMissing(missing);
+  }
+
+  private loadMissing(missing: Tile[]) {
+    const seq = ++this.tileSeq;
+    this.tileCtrl?.abort();   // its tiles are asked for again below, unless they left the view
+    // After a failure the poller's backoff rules: it asks for all tiles again, so moving does not hammer the API.
+    if (missing.length && performance.now() < this.tileRetryAt) return this.publishCity();
+    if (!missing.length) return this.publishCity();   // tiles only left
+    const ctrl = this.tileCtrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), TILE_TIMEOUT_MS);
+    void loadTiles(this.cityTiles, missing, fetchTile, ctrl.signal).then(r => {
+      clearTimeout(timer);
+      if (seq !== this.tileSeq) return;   // a newer view change, or the layer was turned off
+      if (r.status !== 200) this.tileRetryAt = performance.now() + BACKOFF_MS;
+      this.publishCity();   // after a failure: only when the dropped tiles complete the set
+    });
+  }
+
+  // Stale copies are held back per tile (CityTiles.put); a part of the view is not shown (snapshot is null).
+  private publishCity() {
+    const c = this.cityTiles.snapshot(), old = this.city;
+    // A move that changed no tile gives the same vehicles: leave the map alone.
+    if (c && !(old && c.updated_at === old.updated_at && c.vehicles.length === old.vehicles.length
+      && c.vehicles.every((v, i) => v === old.vehicles[i]))) this.city = c;
+  }
+
   private startCity() {
+    if (!this.cityTiles.tiles.length) return;
     this.cityPoller ??= new LinePoller<CityLive>({
       line: "*",
-      fetchLine: fetchCity,
+      fetchLine: fetchCity(this.cityTiles),
       validate: isCityLive,
       clock: this.clock,
-      onData: d => {
-        if (this.city && d.updated_at < this.city.updated_at) return;   // a stale cached copy
-        this.city = { ...d, vehicles: cleanCity(d.vehicles) };
-      },
+      onData: () => this.publishCity(),
       onState: s => (this.cityState = s),
     });
     this.cityPoller.start();
