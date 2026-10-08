@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findTrips, parsePhoton, places, searchPlaces, suggest, termini, type Place, type Pt, type TripIndex } from "../src/lib/trip";
+import { alertTargets, boardings, findTrips, parsePhoton, places, searchPlaces, suggest, termini, type Place, type Pt, type TripIndex } from "../src/lib/trip";
 
 // ~111 m per 0.001° of latitude: stops on a north-south street, 0.001° apart.
 const at = (k: number): Pt => [38 + k * 0.001, 23.7];
@@ -154,5 +154,64 @@ describe("termini", () => {
     expect(termini(ix, "A", ["nope", "up"])).toEqual(["ΤΕΡΜΑ"]);
     expect(termini(ix, "Z", ["gone"])).toEqual([]);
     expect(termini(ix, "Q", ["up"])).toEqual([]);
+  });
+});
+
+describe("boardings", () => {
+  // Stops 0-10 on one street; 1 and 3 share a name (two sides of a square).
+  const names = ["S0", "ΠΛΑΤΕΙΑ", "S2", "ΠΛΑΤΕΙΑ"];
+  const ix = index({
+    A: { up: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], down: [10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0] },
+    B: { up: [2, 3, 4, 10] },
+    C: { up: [0, 9] },
+  }, names);
+
+  it("lists the stops near the start that reach the end, nearest first, one per name", () => {
+    const r = boardings(ix, [at(0)], [at(10)], 400, ["A", "B", "C"]);
+    expect(r.map(b => [b.name, Math.round(b.walk / 10) * 10])).toEqual([["S0", 0], ["ΠΛΑΤΕΙΑ", 110], ["S2", 220]]);
+  });
+
+  it("gives each stop its lines in trip order, at the stop's position in each variant", () => {
+    const r = boardings(ix, [at(0)], [at(10)], 400, ["B", "A", "C"]);
+    const sq = r.find(b => b.name === "ΠΛΑΤΕΙΑ")!;
+    expect(sq.lines).toEqual([
+      { line: "B", variants: [{ id: "up", i: 1, from: 3 }] },
+      { line: "A", variants: [{ id: "up", i: 1, from: 1 }] },   // the nearer of the two stops of the name
+    ]);
+    expect(r.find(b => b.name === "S0")!.lines.map(l => l.line)).toEqual(["A", "C"]);
+  });
+
+  it("leaves out lines not asked for, and keeps at most max stops", () => {
+    expect(boardings(ix, [at(0)], [at(10)], 400, ["C"]).map(b => b.name)).toEqual(["S0"]);
+    expect(boardings(ix, [at(0)], [at(10)], 400, ["A", "B", "C"], 2)).toHaveLength(2);
+  });
+
+  it("boards a loop at the occurrence with the fewest stops to the end", () => {
+    const loop = index({ L: { v: [0, 1, 2, 3, 4, 5, 6, 0, 7, 8, 9, 10] } });
+    expect(boardings(loop, [at(0)], [at(10)], 50, ["L"])[0].lines[0].variants).toEqual([{ id: "v", i: 7, from: 0 }]);
+  });
+});
+
+describe("alertTargets", () => {
+  const trips = [
+    { line: "A", walk: 0, stops: 9, variants: [{ id: "up", i: 0, j: 9, from: 0, to: 9, walk: 0, stops: 9 }] },
+    { line: "B", walk: 10, stops: 3, variants: [{ id: "x", i: 2, j: 5, from: 4, to: 9, walk: 10, stops: 3 }] },
+  ];
+  const board = { name: "ΠΛΑΤΕΙΑ", walk: 100, lines: [{ line: "B", variants: [{ id: "x", i: 1, from: 3 }] }, { line: "A", variants: [{ id: "up", i: 1, from: 1 }] }] };
+
+  it("uses each line's own boarding stop when no stop is chosen", () => {
+    expect(alertTargets(trips, ["A", "B"], null, [])).toEqual([
+      { line: "A", variants: [{ id: "up", i: 0, from: 0 }] },
+      { line: "B", variants: [{ id: "x", i: 2, from: 4 }] },
+    ]);
+  });
+
+  it("uses the chosen stop for every line", () => {
+    expect(alertTargets(trips, ["A", "B"], board, [])).toEqual(board.lines);
+  });
+
+  it("leaves out lines unticked or not on the map", () => {
+    expect(alertTargets(trips, ["A", "B"], null, ["A"]).map(l => l.line)).toEqual(["B"]);
+    expect(alertTargets(trips, ["A"], board, []).map(l => l.line)).toEqual(["A"]);
   });
 });

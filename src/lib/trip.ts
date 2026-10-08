@@ -116,6 +116,48 @@ export function findTrips(ix: TripIndex, from: Pt[], to: Pt[], radius = WALK_M, 
   return out.sort((a, b) => a.walk - b.walk || a.stops - b.stops || byLine(a.line, b.line));
 }
 
+// A stop near the start to wait at: stops of one name, the walk to the nearest of them, and the given
+// lines that stop there and still reach the end (per variant, the occurrence with the least walking,
+// then the fewest stops, as in findTrips).
+export interface BoardAt { id: string; i: number; from: number }
+export interface Boarding { name: string; walk: number; lines: { line: string; variants: BoardAt[] }[] }
+
+export function boardings(ix: TripIndex, from: Pt[], to: Pt[], radius: number, lines: string[], max = 4): Boarding[] {
+  const near = (pts: Pt[], k: number) => nearest([ix.s[k][1], ix.s[k][2]], pts);
+  const out = new Map<string, Boarding>();
+  for (const line of lines) {
+    for (const [id, seq] of Object.entries(ix.l[line] ?? {})) {
+      const best = new Map<string, { at: BoardAt; a: number; cost: number; stops: number }>();   // per stop name
+      for (let i = 0; i < seq.length; i++) {
+        const a = near(from, seq[i]);
+        if (a > radius) continue;
+        let b = Infinity, j = -1;
+        for (let k = i + 1; k < seq.length; k++) { const d = near(to, seq[k]); if (d <= radius && d < b) { b = d; j = k; } }
+        if (j < 0) continue;
+        const key = fold(ix.s[seq[i]][0]), had = best.get(key);
+        if (!had || a + b < had.cost || (a + b === had.cost && j - i < had.stops))
+          best.set(key, { at: { id, i, from: seq[i] }, a, cost: a + b, stops: j - i });
+      }
+      for (const [key, { at, a }] of best) {
+        let g = out.get(key);
+        if (!g) out.set(key, (g = { name: ix.s[at.from][0], walk: a, lines: [] }));
+        g.walk = Math.min(g.walk, a);
+        const l = g.lines.find(x => x.line === line);
+        if (l) l.variants.push(at);
+        else g.lines.push({ line, variants: [at] });
+      }
+    }
+  }
+  return [...out.values()].sort((a, b) => a.walk - b.walk || a.name.localeCompare(b.name, "el")).slice(0, max);
+}
+
+// What a stop alert watches: each line's own boarding stop, or the chosen stop for all; only lines on
+// the map (the alert follows their live feeds) and not unticked.
+export function alertTargets(trips: TripLine[], onMap: string[], at: Boarding | null, off: string[]): { line: string; variants: BoardAt[] }[] {
+  const lines = at ? at.lines : trips.map(t => ({ line: t.line, variants: t.variants.map(({ id, i, from }) => ({ id, i, from })) }));
+  return lines.filter(l => onMap.includes(l.line) && !off.includes(l.line));
+}
+
 // Where the given variants of a line end (the stop names), once each: the way the line goes.
 export function termini(ix: TripIndex, line: string, variantIds: string[]): string[] {
   const out: string[] = [];
