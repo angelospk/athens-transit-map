@@ -80,6 +80,8 @@ export class AppState {
   showAges = $state(stored("showAges", false, isBool));
   // Off: every vehicle stays at its last GPS fix (no motion in between); its age is always shown.
   motion = $state(stored("motion", true, isBool));
+  // Pilot: typical bus speed per road segment (public/pilot/segspeed.geojson, lab/segspeed).
+  segSpeed = $state(stored("segSpeed", false, isBool));
   // Map filters; the selected vehicle is always shown.
   only = $state.raw<Only>(stored("only", { fresh: false, onTime: false },
     v => !!v && isBool((v as Only).fresh) && isBool((v as Only).onTime)));
@@ -376,6 +378,11 @@ export class AppState {
   setShowAges(on: boolean) {
     this.showAges = on;
     store("showAges", on);
+  }
+
+  setSegSpeed(on: boolean) {
+    this.segSpeed = on;
+    store("segSpeed", on);
   }
 
   setMotion(on: boolean) {
