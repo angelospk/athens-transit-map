@@ -306,6 +306,13 @@
           </details>
         </section>
         <section>
+          <h4>Ταχύτητα δρόμων (πιλοτικό)</h4>
+          <label class="switch">
+            <input type="checkbox" checked={app.segSpeed} onchange={e => app.setSegSpeed(e.currentTarget.checked)} />
+            <span>Τυπική ταχύτητα λεωφορείων<br /><small>Ανά κομμάτι δρόμου, από στάση σε στάση. Πάτα ένα για km/h.</small></span>
+          </label>
+        </section>
+        <section>
           <h4>Θέμα χάρτη</h4>
           <div class="seg" role="radiogroup" aria-label="Θέμα">
             {#each [["system", "Συσκευής"], ["light", "Φωτεινό"], ["dark", "Σκοτεινό"]] as const as [v, label] (v)}

@@ -27,6 +27,8 @@
   const VIEW_SETTLE_MS = 300;   // the map must rest this long before the city layer asks for tiles
   const DEFAULT_COLOR = "#3b5bdb";
   const DELAY_CLASSES = ["ontime", "late1", "late2", "late3", "none"];
+  // Pilot road-speed layer: km/h stops, slow (red) to fast (blue). The legend uses the same stops.
+  const SEG_SPEED: [number, string][] = [[4, "#b2182b"], [8, "#ef6548"], [12, "#fdae61"], [16, "#d9ef8b"], [22, "#66bd63"], [30, "#2166ac"]];
   const STYLE = (dark: boolean) => `https://tiles.openfreemap.org/styles/${dark ? "dark" : "positron"}`;
   const EMPTY = { type: "FeatureCollection" as const, features: [] };
   const COS_LAT = Math.cos((37.98 * Math.PI) / 180);
@@ -223,7 +225,17 @@
     m.setStyle(STYLE(d), { diff: false });
   }
 
+  // Pilot: typical bus speed per stop-to-stop segment, under every other layer of ours.
+  function addSegSpeed(m: MlMap) {
+    m.addSource("segspeed", { type: "geojson", data: `${import.meta.env.BASE_URL}pilot/segspeed.geojson` });
+    m.addLayer({ id: "segspeed", type: "line", source: "segspeed",
+      layout: { "line-join": "round", "line-cap": "round", visibility: app.segSpeed ? "visible" : "none" },
+      paint: { "line-color": ["interpolate", ["linear"], ["get", "kmh"], ...SEG_SPEED.flat()] as ExpressionSpecification,
+        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.5, 13, 3, 16, 6], "line-opacity": 0.85 } });
+  }
+
   function addLayers(m: MlMap) {
+    addSegSpeed(m);
     addMetroLayers(m);
     addCityLayers(m);
     for (const id of ["metro-station", "metro-label"]) m.moveLayer(id);
@@ -598,10 +610,18 @@
       }
       const route = m.queryRenderedFeatures(e.point, { layers: ["routes-hit"] })[0];
       if (route) return app.selectRoute(String(route.properties.line), String(route.properties.variant));
+      const box: [[number, number], [number, number]] = [[e.point.x - 8, e.point.y - 8], [e.point.x + 8, e.point.y + 8]];
+      const seg = app.segSpeed ? m.queryRenderedFeatures(box, { layers: ["segspeed"] })[0] : undefined;
+      if (seg) {
+        const p = seg.properties;
+        const kmh = (v: unknown) => (v == null ? "–" : `${Math.round(Number(v))}`);
+        popup.setLngLat(e.lngLat).setDOMContent(segInfo(p, kmh)).addTo(m);
+        return;
+      }
       app.selectStation(null);
       app.clearSelection();
     });
-    for (const layer of ["routes-hit", "stops", "city-dot", "metro-station"]) {
+    for (const layer of ["routes-hit", "stops", "city-dot", "metro-station", "segspeed"]) {
       m.on("mouseenter", layer, () => (m.getCanvas().style.cursor = "pointer"));
       m.on("mouseleave", layer, () => (m.getCanvas().style.cursor = ""));
     }
@@ -626,6 +646,23 @@
       loaded = false;
     };
   }
+
+  // The popup for a road-speed segment; built from text nodes (stop names come from data).
+  function segInfo(p: Record<string, unknown>, kmh: (v: unknown) => string) {
+    const el = document.createElement("div");
+    el.className = "segpop";
+    const line = (text: string, tag = "div") => el.appendChild(Object.assign(document.createElement(tag), { textContent: text }));
+    line(`${kmh(p.kmh)} km/h`, "b");
+    line(`${p.from} → ${p.to}`);
+    line(`Αιχμή καθημερινής ${kmh(p.peak)} · εκτός ${kmh(p.off)} km/h`);
+    line(`${p.n} μετρήσεις · γραμμές ${p.lines}`);
+    return el;
+  }
+
+  $effect(() => {
+    const on = app.segSpeed;
+    if (loaded) map!.setLayoutProperty("segspeed", "visibility", on ? "visible" : "none");
+  });
 
   $effect(() => {
     const m = map, d = dark;
@@ -775,6 +812,12 @@
 </script>
 
 <div class="map" class:no-ages={!app.showAges && app.motion} {@attach setup}></div>
+{#if app.segSpeed}
+  <div class="seglegend" aria-label="Τυπική ταχύτητα λεωφορείων, km/h">
+    <span>km/h</span>
+    {#each SEG_SPEED as [v, c] (v)}<i style:background={c}>{v}</i>{/each}
+  </div>
+{/if}
 {#if Info}<Info bind:open={infoOpen} motion={app.motion} {ended} />{/if}
 {#if ended}<OldTimetable {ended} onmore={openInfo} />{/if}
 {#if failed}
@@ -786,6 +829,13 @@
 
 <style>
   .map { position: absolute; inset: 0; }
+  .seglegend { position: absolute; left: 10px; bottom: 34px; z-index: 1; display: flex; align-items: center; gap: 2px;
+    padding: 4px 6px; border-radius: 8px; background: var(--panel); color: var(--fg); box-shadow: var(--shadow); font-size: 11px; }
+  .seglegend span { margin-right: 4px; }
+  .seglegend i { font-style: normal; min-width: 22px; padding: 1px 0; border-radius: 3px; color: #fff; text-align: center;
+    text-shadow: 0 0 2px #000; }
+  :global(.segpop b) { font-size: 15px; }
+  :global(.segpop div) { font-size: 12px; }
   .nogl { position: absolute; inset: auto 16px 16px; padding: 12px 14px; border-radius: 12px;
     background: var(--warn-bg); box-shadow: var(--shadow); }
 </style>
