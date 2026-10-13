@@ -1,18 +1,21 @@
 <script lang="ts">
   // What each symbol on the map shows and what a tap on it does. Static: the samples are drawn like the real
   // ones (the vehicle classes are in app.css) and are not interactive.
+  import { PALETTE } from "../lineColors";
 </script>
 
 <ul>
-  <li><span class="s"><span class="bus late1">040</span></span>
-    <span>Όχημα γραμμής που βλέπεις αναλυτικά. Το χρώμα είναι η καθυστέρηση. Πάτα το για τις λεπτομέρειες και τη διαδρομή του.</span></li>
-  <li><span class="s"><i class="dot ontime"></i><i class="dot late2"></i></span>
-    <span>Όχημα της πόλης, με «Όλα τα λεωφορεία» ανοιχτό. Πάτα το για να δεις ολόκληρη τη γραμμή του.</span></li>
-  <li><span class="s"><span class="bus ontime">550<i class="dir" style="transform: translate(24px, 0) rotate(90deg)"></i></span></span>
+  <li><span class="s"><span class="bus late1" style:--c={PALETTE[0].bg} style:--t={PALETTE[0].fg}>040</span></span>
+    <span>Όχημα γραμμής που ακολουθείς. Κάθε γραμμή έχει δικό της χρώμα, ίδιο στη διαδρομή και στο κουμπί της.
+      Το δαχτυλίδι γύρω του είναι η καθυστέρηση. Πάτα το για τις λεπτομέρειες.</span></li>
+  <li><span class="s"><i class="dot ontime"></i><i class="dot late1"></i><i class="dot late3"></i></span>
+    <span>Όχημα της πόλης: το χρώμα του είναι η καθυστέρηση. Πράσινο στην ώρα του, κίτρινο, πορτοκαλί, κόκκινο όλο και
+      πιο αργά, γκρι χωρίς δρομολόγιο. Πάτα το για να δεις ολόκληρη τη γραμμή του.</span></li>
+  <li><span class="s"><span class="bus ontime" style:--c={PALETTE[1].bg} style:--t={PALETTE[1].fg}>550<i class="dir" style="transform: translate(24px, 0) rotate(90deg)"></i></span></span>
     <span>Το βελάκι δείχνει προς πού κινείται. Λείπει όταν το όχημα στέκεται.</span></li>
   <li><span class="s"><span class="age">24″</span></span>
     <span>Πριν από τόσο ήρθε η τελευταία θέση GPS του οχήματος.</span></li>
-  <li><span class="s"><span class="bus none stale">2</span></span>
+  <li><span class="s"><span class="bus none stale" style:--c={PALETTE[2].bg} style:--t={PALETTE[2].fg}>2</span></span>
     <span>Αχνό: δεν έστειλε θέση για πάνω από 1½ λεπτό. Η πραγματική θέση του μπορεί να είναι αλλού.</span></li>
   <li><span class="s"><i class="trail"></i></span>
     <span>Μπλε ίχνος: το όχημα πήγε σε νέα θέση και άφησε το δρόμο που έκανε.</span></li>

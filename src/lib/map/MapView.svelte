@@ -12,10 +12,12 @@
   import { Locator, userPlan, type Fix, type LocState } from "../locate";
   import { Mover, planOnto } from "../motion";
   import { shapeLength, stopOffsets } from "../predict";
+  import { loadSpeed, SPEED_STOPS, type SpeedData } from "../speed";
   import { resolveDark } from "../theme";
   import type { Variant } from "../types";
   import type { AppState } from "../state.svelte";
   import OldTimetable from "../ui/OldTimetable.svelte";
+  import SpeedLegend from "../ui/SpeedLegend.svelte";
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
 
@@ -25,10 +27,7 @@
 
   const FOLLOW_VIEW_MS = 2000;   // following the user: the view is reported this often
   const VIEW_SETTLE_MS = 300;   // the map must rest this long before the city layer asks for tiles
-  const DEFAULT_COLOR = "#3b5bdb";
   const DELAY_CLASSES = ["ontime", "late1", "late2", "late3", "none"];
-  // Pilot road-speed layer: km/h stops, slow (red) to fast (blue). The legend uses the same stops.
-  const SEG_SPEED: [number, string][] = [[4, "#b2182b"], [8, "#ef6548"], [12, "#fdae61"], [16, "#d9ef8b"], [22, "#66bd63"], [30, "#2166ac"]];
   const STYLE = (dark: boolean) => `https://tiles.openfreemap.org/styles/${dark ? "dark" : "positron"}`;
   const EMPTY = { type: "FeatureCollection" as const, features: [] };
   const COS_LAT = Math.cos((37.98 * Math.PI) / 180);
@@ -93,7 +92,7 @@
     app.detailLines.flatMap(id => {
       const data = app.statics[id];
       const focus = app.focus[id];
-      return data ? [{ id, color: app.lineInfo.get(id)?.color || DEFAULT_COLOR, data, visible: focus && new Set(focus) }] : [];
+      return data ? [{ id, color: app.lineColor(id).bg, data, visible: focus && new Set(focus) }] : [];
     }),
   );
 
@@ -225,17 +224,21 @@
     m.setStyle(STYLE(d), { diff: false });
   }
 
-  // Pilot: typical bus speed per stop-to-stop segment, under every other layer of ours.
-  function addSegSpeed(m: MlMap) {
-    m.addSource("segspeed", { type: "geojson", data: `${import.meta.env.BASE_URL}pilot/segspeed.geojson` });
-    m.addLayer({ id: "segspeed", type: "line", source: "segspeed",
-      layout: { "line-join": "round", "line-cap": "round", visibility: app.segSpeed ? "visible" : "none" },
-      paint: { "line-color": ["interpolate", ["linear"], ["get", "kmh"], ...SEG_SPEED.flat()] as ExpressionSpecification,
-        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.5, 13, 3, 16, 6], "line-opacity": 0.85 } });
+  // Typical bus speed per stop-to-stop segment (speed.ts): thin and translucent, under every other layer of ours.
+  // Its data loads the first time the switch is on (effect below).
+  function addSpeed(m: MlMap) {
+    m.addSource("speed", { type: "geojson", data: speedData ?? EMPTY });
+    m.addLayer({ id: "speed", type: "line", source: "speed",
+      layout: { "line-join": "round", "line-cap": "round", visibility: app.speedOn ? "visible" : "none" },
+      paint: { "line-color": ["interpolate", ["linear"], ["get", "kmh"], ...SPEED_STOPS.flat()] as ExpressionSpecification,
+        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 13, 2, 16, 4], "line-opacity": speedOpacity() } });
   }
+  let speedData = $state.raw<SpeedData | null>(null);
+  // Fainter while a line is followed: the line and its vehicles come first.
+  const speedOpacity = () => (app.detailLines.length ? 0.3 : 0.6);
 
   function addLayers(m: MlMap) {
-    addSegSpeed(m);
+    addSpeed(m);
     addMetroLayers(m);
     addCityLayers(m);
     for (const id of ["metro-station", "metro-label"]) m.moveLayer(id);
@@ -500,12 +503,20 @@
     wrap.className = "vm";
     wrap.append(el, age);
     const marker = new Marker({ element: wrap, anchor: "center", subpixelPositioning: true }).setLngLat(pos).addTo(map!);
+    paint(el, e.line);
     const d: Dom = { marker, wrap, el, dir, age, width: el.offsetWidth, heading: null };
     doms.set(e.key, d);
     const s = app.selection;
     if (s?.kind === "vehicle" && s.line === e.line && s.id === e.id) { el.classList.add("selected"); wrap.classList.add("sel"); }
     updateAge(d, e, app.serverNow / 1000);
     return d;
+  }
+
+  // A detail line's vehicle wears the line's colour; its delay is the ring (app.css).
+  function paint(el: HTMLElement, line: string) {
+    const c = app.lineColor(line);
+    el.style.setProperty("--c", c.bg);
+    el.style.setProperty("--t", c.fg);
   }
 
   function updateAge(d: Dom, e: FleetEntry, now: number) {
@@ -611,7 +622,7 @@
       const route = m.queryRenderedFeatures(e.point, { layers: ["routes-hit"] })[0];
       if (route) return app.selectRoute(String(route.properties.line), String(route.properties.variant));
       const box: [[number, number], [number, number]] = [[e.point.x - 8, e.point.y - 8], [e.point.x + 8, e.point.y + 8]];
-      const seg = app.segSpeed ? m.queryRenderedFeatures(box, { layers: ["segspeed"] })[0] : undefined;
+      const seg = app.speedOn ? m.queryRenderedFeatures(box, { layers: ["speed"] })[0] : undefined;
       if (seg) {
         const p = seg.properties;
         const kmh = (v: unknown) => (v == null ? "–" : `${Math.round(Number(v))}`);
@@ -621,7 +632,7 @@
       app.selectStation(null);
       app.clearSelection();
     });
-    for (const layer of ["routes-hit", "stops", "city-dot", "metro-station", "segspeed"]) {
+    for (const layer of ["routes-hit", "stops", "city-dot", "metro-station", "speed"]) {
       m.on("mouseenter", layer, () => (m.getCanvas().style.cursor = "pointer"));
       m.on("mouseleave", layer, () => (m.getCanvas().style.cursor = ""));
     }
@@ -647,7 +658,7 @@
     };
   }
 
-  // The popup for a road-speed segment; built from text nodes (stop names come from data).
+  // The popup for a speed segment; built from text nodes (stop names come from data).
   function segInfo(p: Record<string, unknown>, kmh: (v: unknown) => string) {
     const el = document.createElement("div");
     el.className = "segpop";
@@ -656,12 +667,27 @@
     line(`${p.from} → ${p.to}`);
     line(`Αιχμή καθημερινής ${kmh(p.peak)} · εκτός ${kmh(p.off)} km/h`);
     line(`${p.n} μετρήσεις · γραμμές ${p.lines}`);
+    line("Με τον χρόνο στις στάσεις.");
     return el;
   }
 
   $effect(() => {
-    const on = app.segSpeed;
-    if (loaded) map!.setLayoutProperty("segspeed", "visibility", on ? "visible" : "none");
+    const on = app.speedOn;
+    if (on && !speedData) loadSpeed().then(d => (speedData = d), () => {
+      app.notify("Δεν φόρτωσαν οι ταχύτητες. Δοκίμασε ξανά.");
+      app.setSpeedOn(false);
+    });
+    if (loaded) map!.setLayoutProperty("speed", "visibility", on ? "visible" : "none");
+  });
+
+  $effect(() => {
+    const d = speedData;
+    if (loaded && d) (map!.getSource("speed") as GeoJSONSource).setData(d);
+  });
+
+  $effect(() => {
+    const o = speedOpacity();
+    if (loaded) map!.setPaintProperty("speed", "line-opacity", o);
   });
 
   $effect(() => {
@@ -812,12 +838,7 @@
 </script>
 
 <div class="map" class:no-ages={!app.showAges && app.motion} {@attach setup}></div>
-{#if app.segSpeed}
-  <div class="seglegend" aria-label="Τυπική ταχύτητα λεωφορείων, km/h">
-    <span>km/h</span>
-    {#each SEG_SPEED as [v, c] (v)}<i style:background={c}>{v}</i>{/each}
-  </div>
-{/if}
+{#if app.speedOn}<SpeedLegend meta={speedData?.meta ?? null} onclose={() => app.setSpeedOn(false)} />{/if}
 {#if Info}<Info bind:open={infoOpen} motion={app.motion} {ended} />{/if}
 {#if ended}<OldTimetable {ended} onmore={openInfo} />{/if}
 {#if failed}
@@ -829,11 +850,6 @@
 
 <style>
   .map { position: absolute; inset: 0; }
-  .seglegend { position: absolute; left: 10px; bottom: 34px; z-index: 1; display: flex; align-items: center; gap: 2px;
-    padding: 4px 6px; border-radius: 8px; background: var(--panel); color: var(--fg); box-shadow: var(--shadow); font-size: 11px; }
-  .seglegend span { margin-right: 4px; }
-  .seglegend i { font-style: normal; min-width: 22px; padding: 1px 0; border-radius: 3px; color: #fff; text-align: center;
-    text-shadow: 0 0 2px #000; }
   :global(.segpop b) { font-size: 15px; }
   :global(.segpop div) { font-size: 12px; }
   .nogl { position: absolute; inset: auto 16px 16px; padding: 12px 14px; border-radius: 12px;

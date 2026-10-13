@@ -96,8 +96,8 @@
           <button
             type="button"
             class="chip"
-            style:--c={info?.color ?? "#3b5bdb"}
-            style:--t={info?.text_color ?? "#fff"}
+            style:--c={app.lineColor(id).bg}
+            style:--t={app.lineColor(id).fg}
             title={st?.title ?? info?.name}
             aria-label="Αφαίρεση γραμμής {id}"
             onclick={() => app.toggleLine(id)}
@@ -144,7 +144,7 @@
       <span aria-hidden="true">★</span>
       {#each favs as id (id)}
         {@const on = app.selected.includes(id)}
-        <button type="button" class="fav" style:--c={app.lineInfo.get(id)?.color} aria-pressed={on}
+        <button type="button" class="fav" style:--c={app.lineColor(id).bg} style:--t={app.lineColor(id).fg} aria-pressed={on}
           aria-label="{on ? 'Απόκρυψη' : 'Εμφάνιση'} γραμμής {id}" onclick={() => app.toggleLine(id)}>{id}</button>
       {/each}
       {#if favs.length > 1 && favsOff}
@@ -184,7 +184,7 @@
           onpointerdown={e => e.preventDefault()}
           onclick={() => pick(l.id)}
         >
-          <span class="id" style:--c={l.color} style:--t={l.text_color}>{l.id}</span>
+          <span class="id" style:--c={app.lineColor(l.id).bg} style:--t={app.lineColor(l.id).fg}>{l.id}</span>
           <span class="name">{l.name}</span>
           {#if sel}<span class="check" aria-hidden="true">✓</span>{/if}
           <button type="button" class="star" class:on={star} tabindex="-1" aria-pressed={star}
@@ -235,7 +235,7 @@
   .star.on { color: #f59f00; }
   .fav { min-height: 32px; padding: 0 10px; border: 2px solid var(--c, #3b5bdb); border-radius: 16px; background: none;
     color: var(--fg); font-weight: 700; cursor: pointer; }
-  .fav[aria-pressed="true"] { background: var(--c, #3b5bdb); color: #fff; }
+  .fav[aria-pressed="true"] { background: var(--c, #3b5bdb); color: var(--t, #fff); }
   .all { min-height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: 16px; background: var(--control);
     font-size: 12px; cursor: pointer; }
   .tip { margin-top: 6px; color: var(--muted); font-size: 11px; }

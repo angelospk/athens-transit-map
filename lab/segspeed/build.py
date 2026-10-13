@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Pilot: typical bus speed per road segment (stop to stop), as one GeoJSON.
+"""Typical bus speed per road segment (stop to stop), as one GeoJSON for the map's speed layer.
 
-Usage: python3 lab/segspeed/build.py <history_dir> <out.geojson> [line ...]
+Usage: python3 lab/segspeed/build.py <history_dir> public/speed/segments.geojson [line ...]
   history_dir: hourly CSV.gz from `docker cp atrt-atrt-1:/var/lib/atrt/history <dir>`
   lines: line ids (default: all lines in the history)
 
@@ -9,6 +9,8 @@ Observation = two consecutive fixes of one vehicle on one line, 5-120 s apart,
 straight-line speed <= 25 m/s. The pair's midpoint is snapped to the line's
 shape (variant = route_code) and credited to the stop-to-stop segment there.
 Segments with the same (from_stop, to_stop) on different lines are merged.
+Segments with fewer than MIN_SAMPLES observations are left out. The top-level `meta` member holds the
+observation period, the sample count and MIN_SAMPLES (the map's legend shows them).
 Offline only; not part of the app build.
 """
 import csv, gzip, json, math, os, sys, urllib.request
@@ -25,7 +27,9 @@ LAT0 = 37.98
 KX = 111320 * math.cos(math.radians(LAT0))  # m per deg lon
 KY = 110540  # m per deg lat
 SNAP_M = 35  # max midpoint-to-shape distance
-MIN_SAMPLES = 5
+STOP_SNAP_M = 40  # a stop this close to the shape is on it
+MIN_SAMPLES = 20  # per segment shown
+PART_MIN_SAMPLES = 10  # for its peak / off-peak figure
 PARKED_S = 180  # stationary longer than this = layover, dropped
 
 
@@ -61,10 +65,24 @@ class Shape:
         # monotonic snap: each stop at or after the previous one
         ss, last = [], 0.0
         for i in range(len(ids)):
-            s, _ = self.snap(np.array([sx[i]]), np.array([sy[i]]), lo=last)
-            last = max(last, float(s[0]))
+            last = max(last, self.first_near(sx[i], sy[i], last))
             ss.append(last)
         self.stop_ids, self.stop_s = ids, np.array(ss)
+
+    def first_near(self, px, py, lo):
+        """The first place at or after lo where the shape passes within STOP_SNAP_M of a stop (the nearest
+        place if none): a loop line starts and ends at the same stop, and the nearest would be the end."""
+        ax, ay = self.x[:-1], self.y[:-1]
+        dx, dy = np.diff(self.x), np.diff(self.y)
+        L2 = np.maximum(dx * dx + dy * dy, 1e-9)
+        t = np.clip(((px - ax) * dx + (py - ay) * dy) / L2, 0, 1)
+        dist = np.hypot(px - (ax + t * dx), py - (ay + t * dy))
+        s = self.cum[:-1] + t * np.sqrt(L2)
+        ok = s >= lo - 1
+        near = ok & (dist <= STOP_SNAP_M)
+        if near.any():
+            return float(s[near].min())
+        return float(s[ok][np.argmin(dist[ok])]) if ok.any() else lo
 
     def snap(self, px, py, lo=0.0):
         """Project points to the polyline; returns (s along shape, distance)."""
@@ -110,6 +128,8 @@ def read_pairs(hist_dir, lines):
                 rows[r["veh"]].append((int(r["fix_t"]), r["line"], r["route_code"],
                                        int(r["lat"]) / 1e6, int(r["lon"]) / 1e6))
     pairs = defaultdict(list)
+    times = [f[0] for fixes in rows.values() for f in fixes]
+    span = (min(times), max(times)) if times else (0, 0)
     for fixes in rows.values():
         fixes.sort()
         run = []  # current stationary run: a bus standing > PARKED_S is parked, not in traffic
@@ -136,7 +156,7 @@ def read_pairs(hist_dir, lines):
             flush()
             pairs[(a[1], a[2])].append(obs)
         flush()
-    return pairs
+    return pairs, span
 
 
 def is_peak(t):
@@ -147,7 +167,7 @@ def is_peak(t):
 def main():
     hist, out, *lines = sys.argv[1:]
     lines = set(lines)
-    pairs = read_pairs(hist, lines)
+    pairs, span = read_pairs(hist, lines)
     print(f"{sum(map(len, pairs.values()))} pairs on {len({k[0] for k in pairs})} lines", file=sys.stderr)
     # seg key -> {"geom", "v": [], "peak": [], "off": [], "lines": set}
     segs = {}
@@ -191,8 +211,8 @@ def main():
                 (seg["peak"] if is_peak(o[i, 0]) else seg["off"]).append(v)
                 seg["lines"].add(lid)
 
-    def kmh(vs):
-        return round(float(np.median(vs)) * 3.6, 1) if len(vs) >= MIN_SAMPLES else None
+    def kmh(vs, least=MIN_SAMPLES):
+        return round(float(np.median(vs)) * 3.6, 1) if len(vs) >= least else None
 
     feats = []
     for (a, b), seg in segs.items():
@@ -201,12 +221,14 @@ def main():
         feats.append({"type": "Feature",
                       "geometry": {"type": "LineString", "coordinates": seg["geom"]},
                       "properties": {"kmh": kmh(seg["v"]), "n": len(seg["v"]),
-                                     "peak": kmh(seg["peak"]), "off": kmh(seg["off"]),
+                                     "peak": kmh(seg["peak"], PART_MIN_SAMPLES), "off": kmh(seg["off"], PART_MIN_SAMPLES),
                                      "from": seg["names"][0], "to": seg["names"][1],
                                      "lines": " ".join(sorted(seg["lines"]))}})
     # slow segments drawn last (on top)
     feats.sort(key=lambda f: -f["properties"]["kmh"])
-    json.dump({"type": "FeatureCollection", "features": feats}, open(out, "w"),
+    meta = {"from": span[0], "to": span[1], "samples": sum(f["properties"]["n"] for f in feats),
+            "segments": len(feats), "min_samples": MIN_SAMPLES}
+    json.dump({"type": "FeatureCollection", "meta": meta, "features": feats}, open(out, "w"),
               ensure_ascii=False, separators=(",", ":"))
     print(f"{len(feats)} segments -> {out}", file=sys.stderr)
 

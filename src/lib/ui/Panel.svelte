@@ -306,10 +306,10 @@
           </details>
         </section>
         <section>
-          <h4>Ταχύτητα δρόμων (πιλοτικό)</h4>
+          <h4>Ταχύτητα λεωφορείων</h4>
           <label class="switch">
-            <input type="checkbox" checked={app.segSpeed} onchange={e => app.setSegSpeed(e.currentTarget.checked)} />
-            <span>Τυπική ταχύτητα λεωφορείων<br /><small>Ανά κομμάτι δρόμου, από στάση σε στάση. Πάτα ένα για km/h.</small></span>
+            <input type="checkbox" checked={app.speedOn} onchange={e => app.setSpeedOn(e.currentTarget.checked)} />
+            <span>Τυπική ταχύτητα ανά δρόμο<br /><small>Από στάση σε στάση, από τις θέσεις GPS. Πάτα ένα κομμάτι για km/h.</small></span>
           </label>
         </section>
         <section>
@@ -327,7 +327,7 @@
 
 <div class="rail" role="toolbar" aria-label="Εργαλεία χάρτη">
   <button type="button" class="tool" class:on={pop === "layers"} class:filtering={app.only.fresh || app.only.onTime} aria-expanded={pop === "layers"} aria-controls="pop-layers"
-    bind:this={layersButton} aria-label="Τι δείχνει ο χάρτης" data-tip="Τι δείχνει ο χάρτης: γραμμές μετρό, ποια λεωφορεία, φίλτρα, θέμα" onclick={() => toggle("layers")}>
+    bind:this={layersButton} aria-label="Τι δείχνει ο χάρτης" data-tip="Τι δείχνει ο χάρτης: γραμμές μετρό, ποια λεωφορεία, φίλτρα, ταχύτητα, θέμα" onclick={() => toggle("layers")}>
     <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
       <path d="M2 10S5 4.8 10 4.8 18 10 18 10 15 15.2 10 15.2 2 10 2 10z" /><circle cx="10" cy="10" r="2.5" />
     </svg>

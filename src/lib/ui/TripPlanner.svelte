@@ -282,7 +282,7 @@
           <span class="lines">
             {#each onMap as t (t.line)}
               {@const info = app.lineInfo.get(t.line)}
-              <span class="ln" style:--c={info?.color ?? "#3b5bdb"}><b>{t.line}</b>{#if goingNow(t)}<i>→ {goingNow(t)}</i>{/if}</span>
+              <span class="ln" style:--c={app.lineColor(t.line).bg}><b>{t.line}</b>{#if goingNow(t)}<i>→ {goingNow(t)}</i>{/if}</span>
             {/each}
           </span>
         {/if}
@@ -351,7 +351,7 @@
           {@const info = app.lineInfo.get(t.line)}
           {@const v = t.variants[0]}
           <li class:out={k >= MAX_LINES}>
-            <button type="button" class="chip" style:--c={info?.color ?? "#3b5bdb"} style:--t={info?.text_color ?? "#fff"}
+            <button type="button" class="chip" style:--c={app.lineColor(t.line).bg} style:--t={app.lineColor(t.line).fg}
               aria-pressed={app.selected.includes(t.line)} title={info?.name}
               onclick={() => toggleTripLine(app, t)}>{t.line}</button>
             <span>{stop(v.from)} → {stop(v.to)}<br />
@@ -394,7 +394,7 @@
               <legend>Γραμμές</legend>
               {#each tickable as l (l)}
                 {@const info = app.lineInfo.get(l)}
-                <label class="ln" style:--c={info?.color ?? "#3b5bdb"}>
+                <label class="ln" style:--c={app.lineColor(l).bg}>
                   <input type="checkbox" checked={!off.includes(l)} onchange={e => setTicked(l, e.currentTarget.checked)} /><b>{l}</b>
                 </label>
               {/each}

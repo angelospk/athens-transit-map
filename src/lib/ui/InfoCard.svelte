@@ -136,7 +136,7 @@
       <button type="button" class="grab" aria-expanded={sheet === "open"} aria-controls="card-body"
         aria-label={sheet === "open" ? "Σύμπτυξη λεπτομερειών" : "Ανάπτυξη λεπτομερειών"} onclick={e => { if (e.detail === 0) sheet = flip(sheet); }}><span></span></button>
       <header>
-        <span class="pill" style:--c={info?.color ?? "#3b5bdb"} style:--t={info?.text_color ?? "#fff"}>{line}</span>
+        <span class="pill" style:--c={app.lineColor(line).bg} style:--t={app.lineColor(line).fg}>{line}</span>
         <h2>{info?.name ?? ""}</h2>
         <button type="button" class="star" class:on={starred} aria-pressed={starred} title={starred ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
           aria-label={starred ? `Αφαίρεση της γραμμής ${line} από τις αγαπημένες` : `Προσθήκη της γραμμής ${line} στις αγαπημένες`}
