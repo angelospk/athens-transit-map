@@ -12,10 +12,12 @@
   import { Locator, userPlan, type Fix, type LocState } from "../locate";
   import { Mover, planOnto } from "../motion";
   import { shapeLength, stopOffsets } from "../predict";
+  import { loadSpeed, SPEED_STOPS, type SpeedData } from "../speed";
   import { resolveDark } from "../theme";
   import type { Variant } from "../types";
   import type { AppState } from "../state.svelte";
   import OldTimetable from "../ui/OldTimetable.svelte";
+  import SpeedLegend from "../ui/SpeedLegend.svelte";
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
 
@@ -25,7 +27,6 @@
 
   const FOLLOW_VIEW_MS = 2000;   // following the user: the view is reported this often
   const VIEW_SETTLE_MS = 300;   // the map must rest this long before the city layer asks for tiles
-  const DEFAULT_COLOR = "#3b5bdb";
   const DELAY_CLASSES = ["ontime", "late1", "late2", "late3", "none"];
   const STYLE = (dark: boolean) => `https://tiles.openfreemap.org/styles/${dark ? "dark" : "positron"}`;
   const EMPTY = { type: "FeatureCollection" as const, features: [] };
@@ -91,7 +92,7 @@
     app.detailLines.flatMap(id => {
       const data = app.statics[id];
       const focus = app.focus[id];
-      return data ? [{ id, color: app.lineInfo.get(id)?.color || DEFAULT_COLOR, data, visible: focus && new Set(focus) }] : [];
+      return data ? [{ id, color: app.lineColor(id).bg, data, visible: focus && new Set(focus) }] : [];
     }),
   );
 
@@ -223,7 +224,21 @@
     m.setStyle(STYLE(d), { diff: false });
   }
 
+  // Typical bus speed per stop-to-stop segment (speed.ts): thin and translucent, under every other layer of ours.
+  // Its data loads the first time the switch is on (effect below).
+  function addSpeed(m: MlMap) {
+    m.addSource("speed", { type: "geojson", data: speedData ?? EMPTY });
+    m.addLayer({ id: "speed", type: "line", source: "speed",
+      layout: { "line-join": "round", "line-cap": "round", visibility: app.speedOn ? "visible" : "none" },
+      paint: { "line-color": ["interpolate", ["linear"], ["get", "kmh"], ...SPEED_STOPS.flat()] as ExpressionSpecification,
+        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 13, 2, 16, 4], "line-opacity": speedOpacity() } });
+  }
+  let speedData = $state.raw<SpeedData | null>(null);
+  // Fainter while a line is followed: the line and its vehicles come first.
+  const speedOpacity = () => (app.detailLines.length ? 0.3 : 0.6);
+
   function addLayers(m: MlMap) {
+    addSpeed(m);
     addMetroLayers(m);
     addCityLayers(m);
     for (const id of ["metro-station", "metro-label"]) m.moveLayer(id);
@@ -488,12 +503,20 @@
     wrap.className = "vm";
     wrap.append(el, age);
     const marker = new Marker({ element: wrap, anchor: "center", subpixelPositioning: true }).setLngLat(pos).addTo(map!);
+    paint(el, e.line);
     const d: Dom = { marker, wrap, el, dir, age, width: el.offsetWidth, heading: null };
     doms.set(e.key, d);
     const s = app.selection;
     if (s?.kind === "vehicle" && s.line === e.line && s.id === e.id) { el.classList.add("selected"); wrap.classList.add("sel"); }
     updateAge(d, e, app.serverNow / 1000);
     return d;
+  }
+
+  // A detail line's vehicle wears the line's colour; its delay is the ring (app.css).
+  function paint(el: HTMLElement, line: string) {
+    const c = app.lineColor(line);
+    el.style.setProperty("--c", c.bg);
+    el.style.setProperty("--t", c.fg);
   }
 
   function updateAge(d: Dom, e: FleetEntry, now: number) {
@@ -598,10 +621,18 @@
       }
       const route = m.queryRenderedFeatures(e.point, { layers: ["routes-hit"] })[0];
       if (route) return app.selectRoute(String(route.properties.line), String(route.properties.variant));
+      const box: [[number, number], [number, number]] = [[e.point.x - 8, e.point.y - 8], [e.point.x + 8, e.point.y + 8]];
+      const seg = app.speedOn ? m.queryRenderedFeatures(box, { layers: ["speed"] })[0] : undefined;
+      if (seg) {
+        const p = seg.properties;
+        const kmh = (v: unknown) => (v == null ? "–" : `${Math.round(Number(v))}`);
+        popup.setLngLat(e.lngLat).setDOMContent(segInfo(p, kmh)).addTo(m);
+        return;
+      }
       app.selectStation(null);
       app.clearSelection();
     });
-    for (const layer of ["routes-hit", "stops", "city-dot", "metro-station"]) {
+    for (const layer of ["routes-hit", "stops", "city-dot", "metro-station", "speed"]) {
       m.on("mouseenter", layer, () => (m.getCanvas().style.cursor = "pointer"));
       m.on("mouseleave", layer, () => (m.getCanvas().style.cursor = ""));
     }
@@ -626,6 +657,38 @@
       loaded = false;
     };
   }
+
+  // The popup for a speed segment; built from text nodes (stop names come from data).
+  function segInfo(p: Record<string, unknown>, kmh: (v: unknown) => string) {
+    const el = document.createElement("div");
+    el.className = "segpop";
+    const line = (text: string, tag = "div") => el.appendChild(Object.assign(document.createElement(tag), { textContent: text }));
+    line(`${kmh(p.kmh)} km/h`, "b");
+    line(`${p.from} → ${p.to}`);
+    line(`Αιχμή καθημερινής ${kmh(p.peak)} · εκτός ${kmh(p.off)} km/h`);
+    line(`${p.n} μετρήσεις · γραμμές ${p.lines}`);
+    line("Με τον χρόνο στις στάσεις.");
+    return el;
+  }
+
+  $effect(() => {
+    const on = app.speedOn;
+    if (on && !speedData) loadSpeed().then(d => (speedData = d), () => {
+      app.notify("Δεν φόρτωσαν οι ταχύτητες. Δοκίμασε ξανά.");
+      app.setSpeedOn(false);
+    });
+    if (loaded) map!.setLayoutProperty("speed", "visibility", on ? "visible" : "none");
+  });
+
+  $effect(() => {
+    const d = speedData;
+    if (loaded && d) (map!.getSource("speed") as GeoJSONSource).setData(d);
+  });
+
+  $effect(() => {
+    const o = speedOpacity();
+    if (loaded) map!.setPaintProperty("speed", "line-opacity", o);
+  });
 
   $effect(() => {
     const m = map, d = dark;
@@ -775,6 +838,7 @@
 </script>
 
 <div class="map" class:no-ages={!app.showAges && app.motion} {@attach setup}></div>
+{#if app.speedOn}<SpeedLegend meta={speedData?.meta ?? null} onclose={() => app.setSpeedOn(false)} />{/if}
 {#if Info}<Info bind:open={infoOpen} motion={app.motion} {ended} />{/if}
 {#if ended}<OldTimetable {ended} onmore={openInfo} />{/if}
 {#if failed}
@@ -786,6 +850,8 @@
 
 <style>
   .map { position: absolute; inset: 0; }
+  :global(.segpop b) { font-size: 15px; }
+  :global(.segpop div) { font-size: 12px; }
   .nogl { position: absolute; inset: auto 16px 16px; padding: 12px 14px; border-radius: 12px;
     background: var(--warn-bg); box-shadow: var(--shadow); }
 </style>

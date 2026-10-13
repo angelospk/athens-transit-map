@@ -1,10 +1,48 @@
 # athens-transit-map
 
+**Live map:** https://bus.haroldpoi.dev · **Public API (no key):** https://transit.haroldpoi.dev/v1/status ·
+**45 s demo:** <!-- TODO(Harold): demo video URL here, and DEMO_VIDEO_URL in src/lib/config.ts --> _video coming soon_
+
+## At a glance
+
+**The problem.** Athens buses (OASA) send GPS positions, but the only live source is an undocumented
+endpoint that answers one route per request and does not answer data-centre addresses. There was no
+map where you could see every bus of the city at once and follow your own lines.
+
+**What I built**, beyond the upstream project
+([foivospro/athens-gtfs-realtime](https://github.com/foivospro/athens-gtfs-realtime), whose matching ideas and viewer I started from):
+
+- A Go backend ([athens-transit-rt](https://github.com/angelospk/athens-transit-rt)) that polls every active
+  route under one request budget, matches vehicles to scheduled trips and serves a keyless JSON API,
+  including map tiles of all ~1,500 live vehicles.
+- This map (Svelte 5, MapLibre): the whole city live, up to 5 followed lines, each in its own colourblind-safe
+  colour, vehicles that move along their route between GPS fixes, a trip planner, stop alerts (web push and a
+  Telegram bot) and the typical bus speed of each street.
+
+**Three tradeoffs.**
+
+1. *Backend at home, not in the cloud.* OASA times out for data-centre IPs (tested on five providers), so the
+   backend runs in Docker on a home machine behind a Cloudflare Tunnel. Cost: uptime depends on that machine;
+   the map shows a banner when it cannot reach it.
+2. *Cloudflare cache and one request budget.* The backend asks OASA at most 4–5 requests per second in total,
+   and every user gets the same cached answer (`max-age` 10 s), so more users add no load on OASA. Cost: lines
+   nobody watches can be up to ~2.5 min behind.
+3. *Static frontend on GitHub Pages.* No server code to run, pay for or secure. Cost: per-user features (alerts)
+   run in the browser, or in a small separate bot.
+
+**One measured result.** The motion model between GPS fixes was chosen offline on recorded fixes: on a held-out
+test split, the median position error fell from 225 m to 122 m ([lab/motion/program.md](lab/motion/program.md)).
+
+Try the API: [`/v1/status`](https://transit.haroldpoi.dev/v1/status) ·
+[`/v1/lines/040`](https://transit.haroldpoi.dev/v1/lines/040) (live vehicles of line 040).
+
+---
+
 Ζωντανός χάρτης με τα λεωφορεία και τα τρόλεϊ του ΟΑΣΑ: **https://bus.haroldpoi.dev**
 
 A live map of Athens (OASA) buses and trolleys. Every live vehicle of the city is on the map, coloured
-by delay; click one to see its line and trip. Pick up to 5 lines to follow them in detail; each vehicle
-shows its line number, coloured by delay. Click a vehicle for its delay, trip, next stop and GPS age; click a route
+by delay; click one to see its line and trip. Pick up to 5 lines to follow them in detail; each line gets its own
+colour (Okabe-Ito, colourblind-safe) on its route, vehicles, card and chip, and each vehicle shows its delay as a ring. Click a vehicle for its delay, trip, next stop and GPS age; click a route
 for its direction and stops. The chosen lines stay in the URL, so links can be shared
 (`https://bus.haroldpoi.dev/?l=040,Α1`).
 
@@ -47,8 +85,14 @@ The UI follows the viewer of [foivospro/athens-gtfs-realtime](https://github.com
 - My location (button under the zoom): a blue dot with its accuracy, the map follows it until you drag.
   Polled every 5 s in a vehicle, 10 s walking, up to 30 s standing; paused while the tab is hidden.
 - GPS age labels ("24″") are off by default; the map menu (layers button) turns them and motion on or off.
-- Vehicles labelled with the line number, coloured by delay: up to 2′, 2–5′, 5–10′, over 10′, no trip.
-- Route shapes in the line colour. Line picker with search (Greek, accent-insensitive; `a1` finds `Α1`, `40` finds `040`).
+- City vehicles coloured by delay: up to 2′, 2–5′, 5–10′, over 10′, no trip. A followed line's vehicles carry
+  the line number in the line's colour, with the same delay colours as a ring (`src/lib/lineColors.ts`, `src/app.css`).
+- Route shapes in the line colour.
+- Bus speed (layers menu, off by default): the typical (median) bus speed of each stop-to-stop segment, drawn thin
+  under the bus lines, with a legend (period, sample count). It includes the time at stops, so it is bus speed,
+  not car traffic. Built offline from the backend's fix history: `python3 lab/segspeed/build.py <history dir>
+  public/speed/segments.geojson` (segments with under 20 samples are left out); loaded only when switched on.
+- Line picker with search (Greek, accent-insensitive; `a1` finds `Α1`, `40` finds `040`).
 - Vehicle details: delay, trip ("00:35 ΠΕΙΡΑΙΑΣ → ΣΥΝΤΑΓΜΑ"), next stop, GPS age. The trip's route and stops are highlighted.
 - Route details: direction, number of stops, vehicles on it now. Tap a stop for its name.
 - Max 5 lines at once. Selection kept in the URL (`?l=…`).
@@ -82,6 +126,7 @@ bun run build      # static site in dist/
 | `VITE_API_BASE` | `https://transit.haroldpoi.dev` | Live API (`/v1/lines/{id}`, `/v1/status`) |
 | `VITE_STATIC_BASE` | `https://angelospk.github.io/athens-transit-rt/static/v1` | Static data (`lines.json`, `lines/{id}.json`) |
 | `VITE_GEOCODE_URL` | `https://photon.komoot.io/api/` | Area and street search of the trip planner (Photon API) |
+| `VITE_DEMO_VIDEO_URL` | `DEMO_VIDEO_URL` in `src/lib/config.ts` (empty) | Demo video linked from the "no connection" banner; empty: no link |
 | `VITE_MOCK` | unset | `1` = answer every request from `src/fixtures/` (moving vehicles, 30 s cycle) |
 
 Mock code and fixtures are not included in production builds.

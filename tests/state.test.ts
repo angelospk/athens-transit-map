@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PALETTE } from "../src/lib/lineColors";
 import { AppState } from "../src/lib/state.svelte";
 
 vi.stubGlobal("history", { state: null, replaceState: () => {} });
@@ -106,6 +107,37 @@ describe("AppState city focus (temporary line)", () => {
     hook(app).onData("040", { line: "040", updated_at: 1, next_update_at: 31, vehicles: [] });
     app.toggleLine("040");
     expect(app.live["040"]).toBeUndefined();
+  });
+});
+
+describe("AppState line colours", () => {
+  vi.stubGlobal("fetch", () => new Promise(() => {}));
+
+  it("gives each detail line its own palette colour, kept while it stays", () => {
+    const app = new AppState();
+    app.selected = ["040", "550"];
+    const c550 = app.lineColor("550");
+    expect(app.lineColor("040")).toEqual(PALETTE[0]);
+    expect(c550).toEqual(PALETTE[1]);
+    app.selected = ["550"];
+    expect(app.lineColor("550")).toEqual(c550);
+  });
+
+  it("keeps the colour of a line shown from the city layer when the user picks it", () => {
+    const app = new AppState();
+    app.selected = ["040"];
+    app.selectCityVehicle("Α1", "5");
+    const c = app.lineColor("Α1");
+    expect(c).toEqual(PALETTE[1]);
+    app.toggleLine("Α1");
+    expect(app.selected).toEqual(["040", "Α1"]);
+    expect(app.lineColor("Α1")).toEqual(c);
+  });
+
+  it("uses the operator colour for a line not on the map", () => {
+    const app = new AppState();
+    app.lines = [{ id: "040", name: "x", color: "#153ce0", text_color: "#ffffff" } as never];
+    expect(app.lineColor("040")).toEqual({ bg: "#153ce0", fg: "#ffffff" });
   });
 });
 
