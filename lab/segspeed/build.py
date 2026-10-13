@@ -82,7 +82,8 @@ class Shape:
         near = ok & (dist <= STOP_SNAP_M)
         if near.any():
             i = j = int(np.argmax(near))   # the first shape segment of the passage
-            while j + 1 < len(near) and near[j + 1]:
+            # it goes on while the shared vertex stays near too (a hairpin can come back within reach)
+            while j + 1 < len(near) and near[j + 1] and math.hypot(self.x[j + 1] - px, self.y[j + 1] - py) <= STOP_SNAP_M:
                 j += 1
             k = i + int(np.argmin(dist[i:j + 1]))
             return float(s[k])

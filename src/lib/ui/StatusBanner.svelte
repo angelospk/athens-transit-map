@@ -1,19 +1,14 @@
 <script lang="ts">
+  import { bannerMessages } from "../banner";
   import { DEMO_VIDEO_URL } from "../config";
   import { STALE_S, type AppState } from "../state.svelte";
 
   let { app }: { app: AppState } = $props();
 
-  // The last /v1/status call failed (also after earlier successes).
-  const offline = $derived(app.statusFailed);
-  const messages = $derived.by(() => {
-    const out: string[] = [];
-    if (offline) out.push("Δεν υπάρχει σύνδεση με τον διακομιστή δεδομένων. Νέα προσπάθεια σε λίγο.");
-    if (!offline && app.status && !app.status.ok) out.push("Ο διακομιστής δεδομένων έχει προσωρινό πρόβλημα. Τα στοιχεία μπορεί να μην είναι ενημερωμένα.");
-    const stale = app.selected.filter(l => app.live[l] && app.serverNow / 1000 - app.live[l].updated_at > STALE_S);
-    if (stale.length) out.push(`Χωρίς ενημέρωση πάνω από 2 λεπτά: ${stale.join(", ")}.`);
-    return out;
-  });
+  const banner = $derived(bannerMessages(app.statusFailed, app.status,
+    app.selected.filter(l => app.live[l] && app.serverNow / 1000 - app.live[l].updated_at > STALE_S)));
+  const offline = $derived(banner.offline);
+  const messages = $derived(banner.messages);
 </script>
 
 {#if messages.length || app.notice}

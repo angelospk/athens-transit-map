@@ -25,6 +25,10 @@ class FirstNear(unittest.TestCase):
         sh = self.shape([(0, 0), (50, 0), (90, 0), (100, 0), (110, 0), (300, 0)], [(0, 0), (100, 30)])
         self.assertAlmostEqual(sh.stop_s[1], 100, delta=1)
 
+    def test_hairpin_that_comes_back_is_another_passage(self):
+        sh = self.shape([(0, 0), (500, 0), (100, 30), (100, 600)], [(0, 0), (100, 30)])
+        self.assertAlmostEqual(sh.stop_s[1], 100, delta=1)
+
     def test_loop_line_first_stop_is_at_the_start(self):
         sh = self.shape([(0, 0), (500, 0), (500, 500), (0, 500), (0, 5)], [(0, 0), (500, 250), (0, 0)])
         self.assertLess(sh.stop_s[0], 5)
