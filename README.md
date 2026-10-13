@@ -91,7 +91,8 @@ The UI follows the viewer of [foivospro/athens-gtfs-realtime](https://github.com
 - Bus speed (layers menu, off by default): the typical (median) bus speed of each stop-to-stop segment, drawn thin
   under the bus lines, with a legend (period, sample count). It includes the time at stops, so it is bus speed,
   not car traffic. Built offline from the backend's fix history: `python3 lab/segspeed/build.py <history dir>
-  public/speed/segments.geojson` (segments with under 20 samples are left out); loaded only when switched on. Line picker with search (Greek, accent-insensitive; `a1` finds `Α1`, `40` finds `040`).
+  public/speed/segments.geojson` (segments with under 20 samples are left out); loaded only when switched on.
+- Line picker with search (Greek, accent-insensitive; `a1` finds `Α1`, `40` finds `040`).
 - Vehicle details: delay, trip ("00:35 ΠΕΙΡΑΙΑΣ → ΣΥΝΤΑΓΜΑ"), next stop, GPS age. The trip's route and stops are highlighted.
 - Route details: direction, number of stops, vehicles on it now. Tap a stop for its name.
 - Max 5 lines at once. Selection kept in the URL (`?l=…`).

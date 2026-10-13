@@ -70,8 +70,8 @@ class Shape:
         self.stop_ids, self.stop_s = ids, np.array(ss)
 
     def first_near(self, px, py, lo):
-        """The first place at or after lo where the shape passes within STOP_SNAP_M of a stop (the nearest
-        place if none): a loop line starts and ends at the same stop, and the nearest would be the end."""
+        """The nearest place on the first passage at or after lo within STOP_SNAP_M of a stop (the nearest
+        place overall if none): a loop line starts and ends at the same stop, and the nearest would be the end."""
         ax, ay = self.x[:-1], self.y[:-1]
         dx, dy = np.diff(self.x), np.diff(self.y)
         L2 = np.maximum(dx * dx + dy * dy, 1e-9)
@@ -81,7 +81,11 @@ class Shape:
         ok = s >= lo - 1
         near = ok & (dist <= STOP_SNAP_M)
         if near.any():
-            return float(s[near].min())
+            i = j = int(np.argmax(near))   # the first shape segment of the passage
+            while j + 1 < len(near) and near[j + 1]:
+                j += 1
+            k = i + int(np.argmin(dist[i:j + 1]))
+            return float(s[k])
         return float(s[ok][np.argmin(dist[ok])]) if ok.any() else lo
 
     def snap(self, px, py, lo=0.0):
@@ -134,8 +138,8 @@ def read_pairs(hist_dir, lines):
         fixes.sort()
         run = []  # current stationary run: a bus standing > PARKED_S is parked, not in traffic
         def flush():
-            if run and run[-1][1][0] - run[0][1][0] <= PARKED_S:
-                for key, obs in run:
+            if run and run[-1][3] - run[0][2] <= PARKED_S:   # first fix to last fix of the run
+                for key, obs, _, _ in run:
                     pairs[key].append(obs)
             run.clear()
         for a, b in zip(fixes, fixes[1:]):
@@ -151,7 +155,7 @@ def read_pairs(hist_dir, lines):
                 continue
             obs = ((a[0] + b[0]) / 2, (a[3] + b[3]) / 2, (a[4] + b[4]) / 2, v)
             if v < 1.0:
-                run.append(((a[1], a[2]), obs))
+                run.append(((a[1], a[2]), obs, a[0], b[0]))
                 continue
             flush()
             pairs[(a[1], a[2])].append(obs)

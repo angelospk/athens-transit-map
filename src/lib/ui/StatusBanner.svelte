@@ -4,11 +4,12 @@
 
   let { app }: { app: AppState } = $props();
 
-  const offline = $derived(app.statusFailed && !app.status);
+  // The last /v1/status call failed (also after earlier successes).
+  const offline = $derived(app.statusFailed);
   const messages = $derived.by(() => {
     const out: string[] = [];
     if (offline) out.push("Δεν υπάρχει σύνδεση με τον διακομιστή δεδομένων. Νέα προσπάθεια σε λίγο.");
-    if (app.status && !app.status.ok) out.push("Ο διακομιστής δεδομένων έχει προσωρινό πρόβλημα. Τα στοιχεία μπορεί να μην είναι ενημερωμένα.");
+    if (!offline && app.status && !app.status.ok) out.push("Ο διακομιστής δεδομένων έχει προσωρινό πρόβλημα. Τα στοιχεία μπορεί να μην είναι ενημερωμένα.");
     const stale = app.selected.filter(l => app.live[l] && app.serverNow / 1000 - app.live[l].updated_at > STALE_S);
     if (stale.length) out.push(`Χωρίς ενημέρωση πάνω από 2 λεπτά: ${stale.join(", ")}.`);
     return out;
