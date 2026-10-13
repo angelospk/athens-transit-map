@@ -16,7 +16,7 @@
       <h2>{station.name}</h2>
       <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.selectStation(null)}>×</button>
     </header>
-    <p>Άνοιξε μια γραμμή για να φαίνεται η διαδρομή της στον χάρτη. Είναι οι ίδιοι διακόπτες με το 👁 → Μετρό.</p>
+    <p>Άνοιξε μια γραμμή για να φαίνεται η διαδρομή της στον χάρτη. Οι ίδιοι διακόπτες είναι και στο κουμπί «Τι δείχνει ο χάρτης», στο «Μετρό, ΗΣΑΠ και τραμ».</p>
     <MetroToggles {app} ids={station.lines} />
   </section>
 {/if}
