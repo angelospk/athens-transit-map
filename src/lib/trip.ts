@@ -1,6 +1,7 @@
-// Trip planner: which lines go from one place to another, with no change. Loaded with the planner
+// Trip planner: which lines go from one place to another, with no change or one. Loaded with the planner
 // only (dynamic import), as is public/trips.json, its stop index (scripts/trips.ts).
 
+import type { MetroData } from "./metro";
 import { fold } from "./search";
 import type { AppState } from "./state.svelte";
 
@@ -11,7 +12,7 @@ export interface TripIndex { v: string; s: [string, number, number][]; l: Record
 
 // A place to start or end at: stops of one name close together, an area or street (geocoder), or the
 // user's location.
-export interface Place { label: string; hint?: string; pts: Pt[]; lines: string[]; kind?: "stop" | "area" | "street" | "poi" | "me" }
+export interface Place { label: string; hint?: string; pts: Pt[]; lines: string[]; kind?: "stop" | "area" | "street" | "poi" | "me" | "metro" | "metro-any" }
 
 export interface TripVariant {
   id: string;
@@ -19,10 +20,17 @@ export interface TripVariant {
   from: number; to: number;      // the same stops, as indexes into the index's stop table
   walk: number;                  // metres in a straight line, to the first stop and from the last
   stops: number;                 // stops travelled
+  ride: number;                  // metres on the bus, stop to stop in straight lines
+  min: number;                   // estimated minutes, walking and riding
 }
-export interface TripLine { line: string; walk: number; stops: number; variants: TripVariant[] }
+export interface TripLine { line: string; walk: number; stops: number; min: number; variants: TripVariant[] }
 
 export const WALK_M = 500;
+const WALK_MPM = 75;       // 4.5 km/h
+const DETOUR = 1.3;        // streets are longer than the straight line
+const RIDE_MPM = 250;      // 15 km/h, stops included
+export const XFER_M = 250;
+export const XFER_MIN = 5; // waiting for the second bus
 const CLUSTER_M = 800;
 
 export function distM(a: Pt, b: Pt): number {
@@ -75,13 +83,31 @@ export function searchPlaces(list: Place[], query: string, max = 6): Place[] {
     return -1;
   };
   return list.map(p => [rank(p), p] as const).filter(([r]) => r >= 0)
-    .sort((a, b) => a[0] - b[0] || b[1].lines.length - a[1].lines.length || a[1].label.localeCompare(b[1].label, "el"))
+    .sort((a, b) => a[0] - b[0] || +(b[1].kind === "metro") - +(a[1].kind === "metro") || b[1].lines.length - a[1].lines.length || a[1].label.localeCompare(b[1].label, "el"))
     .slice(0, max).map(([, p]) => p);
 }
 
+const walkMin = (m: number) => (m * DETOUR) / WALK_MPM;
+
+// Metres on the bus up to each stop of a variant (straight lines between stops), cached per index.
+const rides = new WeakMap<TripIndex, Map<string, number[]>>();
+function cumulative(ix: TripIndex, line: string, id: string, seq: number[]): number[] {
+  let m = rides.get(ix);
+  if (!m) rides.set(ix, (m = new Map()));
+  const key = `${line}/${id}`;
+  let c = m.get(key);
+  if (!c) {
+    c = [0];
+    for (let k = 1; k < seq.length; k++) c.push(c[k - 1] + distM([ix.s[seq[k - 1]][1], ix.s[seq[k - 1]][2]], [ix.s[seq[k]][1], ix.s[seq[k]][2]]));
+    m.set(key, c);
+  }
+  return c;
+}
+
 // Every line with a variant that stops within `radius` of the start and later within `radius` of the
-// end. Per variant, the pair of stops with the least walking, then the fewest stops. Lines come
-// best first; `known` (the current line list) leaves out lines the index has but OASA dropped.
+// end. Per variant, the pair of stops with the least estimated time (walking and riding), then the
+// fewest stops. Lines come best first; `known` (the current line list) leaves out lines the index has
+// but OASA dropped.
 export function findTrips(ix: TripIndex, from: Pt[], to: Pt[], radius = WALK_M, known?: Set<string>): TripLine[] {
   if (Math.min(...from.map(p => nearest(p, to))) < radius) return [];   // close enough to walk
   const dFrom = new Map<number, number>(), dTo = new Map<number, number>();
@@ -95,6 +121,7 @@ export function findTrips(ix: TripIndex, from: Pt[], to: Pt[], radius = WALK_M, 
     if (known && !known.has(line)) continue;
     const variants: TripVariant[] = [];
     for (const [id, seq] of Object.entries(vs)) {
+      const cum = cumulative(ix, line, id, seq);
       let best: TripVariant | null = null;
       for (let i = 0; i < seq.length; i++) {
         const a = d(dFrom, from, seq[i]);
@@ -102,18 +129,120 @@ export function findTrips(ix: TripIndex, from: Pt[], to: Pt[], radius = WALK_M, 
         for (let j = i + 1; j < seq.length; j++) {
           const b = d(dTo, to, seq[j]);
           if (b > radius) continue;
-          const walk = a + b;
-          if (!best || walk < best.walk || (walk === best.walk && j - i < best.stops))
-            best = { id, i, j, from: seq[i], to: seq[j], walk, stops: j - i };
+          const ride = cum[j] - cum[i], min = walkMin(a + b) + ride / RIDE_MPM;
+          if (!best || min < best.min || (min === best.min && j - i < best.stops))
+            best = { id, i, j, from: seq[i], to: seq[j], walk: a + b, stops: j - i, ride, min };
         }
       }
       if (best) variants.push(best);
     }
     if (!variants.length) continue;
-    variants.sort((a, b) => a.walk - b.walk || a.stops - b.stops || a.id.localeCompare(b.id));
-    out.push({ line, walk: variants[0].walk, stops: variants[0].stops, variants });
+    variants.sort((a, b) => a.min - b.min || a.stops - b.stops || a.id.localeCompare(b.id));
+    out.push({ line, walk: variants[0].walk, stops: variants[0].stops, min: variants[0].min, variants });
   }
-  return out.sort((a, b) => a.walk - b.walk || a.stops - b.stops || byLine(a.line, b.line));
+  return out.sort((a, b) => a.min - b.min || a.stops - b.stops || byLine(a.line, b.line));
+}
+
+// One bus ride inside a trip with a change.
+export interface TripLeg { line: string; id: string; i: number; j: number; from: number; to: number; stops: number; ride: number }
+export interface TripTransfer {
+  legs: [TripLeg, TripLeg];
+  walk: number;   // metres in a straight line, to the first stop and from the last
+  xfer: number;   // metres between the stop of the first leg's end and the second leg's start
+  min: number;
+}
+
+// Stops in a grid of XFER_M cells, cached per index: the stops near a stop without looking at all.
+interface Grid { cell: (lat: number, lon: number) => [number, number]; at: Map<string, number[]> }
+const grids = new WeakMap<TripIndex, Grid>();
+function gridOf(ix: TripIndex): Grid {
+  let g = grids.get(ix);
+  if (g) return g;
+  const lat0 = ix.s.length ? ix.s.reduce((t, x) => t + x[1], 0) / ix.s.length : 38;
+  const dLat = XFER_M / 111_320, dLon = dLat / Math.cos((lat0 * Math.PI) / 180);
+  const cell = (lat: number, lon: number): [number, number] => [Math.floor(lat / dLat), Math.floor(lon / dLon)];
+  const at = new Map<string, number[]>();
+  ix.s.forEach((x, k) => {
+    const key = cell(x[1], x[2]).join(",");
+    const list = at.get(key);
+    if (list) list.push(k); else at.set(key, [k]);
+  });
+  grids.set(ix, (g = { cell, at }));
+  return g;
+}
+
+// Trips with one change: a first line from near the start, then on foot (at most XFER_M) to a stop of
+// another line that gets off near the end. Per pair of lines the quickest; the first few overall.
+export function findTransfers(ix: TripIndex, from: Pt[], to: Pt[], radius = WALK_M, known?: Set<string>, max = 3): TripTransfer[] {
+  if (Math.min(...from.map(p => nearest(p, to))) < radius) return [];   // close enough to walk
+  const pt = (k: number): Pt => [ix.s[k][1], ix.s[k][2]];
+  const dFrom = new Map<number, number>(), dTo = new Map<number, number>();
+  const d = (cache: Map<number, number>, pts: Pt[], k: number) => {
+    let v = cache.get(k);
+    if (v == null) cache.set(k, (v = nearest(pt(k), pts)));
+    return v;
+  };
+  const leg = (line: string, id: string, seq: number[], cum: number[], i: number, j: number): TripLeg =>
+    ({ line, id, i, j, from: seq[i], to: seq[j], stops: j - i, ride: cum[j] - cum[i] });
+
+  // First leg: the quickest way to each stop, per line.
+  interface Arrival { cost: number; walk: number; leg: TripLeg }
+  const arrivals = new Map<number, Map<string, Arrival>>();
+  for (const [line, vs] of Object.entries(ix.l)) {
+    if (known && !known.has(line)) continue;
+    for (const [id, seq] of Object.entries(vs)) {
+      const cum = cumulative(ix, line, id, seq);
+      let bestI = -1, bestV = Infinity;   // over boardings so far: walk minutes minus the ride to them
+      for (let j = 0; j < seq.length; j++) {
+        if (bestI >= 0) {
+          const cost = bestV + cum[j] / RIDE_MPM;
+          let m = arrivals.get(seq[j]);
+          if (!m) arrivals.set(seq[j], (m = new Map()));
+          const had = m.get(line);
+          if (!had || cost < had.cost) m.set(line, { cost, walk: d(dFrom, from, seq[bestI]), leg: leg(line, id, seq, cum, bestI, j) });
+        }
+        const a = d(dFrom, from, seq[j]);
+        if (a <= radius && walkMin(a) - cum[j] / RIDE_MPM < bestV) { bestV = walkMin(a) - cum[j] / RIDE_MPM; bestI = j; }
+      }
+    }
+  }
+  if (!arrivals.size) return [];
+
+  // Second leg: from each boarding stop, the quickest way to the end; joined to the first legs that
+  // arrive within walking distance.
+  const { cell, at } = gridOf(ix);
+  const best = new Map<string, TripTransfer>();
+  for (const [line, vs] of Object.entries(ix.l)) {
+    if (known && !known.has(line)) continue;
+    for (const [id, seq] of Object.entries(vs)) {
+      const cum = cumulative(ix, line, id, seq);
+      let g = Infinity, gJ = -1;   // over alightings after the stop: walk minutes plus the ride to them
+      for (let i = seq.length - 2; i >= 0; i--) {
+        const b = d(dTo, to, seq[i + 1]);
+        if (b <= radius && walkMin(b) + cum[i + 1] / RIDE_MPM < g) { g = walkMin(b) + cum[i + 1] / RIDE_MPM; gJ = i + 1; }
+        if (gJ < 0) continue;
+        const [r, c] = cell(ix.s[seq[i]][1], ix.s[seq[i]][2]);
+        for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+          for (const m of at.get(`${r + dr},${c + dc}`) ?? []) {
+            const arr = arrivals.get(m);
+            if (!arr) continue;
+            const x = distM(pt(m), pt(seq[i]));
+            if (x > XFER_M) continue;
+            for (const [line1, a] of arr) {
+              if (line1 === line) continue;
+              const min = a.cost + walkMin(x) + XFER_MIN + g - cum[i] / RIDE_MPM;
+              const key = `${line1}\n${line}`, had = best.get(key);
+              if (!had || min < had.min)
+                best.set(key, { legs: [a.leg, leg(line, id, seq, cum, i, gJ)], walk: a.walk + d(dTo, to, seq[gJ]), xfer: x, min });
+            }
+          }
+        }
+      }
+    }
+  }
+  return [...best.values()]
+    .sort((a, b) => a.min - b.min || byLine(a.legs[0].line, b.legs[0].line) || byLine(a.legs[1].line, b.legs[1].line))
+    .slice(0, max);
 }
 
 // A stop near the start to wait at: stops of one name, the walk to the nearest of them, and the given
@@ -174,6 +303,41 @@ export function toggleTripLine(app: AppState, t: TripLine) {
   const was = app.selected.includes(t.line);
   app.toggleLine(t.line);
   if (!was && app.selected.includes(t.line)) app.setFocus(t.line, t.variants.map(v => v.id));
+}
+
+// Metro, ISAP and tram stations as places to start or end at, with their lines; one place for the
+// nearest metro or ISAP station of all (the caller picks by the point it compares).
+export function metroPlaces(data: MetroData): Place[] {
+  return data.stations.map(s => ({ label: s.name, pts: [[s.lat, s.lon]] as Pt[], lines: s.lines, kind: "metro" as const }));
+}
+const isMetro = (s: MetroData["stations"][number]) => s.lines.some(l => l.startsWith("M"));
+export function anyMetro(data: MetroData): Place {
+  return { label: "Κοντινότερος σταθμός μετρό", pts: data.stations.filter(isMetro).map(s => [s.lat, s.lon] as Pt), lines: [], kind: "metro-any" };
+}
+
+// A metro or tram line with a station near the start and another near the end (the least walking):
+// the planner says so before the buses, which may take far longer.
+export function metroDirect(data: MetroData, from: Pt[], to: Pt[], radius: number): { line: string; from: string; to: string; walk: number } | null {
+  const near = (pts: Pt[]) => data.stations.map(s => ({ s, d: nearest([s.lat, s.lon], pts) })).filter(x => x.d <= radius);
+  const a = near(from), b = near(to);
+  let best: { line: string; from: string; to: string; walk: number } | null = null;
+  for (const x of a) for (const y of b) {
+    if (x.s.name === y.s.name) continue;
+    const line = x.s.lines.find(l => y.s.lines.includes(l));
+    if (line && (!best || x.d + y.d < best.walk)) best = { line, from: x.s.name, to: y.s.name, walk: x.d + y.d };
+  }
+  return best;
+}
+
+// The metro or ISAP station nearest a point, and the metres to it.
+export function nearestStation(data: MetroData, p: Pt): { name: string; d: number } | null {
+  let best: { name: string; d: number } | null = null;
+  for (const s of data.stations) {
+    if (!isMetro(s)) continue;
+    const d = distM(p, [s.lat, s.lon]);
+    if (!best || d < best.d) best = { name: s.name, d };
+  }
+  return best;
 }
 
 // Photon answers (GeoJSON, [lon, lat]): areas, streets and addresses, other places (poi). Left out: bus

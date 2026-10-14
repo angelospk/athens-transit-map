@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { distanceM, type LngLat } from "../src/lib/glide";
 import { Fleet, GAP_M, routeGeom } from "../src/lib/map/fleet";
+import { cumulativeLL, project } from "../src/lib/motion";
 import { shapeLength } from "../src/lib/predict";
 import type { CityVehicle, Vehicle } from "../src/lib/types";
 
@@ -108,6 +109,26 @@ describe("Fleet", () => {
     const g = new Fleet();
     g.city([city(300, T, { path: null, path_beyond: beyond, path_stops: [500] })], new Set(), T);
     expect(g.entries.get("040/1")!.mover.targetPos(T + 60)![0]).toBeGreaterThan(lonAt(400));
+  });
+
+  it("goes back along the road it was on, round the bend, to a fix behind with no path", () => {
+    const f = new Fleet();
+    const bent: [number, number][] = [[37.97, 23.70], [37.97, 23.71], [37.98, 23.71]];
+    f.city([city(0, T, { path: bent })], new Set(), T);
+    run(f, T, T + 150);                                           // past the bend, going north
+    const mv = f.entries.get("040/1")!.mover;
+    expect(mv.pos[1]).toBeGreaterThan(37.9701);
+    f.city([city(600, T + 150, { path: null })], new Set(), T + 150);   // the bus was not that far
+    const geom: LngLat[] = bent.map(([lat, lon]) => [lon, lat]), cum = cumulativeLL(geom);
+    let worst = 0, back = false;
+    for (let t = T + 150.05; t < T + 153; t += 0.05) {
+      const r = mv.step(t);
+      back ||= r.back;
+      worst = Math.max(worst, project(geom, cum, r.pos).off);
+    }
+    expect(back).toBe(true);
+    expect(worst).toBeLessThan(3);                                // on the road, never across the corner
+    expect(distanceM(mv.pos, [lonAt(600), 37.97])).toBeLessThan(2);
   });
 
   it("keeps the same id on two lines apart", () => {

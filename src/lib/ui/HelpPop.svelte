@@ -18,7 +18,9 @@
   <li><span class="s"><span class="bus none stale" style:--c={PALETTE[2].bg} style:--t={PALETTE[2].fg}>2</span></span>
     <span>Αχνό: δεν έστειλε θέση για πάνω από 1½ λεπτό. Η πραγματική θέση του μπορεί να είναι αλλού.</span></li>
   <li><span class="s"><i class="trail"></i></span>
-    <span>Μπλε ίχνος: το όχημα πήγε σε νέα θέση και άφησε το δρόμο που έκανε.</span></li>
+    <span>Μπλε ίχνος: η νέα θέση ήταν πιο μπροστά· το όχημα πήγε ως εκεί και άφησε το δρόμο που έκανε.</span></li>
+  <li><span class="s"><i class="trail back"></i></span>
+    <span>Γκρι διακεκομμένο ίχνος: η νέα θέση ήταν πιο πίσω. Διόρθωση θέσης, όχι όπισθεν· το όχημα είναι αχνό όσο γυρίζει.</span></li>
   <li><span class="s"><i class="route"></i></span>
     <span>Διαδρομή. Τα βέλη δείχνουν την κατεύθυνση. Πάτα τη για τις στάσεις της.</span></li>
   <li><span class="s"><i class="stop"></i></span>
@@ -40,6 +42,7 @@
   .age { padding: 0 4px; border-radius: 6px; background: var(--control); font: 600 10px/16px system-ui, sans-serif;
     font-variant-numeric: tabular-nums; }
   .trail { display: block; width: 40px; height: 8px; border-radius: 4px; background: var(--accent); opacity: .55; }
+  .trail.back { height: 0; border-radius: 0; background: none; border-top: 3px dashed #80868b; opacity: .9; }
   .route { display: block; width: 40px; height: 4px; border-radius: 2px; background: #c2185b; opacity: .8; }
   .stop { display: block; width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 2px solid #c2185b; }
   .station { display: block; width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2px solid #e30613; }

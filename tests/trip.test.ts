@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { alertTargets, boardings, findTrips, parsePhoton, places, searchPlaces, suggest, termini, type Place, type Pt, type TripIndex } from "../src/lib/trip";
+import type { MetroData } from "../src/lib/metro";
+import { alertTargets, anyMetro, metroDirect, boardings, findTransfers, findTrips, metroPlaces, nearestStation, parsePhoton, places, searchPlaces, suggest, termini, type Place, type Pt, type TripIndex } from "../src/lib/trip";
 
 // ~111 m per 0.001° of latitude: stops on a north-south street, 0.001° apart.
 const at = (k: number): Pt => [38 + k * 0.001, 23.7];
@@ -38,9 +39,23 @@ describe("findTrips", () => {
     expect(t.variants[0]).toMatchObject({ i: 7, j: 11, stops: 4 });   // the later boarding: fewer stops
   });
 
-  it("ranks lines by walking, then stops, then id, deterministically", () => {
+  it("ranks lines by estimated time (walking and riding), then stops, then id, deterministically", () => {
     const two = index({ Z: { v: [0, 5, 10] }, Y: { v: [0, 10] }, X: { v: [1, 10] } });
     expect(findTrips(two, [at(0)], [at(10)], 300).map(t => t.line)).toEqual(["Y", "Z", "X"]);
+  });
+
+  it("estimates minutes: walking at 4.5 km/h on streets a third longer than the straight line, riding at 15 km/h", () => {
+    const [t] = findTrips(ix, [at(0)], [at(10)], 300);
+    expect(t.min).toBeCloseTo(1110 / 250, 0);                 // 1.1 km on the bus, no walking
+    const [w] = findTrips(ix, [[38, 23.701]], [at(10)], 300);  // 88 m west of stop 0
+    expect(w.min - t.min).toBeCloseTo((88 * 1.3) / 75, 0);
+  });
+
+  it("prefers a longer walk that saves a long ride", () => {
+    // V reaches stop 10 from stop 0 the long way round; W boards 220 m away and goes straight there
+    const long = index({ V: { v: [0, 30, 31, 32, 33, 10] }, W: { v: [2, 10] } });
+    long.s[30] = ["F1", 38.02, 23.75]; long.s[31] = ["F2", 38.04, 23.75]; long.s[32] = ["F3", 38.04, 23.70]; long.s[33] = ["F4", 38.02, 23.70];
+    expect(findTrips(long, [at(0)], [at(10)], 300).map(t => t.line)).toEqual(["W", "V"]);
   });
 
   it("leaves out lines missing from the current line list", () => {
@@ -194,8 +209,8 @@ describe("boardings", () => {
 
 describe("alertTargets", () => {
   const trips = [
-    { line: "A", walk: 0, stops: 9, variants: [{ id: "up", i: 0, j: 9, from: 0, to: 9, walk: 0, stops: 9 }] },
-    { line: "B", walk: 10, stops: 3, variants: [{ id: "x", i: 2, j: 5, from: 4, to: 9, walk: 10, stops: 3 }] },
+    { line: "A", walk: 0, stops: 9, min: 0, variants: [{ id: "up", i: 0, j: 9, from: 0, to: 9, walk: 0, stops: 9, ride: 0, min: 0 }] },
+    { line: "B", walk: 10, stops: 3, min: 0, variants: [{ id: "x", i: 2, j: 5, from: 4, to: 9, walk: 10, stops: 3, ride: 0, min: 0 }] },
   ];
   const board = { name: "ΠΛΑΤΕΙΑ", walk: 100, lines: [{ line: "B", variants: [{ id: "x", i: 1, from: 3 }] }, { line: "A", variants: [{ id: "up", i: 1, from: 1 }] }] };
 
@@ -213,5 +228,72 @@ describe("alertTargets", () => {
   it("leaves out lines unticked or not on the map", () => {
     expect(alertTargets(trips, ["A", "B"], null, ["A"]).map(l => l.line)).toEqual(["B"]);
     expect(alertTargets(trips, ["A"], board, []).map(l => l.line)).toEqual(["A"]);
+  });
+});
+
+describe("findTransfers", () => {
+  // A goes north from stop 0 to stop 5; B starts 44 m east of stop 5 and goes east to stop 10.
+  const ix: TripIndex = { v: "t", s: [
+    ...Array.from({ length: 6 }, (_, k) => [`N${k}`, 38 + k * 0.001, 23.7] as [string, number, number]),
+    ["E0", 38.005, 23.7005], ["E1", 38.005, 23.702], ["E2", 38.005, 23.704], ["E3", 38.005, 23.706], ["E4", 38.005, 23.708],
+  ], l: { A: { up: [0, 1, 2, 3, 4, 5] }, B: { e: [6, 7, 8, 9, 10] }, C: { e: [0, 1] } } };
+  const end: Pt = [38.005, 23.708];
+
+  it("changes once, walking to a nearby stop of the second line", () => {
+    const [r] = findTransfers(ix, [at(0)], [end], 300);
+    expect(r.legs.map(l => l.line)).toEqual(["A", "B"]);
+    expect(r.legs[0]).toMatchObject({ id: "up", from: 0, to: 5 });
+    expect(r.legs[1]).toMatchObject({ id: "e", from: 6, to: 10 });
+    expect(r.xfer).toBeGreaterThan(30);
+    expect(r.xfer).toBeLessThan(60);
+    expect(r.min).toBeGreaterThan(5);                          // a change costs a wait
+  });
+
+  it("finds no change when the second line is out of walking reach, or the trip needs none", () => {
+    const far: TripIndex = { ...ix, s: ix.s.map((x, k) => (k >= 6 ? [x[0], x[1] - 0.004, x[2] + 0.003] : x)) as TripIndex["s"] };
+    expect(findTransfers(far, [at(0)], [[38.001, 23.711]], 300)).toEqual([]);
+    expect(findTransfers(ix, [at(0)], [at(5)], 300).every(r => r.legs[0].line !== r.legs[1].line)).toBe(true);
+  });
+
+  it("leaves out lines missing from the current line list", () => {
+    expect(findTransfers(ix, [at(0)], [end], 300, new Set(["A"]))).toEqual([]);
+  });
+});
+
+describe("metro places", () => {
+  const data: MetroData = { source: "t", lines: [], stations: [
+    { name: "ΣΥΝΤΑΓΜΑ", lat: 37.975, lon: 23.735, lines: ["M2", "M3"] },
+    { name: "ΑΚΡΟΠΟΛΗ", lat: 37.969, lon: 23.729, lines: ["M2"] },
+    { name: "ΖΑΠΠΕΙΟ", lat: 37.970, lon: 23.738, lines: ["T6"] },
+  ] };
+
+  it("are stations to start or end at, with their lines", () => {
+    const ps = metroPlaces(data);
+    expect(ps.map(p => p.label)).toEqual(["ΣΥΝΤΑΓΜΑ", "ΑΚΡΟΠΟΛΗ", "ΖΑΠΠΕΙΟ"]);
+    expect(ps[0]).toMatchObject({ kind: "metro", lines: ["M2", "M3"], pts: [[37.975, 23.735]] });
+  });
+
+  it("come before a bus stop place of the same name", () => {
+    const bus: Place = { label: "ΣΥΝΤΑΓΜΑ", pts: [[37.976, 23.734]], lines: ["1", "2", "3", "4"], kind: "stop" };
+    expect(searchPlaces([bus, ...metroPlaces(data)], "συνταγμα")[0].kind).toBe("metro");
+  });
+
+  it("any metro station: every metro and ISAP station, not the tram", () => {
+    const any = anyMetro(data);
+    expect(any.kind).toBe("metro-any");
+    expect(any.pts).toEqual([[37.975, 23.735], [37.969, 23.729]]);
+  });
+
+  it("finds a metro or tram line that joins stations near both ends", () => {
+    const r = metroDirect(data, [[37.9752, 23.7352]], [[37.9692, 23.7292]], 300);
+    expect(r).toMatchObject({ line: "M2", from: "ΣΥΝΤΑΓΜΑ", to: "ΑΚΡΟΠΟΛΗ" });
+    expect(metroDirect(data, [[37.975, 23.735]], [[37.970, 23.738]], 300)).toBeNull();   // ΖΑΠΠΕΙΟ: T6 only, no shared line
+    expect(metroDirect(data, [[37.99, 23.70]], [[37.969, 23.729]], 300)).toBeNull();     // no station near the start
+  });
+
+  it("names the metro station nearest a point, with its distance", () => {
+    expect(nearestStation(data, [37.9691, 23.7291])).toMatchObject({ name: "ΑΚΡΟΠΟΛΗ" });
+    expect(nearestStation(data, [37.9691, 23.7291])!.d).toBeLessThan(20);
+    expect(nearestStation({ ...data, stations: [] }, [37.97, 23.73])).toBeNull();
   });
 });

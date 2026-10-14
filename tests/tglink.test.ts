@@ -47,3 +47,32 @@ describe("encodeAlert / decodeAlert", () => {
     expect(d.ok && d.lines.map(l => l.line)).toEqual(["040", "622"]);
   });
 });
+
+describe("recurring alerts in the link", () => {
+  const lines = [pick("622", "5433", 2)];
+  const rep = { days: 31, start: 450, len: 60 };   // weekdays 07:30, for an hour
+
+  it("round-trips days, start and length after a \"2\"", () => {
+    const p = encodeAlert(ix, 2, lines, rep)!;
+    expect(p[0]).toBe("2");
+    expect(p).toMatch(/^[0-9a-z]+$/);
+    expect(decodeAlert(ix, p)).toEqual({ ok: true, n: 2, lines, rep });
+    expect(decodeAlert(ix, encodeAlert(ix, 2, lines)!)).toEqual({ ok: true, n: 2, lines });   // one-off: no rep
+  });
+
+  it("keeps the entries that fit next to the longer head", () => {
+    const many = Array.from({ length: 20 }, (_, k) => ({ id: "10", i: k }));
+    const p = encodeAlert(ix, 2, [{ line: "Α1", variants: many }], rep)!;
+    expect(p.length).toBeLessThanOrEqual(MAX_PAYLOAD);
+    const d = decodeAlert(ix, p);
+    expect(d.ok && d.lines[0].variants).toHaveLength(10);
+  });
+
+  it("refuses a schedule it cannot keep", () => {
+    for (const r of [{ days: 0, start: 450, len: 60 }, { days: 128, start: 450, len: 60 }, { days: 31, start: 452, len: 60 },
+      { days: 31, start: 450, len: 50 }, { days: 31, start: 450, len: 0 }, { days: 31, start: 450, len: 255 }, { days: 31, start: 1410, len: 60 }])
+      expect(encodeAlert(ix, 2, lines, r)).toBeNull();
+    const p = encodeAlert(ix, 2, lines, rep)!;
+    expect(decodeAlert(ix, p.slice(0, 5) + "00" + p.slice(7)).ok).toBe(false);   // no days
+  });
+});

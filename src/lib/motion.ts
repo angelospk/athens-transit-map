@@ -1,7 +1,8 @@
 // Natural motion for every moving dot (docs/superpowers/specs/2026-10-06-natural-motion-locate-design.md).
 // The shown position chases a target along a polyline: faster when late, slower when early, never
-// backwards. A target far behind (or very far ahead) gets a "correction" instead: a fast glide
-// along the route to it, leaving a trail that fades.
+// backwards. A target far behind (or very far ahead) gets a "correction" instead: a glide along
+// the route to it, leaving a trail that fades. Back is quick and marked as such (`back`: the map
+// draws it apart and the dot keeps facing the way it travels); ahead takes longer for longer jumps.
 // Geometry here is [lon, lat]; times are server seconds.
 
 import { distanceM, type LngLat } from "./glide";
@@ -10,7 +11,9 @@ import { bearingDeg } from "./heading";
 export const TAU_S = 10;       // a gap closes with this time constant...
 export const CATCH_MAX = 6;    // ...at most this much faster than the target (m/s): no burst after new data
 export const FAR_M = 600;      // farther ahead: correction, not a race
-export const GLIDE_S = 1.2;    // correction glide length
+export const GLIDE_S = 1.2;    // correction glide length: back, and the shortest ahead
+export const GLIDE_MAX_S = 2.4;   // the longest ahead
+const GLIDE_M_PER_S = 1200;    // ahead: GLIDE_S plus a second per this many metres
 export const TRAIL_S = 0.8;    // its trail fades out over this, after the glide
 const OFF_S = 1.2;             // sideways offsets fade out over at least this...
 const OFF_V = 5;               // ...and at most this fast (m/s at the steepest point)
@@ -156,7 +159,9 @@ export function project(geom: LngLat[], cum: number[], p: LngLat, hint?: number)
   return hint == null ? hits.find(h => h.off === min)! : near.reduce((b, h) => (Math.abs(h.s - hint) < Math.abs(b.s - hint) ? h : b));
 }
 
-export interface Handoff { plan: Plan; s0: number; off?: LngLat; fix: boolean }
+export interface Handoff { plan: Plan; s0: number; off?: LngLat; fix: boolean; back?: boolean }
+
+export const glideS = (m: number, back: boolean) => (back ? GLIDE_S : Math.min(GLIDE_MAX_S, GLIDE_S + Math.max(0, m) / GLIDE_M_PER_S));
 
 // The shown point joined to the polyline at s = at: [shown, point(at), ...rest]; target shifted.
 function joinAt(shown: LngLat, p: Plan, at: number): Handoff {
@@ -199,7 +204,26 @@ export function linePlan(shown: LngLat, to: LngLat, bearing: number | null): Han
   const d = distanceM(shown, to);
   const behind = bearing != null && d > NOISE_M && angle(bearingDeg(shown, to), bearing) > BEHIND_DEG;
   const geom = [shown, to];
-  return { plan: { geom, cum: [0, d], target: () => d }, s0: 0, fix: behind || d > FAR_M };
+  return { plan: { geom, cum: [0, d], target: () => d }, s0: 0, fix: behind || d > FAR_M, back: behind };
+}
+
+// A handoff that starts with a straight leg from the shown point (no path, another route, a path
+// that does not pass the dot) goes along the route the dot is on instead, when the leg's end lies
+// on it: back to it as a correction, or on round the bend. Else the handoff as it is.
+export function bridge(mv: Mover, h: Handoff): Handoff {
+  const old = mv.plan, g = h.plan.geom;
+  if (!old || h.s0 !== 0 || g.length < 2) return h;
+  const dist0 = distanceM(g[0], g[1]);
+  if (dist0 <= NEAR_M) return h;
+  const q = project(old.geom, old.cum, g[1], mv.s);
+  if (q.off > NEAR_M || Math.abs(q.s - mv.s) <= NEAR_M) return h;
+  const way = subLine(old.geom, old.cum, mv.s, q.s);
+  way[0] = mv.pos;   // the shown point, with any fading offset
+  if (distanceM(way[way.length - 1], g[1]) >= 1) way.push(g[1]);
+  const geom = [...way, ...g.slice(2)], cum = cumulativeLL(geom), L = cum[way.length - 1];
+  const back = q.s < mv.s, t = h.plan.target, base = h.plan.base;
+  return { plan: { geom, cum, target: s => Math.max(0, L + t(s) - dist0), ...(base && { base: { geom: base.geom, ds: base.ds + dist0 - L } }) },
+    s0: 0, fix: back || h.fix, back };
 }
 
 // One moving dot. step() is called each frame with the server time.
@@ -210,9 +234,10 @@ export class Mover {
   private off: LngLat | null = null;
   private offAt = 0;
   private offDur = OFF_S;
-  // from: s on the plan where this glide leg starts; tail: where the trail starts (the first leg's from)
-  private glide: { t0: number; from: number; tail: number } | null = null;
-  private trail: { geom: LngLat[]; end: number } | null = null; // after a glide, fading until `end`
+  // from: s on the plan where this glide leg starts; tail: where the trail starts (the first leg's from);
+  // dur: its length; back: a correction backwards, with the heading the dot had (`face`)
+  private glide: { t0: number; from: number; tail: number; dur: number; back: boolean; face: number | null } | null = null;
+  private trail: { geom: LngLat[]; end: number; back: boolean } | null = null; // after a glide, fading until `end`
   private last = -Infinity;
   private snapPending = false;
   private aheadSince: number | null = null;
@@ -228,7 +253,7 @@ export class Mover {
   // running glide goes on from where the dot is, to the new target, with the same trail.
   retarget(plan: Plan, nowSec: number) {
     this.plan = plan;
-    if (this.glide) this.glide = { t0: nowSec, from: this.s, tail: this.glide.tail };
+    if (this.glide) this.glide = { ...this.glide, t0: nowSec, from: this.s };
   }
 
   // A correction glide or its trail is on screen.
@@ -236,12 +261,12 @@ export class Mover {
 
   // New geometry. A correction (re)starts the glide at s0, where the dot is (handoffs put the shown
   // point at s0); otherwise a running glide ends here and its trail fades.
-  setPlan(plan: Plan, s0: number, nowSec: number, off?: LngLat, fix = false) {
-    const old = this.plan;
+  setPlan(plan: Plan, s0: number, nowSec: number, off?: LngLat, fix = false, back = false) {
+    const old = this.plan, face = this.heading();
     if (this.glide && old) this.endGlide(old, nowSec);
     this.plan = plan;
     this.aheadSince = null;
-    if (fix) { this.s = s0; this.off = null; this.startFix(nowSec); }   // s0 is the shown point, offset included
+    if (fix) { this.s = s0; this.off = null; this.startFix(nowSec, back, face); }   // s0 is the shown point, offset included
     else {
       this.s = s0;
       this.off = off && (off[0] || off[1]) ? off : null;
@@ -252,26 +277,28 @@ export class Mover {
     if (this.last === -Infinity) this.last = nowSec;
   }
 
-  apply(h: Handoff, nowSec: number) { this.setPlan(h.plan, h.s0, nowSec, h.off, h.fix); }
+  apply(h: Handoff, nowSec: number) { this.setPlan(h.plan, h.s0, nowSec, h.off, h.fix, h.back); }
 
   // A running fading offset goes on fading: the dot does not jump when the glide starts.
-  private startFix(nowSec: number) {
-    this.glide = { t0: nowSec, from: this.s, tail: this.s };
+  private startFix(nowSec: number, back: boolean, face: number | null) {
+    const p = this.plan!, m = Math.abs(p.target(nowSec) - this.s);
+    this.glide = { t0: nowSec, from: this.s, tail: this.s, dur: glideS(m, back), back, face };
     this.trail = null;
   }
 
   // The glide so far becomes a fading trail.
   private endGlide(p: Plan, nowSec: number) {
-    this.trail = { geom: subLine(p.geom, p.cum, this.glide!.tail, this.s), end: nowSec + TRAIL_S };
+    this.trail = { geom: subLine(p.geom, p.cum, this.glide!.tail, this.s), end: nowSec + TRAIL_S, back: this.glide!.back };
     this.glide = null;
   }
 
   // fx: the correction glide's phase (0..1), or null. trail: the route it has covered, while shown.
-  step(nowSec: number): { pos: LngLat; fx: number | null; trail: { geom: LngLat[]; alpha: number } | null } {
+  // back: that glide or trail is a correction backwards.
+  step(nowSec: number): { pos: LngLat; fx: number | null; trail: { geom: LngLat[]; alpha: number } | null; back: boolean } {
     const p = this.plan;
     const dt = nowSec - this.last;
     this.last = nowSec;
-    if (!p) return { pos: this.pos, fx: null, trail: null };
+    if (!p) return { pos: this.pos, fx: null, trail: null, back: false };
     const target = p.target(nowSec), s0 = this.s;
     // Held behind the vehicle ahead (spacing): never forward past the cap, never backwards for it.
     const held = (x: number) => (this.cap != null && x > s0 && x > this.cap ? Math.max(s0, this.cap) : x);
@@ -281,7 +308,7 @@ export class Mover {
       this.s = target;
       this.off = this.glide = this.trail = null;
     } else if (this.glide) {
-      const k = (nowSec - this.glide.t0) / GLIDE_S;
+      const k = (nowSec - this.glide.t0) / this.glide.dur;
       if (k >= 1) { this.s = held(target); this.endGlide(p, nowSec); }
       else { fx = Math.max(0, k); this.s = this.glide.from + (target - this.glide.from) * easeInOut(fx); }
     } else {
@@ -290,7 +317,7 @@ export class Mover {
       // Ahead of a target that stands: wait a little, then correct (it is not coming).
       const waiting = r !== "fix" && v < 0.1 && this.s - target > WAIT_M;
       this.aheadSince = waiting ? this.aheadSince ?? nowSec : null;
-      if (r === "fix" || (waiting && nowSec - this.aheadSince! > WAIT_S)) { this.startFix(nowSec); fx = 0; }
+      if (r === "fix" || (waiting && nowSec - this.aheadSince! > WAIT_S)) { this.startFix(nowSec, target < this.s, this.heading()); fx = 0; }
       else this.s = r;
     }
     this.s = held(this.s);
@@ -308,7 +335,7 @@ export class Mover {
       else trail = { geom: this.trail.geom, alpha: Math.min(1, left / TRAIL_S) };
     }
     this.pos = pos;
-    return { pos, fx, trail };
+    return { pos, fx, trail, back: !!(this.glide?.back ?? (trail && this.trail?.back)) };
   }
 
   // Where the target is now (culling: a dot off screen whose target is on screen must be stepped).
@@ -317,6 +344,7 @@ export class Mover {
   }
 
   heading(): number | null {
+    if (this.glide?.back && this.glide.face != null) return this.glide.face;
     return this.plan && this.plan.geom.length > 1 ? headingAtLL(this.plan.geom, this.plan.cum, this.s) : null;
   }
 }

@@ -252,20 +252,19 @@
       <div class="pop" id="pop-layers" role="dialog" aria-label="Τι δείχνει ο χάρτης">
         <h3>Τι δείχνει ο χάρτης</h3>
         <section>
-          <h4>Μετρό, ΗΣΑΠ και τραμ</h4>
-          <p class="hint">Οι σταθμοί φαίνονται πάντα· πάτα έναν για τις γραμμές του. Άνοιξε μια γραμμή για να φαίνεται η διαδρομή της.</p>
-          {#if app.metro}
-            <MetroToggles {app} ids={app.metro.lines.map(l => l.id)} />
-          {:else}
-            <p class="hint">Φόρτωση…</p>
-          {/if}
+          <h4>Θέμα χάρτη</h4>
+          <div class="seg" role="radiogroup" aria-label="Θέμα">
+            {#each [["system", "Συσκευής"], ["light", "Φωτεινό"], ["dark", "Σκοτεινό"]] as const as [v, label] (v)}
+              <button type="button" role="radio" aria-checked={app.theme === v} onclick={() => app.setTheme(v)}>{label}</button>
+            {/each}
+          </div>
         </section>
         <section>
           <h4>Λεωφορεία</h4>
           <label class="switch">
             <input type="checkbox" checked={app.cityOn} disabled={cityMissing} onchange={e => app.setCityOn(e.currentTarget.checked)} />
-            <span>Όλα της πόλης <small>{#if cityMissing}(όχι ακόμα διαθέσιμο){:else if app.city}· {app.city.vehicles.length} τώρα{/if}</small><br />
-              <small>Κλειστό: μόνο οι γραμμές που διαλέγεις.</small></span>
+            <span>Και των άλλων γραμμών <small>{#if cityMissing}(όχι ακόμα διαθέσιμο){:else if app.city}· {app.city.vehicles.length} τώρα{/if}</small><br />
+              <small>Όλα τα λεωφορεία της πόλης, όχι μόνο οι γραμμές που διάλεξες. Κλειστό: λιγότερα δεδομένα.</small></span>
           </label>
           <div class="field" role="radiogroup" aria-label="Τα άλλα λεωφορεία όταν πατάς ένα">
             <span>Όταν πατάς ένα, τα άλλα:</span>
@@ -299,8 +298,9 @@
           </label>
           <details class="hint">
             <summary>Πώς κινούνται</summary>
-            Ο ΟΑΣΑ στέλνει θέσεις κάθε 20–60″. Όταν η νέα θέση είναι μακριά, το όχημα πηγαίνει γρήγορα ως εκεί και αφήνει
-            για λίγο μπλε ίχνος. Αχνό όχημα με πορτοκαλί ηλικία: δεν έστειλε θέση για πάνω από 1½ λεπτό, άρα μπορεί να είναι αλλού.
+            Ο ΟΑΣΑ στέλνει θέσεις κάθε 20–60″. Όταν η νέα θέση είναι πολύ μπροστά, το όχημα πηγαίνει γρήγορα ως εκεί, πάνω
+            στον δρόμο, και αφήνει για λίγο μπλε ίχνος. Όταν είναι πίσω, γυρίζει αχνό πάνω στον δρόμο με γκρι διακεκομμένο
+            ίχνος: διόρθωση θέσης, όχι όπισθεν. Αχνό όχημα με πορτοκαλί ηλικία: δεν έστειλε θέση για πάνω από 1½ λεπτό, άρα μπορεί να είναι αλλού.
             {#if oldest != null}<br /><span title="Ώρα δεδομένων {clock(oldest)}">Ενημέρωση γραμμών πριν {duration(Math.max(0, app.serverNow / 1000 - oldest))}.</span>{/if}
             {#if cityAge != null && app.cityOn}<br /><span title="Ώρα δεδομένων {clock(app.city!.updated_at)}">Ενημέρωση πόλης πριν {duration(cityAge)}.</span>{/if}
           </details>
@@ -313,12 +313,17 @@
           </label>
         </section>
         <section>
-          <h4>Θέμα χάρτη</h4>
-          <div class="seg" role="radiogroup" aria-label="Θέμα">
-            {#each [["system", "Συσκευής"], ["light", "Φωτεινό"], ["dark", "Σκοτεινό"]] as const as [v, label] (v)}
-              <button type="button" role="radio" aria-checked={app.theme === v} onclick={() => app.setTheme(v)}>{label}</button>
-            {/each}
-          </div>
+          <h4>Μετρό, ΗΣΑΠ και τραμ</h4>
+          <label class="switch">
+            <input type="checkbox" checked={app.stationsOn} onchange={e => app.setStationsOn(e.currentTarget.checked)} />
+            <span>Σταθμοί στον χάρτη<br /><small>Κλειστό: κρύβονται οι σταθμοί (οι γραμμές που άνοιξες μένουν).</small></span>
+          </label>
+          <p class="hint">Άνοιξε μια γραμμή για να φαίνεται η διαδρομή της.</p>
+          {#if app.metro}
+            <MetroToggles {app} ids={app.metro.lines.map(l => l.id)} />
+          {:else}
+            <p class="hint">Φόρτωση…</p>
+          {/if}
         </section>
       </div>
     {/if}
@@ -327,7 +332,7 @@
 
 <div class="rail" role="toolbar" aria-label="Εργαλεία χάρτη">
   <button type="button" class="tool" class:on={pop === "layers"} class:filtering={app.only.fresh || app.only.onTime} aria-expanded={pop === "layers"} aria-controls="pop-layers"
-    bind:this={layersButton} aria-label="Τι δείχνει ο χάρτης" data-tip="Τι δείχνει ο χάρτης: γραμμές μετρό, ποια λεωφορεία, φίλτρα, ταχύτητα, θέμα" onclick={() => toggle("layers")}>
+    bind:this={layersButton} aria-label="Τι δείχνει ο χάρτης" data-tip="Τι δείχνει ο χάρτης: θέμα, λεωφορεία, φίλτρα, ταχύτητα, μετρό" onclick={() => toggle("layers")}>
     <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
       <path d="M2 10S5 4.8 10 4.8 18 10 18 10 15 15.2 10 15.2 2 10 2 10z" /><circle cx="10" cy="10" r="2.5" />
     </svg>

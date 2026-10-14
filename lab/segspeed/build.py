@@ -8,7 +8,8 @@ Usage: python3 lab/segspeed/build.py <history_dir> public/speed/segments.geojson
 Observation = two consecutive fixes of one vehicle on one line, 5-120 s apart,
 straight-line speed <= 25 m/s. The pair's midpoint is snapped to the line's
 shape (variant = route_code) and credited to the stop-to-stop segment there.
-Segments with the same (from_stop, to_stop) on different lines are merged.
+Overlapping stretches of different segments (other lines, other stops, the other direction) are merged
+into one piece per road, drawn once; its observations are pooled (merge_segments).
 Segments with fewer than MIN_SAMPLES observations are left out. The top-level `meta` member holds the
 observation period, the sample count and MIN_SAMPLES (the map's legend shows them).
 Offline only; not part of the app build.
@@ -31,6 +32,10 @@ STOP_SNAP_M = 40  # a stop this close to the shape is on it
 MIN_SAMPLES = 20  # per segment shown
 PART_MIN_SAMPLES = 10  # for its peak / off-peak figure
 PARKED_S = 180  # stationary longer than this = layover, dropped
+STEP_M = 10  # segment polylines are resampled this often for the merge
+MERGE_M = 20  # points this close ...
+MERGE_DEG = 35  # ... and heading within this (either direction) are the same road
+MIN_PIECE_M = 30  # a stretch of a segment not covered by another is kept as its own piece if this long
 
 
 def xy(lat, lon):
@@ -121,7 +126,7 @@ class Shape:
 
 
 def read_pairs(hist_dir, lines):
-    """Consecutive fix pairs per vehicle -> {(line, route): [(t_mid, lat, lon, v_mps)]}."""
+    """Consecutive fix pairs per vehicle -> {(line, route): [(t_mid, lat, lon, v_mps, heading_deg)]}."""
     rows = defaultdict(list)
     for f in sorted(os.listdir(hist_dir)):
         if not f.endswith(".csv.gz"):
@@ -154,7 +159,8 @@ def read_pairs(hist_dir, lines):
             if v > 25:
                 flush()
                 continue
-            obs = ((a[0] + b[0]) / 2, (a[3] + b[3]) / 2, (a[4] + b[4]) / 2, v)
+            hd = math.degrees(math.atan2(dx, dy)) % 360   # compass heading of a -> b
+            obs = ((a[0] + b[0]) / 2, (a[3] + b[3]) / 2, (a[4] + b[4]) / 2, v, hd)
             if v < 1.0:
                 run.append(((a[1], a[2]), obs, a[0], b[0]))
                 continue
@@ -162,6 +168,142 @@ def read_pairs(hist_dir, lines):
             pairs[(a[1], a[2])].append(obs)
         flush()
     return pairs, span
+
+
+def _hdiff(h1, h2):
+    """Undirected angle between two compass headings, degrees (0..90)."""
+    d = np.abs(h1 - h2) % 180
+    return np.minimum(d, 180 - d)
+
+
+def _cell_key(x, y):
+    return ((np.floor(x / MERGE_M).astype(np.int64) + (1 << 20)) << 22) + (np.floor(y / MERGE_M).astype(np.int64) + (1 << 20))
+
+
+def _resample(geom):
+    """A polyline [[lon, lat]] -> (s, x, y, heading, cum): a point every STEP_M metres (and the end) with its leg's heading."""
+    ll = np.array(geom, dtype=float)
+    x, y = xy(ll[:, 1], ll[:, 0])
+    dx, dy = np.diff(x), np.diff(y)
+    cum = np.concatenate([[0], np.cumsum(np.hypot(dx, dy))])
+    if len(ll) < 2 or cum[-1] <= 0:
+        return None
+    s = np.append(np.arange(0, cum[-1], STEP_M), cum[-1])
+    leg = np.clip(np.searchsorted(cum, s, side="right") - 1, 0, len(dx) - 1)
+    f = (s - cum[leg]) / np.maximum(cum[leg + 1] - cum[leg], 1e-9)
+    hd = np.degrees(np.arctan2(dx[leg], dy[leg])) % 360
+    return s, x[leg] + f * dx[leg], y[leg] + f * dy[leg], hd, cum, ll
+
+
+def _slice(ll, cum, s0, s1):
+    """[lon, lat] coordinates of a polyline (lat/lon array with cumulative metres) between s0 and s1."""
+    def at(s):
+        i = min(max(int(np.searchsorted(cum, s)) - 1, 0), len(cum) - 2)
+        f = (s - cum[i]) / max(cum[i + 1] - cum[i], 1e-9)
+        a, b = ll[i], ll[i + 1]
+        return [round(a[0] + f * (b[0] - a[0]), 5), round(a[1] + f * (b[1] - a[1]), 5)]
+    inner = [[round(p[0], 5), round(p[1], 5)] for p, c in zip(ll, cum) if s0 < c < s1]
+    return [at(s0)] + inner + [at(s1)]
+
+
+def merge_segments(segs):
+    """One road, one piece. segs: [{"geom": [[lon, lat]], "obs": [(x, y, heading, v, is_peak)], "lines": set, "names": (a, b)}].
+    Segments are taken busiest first; the stretches of a segment that no earlier segment covers (a claimed point within
+    MERGE_M going the same way or the opposite way) become pieces of their own, and every observation is pooled into the
+    piece it lies on. Returns [{"geom", "v", "peak", "off", "lines", "names"}]."""
+    order = sorted(range(len(segs)), key=lambda i: -len(segs[i]["obs"]))
+    grid = defaultdict(list)   # cell key -> [(x, y, heading, piece)] of claimed points
+    pieces, seg_of, claimed = [], [], []   # claimed[pid] = (x, y, heading)
+    seg_pts = {}   # seg -> (x, y, piece) of its resampled points that belong to a piece (own, or the one that covered them)
+    for si in order:
+        r = _resample(segs[si]["geom"])
+        if r is None:
+            continue
+        s, x, y, hd, cum, ll = r
+        key = _cell_key(x, y)
+        cand = []
+        for k in set(key.tolist()):
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    cand += grid.get(k + (dx << 22) + dy, [])
+        covered = np.zeros(len(s), bool)
+        pid_of = np.full(len(s), -1)
+        if cand:
+            c = np.array(cand)
+            for a in range(0, len(s), 500):
+                sl = slice(a, a + 500)
+                near = np.hypot(x[sl, None] - c[None, :, 0], y[sl, None] - c[None, :, 1]) <= MERGE_M
+                near &= _hdiff(hd[sl, None], c[None, :, 2]) < MERGE_DEG
+                covered[sl] = near.any(axis=1)
+                dist = np.where(near, np.hypot(x[sl, None] - c[None, :, 0], y[sl, None] - c[None, :, 1]), np.inf)
+                pid_of[sl] = np.where(covered[sl], c[np.argmin(dist, axis=1), 3], -1).astype(int)
+        i, n = 0, len(s)
+        while i < n:
+            if covered[i]:
+                i += 1
+                continue
+            j = i
+            while j + 1 < n and not covered[j + 1]:
+                j += 1
+            if s[j] - s[i] >= MIN_PIECE_M:
+                pid = len(pieces)
+                pieces.append({"geom": _slice(ll, cum, s[i], s[j]), "v": [], "peak": [], "off": [], "lines": set(),
+                               "names": segs[si]["names"]})
+                seg_of.append(si)
+                claimed.append((x[i:j + 1], y[i:j + 1], hd[i:j + 1]))
+                pid_of[i:j + 1] = pid
+                for px, py, ph, pk in zip(x[i:j + 1], y[i:j + 1], hd[i:j + 1], key[i:j + 1].tolist()):
+                    grid[pk].append((px, py, ph, pid))
+            i = j + 1
+        has = pid_of >= 0
+        if has.any():
+            seg_pts[si] = (x[has], y[has], pid_of[has])
+    if not pieces:
+        return []
+    # claimed points sorted by cell, for the observation lookup
+    CX = np.concatenate([c[0] for c in claimed])
+    CY = np.concatenate([c[1] for c in claimed])
+    CH = np.concatenate([c[2] for c in claimed])
+    CP = np.concatenate([np.full(len(c[0]), p) for p, c in enumerate(claimed)])
+    ck = _cell_key(CX, CY)
+    o = np.argsort(ck, kind="stable")
+    CX, CY, CH, CP, ck = CX[o], CY[o], CH[o], CP[o], ck[o]
+    obs = [np.asarray(sg["obs"], dtype=float).reshape(-1, 5) for sg in segs]
+    OS = np.concatenate([np.full(len(a), i) for i, a in enumerate(obs)])
+    O = np.concatenate(obs)
+    best_d = np.full(len(O), np.inf)
+    best_p = np.full(len(O), -1)
+    for a in range(0, len(O), 100000):
+        ox, oy, oh = O[a:a + 100000, 0], O[a:a + 100000, 1], O[a:a + 100000, 2]
+        k0 = _cell_key(ox, oy)
+        bd = best_d[a:a + 100000]
+        bp = best_p[a:a + 100000]
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                kk = k0 + (dx << 22) + dy
+                lo, hi = np.searchsorted(ck, kk, "left"), np.searchsorted(ck, kk, "right")
+                for t in range(int((hi - lo).max())):
+                    m = np.nonzero(t < hi - lo)[0]
+                    ix = lo[m] + t
+                    d = np.hypot(ox[m] - CX[ix], oy[m] - CY[ix])
+                    good = (d <= MERGE_M) & (_hdiff(oh[m], CH[ix]) < MERGE_DEG) & (d < bd[m])
+                    bd[m[good]] = d[good]
+                    bp[m[good]] = CP[ix[good]]
+    for si in np.unique(OS[best_p < 0]).tolist():   # observations that match no road: the piece of their own seg's nearest point
+        if si not in seg_pts:
+            continue
+        idx = np.nonzero((OS == si) & (best_p < 0))[0]
+        px, py, pp = seg_pts[si]
+        d = np.hypot(O[idx, 0, None] - px[None, :], O[idx, 1, None] - py[None, :])
+        best_p[idx] = pp[np.argmin(d, axis=1)]
+    for p, v, pk in zip(best_p.tolist(), O[:, 3].tolist(), O[:, 4].astype(bool).tolist()):
+        if p >= 0:
+            pieces[p]["v"].append(v)
+            pieces[p]["peak" if pk else "off"].append(v)
+    ok = best_p >= 0
+    for p, si in set(zip(best_p[ok].tolist(), OS[ok].tolist())):
+        pieces[p]["lines"] |= segs[si]["lines"]
+    return pieces
 
 
 def is_peak(t):
@@ -174,7 +316,7 @@ def main():
     lines = set(lines)
     pairs, span = read_pairs(hist, lines)
     print(f"{sum(map(len, pairs.values()))} pairs on {len({k[0] for k in pairs})} lines", file=sys.stderr)
-    # seg key -> {"geom", "v": [], "peak": [], "off": [], "lines": set}
+    # seg key -> {"geom", "obs": [(x, y, heading, v, is_peak)], "lines": set, "names"}
     segs = {}
     by_line = defaultdict(dict)
     for (lid, rc), obs in pairs.items():
@@ -210,17 +352,16 @@ def main():
                 key = (sh.stop_ids[j], sh.stop_ids[j + 1])
                 seg = segs.get(key)
                 if seg is None:
-                    seg = segs[key] = {"geom": sh.slice(s0, s1), "v": [], "peak": [], "off": [], "lines": set(),
+                    seg = segs[key] = {"geom": sh.slice(s0, s1), "obs": [], "lines": set(),
                                        "names": (data["stops"][key[0]]["name"], data["stops"][key[1]]["name"])}
-                seg["v"].append(v)
-                (seg["peak"] if is_peak(o[i, 0]) else seg["off"]).append(v)
+                seg["obs"].append((float(px[i]), float(py[i]), float(o[i, 4]), float(v), is_peak(o[i, 0])))
                 seg["lines"].add(lid)
 
     def kmh(vs, least=MIN_SAMPLES):
         return round(float(np.median(vs)) * 3.6, 1) if len(vs) >= least else None
 
     feats = []
-    for (a, b), seg in segs.items():
+    for seg in merge_segments(list(segs.values())):
         if len(seg["v"]) < MIN_SAMPLES:
             continue
         feats.append({"type": "Feature",

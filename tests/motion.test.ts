@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { distanceM, type LngLat } from "../src/lib/glide";
 import {
-  CATCH_MAX, chase, cumulativeLL, drive, DWELL_S, GLIDE_S, holdM, HORIZON_S, linePlan, MIN_CRUISE, Mover, PACE, pathPlan, pointAtLL, project,
-  subLine, TRAIL_S, type Plan,
+  bridge, CATCH_MAX, chase, cumulativeLL, drive, DWELL_S, GLIDE_MAX_S, GLIDE_S, glideS, holdM, HORIZON_S, linePlan, MIN_CRUISE, Mover, PACE,
+  pathPlan, pointAtLL, project, subLine, TRAIL_S, type Plan,
 } from "../src/lib/motion";
 
 // 0.01° lon at 37.97° ≈ 877 m. Geometry here is [lon, lat].
@@ -123,7 +123,7 @@ describe("Mover", () => {
     mv.step(0.1);
     mv.retarget(plan(() => 1500), 0.2);
     let prev = 0;
-    for (let t = 0.3; t < 0.3 + GLIDE_S + 0.1; t += 0.05) {
+    for (let t = 0.3; t < 0.3 + GLIDE_MAX_S + 0.1; t += 0.05) {
       mv.step(t);
       expect(mv.s).toBeGreaterThanOrEqual(prev);
       prev = mv.s;
@@ -375,3 +375,90 @@ describe("Mover lifecycle", () => {
   });
 });
 
+describe("corrections forward and back", () => {
+  it("takes longer for a longer jump ahead, within bounds; a jump back is quick", () => {
+    expect(glideS(700, false)).toBeGreaterThan(GLIDE_S);
+    expect(glideS(5000, false)).toBe(GLIDE_MAX_S);
+    expect(glideS(5000, true)).toBe(GLIDE_S);
+    expect(glideS(0, false)).toBe(GLIDE_S);
+  });
+  it("marks a glide back, and its trail, as back; a glide ahead is not", () => {
+    const mv = new Mover(atM(1500));
+    mv.setPlan(plan(() => 1500), 1500, 0);
+    mv.step(0.1);
+    mv.retarget(plan(() => 100), 1);
+    expect(mv.step(1.1).back).toBe(true);
+    const end = mv.step(1.1 + GLIDE_S + 0.01);
+    expect(end.trail).not.toBeNull();
+    expect(end.back).toBe(true);
+    const fw = new Mover(atM(0));
+    fw.setPlan(plan(() => 0), 0, 0);
+    fw.step(0.1);
+    fw.retarget(plan(() => 1500), 0.2);
+    const r = fw.step(0.3);
+    expect(r.fx).not.toBeNull();
+    expect(r.back).toBe(false);
+  });
+  it("keeps facing the way it travels while it glides back", () => {
+    const mv = new Mover(onBent(M + 500));
+    mv.setPlan(plan(() => M + 500, bent), M + 500, 0);
+    mv.step(0.1);
+    const h = bridge(mv, linePlan(mv.pos, onBent(200), 0));   // heading north; the fix is back past the bend
+    mv.apply(h, 1);
+    mv.step(1.05);
+    mv.step(1 + GLIDE_S * 0.75);                                   // past the bend, going west on the route
+    expect(mv.heading()).toBeCloseTo(0, 0);                        // still north, the way it travels
+  });
+});
+
+describe("bridge", () => {
+  const along = (mvS: number) => {
+    const mv = new Mover(onBent(mvS));
+    mv.setPlan(plan(() => mvS, bent), mvS, 0);
+    mv.step(0.1);
+    return mv;
+  };
+  it("takes a straight correction back along the route the dot was on", () => {
+    const mv = along(M + 400);
+    const h = bridge(mv, linePlan(mv.pos, onBent(200), 0));
+    expect(h.fix).toBe(true);
+    expect(h.back).toBe(true);
+    expect(h.plan.geom).toHaveLength(3);                           // old place, the bend, the fix
+    expect(h.plan.geom[1]).toEqual(bent[1]);
+    expect(distanceM(h.plan.geom[2], onBent(200))).toBeLessThan(2);
+    expect(h.plan.target(1)).toBeCloseTo(M + 200, -1);
+  });
+  it("takes a straight move ahead round the bend instead of across", () => {
+    const mv = along(200);
+    const h = bridge(mv, linePlan(mv.pos, onBent(M + 400), null));
+    expect(h.back).toBe(false);
+    expect(h.plan.geom).toHaveLength(3);
+    expect(h.plan.geom[1]).toEqual(bent[1]);
+  });
+  it("goes on along the new path after the route bit", () => {
+    const mv = along(M + 400);
+    const path: LngLat[] = [onBent(200), onBent(M), onBent(M + 50)];   // the backend path from the fix on
+    const h = bridge(mv, pathPlan(mv.pos, path, 8, 1, 1));
+    expect(h.back).toBe(true);
+    const back = M + 200;
+    expect(h.plan.target(1)).toBeCloseTo(back, -1);
+    expect(h.plan.target(1 + 20)).toBeGreaterThan(back + 10);       // and drives on from there
+  });
+  it("starts at the shown point, fading offset included: no jump", () => {
+    const mv = new Mover([23.705, 37.9702]);                       // 22 m north of the line, fading in
+    mv.setPlan(plan(() => M / 2), M / 2, 0, [0, 0.0002]);
+    const shown = mv.step(0.1).pos;
+    mv.apply(bridge(mv, linePlan(shown, atM(100), 90)), 0.1);
+    expect(distanceM(mv.step(0.11).pos, shown)).toBeLessThan(1);
+  });
+  it("leaves a handoff alone when the fix is off the old route, or nothing is straight", () => {
+    const mv = along(M + 400);
+    const off = linePlan(mv.pos, [23.705, 37.975], 0);
+    expect(bridge(mv, off)).toBe(off);
+    const near = linePlan(mv.pos, onBent(M + 410), 0);             // close by: nothing to bridge
+    expect(bridge(mv, near)).toBe(near);
+    const fresh = new Mover(onBent(M + 400));                     // no plan yet
+    const h = linePlan(fresh.pos, onBent(200), 0);
+    expect(bridge(fresh, h)).toBe(h);
+  });
+});
