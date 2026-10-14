@@ -52,3 +52,132 @@ export async function latestDay(now = Date.now()): Promise<DayStats | null> {
   cache = { at: now, day };
   return day;
 }
+
+// ---- Long-term: the stored days combined. Speeds are pooled (sum dist / sum time), never a mean of means.
+
+export const LONG_DAYS = 28; // newest day files read for the long-term tab
+
+// A day without gaps; partial days are left out of every long-term figure.
+export const complete = (d: DayStats) => gaps(d).length === 0;
+
+export const isWeekend = (date: string) => [0, 6].includes(new Date(`${date}T12:00:00Z`).getUTCDay());
+
+export type HourBand = { h: number; kmh: number | null; min: number | null; max: number | null; n: number };
+
+// Per local hour: pooled km/h over the days, the slowest and fastest day, and the days with a speed.
+export function hourBand(days: DayStats[]): HourBand[] {
+  return Array.from({ length: 24 }, (_, h) => {
+    let dist = 0, time = 0, min: number | null = null, max: number | null = null, n = 0;
+    for (const d of days) {
+      const v = kmh(d.hours[h].dist_m, d.hours[h].time_s);
+      if (v == null) continue;
+      dist += d.hours[h].dist_m; time += d.hours[h].time_s; n++;
+      min = min == null ? v : Math.min(min, v);
+      max = max == null ? v : Math.max(max, v);
+    }
+    return { h, kmh: kmh(dist, time), min, max, n };
+  });
+}
+
+export type TypeHour = { h: number; vehicles: number | null; kmh: number | null };
+export type DayType = { days: number; hours: TypeHour[] };
+
+// Weekdays and weekend apart: vehicles per hour as a plain mean of the days (a count), speed pooled.
+export function byDayType(days: DayStats[]): { weekday: DayType; weekend: DayType } {
+  const group = (ds: DayStats[]): DayType => ({
+    days: ds.length,
+    hours: Array.from({ length: 24 }, (_, h) => ({
+      h,
+      vehicles: ds.length ? ds.reduce((s, d) => s + d.hours[h].vehicles, 0) / ds.length : null,
+      kmh: kmh(ds.reduce((s, d) => s + d.hours[h].dist_m, 0), ds.reduce((s, d) => s + d.hours[h].time_s, 0)),
+    })),
+  });
+  return { weekday: group(days.filter(d => !isWeekend(d.date))), weekend: group(days.filter(d => isWeekend(d.date))) };
+}
+
+export type Trend = { line: string; kmh: number; base: number; change: number };
+
+// The newest day's lines against the earlier days of the same type (weekday or weekend), pooled.
+// Both sides need minHours of speed samples. null: fewer than 2 earlier days of that type.
+export function lineTrends(days: DayStats[], n: number, minHours = MIN_LINE_HOURS) {
+  const sorted = [...days].sort((a, b) => a.date.localeCompare(b.date));
+  const latest = sorted.at(-1);
+  if (!latest) return null;
+  const weekend = isWeekend(latest.date);
+  const base = sorted.slice(0, -1).filter(d => isWeekend(d.date) === weekend);
+  if (base.length < 2) return null;
+  const sums = new Map<string, { dist: number; time: number }>();
+  for (const d of base) for (const l of d.by_line) {
+    const s = sums.get(l.line) ?? { dist: 0, time: 0 };
+    s.dist += l.dist_m; s.time += l.time_s;
+    sums.set(l.line, s);
+  }
+  const all: Trend[] = [];
+  for (const l of latest.by_line) {
+    const s = sums.get(l.line);
+    if (!s || l.time_s < minHours * 3600 || s.time < minHours * 3600 || s.dist <= 0) continue;
+    const now = (l.dist_m / l.time_s) * 3.6, was = (s.dist / s.time) * 3.6;
+    all.push({ line: l.line, kmh: now, base: was, change: now / was - 1 });
+  }
+  return {
+    date: latest.date, weekend, baseDays: base.length, eligible: all.length,
+    slower: all.filter(t => t.change < 0).sort((a, b) => a.change - b.change || a.line.localeCompare(b.line)).slice(0, n),
+    faster: all.filter(t => t.change > 0).sort((a, b) => b.change - a.change || a.line.localeCompare(b.line)).slice(0, n),
+  };
+}
+
+const num = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v >= 0;
+const zone = (tz: unknown) => {
+  try {
+    return typeof tz === "string" && !!new Intl.DateTimeFormat("en-GB", { timeZone: tz });
+  } catch {
+    return false; // gaps() would throw on it
+  }
+};
+
+// A day file as docs/API.md describes it, and the day that was asked for.
+export function validDay(d: unknown, date: string): d is DayStats {
+  const x = d as DayStats | null;
+  return !!x && x.version === 1 && x.date === date && zone(x.tz) && num(x.first_fix) && num(x.last_fix) && num(x.fixes)
+    && Array.isArray(x.hours) && x.hours.length === 24
+    && x.hours.every((h, i) => h?.h === i && [h.fixes, h.vehicles, h.dist_m, h.time_s].every(num))
+    && Array.isArray(x.by_line) && x.by_line.every(l => typeof l?.line === "string" && [l.dist_m, l.time_s].every(num));
+}
+
+export type Stored = { days: DayStats[]; partial: number; bad: number };
+
+const TIMEOUT = 15_000;
+// null for 404. A body that is not JSON throws, or gives null when `lenient` (a day file: counted as bad).
+const get = async (path: string, lenient = false) => {
+  const r = await fetch(`${STATS_BASE}/${path}`, { signal: AbortSignal.timeout(TIMEOUT) });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(`stats: HTTP ${r.status}`);
+  const text = await r.text();
+  try {
+    return JSON.parse(text) as unknown;
+  } catch (e) {
+    if (lenient) return null;
+    throw e;
+  }
+};
+
+// The newest LONG_DAYS complete days, oldest first; null before the first day exists. A fetch
+// failure throws and is not cached; a missing or malformed file is skipped and counted in `bad`.
+let stored: { at: number; load: Promise<Stored | null> } | null = null;
+export function storedDays(now = Date.now()): Promise<Stored | null> {
+  if (stored && now - stored.at < 3600_000) return stored.load;
+  const load = (async () => {
+    const index = (await get("index.json")) as { days?: unknown } | null;
+    if (!index) return null;
+    if (!Array.isArray(index.days)) throw new Error("stats: unknown index format");
+    const dates = (index.days as unknown[]).filter((d): d is string => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d))
+      .sort().slice(-LONG_DAYS);
+    const files = await Promise.all(dates.map(d => get(`days/${d}.json`, true)));
+    const ok = files.filter((f, i): f is DayStats => validDay(f, dates[i]));
+    const days = ok.filter(complete);
+    return { days, partial: ok.length - days.length, bad: files.length - ok.length };
+  })();
+  stored = { at: now, load };
+  load.catch(() => { if (stored?.load === load) stored = null; });
+  return load;
+}

@@ -2,6 +2,7 @@
   import { dayMonth } from "../format";
   import { GTFS_PAGE } from "../sources";
   import SourcesView from "./SourcesView.svelte";
+  import LongTermView from "./LongTermView.svelte";
   import StatsView from "./StatsView.svelte";
 
   // ended: the day the OASA timetable ended, when it is past (explained at the top).
@@ -12,6 +13,13 @@
     { id: "stats", label: "Στατιστικά δικτύου" },
   ] as const;
   type Tab = (typeof TABS)[number]["id"];
+  // Inside the stats tab: the newest day first, then the stored days together.
+  const SUBS = [
+    { id: "day", label: "Τελευταία μέρα" },
+    { id: "long", label: "Μακροχρόνια" },
+  ] as const;
+  type Sub = (typeof SUBS)[number]["id"];
+  let sub = $state<Sub>("day");
 
   let dlg: HTMLDialogElement;
   let tab = $state<Tab>("sources");
@@ -24,15 +32,18 @@
     else if (!open && dlg.open) dlg.close();
   });
 
-  function onTabKey(e: KeyboardEvent) {
-    const to = { ArrowLeft: -1, ArrowRight: 1, Home: -TABS.length, End: TABS.length }[e.key];
+  // Arrow keys, Home and End move through a tab list; the new tab gets the focus.
+  function tabKey<T extends string>(e: KeyboardEvent, ids: readonly T[], now: T, set: (id: T) => void, prefix: string) {
+    const to = { ArrowLeft: -1, ArrowRight: 1, Home: -ids.length, End: ids.length }[e.key];
     if (to == null) return;
     e.preventDefault();
-    const i = TABS.findIndex(t => t.id === tab);
-    const next = Math.abs(to) === TABS.length ? (to < 0 ? 0 : TABS.length - 1) : (i + to + TABS.length) % TABS.length;
-    tab = TABS[next].id;
-    document.getElementById(`info-tab-${tab}`)?.focus();
+    const i = ids.indexOf(now);
+    const next = ids[Math.abs(to) === ids.length ? (to < 0 ? 0 : ids.length - 1) : (i + to + ids.length) % ids.length];
+    set(next);
+    document.getElementById(`${prefix}${next}`)?.focus();
   }
+  const onTabKey = (e: KeyboardEvent) => tabKey(e, TABS.map(t => t.id), tab, id => (tab = id), "info-tab-");
+  const onSubKey = (e: KeyboardEvent) => tabKey(e, SUBS.map(t => t.id), sub, id => (sub = id), "stats-tab-");
 </script>
 
 <dialog bind:this={dlg} class="sheet" aria-labelledby="info-title" onclose={() => (open = false)}
@@ -66,7 +77,19 @@
       <SourcesView {motion} />
     </div>
     <div role="tabpanel" id="info-panel-stats" aria-labelledby="info-tab-stats" hidden={tab !== "stats"}>
-      {#if statsSeen}<StatsView />{/if}
+      <div class="tabs sub" role="tablist" aria-label="Στατιστικά">
+        {#each SUBS as t (t.id)}
+          <button type="button" role="tab" id="stats-tab-{t.id}" aria-controls="stats-panel-{t.id}" aria-selected={sub === t.id}
+            tabindex={sub === t.id ? 0 : -1} onclick={() => (sub = t.id)} onkeydown={onSubKey}>{t.label}</button>
+        {/each}
+      </div>
+      <div role="tabpanel" id="stats-panel-day" aria-labelledby="stats-tab-day" hidden={sub !== "day"}>
+        {#if statsSeen}<StatsView />{/if}
+      </div>
+      <!-- Mounted only while shown, so each visit asks for the days again (cached for an hour). -->
+      <div role="tabpanel" id="stats-panel-long" aria-labelledby="stats-tab-long" hidden={sub !== "long"}>
+        {#if open && tab === "stats" && sub === "long"}<LongTermView />{/if}
+      </div>
     </div>
   </div>
 </dialog>
@@ -86,6 +109,8 @@
   .tabs { display: flex; padding: 2px; margin-bottom: 14px; border-radius: 9px; background: var(--control); }
   .tabs button { flex: 1; min-height: 34px; border: 0; border-radius: 7px; background: none; cursor: pointer; font-size: 13px; }
   .tabs button[aria-selected="true"] { background: var(--bg); box-shadow: 0 1px 3px rgba(0, 0, 0, .2); font-weight: 600; }
+  .tabs.sub { width: fit-content; margin-bottom: 10px; }
+  .tabs.sub button { min-height: 32px; padding: 0 14px; font-size: 12px; white-space: nowrap; }
   [hidden] { display: none !important; }
   @media (max-width: 719px) {
     .sheet { width: 100%; max-width: none; height: 100%; max-height: none; margin: 0; border: 0; border-radius: 0; }
