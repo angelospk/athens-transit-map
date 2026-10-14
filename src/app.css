@@ -90,6 +90,9 @@ button, input { font: inherit; color: inherit; }
   background: #222; color: #fff; font: normal 700 13px system-ui, sans-serif; border: 2px solid #fff;
   box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
 .trip-end b { rotate: 45deg; }
+.trip-stop { max-width: 160px; padding: 2px 7px; border-radius: 8px; background: #222; color: #fff; pointer-events: none;
+  font: 600 11px/1.4 system-ui, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
 
 .maplibregl-ctrl-group button.locate { display: grid; place-items: center; color: #333; }
 .locate .core { fill: none; }

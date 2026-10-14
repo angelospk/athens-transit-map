@@ -114,6 +114,8 @@ export class AppState {
   private alertsStarted = false;
   // The trip planner's start and end ([lat, lon]), marked on the map while the planner is open.
   tripEnds = $state.raw<{ from: [number, number]; to: [number, number] } | null>(null);
+  // The stops of the trip picked in the planner: where to get on, change and get off ([lat, lon]).
+  tripStops = $state.raw<{ at: [number, number]; name: string }[]>([]);
 
   // Set by MapView: frame the given lines once their shapes are loaded.
   fit: (ids: string[]) => void = () => {};
@@ -317,10 +319,11 @@ export class AppState {
   // A trip from the planner replaces the picks: its first 5 lines, each shown only on the variants
   // that make the trip. Returns the lines left out. An empty trip changes nothing.
   private tripGen = 0;
-  showTrip(lines: { id: string; variants: string[] }[]): string[] {
+  // keepAlert: the same trip shown otherwise (one of its lines, all again); the alert stays while its lines stay.
+  showTrip(lines: { id: string; variants: string[] }[], keepAlert = false): string[] {
     if (!lines.length) return [];
-    this.setAlert(null);   // a new trip: the old alert no longer fits
     const keep = lines.slice(0, MAX_LINES), ids = keep.map(l => l.id), left = lines.slice(MAX_LINES).map(l => l.id);
+    if (!keepAlert || this.alert?.lines.some(l => !ids.includes(l.line))) this.setAlert(null);   // a new trip: the old alert no longer fits
     this.metroStation = null;
     this.selection = null;
     if (this.tempLine && ids.includes(this.tempLine)) this.tempLine = null;   // now a pick

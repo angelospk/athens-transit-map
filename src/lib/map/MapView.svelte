@@ -737,6 +737,19 @@
     return () => pins.forEach(p => p.remove());
   });
 
+  // The picked trip's stops: get on, change, get off.
+  $effect(() => {
+    const stops = app.tripStops, m = map;
+    if (!stops.length || !m) return;
+    const pins = stops.map(st => {
+      const el = document.createElement("div");
+      el.className = "trip-stop";
+      el.textContent = st.name;
+      return new Marker({ element: el, anchor: "bottom", offset: [0, -6] }).setLngLat([st.at[1], st.at[0]]).addTo(m);
+    });
+    return () => pins.forEach(p => p.remove());
+  });
+
   // New city data, or a change of the lines drawn in detail: hand the vehicles to the fleet.
   $effect(() => {
     const city = app.city, on = app.cityOn, own = app.cityExclude;

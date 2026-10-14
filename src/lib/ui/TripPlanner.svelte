@@ -11,9 +11,10 @@
   import { fetchLines } from "../api";
   import { MAX_LINES } from "../selection";
   import { canPush, startPush, stopPush } from "../push";
-  import { encodeAlert } from "../tglink";
+  import { encodeAlert, type Rep } from "../tglink";
   import type { AppState } from "../state.svelte";
-  import { alertTargets, boardings, centre, distM, findTrips, geocode, loadTripIndex, places, searchPlaces, suggest, termini, toggleTripLine, type TripIndex, type TripLine } from "../trip";
+  import { alertTargets, anyMetro, boardings, centre, distM, findTransfers, findTrips, geocode, loadTripIndex, metroPlaces, nearestStation, places, searchPlaces,
+    suggest, termini, toggleTripLine, type Pt, type TripIndex, type TripLine, type TripTransfer } from "../trip";
 
   let { app, onclose }: { app: AppState; onclose: () => void } = $props();
 
@@ -49,6 +50,7 @@
 
   async function load() {
     failed = false;
+    app.loadMetro();   // stations to start or end at (once; again after a failure)
     try {
       const [ix, lines] = await Promise.all([loadTripIndex(), fetchLines()]);
       data = { ix, places: places(ix), known: new Set(lines.lines.map(l => l.id)), stale: ix.v === lines.gtfs_version ? null : ix.v };
@@ -58,14 +60,18 @@
   }
   load();
 
-  // Suggestions: my location for an empty field; else one short list (areas, stops, streets).
+  // Suggestions: my location for an empty field (and, for the end, the nearest metro station); else one
+  // short list (areas, stations and stops, streets, shops).
   type Opt = { key: string; me?: true; place?: Place };
   const keyOf = (p: Place) => `${p.kind}|${p.label}|${p.pts[0].join()}`;
+  const stations = $derived(app.metro ? metroPlaces(app.metro) : []);
+  const anyM = $derived(app.metro ? anyMetro(app.metro) : null);
   const opts = $derived.by((): Opt[] => {
     if (!openField) return [];
     const text = ends[openField].text.trim();
-    if (!text || text === ME) return [{ key: "me", me: true }];
-    const own = data ? searchPlaces(data.places, text, 6) : [];
+    if (!text || text === ME || text === anyM?.label)
+      return [{ key: "me", me: true }, ...(openField === "to" && anyM ? [{ key: keyOf(anyM), place: anyM }] : [])];
+    const own = data ? searchPlaces([...stations, ...data.places], text, 6) : [];
     return suggest(own, geo?.text === text ? geo.places : []).map(place => ({ key: keyOf(place), place }));
   });
   const active = $derived(Math.max(0, opts.findIndex(o => o.key === activeKey)));
@@ -147,19 +153,69 @@
   const from = $derived(ends.from.place), to = $derived(ends.to.place);
   const tooClose = $derived(!!from && !!to && Math.min(...from.pts.flatMap(a => to.pts.map(b => distM(a, b)))) < radius);
   const trips = $derived(data && from && to && !tooClose ? findTrips(data.ix, from.pts, to.pts, radius, data.known) : null);
+  // With one change: when no line goes without, or a change saves 10 minutes.
+  const xfers = $derived.by((): TripTransfer[] => {
+    if (!data || !from || !to || !trips) return [];
+    const best = trips[0]?.min ?? Infinity;
+    return findTransfers(data.ix, from.pts, to.pts, radius, data.known).filter(x => x.min + 10 < best);
+  });
 
-  // A and B on the map whenever both ends are set (again after a reopen).
-  $effect(() => { app.tripEnds = from && to ? { from: centre(from.pts), to: centre(to.pts) } : null; });
+  // The metro station of a stop ("any metro station" as the end), and where it is.
+  const ptOf = (k: number): Pt => [data!.ix.s[k][1], data!.ix.s[k][2]];
+  const stationAt = (p: Pt) => {
+    const st = app.metro && nearestStation(app.metro, p);
+    const s = st && app.metro!.stations.find(x => x.name === st.name);
+    return s ? { name: s.name, d: st.d, pt: [s.lat, s.lon] as Pt } : null;
+  };
+  const anyEnd = $derived(to?.kind === "metro-any");
+  const walkTo = $derived(anyEnd && from ? stationAt(centre(from.pts)) : null);
+
+  // A and B on the map whenever both ends are set (again after a reopen); "any metro station" is the
+  // station of the best trip.
+  const toPt = $derived.by((): Pt | null => {
+    if (!to) return null;
+    if (!anyEnd) return centre(to.pts);
+    const k = trips?.[0]?.variants[0].to ?? xfers[0]?.legs[1].to;
+    return k == null || !data ? null : stationAt(ptOf(k))?.pt ?? null;
+  });
+  $effect(() => { app.tripEnds = from && toPt ? { from: centre(from.pts), to: toPt } : null; });
+
+  // The result shown alone (a line, or "l1>l2" for a change), with its stops on the map.
+  let picked = $state<string | null>(null);
+  const stopAt = (k: number) => ({ at: ptOf(k), name: stop(k) });
+  const xkey = (x: TripTransfer) => `${x.legs[0].line}>${x.legs[1].line}`;
+  function solo(t: TripLine) {
+    const v = t.variants[0];
+    app.showTrip([{ id: t.line, variants: t.variants.map(x => x.id) }], true);
+    app.tripStops = [stopAt(v.from), stopAt(v.to)];
+    picked = t.line;
+  }
+  function pickXfer(x: TripTransfer, keepAlert = true) {
+    const [a, b] = x.legs;
+    app.showTrip([{ id: a.line, variants: [a.id] }, { id: b.line, variants: [b.id] }], keepAlert);
+    app.tripStops = [stopAt(a.from), stopAt(a.to), ...(stop(b.from) === stop(a.to) ? [] : [stopAt(b.from)]), stopAt(b.to)];
+    picked = xkey(x);
+  }
+  function showAll() {
+    if (trips?.length) app.showTrip(trips.map(t => ({ id: t.line, variants: t.variants.map(v => v.id) })), true);
+    app.tripStops = [];
+    picked = null;
+  }
 
   // Once per trip: reopening the planner must not undo picks changed since. On a phone, each new trip
-  // folds the planner so the map shows.
+  // folds the planner so the map shows. With no line without a change, the best change is shown.
   $effect(() => {
     if (!trips || !from || !to) return;
     const key = JSON.stringify([from.pts, to.pts, radius]);
     if (key === memo.applied) return;
     memo.applied = key;
-    untrack(() => app.showTrip(trips.map(t => ({ id: t.line, variants: t.variants.map(v => v.id) }))));
-    if (trips.length && phone()) {
+    untrack(() => {
+      picked = null;
+      app.tripStops = [];
+      if (trips.length) app.showTrip(trips.map(t => ({ id: t.line, variants: t.variants.map(v => v.id) })));
+      else if (xfers.length) pickXfer(xfers[0], false);
+    });
+    if ((trips.length || xfers.length) && phone()) {
       folded = true;
       (document.activeElement as HTMLElement | null)?.blur?.();
     }
@@ -168,11 +224,13 @@
   function close() {
     stopSearch();
     app.tripEnds = null;
+    app.tripStops = [];
     onclose();
   }
 
   // The lines of the trip that are on the map, for the folded summary and the alert: which, and where each goes.
   const onMap = $derived((trips ?? []).filter(t => app.selected.includes(t.line)));
+  const xferLines = $derived(app.selected.filter(l => !onMap.some(t => t.line === l) && xfers.some(x => x.legs.some(g => g.line === l))));
 
   // Alert settings, folded until asked for: the stop to wait at (each line's own, or one of the stops
   // nearest the start), how early, and which of the trip's lines on the map. A new trip resets them.
@@ -186,8 +244,18 @@
   const targets = $derived(trips ? alertTargets(trips, app.selected, board, off) : []);
   const setTicked = (line: string, on: boolean) => { off = on ? off.filter(l => l !== line) : [...off, line]; };
 
-  // The chosen alert as a link payload (src/lib/tglink.ts): for Telegram and for web push.
+  // The chosen alert as a link payload (src/lib/tglink.ts): for Telegram and for web push. A recurring
+  // one (days, from what time, for how long) is for Telegram only.
   const payload = $derived(data && !data.stale ? encodeAlert(data.ix, n, targets) : null);
+  const nextFive = () => { const d = new Date(Date.now() + 5 * 60_000); return `${String(d.getHours()).padStart(2, "0")}:${String(Math.floor(d.getMinutes() / 5) * 5).padStart(2, "0")}`; };
+  let repDays = $state(0);
+  let repStart = $state(nextFive());
+  let repLen = $state(60);
+  const rep = $derived.by((): Rep | undefined => {
+    const [h, m] = repStart.split(":").map(Number);
+    return repDays && Number.isFinite(h) && Number.isFinite(m) ? { days: repDays, start: h * 60 + Math.floor(m / 5) * 5, len: repLen } : undefined;
+  });
+  const tgPayload = $derived(rep ? (data && !data.stale ? encodeAlert(data.ix, n, targets, rep) : null) : payload);
 
   // Stop alert for the chosen lines, at the chosen stop: in the page, and as web push where the browser
   // has it (then it comes with the page closed). The permission prompt comes first, from the tap itself
@@ -230,15 +298,18 @@
 
   // The same alert in Telegram (src/lib/tglink.ts).
   const BOT = "oasa_bus_bot";
-  const tgLink = $derived(payload && `https://t.me/${BOT}?start=${payload}`);
+  const tgLink = $derived(tgPayload && `https://t.me/${BOT}?start=${tgPayload}`);
 
   const stop = (k: number) => data?.ix.s[k][0] ?? "";
   const metres = (m: number) => (m < 50 ? "δίπλα" : `≈ ${Math.round(m / 50) * 50} μ.`);
-  const icon = (p: Place) => ({ area: "◎", stop: "🚏", me: "📍", street: "⌖", poi: "•" })[p.kind ?? "street"];
+  const icon = (p: Place) => ({ area: "◎", stop: "🚏", me: "📍", street: "⌖", poi: "•", metro: "🚇", "metro-any": "🚇" })[p.kind ?? "street"];
+  const mins = (m: number) => `≈ ${Math.max(1, Math.round(m))}′`;
+  // Where a trip gets off: the stop, and for "any metro station" the station there.
+  const offAt = (k: number) => { const st = anyEnd && data ? stationAt(ptOf(k)) : null; return st ? `${stop(k)} (🚇 ${st.name})` : stop(k); };
   const shown = $derived(trips ? Math.min(trips.length, MAX_LINES) : 0);
   // Where a result goes: the variants that make the trip. The summary follows the direction shown on the map.
   const going = (t: TripLine) => (data ? termini(data.ix, t.line, t.variants.map(v => v.id)).join(" · ") : "");
-  const goingNow = (t: TripLine) => (data ? termini(data.ix, t.line, app.focus[t.line] ?? t.variants.map(v => v.id)).join(" · ") : "");
+  const goingNow = (line: string, variants: string[] = []) => (data ? termini(data.ix, line, app.focus[line] ?? variants).join(" · ") : "");
 
   // New results, or the planner opened again: bring the list into view (not while a suggestion list is open).
   let resultsEl: HTMLElement | undefined = $state();
@@ -273,16 +344,18 @@
 <div class="trip" role="dialog" tabindex="-1" aria-labelledby="trip-h" {@attach focusIn}
   onkeydown={e => { if (e.key === "Escape" && !openField) { e.stopPropagation(); close(); } }}>
   {#if folded && from && to && trips}
-    <span id="trip-h" class="sr">Διαδρομή χωρίς αλλαγή</span>
+    <span id="trip-h" class="sr">Διαδρομή</span>
     <div class="row">
       <button type="button" class="summary" aria-expanded="false" onclick={() => (folded = false)}>
         <b>{from.label} → {to.label}</b>
-        <small>{trips.length} {trips.length === 1 ? "γραμμή" : "γραμμές"}{#if trips.length > MAX_LINES} · {MAX_LINES} στον χάρτη{/if}{#if app.alert} · 🔔{/if}</small>
-        {#if onMap.length}
+        <small>{#if trips.length}{trips.length} {trips.length === 1 ? "γραμμή" : "γραμμές"}{#if trips.length > MAX_LINES} · {MAX_LINES} στον χάρτη{/if}{:else if xfers.length}με μία αλλαγή{/if}{#if app.alert} · 🔔{/if}</small>
+        {#if onMap.length || xferLines.length}
           <span class="lines">
             {#each onMap as t (t.line)}
-              {@const info = app.lineInfo.get(t.line)}
-              <span class="ln" style:--c={app.lineColor(t.line).bg}><b>{t.line}</b>{#if goingNow(t)}<i>→ {goingNow(t)}</i>{/if}</span>
+              <span class="ln" style:--c={app.lineColor(t.line).bg}><b>{t.line}</b>{#if goingNow(t.line, t.variants.map(v => v.id))}<i>→ {goingNow(t.line, t.variants.map(v => v.id))}</i>{/if}</span>
+            {/each}
+            {#each xferLines as l (l)}
+              <span class="ln" style:--c={app.lineColor(l).bg}><b>{l}</b>{#if goingNow(l)}<i>→ {goingNow(l)}</i>{/if}</span>
             {/each}
           </span>
         {/if}
@@ -291,8 +364,8 @@
     </div>
   {:else}
     <div class="row">
-      <h3 id="trip-h">Διαδρομή χωρίς αλλαγή</h3>
-      {#if trips?.length}
+      <h3 id="trip-h">Διαδρομή</h3>
+      {#if trips?.length || xfers.length}
         <button type="button" class="icon" aria-label="Σύμπτυξη" title="Σύμπτυξη" onclick={() => (folded = true)}>
           <svg viewBox="0 0 12 8" width="14" height="10" aria-hidden="true"><path d="M1 6.5l5-5 5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
         </button>
@@ -306,7 +379,7 @@
         <div class="field">
           <i class="dot {f}" aria-hidden="true">{f === "from" ? "A" : "B"}</i>
           <input id="trip-{f}" bind:this={inputs[f]} type="search" autocomplete="off" spellcheck="false" enterkeyhint="search"
-            aria-label={f === "from" ? "Από" : "Προς"} placeholder={f === "from" ? "Από: η θέση μου, στάση, περιοχή" : "Προς: στάση ή περιοχή"}
+            aria-label={f === "from" ? "Από" : "Προς"} placeholder={f === "from" ? "Από: η θέση μου, στάση, μετρό, διεύθυνση" : "Προς: στάση, μετρό, διεύθυνση, μαγαζί"}
             value={e.text} class:set={!!e.place}
             role="combobox" aria-expanded={openField === f} aria-controls="trip-{f}-list" aria-autocomplete="list"
             aria-activedescendant={openField === f && opts[active] ? `trip-${f}-${active}` : undefined}
@@ -322,7 +395,7 @@
                   {#if o.me}<span><i aria-hidden="true">📍</i> {ME}</span>
                   {:else if o.place}
                     <span><i aria-hidden="true">{icon(o.place)}</i> {o.place.label}</span>
-                    <small>{o.place.lines.length ? o.place.lines.slice(0, 6).join(" · ") + (o.place.lines.length > 6 ? " …" : "") : o.place.hint ?? ""}</small>
+                    <small>{o.place.kind === "metro-any" ? "η γραμμή που σε πάει πιο γρήγορα σε σταθμό" : o.place.lines.length ? o.place.lines.slice(0, 6).join(" · ") + (o.place.lines.length > 6 ? " …" : "") : o.place.hint ?? ""}</small>
                   {/if}
                 </li>
               {:else}
@@ -342,23 +415,45 @@
     {:else if !data}
       <p class="note">Φόρτωση στάσεων…</p>
     {:else if tooClose}
-      <p class="note">Είναι πολύ κοντά: καλύτερα με τα πόδια.</p>
-    {:else if trips && !trips.length}
-      <p class="note">Καμία γραμμή δεν πάει χωρίς αλλαγή. Δοκίμασε περισσότερο περπάτημα ή κοντινή περιοχή.</p>
+      <p class="note">{#if anyEnd && walkTo}Ο σταθμός {walkTo.name} είναι {metres(walkTo.d)}: καλύτερα με τα πόδια.{:else}Είναι πολύ κοντά: καλύτερα με τα πόδια.{/if}</p>
+    {:else if trips && !trips.length && !xfers.length}
+      <p class="note">Καμία γραμμή δεν πάει, ούτε με μία αλλαγή. Δοκίμασε περισσότερο περπάτημα ή κοντινή περιοχή.</p>
     {:else if trips}
+      {#if !trips.length}<p class="note">Καμία γραμμή δεν πάει χωρίς αλλαγή.</p>{/if}
       <ol class="results" bind:this={resultsEl}>
         {#each trips as t, k (t.line)}
           {@const info = app.lineInfo.get(t.line)}
           {@const v = t.variants[0]}
-          <li class:out={k >= MAX_LINES}>
+          <li class:out={k >= MAX_LINES} class:picked={picked === t.line}>
             <button type="button" class="chip" style:--c={app.lineColor(t.line).bg} style:--t={app.lineColor(t.line).fg}
               aria-pressed={app.selected.includes(t.line)} title={info?.name}
               onclick={() => toggleTripLine(app, t)}>{t.line}</button>
-            <span>{stop(v.from)} → {stop(v.to)}<br />
-              <small>{#if going(t)}προς {going(t)} · {/if}{t.stops} {t.stops === 1 ? "στάση" : "στάσεις"} · περπάτημα {metres(t.walk)}{#if k >= MAX_LINES} · εκτός χάρτη (έως {MAX_LINES}){/if}</small></span>
+            <button type="button" class="pick" aria-pressed={picked === t.line} title="Μόνο αυτή στον χάρτη, με τις στάσεις της" onclick={() => solo(t)}>
+              <span><b>{mins(t.min)}</b> {stop(v.from)} → {offAt(v.to)}</span>
+              <small>{#if going(t)}προς {going(t)} · {/if}{t.stops} {t.stops === 1 ? "στάση" : "στάσεις"} · περπάτημα {metres(t.walk)}{#if k >= MAX_LINES} · εκτός χάρτη (έως {MAX_LINES}){/if}</small>
+            </button>
           </li>
         {/each}
       </ol>
+      {#if xfers.length}
+        <h4 class="sub">Με μία αλλαγή</h4>
+        <ol class="results">
+          {#each xfers as x (xkey(x))}
+            {@const [a, b] = x.legs}
+            <li class:picked={picked === xkey(x)}>
+              <span class="pair">
+                <b class="chip on" style:--c={app.lineColor(a.line).bg} style:--t={app.lineColor(a.line).fg}>{a.line}</b>
+                <b class="chip on" style:--c={app.lineColor(b.line).bg} style:--t={app.lineColor(b.line).fg}>{b.line}</b>
+              </span>
+              <button type="button" class="pick" aria-pressed={picked === xkey(x)} title="Αυτές οι δύο στον χάρτη, με τις στάσεις" onclick={() => pickXfer(x)}>
+                <span><b>{mins(x.min)}</b> {stop(a.from)} → {stop(a.to)}, αλλαγή: {stop(b.from)} → {offAt(b.to)}</span>
+                <small>{a.stops + b.stops} στάσεις · περπάτημα {metres(x.walk)}{#if x.xfer >= 50} και {metres(x.xfer)} στην αλλαγή{/if} · με ~5′ αναμονή</small>
+              </button>
+            </li>
+          {/each}
+        </ol>
+      {/if}
+      {#if picked && trips.length}<button type="button" class="link all" onclick={showAll}>Όλες οι γραμμές στον χάρτη</button>{/if}
       {#if shown}
         <div class="alert">
           {#if app.alert}
@@ -390,6 +485,19 @@
                 {#each [1, 2, 3, 4, 5] as k (k)}<option value={k}>{k === 1 ? "στην προηγούμενη στάση" : `${k} στάσεις πριν`}</option>{/each}
               </select>
             </label>
+            <label>Επανάληψη
+              <select bind:value={repDays}>
+                <option value={0}>όχι, μόνο τώρα</option>
+                <option value={31}>τις καθημερινές</option>
+                <option value={127}>κάθε μέρα</option>
+                <option value={96}>τα Σαββατοκύριακα</option>
+              </select>
+            </label>
+            {#if repDays}
+              <label>Από <input type="time" step="300" bind:value={repStart} />
+                για <select bind:value={repLen}>{#each [[30, "½ ώρα"], [60, "1 ώρα"], [90, "1½ ώρα"], [120, "2 ώρες"]] as const as [m, t] (m)}<option value={m}>{t}</option>{/each}</select>
+              </label>
+            {/if}
             <fieldset>
               <legend>Γραμμές</legend>
               {#each tickable as l (l)}
@@ -400,14 +508,20 @@
               {/each}
             </fieldset>
             <div class="go">
-              <button type="button" class="bell" disabled={!targets.length || pushing} onclick={alertMe}>{pushing ? "…" : "Εδώ"}</button>
-              {#if tgLink}<a class="bell tg" href={tgLink} target="_blank" rel="noopener">Στο Telegram</a>{/if}
+              {#if !repDays}<button type="button" class="bell" disabled={!targets.length || pushing} onclick={alertMe}>{pushing ? "…" : "Εδώ"}</button>{/if}
+              {#if tgLink}<a class="bell tg" href={tgLink} target="_blank" rel="noopener">Στο Telegram</a>
+              {:else if repDays}<small class="warn">Διάλεξε ώρα που να τελειώνει πριν από τα μεσάνυχτα.</small>{/if}
             </div>
+            {#if repDays}
+              <p class="note">Η επανάληψη γίνεται στο Telegram (@{BOT}): σου γράφει κάθε φορά που ένα λεωφορείο πλησιάζει, μόνο σε αυτές τις ώρες.
+                Εκεί, /list δείχνει τις ειδοποιήσεις σου και τις σταματάει.</p>
+            {:else}
             <p class="note">Για 2 ώρες.
               {#if canPush()}Εδώ: και με κλειστή σελίδα ή κλειδωμένη οθόνη.
               {:else}Εδώ: όσο η σελίδα είναι ανοιχτή{canNotify ? "" : ", μόνο μέσα στη σελίδα"}.{/if}
               Telegram: και με κλειδωμένη οθόνη, από το @{BOT}.</p>
-            {#if iosTab}
+            {/if}
+            {#if iosTab && !repDays}
               <p class="note">iPhone, για ειδοποίηση εδώ με κλειδωμένη οθόνη: Κοινοποίηση → «Προσθήκη στην οθόνη Αφετηρίας», και άνοιξε τον χάρτη από το εικονίδιο.</p>
             {/if}
           </div>
@@ -421,6 +535,7 @@
       <label>Περπάτημα έως
         <select bind:value={radius}>{#each RADII as r (r)}<option value={r}>{r} μ.</option>{/each}</select>
       </label>
+      {#if trips?.length || xfers.length}<small>Χρόνοι κατά προσέγγιση, χωρίς την αναμονή στη στάση.</small>{/if}
       {#if data?.stale}<small>Στάσεις από {data.stale}· μπορεί να έχουν αλλάξει.</small>{/if}
       {#if geo?.places.length}<small>Περιοχές: © OpenStreetMap</small>{/if}
     </div>
@@ -471,7 +586,17 @@
   .results small { color: var(--muted); }
   .chip { flex: none; min-width: 46px; min-height: 28px; padding: 0 8px; border: 2px solid var(--c); border-radius: 14px;
     background: none; color: var(--fg); font-weight: 700; cursor: pointer; }
-  .chip[aria-pressed="true"] { background: var(--c); color: var(--t); }
+  .chip[aria-pressed="true"], .chip.on { background: var(--c); color: var(--t); }
+  .chip.on { display: inline-grid; place-items: center; min-width: 0; cursor: default; }
+  .pair { flex: none; display: flex; flex-direction: column; gap: 2px; }
+  .pick { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 2px 6px; margin: -2px 0;
+    border: 0; border-radius: 8px; background: none; color: var(--fg); font-size: 13px; text-align: left; cursor: pointer; }
+  .pick:hover, .picked .pick { background: var(--control); }
+  .pick b { font-variant-numeric: tabular-nums; }
+  .sub { margin: 10px 0 0; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .all { margin-top: 6px; font-size: 12px; padding: 0; }
+  .form input[type="time"] { min-height: 34px; padding: 0 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--control);
+    color: var(--fg); font-size: 16px; }
   .alert { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
   .alert span { flex: 1; }
   .alert .lead { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 8px; margin-left: -8px; border: 0;

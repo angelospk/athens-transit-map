@@ -309,7 +309,7 @@ describe("AppState trip", () => {
 
 describe("trip result buttons", () => {
   vi.stubGlobal("fetch", () => new Promise(() => {}));
-  const t = (line: string) => ({ line, walk: 0, stops: 1, variants: [{ id: `${line}-v`, i: 0, j: 1, from: 0, to: 1, walk: 0, stops: 1 }] });
+  const t = (line: string) => ({ line, walk: 0, stops: 1, min: 0, variants: [{ id: `${line}-v`, i: 0, j: 1, from: 0, to: 1, walk: 0, stops: 1, ride: 0, min: 0 }] });
 
   it("shows a line again in the trip's direction, and hides it", async () => {
     const { toggleTripLine } = await import("../src/lib/trip");
