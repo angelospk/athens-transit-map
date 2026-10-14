@@ -13,7 +13,7 @@
   import { canPush, startPush, stopPush } from "../push";
   import { encodeAlert, type Rep } from "../tglink";
   import type { AppState } from "../state.svelte";
-  import { alertTargets, anyMetro, boardings, centre, distM, findTransfers, findTrips, geocode, loadTripIndex, metroDirect, metroPlaces, nearestStation, places, searchPlaces,
+  import { alertTargets, anyMetro, boardings, centre, distM, findTransfers, findTrips, geocode, legTrip, loadTripIndex, metroDirect, metroPlaces, nearestStation, places, searchPlaces,
     suggest, termini, toggleTripLine, type Pt, type TripIndex, type TripLine, type TripTransfer } from "../trip";
 
   let { app, onclose }: { app: AppState; onclose: () => void } = $props();
@@ -243,14 +243,19 @@
 
   // Alert settings, folded until asked for: the stop to wait at (each line's own, or one of the stops
   // nearest the start), how early, and which of the trip's lines on the map. A new trip resets them.
+  // A picked change: the alert watches its first line, up to the change stop.
   let alertOpen = $state(false);
   let boardName = $state("");
   let off = $state<string[]>([]);
-  $effect(() => { void trips; boardName = ""; off = []; });
-  const near = $derived(data && from && to && onMap.length ? boardings(data.ix, from.pts, to.pts, radius, onMap.map(t => t.line)) : []);
+  const xPicked = $derived(xfers.find(x => xkey(x) === picked) ?? null);
+  const aTrips = $derived(xPicked ? [legTrip(xPicked.legs[0])] : trips);
+  const aOnMap = $derived((aTrips ?? []).filter(t => app.selected.includes(t.line)));
+  $effect(() => { void trips; void xPicked; boardName = ""; off = []; });
+  // Another stop to wait at: not for a change, whose first line is boarded where the change was planned.
+  const near = $derived(data && from && to && !xPicked && aOnMap.length ? boardings(data.ix, from.pts, to.pts, radius, aOnMap.map(t => t.line)) : []);
   const board = $derived(near.find(b => b.name === boardName) ?? null);
-  const tickable = $derived((board ? board.lines.map(l => l.line) : onMap.map(t => t.line)).filter(l => app.selected.includes(l)));
-  const targets = $derived(trips ? alertTargets(trips, app.selected, board, off) : []);
+  const tickable = $derived((board ? board.lines.map(l => l.line) : aOnMap.map(t => t.line)).filter(l => app.selected.includes(l)));
+  const targets = $derived(aTrips ? alertTargets(aTrips, app.selected, board, off) : []);
   const setTicked = (line: string, on: boolean) => { off = on ? off.filter(l => l !== line) : [...off, line]; };
 
   // The chosen alert as a link payload (src/lib/tglink.ts): for Telegram and for web push. A recurring
@@ -286,16 +291,16 @@
     try { await startAlert(); } finally { pushing = false; }
   }
   async function startAlert() {
-    const t = trips, d = data, f = from, p = payload;
+    const t = aTrips, d = data, f = from, p = payload;
     if (!t || !d || !f) return;
     if (canNotify && Notification.permission === "default") await Notification.requestPermission().catch(() => {});
     // Registered before the alert starts: phones show notifications only through it.
     const reg = await navigator.serviceWorker?.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => null);
-    if (closed || t !== trips) return;   // the trip changed while the browser asked
+    if (closed || t !== aTrips) return;   // the trip changed while the browser asked
     const ix = d.ix;
     const lines = targets.map(l => ({ line: l.line, variants: l.variants.map(v => ({ id: v.id, i: v.i, name: ix.s[v.from][0] })) }));
     if (!lines.length) {
-      err = onMap.length ? "Διάλεξε τουλάχιστον μία γραμμή." : "Καμία γραμμή της διαδρομής δεν είναι στον χάρτη: πάτα μία για να τη δείξεις.";
+      err = aOnMap.length ? "Διάλεξε τουλάχιστον μία γραμμή." : "Καμία γραμμή της διαδρομής δεν είναι στον χάρτη: πάτα μία για να τη δείξεις.";
       return;
     }
     err = null;
@@ -303,7 +308,7 @@
     if (reg && p && canPush() && Notification.permission === "granted") {
       const ready = await Promise.race([navigator.serviceWorker.ready, new Promise<null>(r => setTimeout(r, 5000, null))]);
       push = ready && (await startPush(ready, p));
-      if (closed || t !== trips || p !== payload) { if (push) void stopPush(push.id); return; }
+      if (closed || t !== aTrips || p !== payload) { if (push) void stopPush(push.id); return; }
       if (!push) err = "Η ειδοποίηση δουλεύει μόνο με τη σελίδα ανοιχτή: ο server ειδοποιήσεων δεν απάντησε.";
     }
     app.setAlert({ n, until: push?.until ?? Math.floor(app.serverMs() / 1000) + ALERT_S, label: board?.name ?? f.label, lines, ...(push ? { push: push.id } : {}) });
@@ -320,7 +325,7 @@
   const mins = (m: number) => `≈ ${Math.max(1, Math.round(m))}′`;
   // Where a trip gets off: the stop, and for "any metro station" the station there.
   const offAt = (k: number) => { const st = anyEnd && data ? stationAt(ptOf(k)) : null; return st ? `${stop(k)} (🚇 ${st.name})` : stop(k); };
-  const shown = $derived(trips ? Math.min(trips.length, MAX_LINES) : 0);
+  const shown = $derived(aTrips ? Math.min(aTrips.length, MAX_LINES) : 0);
   // Where a result goes: the variants that make the trip. The summary follows the direction shown on the map.
   const going = (t: TripLine) => (data ? termini(data.ix, t.line, t.variants.map(v => v.id)).join(" · ") : "");
   const goingNow = (line: string, variants: string[] = []) => (data ? termini(data.ix, line, app.focus[line] ?? variants).join(" · ") : "");
@@ -487,6 +492,7 @@
         </div>
         {#if alertOpen && !app.alert && !data.stale}
           <div id="trip-alert" class="form">
+            {#if xPicked}<p class="note">Για την πρώτη γραμμή, {xPicked.legs[0].line}, ως την αλλαγή στη στάση {stop(xPicked.legs[0].to)}.</p>{/if}
             {#if near.length > 1}
               <label>Στάση
                 <select bind:value={boardName}>

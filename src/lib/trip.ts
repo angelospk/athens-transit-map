@@ -152,6 +152,12 @@ export interface TripTransfer {
   min: number;
 }
 
+// The first line of a change as a trip of its own (to the change stop): what a stop alert watches.
+export function legTrip(a: TripLeg): TripLine {
+  return { line: a.line, walk: 0, stops: a.stops, min: 0,
+    variants: [{ id: a.id, i: a.i, j: a.j, from: a.from, to: a.to, walk: 0, stops: a.stops, ride: a.ride, min: 0 }] };
+}
+
 // Stops in a grid of XFER_M cells, cached per index: the stops near a stop without looking at all.
 interface Grid { cell: (lat: number, lon: number) => [number, number]; at: Map<string, number[]> }
 const grids = new WeakMap<TripIndex, Grid>();

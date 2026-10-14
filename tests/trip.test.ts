@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MetroData } from "../src/lib/metro";
-import { alertTargets, anyMetro, metroDirect, boardings, findTransfers, findTrips, metroPlaces, nearestStation, parsePhoton, places, searchPlaces, suggest, termini, type Place, type Pt, type TripIndex } from "../src/lib/trip";
+import { alertTargets, anyMetro, legTrip, metroDirect, boardings, findTransfers, findTrips, metroPlaces, nearestStation, parsePhoton, places, searchPlaces, suggest, termini, type Place, type Pt, type TripIndex } from "../src/lib/trip";
 
 // ~111 m per 0.001° of latitude: stops on a north-south street, 0.001° apart.
 const at = (k: number): Pt => [38 + k * 0.001, 23.7];
@@ -253,6 +253,14 @@ describe("findTransfers", () => {
     const far: TripIndex = { ...ix, s: ix.s.map((x, k) => (k >= 6 ? [x[0], x[1] - 0.004, x[2] + 0.003] : x)) as TripIndex["s"] };
     expect(findTransfers(far, [at(0)], [[38.001, 23.711]], 300)).toEqual([]);
     expect(findTransfers(ix, [at(0)], [at(5)], 300).every(r => r.legs[0].line !== r.legs[1].line)).toBe(true);
+  });
+
+  it("gives an alert the first line of a change, as a trip that ends at the change", () => {
+    const [r] = findTransfers(ix, [at(0)], [end], 300);
+    const t = legTrip(r.legs[0]);
+    expect(t).toMatchObject({ line: "A", stops: 5 });
+    expect(t.variants).toEqual([expect.objectContaining({ id: "up", i: 0, j: 5, from: 0, to: 5 })]);
+    expect(alertTargets([t], ["A", "B"], null, [])).toEqual([{ line: "A", variants: [{ id: "up", i: 0, from: 0 }] }]);
   });
 
   it("leaves out lines missing from the current line list", () => {
