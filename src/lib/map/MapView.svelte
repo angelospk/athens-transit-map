@@ -179,14 +179,16 @@
     m.addLayer({ id: "metro-line", type: "line", source: "metro", filter: ["==", ["get", "kind"], "line"],
       layout: { "line-join": "round", "line-cap": "round" },
       paint: { "line-color": ["get", "color"], "line-width": byZoom([10, 2, 14, 4, 17, 6]), "line-opacity": 0.85 } });
+    const stationVis = app.stationsOn ? "visible" : "none";
     m.addLayer({ id: "metro-station", type: "circle", source: "metro", filter: ["==", ["get", "kind"], "station"],
+      layout: { visibility: stationVis },
       paint: { "circle-radius": byZoom([10, sel(6, ["case", ["get", "hub"], 4.5, 3.5]), 14, sel(9, ["case", ["get", "hub"], 7, 6]), 17, ["case", ["get", "hub"], 10, 8]]),
         "circle-color": "#ffffff", "circle-stroke-color": sel(accent, ["case", ["get", "hub"], "#222222", ["get", "color"]]),
         "circle-stroke-width": byZoom([10, sel(3, 2), 14, sel(3.5, 3)]) } });
     m.addLayer({ id: "metro-label", type: "symbol", source: "metro", minzoom: 13,
       filter: ["==", ["get", "kind"], "station"],
       layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Bold"], "text-size": 11,
-        "text-offset": [0, 1.1], "text-anchor": "top", "text-optional": true },
+        "text-offset": [0, 1.1], "text-anchor": "top", "text-optional": true, visibility: stationVis },
       paint: { "text-color": "#333333", "text-halo-color": "#ffffff", "text-halo-width": 1.5 } });
   }
 
@@ -245,11 +247,17 @@
     // Trails of corrections (the route a vehicle glided along) and, with motion off, of moves to a
     // new fix. Always under the vehicle: city dots' trails under the dots, detailed lines' trails
     // over the route lines (their vehicles are DOM markers, above the map).
+    // A correction back is drawn apart: thin, grey and dashed, so it does not read as the bus reversing.
     m.addSource("trails", { type: "geojson", data: EMPTY });
-    const trail = (id: string, dom: boolean, before?: string) => m.addLayer({ id, type: "line", source: "trails",
-      filter: ["==", ["get", "dom"], dom], layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#0071e3",
-        "line-width": 8, "line-opacity": ["*", 0.55, ["get", "alpha"]] } }, before);
+    const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#0071e3";
+    const trail = (id: string, dom: boolean, before?: string) => {
+      m.addLayer({ id, type: "line", source: "trails",
+        filter: ["all", ["==", ["get", "dom"], dom], ["!", ["to-boolean", ["get", "back"]]]], layout: { "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": accent, "line-width": 8, "line-opacity": ["*", 0.55, ["get", "alpha"]] } }, before);
+      m.addLayer({ id: `${id}-back`, type: "line", source: "trails",
+        filter: ["all", ["==", ["get", "dom"], dom], ["to-boolean", ["get", "back"]]], layout: { "line-join": "round" },
+        paint: { "line-color": "#80868b", "line-width": 3, "line-dasharray": [1.5, 1.5], "line-opacity": ["*", 0.9, ["get", "alpha"]] } }, before);
+    };
     trail("trails-city", false, "city-dot");
     m.addImage("route-arrow", arrowImage(), { pixelRatio: 2 });
     // The detailed lines' routes go under the city vehicles: a city vehicle just selected is still drawn
@@ -409,7 +417,7 @@
       if (!dom && (!app.cityOn || (cull && (still
         ? !moved && cull(e.pos)
         : !e.mover.fixing && cull(e.mover.pos) && cull(e.mover.targetPos(now) ?? e.mover.pos))))) continue;
-      let pos: LngLat, trail: { geom: LngLat[]; alpha: number } | null;
+      let pos: LngLat, trail: { geom: LngLat[]; alpha: number } | null, back = false, rewind = false;
       if (still) {
         pos = e.pos;
         trail = moved && { geom: [moved.from, e.pos], alpha: 1 - (now - moved.at) / STILL_TRAIL_S };
@@ -418,18 +426,24 @@
         const r = e.mover.step(now);
         pos = r.pos;
         trail = r.trail;
+        back = r.back;
+        rewind = back && r.fx != null;   // gliding back: the dot is drawn faint
         if (e.mover.fixing) fixing = true;
       }
       if (moved) fixing = true;
       // A trail is drawn like its vehicle: not for one filtered out, hidden or dimmed by a selection.
       const o = dom || !s || app.others === "normal" || e.key === selKey ? 1 : app.others === "dim" ? 0.22 : 0;
       if (trail && shown && o && trail.geom.length > 1)
-        trails.push({ type: "Feature", geometry: { type: "LineString", coordinates: trail.geom }, properties: { alpha: trail.alpha * o, dom } });
-      if (dom) drawDom(e, pos, still).wrap.classList.toggle("filtered", !shown);
+        trails.push({ type: "Feature", geometry: { type: "LineString", coordinates: trail.geom }, properties: { alpha: trail.alpha * o, dom, ...(back && { back }) } });
+      if (dom) {
+        const d = drawDom(e, pos, still);
+        d.wrap.classList.toggle("filtered", !shown);
+        d.el.classList.toggle("rewind", rewind);
+      }
       else {
         const h = headingOf(e, still);
         features.push({ type: "Feature", geometry: { type: "Point", coordinates: pos },
-          properties: { line: e.line, id: e.id, cls: e.cls, stale: isStalePos(now - e.at), ...(h != null && { h }) } });
+          properties: { line: e.line, id: e.id, cls: e.cls, stale: isStalePos(now - e.at), ...(h != null && { h }), ...(rewind && { rewind }) } });
       }
     }
     for (const [k, d] of doms) {
@@ -672,6 +686,11 @@
   }
 
   $effect(() => {
+    const vis = app.stationsOn ? "visible" : "none";
+    if (loaded) for (const id of ["metro-station", "metro-label"]) map!.setLayoutProperty(id, "visibility", vis);
+  });
+
+  $effect(() => {
     const on = app.speedOn;
     if (on && !speedData) loadSpeed().then(d => (speedData = d), () => {
       app.notify("Δεν φόρτωσαν οι ταχύτητες. Δοκίμασε ξανά.");
@@ -737,7 +756,7 @@
     const sel: ExpressionSpecification = s?.kind === "vehicle"
       ? ["all", ["==", ["get", "line"], s.line], ["==", ["get", "id"], s.id]] : ["boolean", false];
     const o = !s || app.others === "normal" ? 1 : app.others === "dim" ? 0.22 : 1;
-    const opacity: ExpressionSpecification = ["*", ["case", sel, 1, o], ["case", ["get", "stale"], 0.3, 1]];
+    const opacity: ExpressionSpecification = ["*", ["case", sel, 1, o], ["case", ["get", "stale"], 0.3, 1], ["case", ["to-boolean", ["get", "rewind"]], 0.5, 1]];
     m.setPaintProperty("city-dot", "circle-opacity", opacity);
     m.setPaintProperty("city-dot", "circle-stroke-opacity", opacity);
     m.setPaintProperty("city-label", "text-opacity", opacity);

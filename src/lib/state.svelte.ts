@@ -83,6 +83,8 @@ export class AppState {
   motion = $state(stored("motion", true, isBool));
   // Typical bus speed per road segment (public/speed/segments.geojson, lab/segspeed).
   speedOn = $state(stored("speedOn", false, isBool));
+  // Metro, ISAP and tram stations on the map (the pinned lines' tracks stay either way).
+  stationsOn = $state(stored("stationsOn", true, isBool));
   // Map filters; the selected vehicle is always shown.
   only = $state.raw<Only>(stored("only", { fresh: false, onTime: false },
     v => !!v && isBool((v as Only).fresh) && isBool((v as Only).onTime)));
@@ -394,6 +396,12 @@ export class AppState {
   setSpeedOn(on: boolean) {
     this.speedOn = on;
     store("speedOn", on);
+  }
+
+  setStationsOn(on: boolean) {
+    this.stationsOn = on;
+    store("stationsOn", on);
+    if (!on) this.selectStation(null);
   }
 
   setMotion(on: boolean) {

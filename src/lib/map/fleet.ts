@@ -4,7 +4,7 @@
 
 import { delayClass, type DelayClass } from "../format";
 import { distanceM, JUMP_M, type LngLat } from "../glide";
-import { linePlan, Mover, project, NO_SPEED, pathPlan, planOnto, type Plan, cumulativeLL } from "../motion";
+import { bridge, linePlan, Mover, project, NO_SPEED, pathPlan, planOnto, type Handoff, type Plan, cumulativeLL } from "../motion";
 import { predictS, updateTrack, type Route, type Track } from "../predict";
 import type { CityVehicle, Vehicle } from "../types";
 
@@ -70,8 +70,7 @@ export class Fleet {
       const e = this.fix(k, v.line, v.id, v, nowSec);
       if (!e) continue;
       const pos: LngLat = [v.lon, v.lat];
-      const h = ahead(e.mover.pos, v, pos, nowSec);
-      this.apply(e, h.plan, h.s0, nowSec, h.off, h.fix);
+      this.apply(e, bridge(e.mover, ahead(e.mover.pos, v, pos, nowSec)), nowSec);
     }
     for (const [k, e] of this.entries) if (!owned.has(e.line) && !seen.has(k)) this.entries.delete(k);
   }
@@ -102,14 +101,11 @@ export class Fleet {
         const plan: Plan = { geom: route.geom, cum: route.cum, target: t => predictS(track, t) };
         if (keepRoute && e.mover.plan?.geom === route.geom) e.mover.retarget(plan, nowSec);
         else {
-          const h = planOnto(e.mover.pos, plan, nowSec);
+          const h = bridge(e.mover, planOnto(e.mover.pos, plan, nowSec));
           if (sameFix && !h.fix) continue;   // same fix, different geometry: do not disturb the motion
-          this.apply(e, h.plan, h.s0, nowSec, h.off, h.fix);
+          this.apply(e, h, nowSec);
         }
-      } else {
-        const h = ahead(e.mover.pos, v, pos, nowSec);
-        this.apply(e, h.plan, h.s0, nowSec, h.off, h.fix);
-      }
+      } else this.apply(e, bridge(e.mover, ahead(e.mover.pos, v, pos, nowSec)), nowSec);
     }
     for (const [k, e] of this.entries) if (e.line === line && !seen.has(k)) this.entries.delete(k);
   }
@@ -167,8 +163,8 @@ export class Fleet {
   }
 
   // A new entry starts where its plan says (no glide from nowhere); others hand over.
-  private apply(e: FleetEntry, plan: Plan, s0: number, nowSec: number, off?: LngLat, fix = false) {
-    if (!e.mover.plan) e.mover.setPlan(plan, plan.target(nowSec), nowSec);
-    else e.mover.setPlan(plan, s0, nowSec, off, fix);
+  private apply(e: FleetEntry, h: Handoff, nowSec: number) {
+    if (!e.mover.plan) e.mover.setPlan(h.plan, h.plan.target(nowSec), nowSec);
+    else e.mover.apply(h, nowSec);
   }
 }

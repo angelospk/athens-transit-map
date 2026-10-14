@@ -204,6 +204,19 @@ describe("AppState metro lines and favourites", () => {
     expect(app.selection).toBeNull();
   });
 
+  it("shows stations by default; turning them off is remembered and closes the station card", () => {
+    mem.clear();
+    const app = fresh();
+    expect(app.stationsOn).toBe(true);
+    app.selectStation("ΟΜΟΝΟΙΑ");
+    app.setStationsOn(false);
+    expect(app.stationsOn).toBe(false);
+    expect(app.metroStation).toBeNull();
+    expect(new AppState().stationsOn).toBe(false);
+    app.setStationsOn(true);
+    expect(new AppState().stationsOn).toBe(true);
+  });
+
   it("stars and unstars lines, and remembers them", () => {
     const app = fresh();
     app.toggleFavorite("040");

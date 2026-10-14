@@ -1,5 +1,5 @@
 """Run: python3 -m unittest lab/segspeed/test_build.py (needs numpy)."""
-import csv, gzip, os, sys, tempfile, unittest
+import csv, gzip, math, os, sys, tempfile, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import build  # noqa: E402
@@ -52,6 +52,60 @@ class ParkedRuns(unittest.TestCase):
 
     def test_short_stop_is_kept(self):
         self.assertEqual(len(self.pairs([(0, 0), (60, 0), (120, 0)])), 2)
+
+
+class Merge(unittest.TestCase):
+    """merge_segments: one road, one line. Overlapping stretches of different segments (other lines,
+    other stops, the other direction) become one piece; its observations are pooled."""
+
+    def seg(self, pts, v, line, n=30, names=("A", "B")):
+        geom = [[at(x, y)[1], at(x, y)[0]] for x, y in pts]   # [lon, lat]
+        obs = []
+        for k in range(n):   # spread along the polyline, heading of the leg they are on
+            f = (k + 0.5) / n * (len(pts) - 1)
+            i = min(int(f), len(pts) - 2)
+            (x0, y0), (x1, y1) = pts[i], pts[i + 1]
+            t = f - i
+            hd = math.degrees(math.atan2(x1 - x0, y1 - y0)) % 360
+            obs.append((x0 + t * (x1 - x0), y0 + t * (y1 - y0), hd, v, k % 2 == 0))
+        return {"geom": geom, "obs": obs, "lines": {line}, "names": names}
+
+    @staticmethod
+    def xs(piece):
+        return [build.xy(lat, lon)[0] for lon, lat in piece["geom"]]
+
+    def test_two_lines_on_one_road_become_one_piece(self):
+        a = self.seg([(0, 0), (500, 0)], 5.0, "1", n=30)
+        b = self.seg([(0, 6), (500, 6)], 10.0, "2", n=25)
+        out = build.merge_segments([b, a])
+        self.assertEqual(len(out), 1)
+        self.assertEqual(len(out[0]["v"]), 55)
+        self.assertEqual(out[0]["lines"], {"1", "2"})
+        self.assertEqual(len(out[0]["peak"]) + len(out[0]["off"]), 55)
+
+    def test_other_direction_is_the_same_road(self):
+        a = self.seg([(0, 0), (500, 0)], 5.0, "1")
+        b = self.seg([(500, 8), (0, 8)], 10.0, "2", n=20)
+        self.assertEqual(len(build.merge_segments([a, b])), 1)
+
+    def test_crossing_roads_stay_apart(self):
+        a = self.seg([(0, 0), (500, 0)], 5.0, "1")
+        b = self.seg([(250, -250), (250, 250)], 10.0, "2", n=20)
+        out = build.merge_segments([a, b])
+        self.assertEqual(len(out), 2)
+        self.assertEqual(sorted(len(p["v"]) for p in out), [20, 30])
+
+    def test_shared_stretch_goes_to_the_busier_line_the_rest_stays(self):
+        a = self.seg([(0, 0), (500, 0)], 5.0, "1", n=40)
+        b = self.seg([(0, 5), (300, 5), (300, 400)], 10.0, "2", n=30)
+        out = build.merge_segments([a, b])
+        self.assertEqual(len(out), 2)
+        own = next(p for p in out if p["lines"] == {"2"})
+        self.assertGreater(min(self.xs(own)), 270)          # only the turn north is its own
+        main = next(p for p in out if "1" in p["lines"])
+        self.assertIn("2", main["lines"])                    # its observations on the shared road count there
+        self.assertEqual(len(main["v"]) + len(own["v"]), 70)
+        self.assertEqual(main["names"], ("A", "B"))
 
 
 if __name__ == "__main__":

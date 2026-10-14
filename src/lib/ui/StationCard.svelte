@@ -16,8 +16,10 @@
       <h2>{station.name}</h2>
       <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.selectStation(null)}>×</button>
     </header>
-    <p>Άνοιξε μια γραμμή για να φαίνεται η διαδρομή της στον χάρτη. Οι ίδιοι διακόπτες είναι και στο κουμπί «Τι δείχνει ο χάρτης», στο «Μετρό, ΗΣΑΠ και τραμ».</p>
+    <p>Άνοιξε μια γραμμή για να φαίνεται η διαδρομή της.</p>
     <MetroToggles {app} ids={station.lines} />
+    <p class="hide"><button type="button" class="link" onclick={() => app.setStationsOn(false)}>Κρύψε τους σταθμούς</button>
+      Ξανά από το κουμπί με το μάτι → Μετρό.</p>
   </section>
 {/if}
 
@@ -28,6 +30,8 @@
   header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
   h2 { flex: 1; margin: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   p { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+  .hide { margin: 10px 0 0; }
+  .link { border: 0; background: none; padding: 0 6px 0 0; color: var(--accent); text-decoration: underline; cursor: pointer; font-size: 12px; }
   .close { width: 36px; height: 36px; margin: -8px -10px -8px 0; border: 0; background: none; font-size: 22px;
     color: var(--muted); cursor: pointer; border-radius: 8px; }
   .close:hover { background: var(--control); }
