@@ -212,8 +212,9 @@ def merge_segments(segs):
     MERGE_M going the same way or the opposite way) become pieces of their own, and every observation is pooled into the
     piece it lies on. Returns [{"geom", "v", "peak", "off", "lines", "names"}]."""
     order = sorted(range(len(segs)), key=lambda i: -len(segs[i]["obs"]))
-    grid = defaultdict(list)   # cell key -> [(x, y, heading)] of claimed points
+    grid = defaultdict(list)   # cell key -> [(x, y, heading, piece)] of claimed points
     pieces, seg_of, claimed = [], [], []   # claimed[pid] = (x, y, heading)
+    seg_pts = {}   # seg -> (x, y, piece) of its resampled points that belong to a piece (own, or the one that covered them)
     for si in order:
         r = _resample(segs[si]["geom"])
         if r is None:
@@ -226,6 +227,7 @@ def merge_segments(segs):
                 for dy in (-1, 0, 1):
                     cand += grid.get(k + (dx << 22) + dy, [])
         covered = np.zeros(len(s), bool)
+        pid_of = np.full(len(s), -1)
         if cand:
             c = np.array(cand)
             for a in range(0, len(s), 500):
@@ -233,6 +235,8 @@ def merge_segments(segs):
                 near = np.hypot(x[sl, None] - c[None, :, 0], y[sl, None] - c[None, :, 1]) <= MERGE_M
                 near &= _hdiff(hd[sl, None], c[None, :, 2]) < MERGE_DEG
                 covered[sl] = near.any(axis=1)
+                dist = np.where(near, np.hypot(x[sl, None] - c[None, :, 0], y[sl, None] - c[None, :, 1]), np.inf)
+                pid_of[sl] = np.where(covered[sl], c[np.argmin(dist, axis=1), 3], -1).astype(int)
         i, n = 0, len(s)
         while i < n:
             if covered[i]:
@@ -247,9 +251,13 @@ def merge_segments(segs):
                                "names": segs[si]["names"]})
                 seg_of.append(si)
                 claimed.append((x[i:j + 1], y[i:j + 1], hd[i:j + 1]))
+                pid_of[i:j + 1] = pid
                 for px, py, ph, pk in zip(x[i:j + 1], y[i:j + 1], hd[i:j + 1], key[i:j + 1].tolist()):
-                    grid[pk].append((px, py, ph))
+                    grid[pk].append((px, py, ph, pid))
             i = j + 1
+        has = pid_of >= 0
+        if has.any():
+            seg_pts[si] = (x[has], y[has], pid_of[has])
     if not pieces:
         return []
     # claimed points sorted by cell, for the observation lookup
@@ -281,16 +289,11 @@ def merge_segments(segs):
                     good = (d <= MERGE_M) & (_hdiff(oh[m], CH[ix]) < MERGE_DEG) & (d < bd[m])
                     bd[m[good]] = d[good]
                     bp[m[good]] = CP[ix[good]]
-    own = defaultdict(list)   # a segment's own pieces, for observations that match no road
-    for p, si in enumerate(seg_of):
-        own[si].append(p)
-    for si in np.unique(OS[best_p < 0]).tolist():
-        if not own[si]:
+    for si in np.unique(OS[best_p < 0]).tolist():   # observations that match no road: the piece of their own seg's nearest point
+        if si not in seg_pts:
             continue
         idx = np.nonzero((OS == si) & (best_p < 0))[0]
-        px = np.concatenate([claimed[p][0] for p in own[si]])
-        py = np.concatenate([claimed[p][1] for p in own[si]])
-        pp = np.concatenate([np.full(len(claimed[p][0]), p) for p in own[si]])
+        px, py, pp = seg_pts[si]
         d = np.hypot(O[idx, 0, None] - px[None, :], O[idx, 1, None] - py[None, :])
         best_p[idx] = pp[np.argmin(d, axis=1)]
     for p, v, pk in zip(best_p.tolist(), O[:, 3].tolist(), O[:, 4].astype(bool).tolist()):

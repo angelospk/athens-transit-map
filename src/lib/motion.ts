@@ -218,6 +218,7 @@ export function bridge(mv: Mover, h: Handoff): Handoff {
   const q = project(old.geom, old.cum, g[1], mv.s);
   if (q.off > NEAR_M || Math.abs(q.s - mv.s) <= NEAR_M) return h;
   const way = subLine(old.geom, old.cum, mv.s, q.s);
+  way[0] = mv.pos;   // the shown point, with any fading offset
   if (distanceM(way[way.length - 1], g[1]) >= 1) way.push(g[1]);
   const geom = [...way, ...g.slice(2)], cum = cumulativeLL(geom), L = cum[way.length - 1];
   const back = q.s < mv.s, t = h.plan.target, base = h.plan.base;

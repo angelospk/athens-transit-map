@@ -107,6 +107,14 @@ class Merge(unittest.TestCase):
         self.assertEqual(len(main["v"]) + len(own["v"]), 70)
         self.assertEqual(main["names"], ("A", "B"))
 
+    def test_stationary_observations_of_a_covered_segment_are_kept(self):
+        a = self.seg([(0, 0), (500, 0)], 5.0, "1", n=40)
+        b = self.seg([(0, 6), (500, 6)], 0.5, "2", n=30)
+        b["obs"] = [(x, y, (h + 90) % 360, v, pk) for x, y, h, v, pk in b["obs"]]   # heading is noise: matches no road
+        out = build.merge_segments([a, b])
+        self.assertEqual(len(out), 1)
+        self.assertEqual(len(out[0]["v"]), 70)
+
 
 if __name__ == "__main__":
     unittest.main()

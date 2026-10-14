@@ -13,7 +13,7 @@
   import { canPush, startPush, stopPush } from "../push";
   import { encodeAlert, type Rep } from "../tglink";
   import type { AppState } from "../state.svelte";
-  import { alertTargets, anyMetro, boardings, centre, distM, findTransfers, findTrips, geocode, loadTripIndex, metroPlaces, nearestStation, places, searchPlaces,
+  import { alertTargets, anyMetro, boardings, centre, distM, findTransfers, findTrips, geocode, loadTripIndex, metroDirect, metroPlaces, nearestStation, places, searchPlaces,
     suggest, termini, toggleTripLine, type Pt, type TripIndex, type TripLine, type TripTransfer } from "../trip";
 
   let { app, onclose }: { app: AppState; onclose: () => void } = $props();
@@ -164,18 +164,21 @@
   const ptOf = (k: number): Pt => [data!.ix.s[k][1], data!.ix.s[k][2]];
   const stationAt = (p: Pt) => {
     const st = app.metro && nearestStation(app.metro, p);
-    const s = st && app.metro!.stations.find(x => x.name === st.name);
+    const s = st && app.metro!.stations.find(x => x.name === st.name && x.lines.some(l => l.startsWith("M")));
     return s ? { name: s.name, d: st.d, pt: [s.lat, s.lon] as Pt } : null;
   };
   const anyEnd = $derived(to?.kind === "metro-any");
   const walkTo = $derived(anyEnd && from ? stationAt(centre(from.pts)) : null);
+  // Both ends near one metro or tram line: said before the buses.
+  const byMetro = $derived(app.metro && from && to && !anyEnd && !tooClose ? metroDirect(app.metro, from.pts, to.pts, radius) : null);
 
   // A and B on the map whenever both ends are set (again after a reopen); "any metro station" is the
   // station of the best trip.
   const toPt = $derived.by((): Pt | null => {
     if (!to) return null;
     if (!anyEnd) return centre(to.pts);
-    const k = trips?.[0]?.variants[0].to ?? xfers[0]?.legs[1].to;
+    const t = trips?.find(x => x.line === picked) ?? trips?.[0], x = xfers.find(y => xkey(y) === picked);
+    const k = x ? x.legs[1].to : t?.variants[0].to ?? xfers[0]?.legs[1].to;
     return k == null || !data ? null : stationAt(ptOf(k))?.pt ?? null;
   });
   $effect(() => { app.tripEnds = from && toPt ? { from: centre(from.pts), to: toPt } : null; });
@@ -190,12 +193,18 @@
     app.tripStops = [stopAt(v.from), stopAt(v.to)];
     picked = t.line;
   }
-  function pickXfer(x: TripTransfer, keepAlert = true) {
+  function pickXfer(x: TripTransfer) {   // another trip than the alert's: the alert ends
     const [a, b] = x.legs;
-    app.showTrip([{ id: a.line, variants: [a.id] }, { id: b.line, variants: [b.id] }], keepAlert);
+    app.showTrip([{ id: a.line, variants: [a.id] }, { id: b.line, variants: [b.id] }]);
     app.tripStops = [stopAt(a.from), stopAt(a.to), ...(stop(b.from) === stop(a.to) ? [] : [stopAt(b.from)]), stopAt(b.to)];
     picked = xkey(x);
   }
+  // A picked result whose lines were closed meanwhile is no longer shown alone.
+  $effect(() => {
+    if (!picked) return;
+    const lines = picked.split(">");
+    if (lines.some(l => !app.selected.includes(l))) untrack(() => { picked = null; app.tripStops = []; });
+  });
   function showAll() {
     if (trips?.length) app.showTrip(trips.map(t => ({ id: t.line, variants: t.variants.map(v => v.id) })), true);
     app.tripStops = [];
@@ -213,7 +222,7 @@
       picked = null;
       app.tripStops = [];
       if (trips.length) app.showTrip(trips.map(t => ({ id: t.line, variants: t.variants.map(v => v.id) })));
-      else if (xfers.length) pickXfer(xfers[0], false);
+      else if (xfers.length) pickXfer(xfers[0]);
     });
     if ((trips.length || xfers.length) && phone()) {
       folded = true;
@@ -247,7 +256,12 @@
   // The chosen alert as a link payload (src/lib/tglink.ts): for Telegram and for web push. A recurring
   // one (days, from what time, for how long) is for Telegram only.
   const payload = $derived(data && !data.stale ? encodeAlert(data.ix, n, targets) : null);
-  const nextFive = () => { const d = new Date(Date.now() + 5 * 60_000); return `${String(d.getHours()).padStart(2, "0")}:${String(Math.floor(d.getMinutes() / 5) * 5).padStart(2, "0")}`; };
+  // Athens time, as the bot reads it.
+  const nextFive = () => {
+    const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Athens", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+      .formatToParts(Date.now() + 5 * 60_000).map(x => [x.type, x.value]));
+    return `${p.hour}:${String(Math.floor(+p.minute / 5) * 5).padStart(2, "0")}`;
+  };
   let repDays = $state(0);
   let repStart = $state(nextFive());
   let repLen = $state(60);
@@ -255,7 +269,7 @@
     const [h, m] = repStart.split(":").map(Number);
     return repDays && Number.isFinite(h) && Number.isFinite(m) ? { days: repDays, start: h * 60 + Math.floor(m / 5) * 5, len: repLen } : undefined;
   });
-  const tgPayload = $derived(rep ? (data && !data.stale ? encodeAlert(data.ix, n, targets, rep) : null) : payload);
+  const tgPayload = $derived(repDays ? (rep && data && !data.stale ? encodeAlert(data.ix, n, targets, rep) : null) : payload);
 
   // Stop alert for the chosen lines, at the chosen stop: in the page, and as web push where the browser
   // has it (then it comes with the page closed). The permission prompt comes first, from the tap itself
@@ -410,6 +424,7 @@
     {#if locating}<p class="note">Εντοπισμός…</p>{/if}
 
     {#if err}<p class="warn" role="status">{err}</p>{/if}
+    {#if byMetro}<p class="metro">🚇 Με {byMetro.line}: {byMetro.from} → {byMetro.to}{#if byMetro.walk >= 50} · περπάτημα {metres(byMetro.walk)}{/if}. Συνήθως πιο γρήγορα από το λεωφορείο.</p>{/if}
     {#if failed}
       <p class="warn">Δεν φόρτωσαν οι στάσεις. <button type="button" class="link" onclick={load}>Ξανά</button></p>
     {:else if !data}
@@ -419,7 +434,7 @@
     {:else if trips && !trips.length && !xfers.length}
       <p class="note">Καμία γραμμή δεν πάει, ούτε με μία αλλαγή. Δοκίμασε περισσότερο περπάτημα ή κοντινή περιοχή.</p>
     {:else if trips}
-      {#if !trips.length}<p class="note">Καμία γραμμή δεν πάει χωρίς αλλαγή.</p>{/if}
+      {#if !trips.length}<p class="note">Καμία γραμμή λεωφορείου δεν πάει χωρίς αλλαγή.</p>{/if}
       <ol class="results" bind:this={resultsEl}>
         {#each trips as t, k (t.line)}
           {@const info = app.lineInfo.get(t.line)}
@@ -510,7 +525,7 @@
             <div class="go">
               {#if !repDays}<button type="button" class="bell" disabled={!targets.length || pushing} onclick={alertMe}>{pushing ? "…" : "Εδώ"}</button>{/if}
               {#if tgLink}<a class="bell tg" href={tgLink} target="_blank" rel="noopener">Στο Telegram</a>
-              {:else if repDays}<small class="warn">Διάλεξε ώρα που να τελειώνει πριν από τα μεσάνυχτα.</small>{/if}
+              {:else if repDays}<small class="warn">Διάλεξε ώρα έναρξης, ώστε να τελειώνει ως τα μεσάνυχτα.</small>{/if}
             </div>
             {#if repDays}
               <p class="note">Η επανάληψη γίνεται στο Telegram (@{BOT}): σου γράφει κάθε φορά που ένα λεωφορείο πλησιάζει, μόνο σε αυτές τις ώρες.
@@ -593,6 +608,7 @@
     border: 0; border-radius: 8px; background: none; color: var(--fg); font-size: 13px; text-align: left; cursor: pointer; }
   .pick:hover, .picked .pick { background: var(--control); }
   .pick b { font-variant-numeric: tabular-nums; }
+  .metro { margin: 8px 0 0; padding: 6px 8px; border-radius: 8px; background: var(--control); font-size: 13px; }
   .sub { margin: 10px 0 0; font-size: 12px; color: var(--muted); font-weight: 600; }
   .all { margin-top: 6px; font-size: 12px; padding: 0; }
   .form input[type="time"] { min-height: 34px; padding: 0 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--control);

@@ -49,6 +49,7 @@ const REP_PER_CHAT = 5;        // recurring alerts per chat
 const MAX_ALERTS = 200;
 const MAX_LINES = 20;          // lines polled at once, for all chats
 const REFRESH_MS = 6 * 3600_000;
+const MISMATCH_MS = 10 * 60_000;   // sooner while the stop index and the backend's data differ
 const FORCE_GAP_MS = 60_000;   // a link newer than the bot's data reloads it, at most this often
 const START_GAP_MS = 2000;     // one new alert per chat this often
 const SEND_GAP_MS = 40;        // Telegram: about 30 messages a second in all
@@ -286,7 +287,7 @@ export class Bot {
   // trips.json and the backend's static version, every 6 h (now, when forced). A new version ends the
   // alerts made from the old one: their stop positions may not hold.
   private loadData(force = false): Promise<void> {
-    if (!force && this.d.now() - this.ixAt < REFRESH_MS) return Promise.resolve();
+    if (!force && this.d.now() - this.ixAt < (this.ix && this.staticVer !== this.ix.v ? MISMATCH_MS : REFRESH_MS)) return Promise.resolve();
     this.loading ??= (async () => {
       const [t, s] = await Promise.all([this.d.get(this.d.urls.trips), this.d.get(`${this.d.urls.static}/lines.json`)]);
       if (t.status !== 200 || s.status !== 200 || !isIndex(t.body)) return;
@@ -419,12 +420,28 @@ const repDays = (days: number) => days === 31 ? "Τις καθημερινές" 
 const athens = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Athens", weekday: "short", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
 const WEEK = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+const ymd = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens", year: "numeric", month: "2-digit", day: "2-digit" });
+const parts = (f: Intl.DateTimeFormat, t: number) => Object.fromEntries(f.formatToParts(t).map(x => [x.type, x.value]));
+
+// Athens wall time (that day, `min` minutes after midnight) as Unix s. One answer for a time that
+// comes twice when the clocks go back, so a window keeps one end (the watch would fire again).
+function athensAt(day: { year: string; month: string; day: string }, min: number): number {
+  const wall = Date.UTC(+day.year, +day.month - 1, +day.day, 0, min);
+  const offset = (t: number) => {   // Athens minus UTC at t
+    const d = parts(ymd, t), h = parts(athens, t);
+    return Date.UTC(+d.year, +d.month - 1, +d.day, +h.hour, +h.minute) - Math.floor(t / 60_000) * 60_000;
+  };
+  let t = wall - 2 * 3600_000;   // Athens is UTC+2 or +3
+  t = wall - offset(t);
+  return Math.floor((wall - offset(t)) / 1000);
+}
+
 // The end (Unix s) of the recurring alert's window if it is in it at `now` (ms), else null.
-function windowEnd(r: Rep, now: number): number | null {
-  const p = Object.fromEntries(athens.formatToParts(now).map(x => [x.type, x.value]));
+export function windowEnd(r: Rep, now: number): number | null {
+  const p = parts(athens, now);
   const day = WEEK.indexOf(p.weekday), min = +p.hour * 60 + +p.minute;
   if (day < 0 || !(r.days & (1 << day)) || min < r.start || min >= r.start + r.len) return null;
-  return Math.floor(now / 1000) - +p.second + (r.start + r.len - min) * 60;
+  return athensAt(parts(ymd, now) as { year: string; month: string; day: string }, r.start + r.len);
 }
 
 // A recurring alert on the new index: every entry keeps its line, variant and stop name (at its old

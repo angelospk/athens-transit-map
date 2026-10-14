@@ -315,6 +315,20 @@ export function anyMetro(data: MetroData): Place {
   return { label: "Κοντινότερος σταθμός μετρό", pts: data.stations.filter(isMetro).map(s => [s.lat, s.lon] as Pt), lines: [], kind: "metro-any" };
 }
 
+// A metro or tram line with a station near the start and another near the end (the least walking):
+// the planner says so before the buses, which may take far longer.
+export function metroDirect(data: MetroData, from: Pt[], to: Pt[], radius: number): { line: string; from: string; to: string; walk: number } | null {
+  const near = (pts: Pt[]) => data.stations.map(s => ({ s, d: nearest([s.lat, s.lon], pts) })).filter(x => x.d <= radius);
+  const a = near(from), b = near(to);
+  let best: { line: string; from: string; to: string; walk: number } | null = null;
+  for (const x of a) for (const y of b) {
+    if (x.s.name === y.s.name) continue;
+    const line = x.s.lines.find(l => y.s.lines.includes(l));
+    if (line && (!best || x.d + y.d < best.walk)) best = { line, from: x.s.name, to: y.s.name, walk: x.d + y.d };
+  }
+  return best;
+}
+
 // The metro or ISAP station nearest a point, and the metres to it.
 export function nearestStation(data: MetroData, p: Pt): { name: string; d: number } | null {
   let best: { name: string; d: number } | null = null;

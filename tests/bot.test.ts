@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Bot, type BotDeps, type BotState, type Fetched, type PushSub } from "../bot/bot";
+import { Bot, windowEnd, type BotDeps, type BotState, type Fetched, type PushSub } from "../bot/bot";
 import { encodeAlert } from "../src/lib/tglink";
 import type { TripIndex } from "../src/lib/trip";
 
@@ -392,6 +392,22 @@ describe("Bot recurring alerts", () => {
     expect((await t.bot.web({ method: "POST", path: "/alerts", body: { p: repPayload, sub } })).status).toBe(400);
   });
 
+  it("checks the data again within minutes while the stop index and the backend disagree", async () => {
+    const t = setup({ staticVer: "2026-10-20" });
+    const loads = () => t.gets.filter(u => u === URLS.trips).length;
+    await t.bot.tick();                                            // nothing to watch: no load
+    const opts = setup();
+    await opts.bot.handle([msg(`/start ${repPayload}`)]);
+    const saved = opts.saved()!;
+    const m = setup({ saved, staticVer: "2026-10-20" });
+    await m.bot.tick();
+    const first = m.gets.filter(u => u === URLS.trips).length;
+    m.advance(11 * 60_000);
+    await m.bot.tick();
+    expect(m.gets.filter(u => u === URLS.trips).length).toBe(first + 1);
+    expect(loads()).toBe(0);
+  });
+
   it("carries over new stop data where its stops are still there, else ends with a message", async () => {
     const opts: Opts = {};
     const t = setup(opts);
@@ -410,5 +426,27 @@ describe("Bot recurring alerts", () => {
     await t.bot.flush();
     expect(t.saved()!.alerts).toEqual([]);
     expect(t.texts().at(-1)).toMatch(/άλλαξαν/);
+  });
+});
+
+describe("windowEnd", () => {
+  it("gives one end for an hour that comes twice when the clocks go back (25 Oct 2026)", () => {
+    const r = { days: 127, start: 180, len: 60 };                  // 03:00-04:00 every day
+    const first = windowEnd(r, Date.UTC(2026, 9, 25, 0, 30));      // 03:30 summer time
+    const again = windowEnd(r, Date.UTC(2026, 9, 25, 1, 30));      // 03:30 again, winter time
+    expect(first).not.toBeNull();
+    expect(again).toBe(first);
+  });
+  it("ends at the wall-clock end on the day the clocks go forward (29 Mar 2026)", () => {
+    const r = { days: 127, start: 120, len: 180 };                 // 02:00-05:00; 03:00-04:00 does not exist
+    expect(windowEnd(r, Date.UTC(2026, 2, 29, 0, 30))).toBe(Date.UTC(2026, 2, 29, 2, 0) / 1000);   // 05:00 summer = 02:00 UTC
+  });
+  it("ends at midnight for a window up to 24:00", () => {
+    expect(windowEnd({ days: 127, start: 1380, len: 60 }, Date.UTC(2026, 9, 8, 20, 30))).toBe(Date.UTC(2026, 9, 8, 21, 0) / 1000);   // 23:30 → 00:00
+  });
+  it("is null outside the window or on another day", () => {
+    expect(windowEnd({ days: 31, start: 630, len: 60 }, T0)).toBeNull();   // Thursday 10:00: before 10:30
+    expect(windowEnd({ days: 96, start: 600, len: 60 }, T0)).toBeNull();   // weekends only
+    expect(windowEnd({ days: 31, start: 600, len: 60 }, T0)).toBe(T0 / 1000 + 3600);
   });
 });

@@ -444,6 +444,13 @@ describe("bridge", () => {
     expect(h.plan.target(1)).toBeCloseTo(back, -1);
     expect(h.plan.target(1 + 20)).toBeGreaterThan(back + 10);       // and drives on from there
   });
+  it("starts at the shown point, fading offset included: no jump", () => {
+    const mv = new Mover([23.705, 37.9702]);                       // 22 m north of the line, fading in
+    mv.setPlan(plan(() => M / 2), M / 2, 0, [0, 0.0002]);
+    const shown = mv.step(0.1).pos;
+    mv.apply(bridge(mv, linePlan(shown, atM(100), 90)), 0.1);
+    expect(distanceM(mv.step(0.11).pos, shown)).toBeLessThan(1);
+  });
   it("leaves a handoff alone when the fix is off the old route, or nothing is straight", () => {
     const mv = along(M + 400);
     const off = linePlan(mv.pos, [23.705, 37.975], 0);

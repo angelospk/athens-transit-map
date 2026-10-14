@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MetroData } from "../src/lib/metro";
-import { alertTargets, anyMetro, boardings, findTransfers, findTrips, metroPlaces, nearestStation, parsePhoton, places, searchPlaces, suggest, termini, type Place, type Pt, type TripIndex } from "../src/lib/trip";
+import { alertTargets, anyMetro, metroDirect, boardings, findTransfers, findTrips, metroPlaces, nearestStation, parsePhoton, places, searchPlaces, suggest, termini, type Place, type Pt, type TripIndex } from "../src/lib/trip";
 
 // ~111 m per 0.001° of latitude: stops on a north-south street, 0.001° apart.
 const at = (k: number): Pt => [38 + k * 0.001, 23.7];
@@ -282,6 +282,13 @@ describe("metro places", () => {
     const any = anyMetro(data);
     expect(any.kind).toBe("metro-any");
     expect(any.pts).toEqual([[37.975, 23.735], [37.969, 23.729]]);
+  });
+
+  it("finds a metro or tram line that joins stations near both ends", () => {
+    const r = metroDirect(data, [[37.9752, 23.7352]], [[37.9692, 23.7292]], 300);
+    expect(r).toMatchObject({ line: "M2", from: "ΣΥΝΤΑΓΜΑ", to: "ΑΚΡΟΠΟΛΗ" });
+    expect(metroDirect(data, [[37.975, 23.735]], [[37.970, 23.738]], 300)).toBeNull();   // ΖΑΠΠΕΙΟ: T6 only, no shared line
+    expect(metroDirect(data, [[37.99, 23.70]], [[37.969, 23.729]], 300)).toBeNull();     // no station near the start
   });
 
   it("names the metro station nearest a point, with its distance", () => {
