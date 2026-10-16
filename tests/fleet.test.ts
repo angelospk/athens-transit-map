@@ -54,6 +54,36 @@ describe("Fleet", () => {
     expect(f.entries.get("040/1")!.track).not.toBeNull();    // the route track still starts
   });
 
+  it("starts moving when a fix shown without a path (zoomed out) comes again with one (zoomed in)", () => {
+    const f = new Fleet();
+    f.city([city(100, T, { path: null })], new Set(), T + 20);   // z 9 tile: no path
+    const still = run(f, T + 20, T + 25);
+    expect(distanceM(still, [lonAt(100), 37.97])).toBeLessThan(1);
+    f.city([city(100, T)], new Set(), T + 25);                    // z 13 tile: same fix, with its path
+    expect(run(f, T + 25.05, T + 25.05)[0]).toBeGreaterThan(lonAt(150));   // at the guess, no race to it
+    const later = run(f, T + 25.1, T + 40);
+    expect(later[0]).toBeGreaterThan(lonAt(250));
+  });
+
+  it("starts moving when a clicked vehicle's line brings the fix the city layer showed without a path", () => {
+    const f = new Fleet();
+    f.city([city(100, T, { path: null })], new Set(), T + 20);
+    run(f, T + 20, T + 25);
+    f.line("040", [{ v: line(100, T), route }], T + 25);         // same position_at, on its route
+    expect(run(f, T + 25.05, T + 25.05)[0]).toBeGreaterThan(lonAt(150));
+    const later = run(f, T + 25.1, T + 40);
+    expect(later[0]).toBeGreaterThan(lonAt(250));
+  });
+
+  it("keeps a moving vehicle's motion when the same fix comes again without a path (zoomed out)", () => {
+    const f = new Fleet();
+    f.city([city(100, T)], new Set(), T + 20);
+    const before = run(f, T + 20, T + 25);
+    f.city([city(100, T, { path: null })], new Set(), T + 25);
+    const next = run(f, T + 25.05, T + 30);
+    expect(next[0]).toBeGreaterThan(before[0]);
+  });
+
   it("does not rewind when the city layer takes a closed line back with an older fix", () => {
     const f = new Fleet();
     f.line("040", [{ v: line(300, T + 30), route }], T + 30);
@@ -225,6 +255,17 @@ describe("Fleet", () => {
       expect(f.entries.get("040/2")!.mover.plan).toBe(cityPlan);
       drive(f, T + 1, T + 60, () => {});
       expect(f.entries.get("040/2")!.mover.pos[0]).toBeLessThanOrEqual(lonAt(500 - GAP_M + 1));
+    });
+    it("a follower that stood for want of a path starts behind the leader, not past it", () => {
+      const f = new Fleet();
+      f.city([city(300, T, { id: "2", speed: 15, path: null })], new Set(), T + 20);
+      f.line("040", [{ v: line(500, T, { id: "1", speed: 0 }), route }, { v: line(300, T, { id: "2", speed: 15 }), route }], T + 25);
+      const fol = f.entries.get("040/2")!;
+      drive(f, T + 25, T + 30, () => {
+        const ds = fol.mover.plan!.geom === route.geom ? 0 : fol.mover.plan!.base!.ds;
+        expect(fol.mover.s + ds).toBeLessThanOrEqual(500 - GAP_M + 1);
+      });
+      expect(fol.mover.pos[0]).toBeGreaterThan(lonAt(450));   // it did start, up to the gap
     });
     it("forgets the tracks of a line that went back to the city layer", () => {
       const f = new Fleet();

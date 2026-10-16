@@ -28,6 +28,7 @@ export interface FleetEntry {
   cls: DelayClass;
   track: Track | null;        // detailed lines only (predict.ts)
   route: RouteGeom | null;
+  guess: boolean;             // the shown motion drives on along a path or route (else it stands at the fix)
 }
 
 export const GAP_M = 25;   // a guess stays this far behind the vehicle ahead on its line
@@ -42,6 +43,9 @@ function toRoute(e: FleetEntry): number | null {
   if (p.base?.geom === r.geom) return p.base.ds;
   return project(r.geom, r.cum, e.mover.pos, e.track?.s).s - e.mover.s;
 }
+
+// Zoomed out, tiles carry no path: the same fix with one (zoomed in, a line's data) is worth taking.
+const hasPath = (v: CityVehicle | Vehicle) => !!(v.path || v.path_beyond);
 
 const ll = (path: [number, number][]) => path.map(([lat, lon]) => [lon, lat] as LngLat);
 
@@ -67,10 +71,11 @@ export class Fleet {
       seen.add(k);
       const old = this.entries.get(k);
       if (old) old.track = old.route = null;   // a closed detailed line: its order no longer applies
-      const e = this.fix(k, v.line, v.id, v, nowSec);
+      const late = !!old && !old.guess && hasPath(v) && old.at === v.position_at;
+      const e = this.fix(k, v.line, v.id, v, nowSec, late);
       if (!e) continue;
       const pos: LngLat = [v.lon, v.lat];
-      this.apply(e, bridge(e.mover, ahead(e.mover.pos, v, pos, nowSec)), nowSec);
+      this.apply(e, bridge(e.mover, ahead(e.mover.pos, v, pos, nowSec)), nowSec, hasPath(v), late);
     }
     for (const [k, e] of this.entries) if (!owned.has(e.line) && !seen.has(k)) this.entries.delete(k);
   }
@@ -95,17 +100,18 @@ export class Fleet {
       e.route = e.track ? route : null;
       // The fix already shown (by the city layer, or this same data again): keep the motion as it
       // is, with any running handoff (no restart on click, no reset of a fading offset).
-      if (sameFix && e.mover.plan && (!e.track || e.track === before)) continue;
+      if (sameFix && e.mover.plan && (e.guess || !(e.track || hasPath(v))) && (!e.track || e.track === before)) continue;
       if (e.track && route) {
         const track = e.track;
         const plan: Plan = { geom: route.geom, cum: route.cum, target: t => predictS(track, t) };
         if (keepRoute && e.mover.plan?.geom === route.geom) e.mover.retarget(plan, nowSec);
         else {
           const h = bridge(e.mover, planOnto(e.mover.pos, plan, nowSec));
-          if (sameFix && !h.fix) continue;   // same fix, different geometry: do not disturb the motion
-          this.apply(e, h, nowSec);
+          if (sameFix && !h.fix && e.guess) continue;   // same fix, different geometry: do not disturb the motion
+          this.apply(e, h, nowSec, true, sameFix);
         }
-      } else this.apply(e, bridge(e.mover, ahead(e.mover.pos, v, pos, nowSec)), nowSec);
+        e.guess = true;
+      } else this.apply(e, bridge(e.mover, ahead(e.mover.pos, v, pos, nowSec)), nowSec, hasPath(v), !!sameFix);
     }
     for (const [k, e] of this.entries) if (e.line === line && !seen.has(k)) this.entries.delete(k);
   }
@@ -141,7 +147,7 @@ export class Fleet {
     let e = this.entries.get(k);
     if (!e) {
       e = { key: k, line, id, mover: new Mover(pos), at: v.position_at, pos, prev: null, moved: null, standing: 2, bearing: v.bearing,
-        variant: v.variant, cls: delayClass(v.delay_s), track: null, route: null };
+        variant: v.variant, cls: delayClass(v.delay_s), track: null, route: null, guess: false };
       this.entries.set(k, e);
       return e;
     }
@@ -162,9 +168,15 @@ export class Fleet {
     return e;
   }
 
-  // A new entry starts where its plan says (no glide from nowhere); others hand over.
-  private apply(e: FleetEntry, h: Handoff, nowSec: number) {
+  // A new entry starts where its plan says (no glide from nowhere); so does one that stood at a fix
+  // only for want of a path (`late`: that fix again, now with one; a race to the guess would skip
+  // stops). It snaps on its next step, so the spacing cap holds it behind the vehicle ahead.
+  // Others hand over.
+  private apply(e: FleetEntry, h: Handoff, nowSec: number, guess: boolean, late = false) {
+    const start = late && !e.guess && guess;
+    e.guess = guess;
     if (!e.mover.plan) e.mover.setPlan(h.plan, h.plan.target(nowSec), nowSec);
     else e.mover.apply(h, nowSec);
+    if (start) e.mover.snap();
   }
 }
