@@ -5,6 +5,7 @@
   import { clock, duration, fmtMinutes } from "../format";
   import { refreshCycle, ringAt } from "../refresh";
   import { STALE_S, type AppState } from "../state.svelte";
+  import Bell from "./Bell.svelte";
   import HelpPop from "./HelpPop.svelte";
   import LinePicker from "./LinePicker.svelte";
   import MetroToggles from "./MetroToggles.svelte";
@@ -200,7 +201,7 @@
     {#if app.alert}
       {@const a = app.alert}
       <div class="focus">
-        <span>🔔 {a.lines.map(l => l.line).join(", ")} · {a.n === 1 ? "στην προηγούμενη στάση" : `${a.n} στάσεις πριν`} · έως {clock(a.until).slice(0, 5)}</span>
+        <span><Bell /> {a.lines.map(l => l.line).join(", ")} · {a.n === 1 ? "στην προηγούμενη στάση" : `${a.n} στάσεις πριν`} · έως {clock(a.until).slice(0, 5)}</span>
         <button type="button" title="Τέλος ειδοποίησης" aria-label="Σταμάτα την ειδοποίηση" onclick={() => app.setAlert(null)}>×</button>
       </div>
     {/if}

@@ -13,6 +13,7 @@
   import { canPush, startPush, stopPush } from "../push";
   import { encodeAlert, type Rep } from "../tglink";
   import type { AppState } from "../state.svelte";
+  import Bell from "./Bell.svelte";
   import { alertTargets, anyMetro, boardings, centre, distM, findTransfers, findTrips, geocode, legTrip, loadTripIndex, metroDirect, metroPlaces, nearestStation, places, searchPlaces,
     suggest, termini, toggleTripLine, type Pt, type TripIndex, type TripLine, type TripTransfer } from "../trip";
 
@@ -367,7 +368,7 @@
     <div class="row">
       <button type="button" class="summary" aria-expanded="false" onclick={() => (folded = false)}>
         <b>{from.label} → {to.label}</b>
-        <small>{#if trips.length}{trips.length} {trips.length === 1 ? "γραμμή" : "γραμμές"}{#if trips.length > MAX_LINES} · {MAX_LINES} στον χάρτη{/if}{:else if xfers.length}με μία αλλαγή{/if}{#if app.alert} · 🔔{/if}</small>
+        <small>{#if trips.length}{trips.length} {trips.length === 1 ? "γραμμή" : "γραμμές"}{#if trips.length > MAX_LINES} · {MAX_LINES} στον χάρτη{/if}{:else if xfers.length}με μία αλλαγή{/if}{#if app.alert} · <Bell label="ειδοποίηση" />{/if}</small>
         {#if onMap.length || xferLines.length}
           <span class="lines">
             {#each onMap as t (t.line)}
@@ -478,14 +479,14 @@
         <div class="alert">
           {#if app.alert}
             {@const a = app.alert}
-            <span>🔔 {a.lines.map(l => l.line).join(", ")}: έως {a.n} {a.n === 1 ? "στάση" : "στάσεις"} πριν από {a.label}{a.push ? ", και με κλειστή σελίδα" : ""}.</span>
+            <span><Bell /> {a.lines.map(l => l.line).join(", ")}: έως {a.n} {a.n === 1 ? "στάση" : "στάσεις"} πριν από {a.label}{a.push ? ", και με κλειστή σελίδα" : ""}.</span>
             <button type="button" class="link" onclick={() => app.setAlert(null)}>Ακύρωση</button>
             {#if tgLink}<a class="bell tg" href={tgLink} target="_blank" rel="noopener">Στο Telegram</a>{/if}
           {:else if data.stale}
             <small>Ειδοποίηση: όχι με παλιά δεδομένα στάσεων.</small>
           {:else}
             <button type="button" class="lead" aria-expanded={alertOpen} aria-controls="trip-alert" onclick={() => (alertOpen = !alertOpen)}>
-              🔔 Ειδοποίηση
+              <Bell /> Ειδοποίηση
               <svg viewBox="0 0 12 8" width="12" height="8" aria-hidden="true" class:up={alertOpen}><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
             </button>
           {/if}
