@@ -1,7 +1,7 @@
 # athens-transit-map
 
 **Live map:** https://bus.haroldpoi.dev · **Public API (no key):** https://transit.haroldpoi.dev/v1/status ·
-**45 s demo:** <!-- TODO(Harold): demo video URL here, and DEMO_VIDEO_URL in src/lib/config.ts --> _video coming soon_
+**50 s demo (Greek):** [github.com/angelospk/athens-transit-map/releases/tag/demo-video-1](https://github.com/angelospk/athens-transit-map/releases/tag/demo-video-1)
 
 ## At a glance
 
@@ -126,7 +126,7 @@ bun run build      # static site in dist/
 | `VITE_API_BASE` | `https://transit.haroldpoi.dev` | Live API (`/v1/lines/{id}`, `/v1/status`) |
 | `VITE_STATIC_BASE` | `https://angelospk.github.io/athens-transit-rt/static/v1` | Static data (`lines.json`, `lines/{id}.json`) |
 | `VITE_GEOCODE_URL` | `https://photon.komoot.io/api/` | Area and street search of the trip planner (Photon API) |
-| `VITE_DEMO_VIDEO_URL` | `DEMO_VIDEO_URL` in `src/lib/config.ts` (empty) | Demo video linked from the "no connection" banner; empty: no link |
+| `VITE_DEMO_VIDEO_URL` | `DEMO_VIDEO_URL` in `src/lib/config.ts` (the demo release) | Demo video linked from the "no connection" banner; empty: no link |
 | `VITE_MOCK` | unset | `1` = answer every request from `src/fixtures/` (moving vehicles, 30 s cycle) |
 
 Mock code and fixtures are not included in production builds.
