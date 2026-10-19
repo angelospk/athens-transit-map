@@ -1,0 +1,8 @@
+node_modules
+capture/frames
+public/cap/*.mp4
+public/mix.wav
+out
+frames
+audio/*.wav
+audio/track
