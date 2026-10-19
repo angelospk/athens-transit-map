@@ -12,5 +12,5 @@
   each capture; a drawn cursor with click ripples. Rounded windows (28 px) on the ink stage; ink plates (94 %)
   behind any type over the map.
 - **Motion vocabulary:** out-expo arrivals, in-expo exits, inOut cubic camera; clip-path hand-offs between a
-  window rect and the full frame; ring pulses on beats. 120 BPM: every scene starts on a beat (30 frames).
+  window rect and the full frame; ring pulses on beats. 72 BPM (the track's measured tempo): every scene starts on a beat (50 frames).
 - **Style frames:** `frames/s16-*.jpg`, `frames/s9-*.jpg` (stills from the code).

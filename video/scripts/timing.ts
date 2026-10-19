@@ -25,8 +25,8 @@ keys("planner", planner.marks.fromType, 8, 5); keys("planner", planner.marks.toT
 for (const m of ["enter0", "enter1", "enter2"]) push(at("follow", follow.marks[m]), "pop");
 push(at("planner", planner.marks.alert) , "chimeNotify");
 // Ring pulses (hook beats, ring dive, end) and the curl command typing.
-for (const b of [30, 60, 90, 120]) push(b, "ping");
-for (const d of [0, 30, 60, 90]) push(SCENES.ring[0] + 205 + d, "ping");
+for (const b of [0, 50, 100, 150]) push(b, "ping");
+for (const d of [0, 50, 100]) push(SCENES.ring[0] + 200 + d, "ping");
 for (let k = 0; k < 41; k += 4) push(SCENES.api[0] + API_T.type + k, "tick");
 push(SCENES.api[0] + API_T.json, "pop");
 for (const h of API_T.hl) push(SCENES.api[0] + h, "tick");
@@ -34,8 +34,11 @@ push(SCENES.api[0] + API_T.token - 30, "pop");
 push(SCENES.end[0] + 4, "chimeEnd");
 
 const timing = {
-  fps: 60, bpm: 120, beatFrames: 30, durationInFrames: DURATION,
+  fps: 60, bpm: 72, beatFrames: 50, durationInFrames: DURATION,
   drop: SCENES.city[0], lift: [SCENES.follow[0], SCENES.planner[1]], endLogo: SCENES.end[0],
+  // Music: audio/mix_track.py plays track [0.57 s, +40 s] then the track's ending from 120.57 s, joined on a downbeat at
+  // the api cut; the track's final hit (126.41 s) lands on the end card.
+  music: { file: "audio/track/lvymusic-calm-digital-technology-background-121521.mp3", headFrom: 0.57, splice: SCENES.api[0], tailFrom: 120.57 },
   scenes: SCENES, sfx: sfx.sort((a, b) => a[0] - b[0]),
   whoosh: (Object.keys(SCENES) as SceneId[]).slice(1).map(id => SCENES[id][0]),
 };

@@ -13,6 +13,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 T = json.loads((ROOT / "timing.json").read_text())
+SFX_ONLY = "--sfx-only" in sys.argv   # the score comes from a licensed track (audio/mix_track.py)
 OUT = ROOT / "audio"
 LIFT = (T["lift"][0] / T["fps"], T["lift"][1] / T["fps"])
 SR = 48000
@@ -290,6 +291,10 @@ music_st[:, 1] += -0.15 * hats + 0.1 * pluck
 peak = np.max(np.abs(music_st))
 music_st *= 0.5 / peak
 sfx_st = stereo(sfx) * (0.5 / peak)
+if SFX_ONLY:
+    write(OUT / "sfx.wav", stereo(sfx / np.max(np.abs(sfx)) * 0.5))
+    print("sfx only", N / SR, "s")
+    sys.exit(0)
 write(OUT / "music.wav", music_st)
 write(OUT / "sfx.wav", sfx_st)
 write(OUT / "mix_raw.wav", music_st + sfx_st)

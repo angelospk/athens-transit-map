@@ -15,4 +15,5 @@
 | r7 | bell plate leaves before the window shrinks; nbsp "σε πάνε."; API headline + "Χωρίς κλειδί." on one baseline | holds > 0.5 s: none; −14.0 LUFS, −1.9 dBTP |
 | scout on r7 | caption box outlived its text by 2 frames before the 1440 and 1710 cuts | one more pass |
 | r8 (final) | plates leave together with their words; capture clock steps by rounded running target; empty-API guard | no freeze, no black; −14.0 LUFS, −1.9 dBTP; exits checked frame by frame |
-| reviews | Codex REVISE → fixed (Playwright browser install documented, clock drift, empty API); CodeRabbit 2 minor → fixed (brief length, browser closed in `finally`, clear error when no 040 vehicle) | — |
+| reviews (r8) | Codex REVISE → fixed (Playwright browser install documented, clock drift, empty API); CodeRabbit 2 minor → fixed (brief length, browser closed in `finally`, clear error when no 040 vehicle) | — |
+| r9–r11 (music) | Harold: the numpy score sounded like the Roomly film. New music: lvymusic "Calm Digital Technology Background" (72.0 BPM measured). Picture re-timed to a 50-frame beat (50.5 → 50.0 s, every cut on a beat); head 0.57–40.57 s + track ending from 120.57 s, spliced on a downbeat at the api cut; final hit on the end card (frame 2750). Hook pulses made continuous (r9 had 0.8 s holds) | holds > 0.5 s: none; −14.0 LUFS |
