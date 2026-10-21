@@ -17,6 +17,7 @@ export interface Vehicle {
   path?: [number, number][] | null;    // route ahead of the vehicle, [lat, lon]
   path_beyond?: [number, number][] | null;   // rev 4: on from path's end to the third stop
   path_stops?: number[] | null;              // rev 4: metres along path + path_beyond of each stop
+  path_speeds?: (number | null)[] | null;    // rev 6: typical m/s per 200 m step ahead
 }
 
 export interface LineLive {
@@ -40,6 +41,7 @@ export interface CityVehicle {
   path: [number, number][] | null;
   path_beyond?: [number, number][] | null;   // rev 4
   path_stops?: number[] | null;              // rev 4
+  path_speeds?: (number | null)[] | null;    // rev 6: typical m/s per 200 m step ahead
 }
 
 export interface CityLive {

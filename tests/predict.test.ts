@@ -3,7 +3,7 @@ import { distanceM } from "../src/lib/glide";
 import {
   headingAt, pointAt, predictS, projectCandidates, stopOffsets, updateTrack, type Route, type Sample, type Track,
 } from "../src/lib/predict";
-import { drive, NO_SPEED } from "../src/lib/motion";
+import { drive, NO_SPEED, walk } from "../src/lib/motion";
 
 // Shapes are [lat, lon]. 0.01° lon at 37.97° ≈ 877 m.
 const M = 877.4;
@@ -53,6 +53,16 @@ describe("updateTrack", () => {
     expect(t1.speed).toBeNull();
     const t2 = updateTrack(t1, sample(at(0.5), 1030), r, 1035)!;
     expect(t2.speed).toBeCloseTo((0.3 * M) / 30, 1);
+  });
+  it("keeps the backend's step speeds of a fresh fix, not of a late or held one", () => {
+    const t1 = updateTrack(null, sample(at(0.2), 1000, { steps: [5, null] }), r, 1005)!;
+    expect(t1.steps).toEqual([5, null]);
+    const t2 = updateTrack(t1, sample(at(0.5), 1030, { steps: [6] }), r, 1035)!;
+    expect(t2.steps).toEqual([6]);
+    expect(updateTrack(t2, sample(at(0.6), 1040, { steps: [6] }), r, 1040 + 3600)!.steps ?? null).toBeNull();
+    const held = updateTrack(null, sample([23.705, 37.970005], 1000, { steps: [5] }), route(outBack), 1005)!;
+    expect(held.alts).toBeDefined();
+    expect(held.steps ?? null).toBeNull();
   });
   it("ignores repeated and older samples", () => {
     const t1 = updateTrack(updateTrack(null, sample(at(0.2), 1000), r, 1005), sample(at(0.5), 1030), r, 1035)!;
@@ -127,6 +137,12 @@ describe("predictS", () => {
     expect(predictS({ ...track, speed: 0 }, 1010)).toBe(500);
     expect(predictS({ ...track, speed: null, alts: [500, 1500] }, 1010)).toBe(500);
     expect(predictS(track, 990)).toBe(500);
+  });
+  it("walks the backend's typical step speeds when it has them (contract rev 6)", () => {
+    const t: Track = { ...track, steps: [4, null, 6] };
+    expect(predictS(t, 1100)).toBeCloseTo(500 + walk([4, null, 6], 10, 2 * M - 500)(100), 6);
+    expect(predictS({ ...t, speed: null }, 1100)).toBeCloseTo(500 + walk([4, null, 6], NO_SPEED, 2 * M - 500)(100), 6);
+    expect(predictS({ ...t, steps: [] }, 1010)).toBeCloseTo(500 + drive(10, [400, 800], 2 * M - 500)(10), 6);
   });
 });
 

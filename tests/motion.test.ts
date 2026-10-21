@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { distanceM, type LngLat } from "../src/lib/glide";
 import {
   bridge, CATCH_MAX, chase, cumulativeLL, drive, DWELL_S, GLIDE_MAX_S, GLIDE_S, glideS, holdM, HORIZON_S, linePlan, MIN_CRUISE, Mover, PACE,
-  pathPlan, pointAtLL, project, subLine, TRAIL_S, type Plan,
+  pathPlan, pointAtLL, project, STEP_M, subLine, TRAIL_S, walk, type Plan,
 } from "../src/lib/motion";
 
 // 0.01° lon at 37.97° ≈ 877 m. Geometry here is [lon, lat].
@@ -460,5 +460,36 @@ describe("bridge", () => {
     const fresh = new Mover(onBent(M + 400));                     // no plan yet
     const h = linePlan(fresh.pos, onBent(200), 0);
     expect(bridge(fresh, h)).toBe(h);
+  });
+});
+
+describe("walk (contract rev 6 path_speeds)", () => {
+  it("moves at each 200 m step's speed, then at the fallback", () => {
+    expect(STEP_M).toBe(200);
+    const f = walk([4, 2], 1, 1000);
+    expect(f(10)).toBeCloseTo(40, 6);
+    expect(f(50)).toBeCloseTo(200, 6);
+    expect(f(60)).toBeCloseTo(220, 6);
+    expect(f(150)).toBeCloseTo(400, 6);
+    expect(f(160)).toBeCloseTo(410, 6);               // past the steps: fallback
+  });
+  it("takes a null step at the fallback; a zero fallback stands there", () => {
+    const f = walk([null, 5], 2, 1000);
+    expect(f(100)).toBeCloseTo(200, 6);
+    expect(f(110)).toBeCloseTo(250, 6);
+    expect(walk([null], 0, 1000)(50)).toBe(0);
+    expect(walk([3, null], 0, 1000)(500)).toBeCloseTo(200, 6);
+  });
+  it("stops at the end and after the horizon; nothing before the fix", () => {
+    expect(walk([10], 10, 150)(100)).toBeCloseTo(150, 6);
+    expect(walk([1], 1, 1e4)(HORIZON_S + 100)).toBeCloseTo(HORIZON_S, 6);
+    expect(walk([4], 4, 1000)(-5)).toBe(0);
+  });
+  it("is what pathPlan drives when the vehicle has path_speeds (no stop waits)", () => {
+    const end = cumulativeLL(east)[2];
+    const r = pathPlan(atM(0), east, 15, 1000, 1000, [400], [6, 3]);
+    expect(r.plan.target(1040)).toBeCloseTo(walk([6, 3], 15, end)(40), 5);
+    expect(pathPlan(atM(0), east, 15, 1000, 1000, [400], null).plan.target(1040)).toBeCloseTo(drive(15, [400], end)(40), 5);
+    expect(pathPlan(atM(0), east, 15, 1000, 1000, [400], []).plan.target(1040)).toBeCloseTo(drive(15, [400], end)(40), 5);
   });
 });

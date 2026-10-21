@@ -120,6 +120,34 @@ const segModel = (own: number, byHour = true, h = 180) => (c: Ctx) => {
   return (t: number) => out[Math.min(h, Math.max(0, Math.round(t - A.at)))];
 };
 
+// What the backend would send (contract rev 5 draft): m/s per 200 m step measured from the vehicle,
+// up to 1500 m (time-weighted from the table's bins); the map walks the steps. cap3: stop at the
+// third stop, like the city layer's path.
+const STEP_M = 200, STEPS = 8;
+const segSteps = (cap3: boolean, h = 180) => (c: Ctx) => {
+  const A = last(c.hist), hk = hourKey(A.at), sp: (number | null)[] = [];
+  for (let k = 0; k < STEPS; k++) {
+    let t = 0, known = false;
+    for (let a = A.s + k * STEP_M, b = a + STEP_M; a < b;) {
+      const bin = Math.floor(a / BIN_M), e = Math.min(b, (bin + 1) * BIN_M), v = segV(c.run.variant, bin, hk);
+      if (v != null) known = true;
+      t += (e - a) / Math.max(v ?? A.speed ?? NO_SPEED, 0.1);
+      a = e;
+    }
+    sp.push(known ? STEP_M / t : null);
+  }
+  const ahead = c.run.stopS.filter(x => x > A.s + 15);
+  const end = Math.min(c.run.endS, A.s + STEP_M * STEPS, cap3 && ahead.length >= 3 ? ahead[2] : Infinity);
+  const out = [A.s];
+  let s = A.s;
+  for (let i = 1; i <= h; i++) {
+    const v = sp[Math.floor((s - A.s) / STEP_M)];
+    s = Math.min(end, s + (v ?? A.speed ?? NO_SPEED));
+    out.push(s);
+  }
+  return (t: number) => out[Math.min(h, Math.max(0, Math.round(t - A.at)))];
+};
+
 function shipped(c: Ctx, maxStops: number, minCruise = MIN_CRUISE, speed?: number) {
   const A = last(c.hist), ahead = c.run.stopS.filter(x => x > A.s + 15).map(x => x - A.s);
   const end = ahead.length > maxStops ? ahead[maxStops - 1] : c.run.endS - A.s;
@@ -156,6 +184,8 @@ export const MODELS: Model[] = [
     { name: "SEG hist, hour of week", predict: segModel(0) },
     { name: "SEG hist, all hours", predict: segModel(0, false) },
     { name: "SEG hist + own 1:1", predict: segModel(0.5) },
+    { name: "SEG steps from vehicle, 1500 m", predict: segSteps(false) },
+    { name: "SEG steps from vehicle, to 3rd stop", predict: segSteps(true) },
     // What could ship: the mean speed of the next 180 s of bins, fed into drive (visible stops).
     ...[1, 0.85].map(pace => ({
       name: `SEG speed into drive, pace ${pace}`,

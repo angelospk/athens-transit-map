@@ -61,6 +61,8 @@ ahead) and `jump` (how far the guess moves when the next fix arrives: the visibl
 | 2026-10-06 | 4 h, Tue 11:19-15:30 | min cruise 3/4/5/6/8 m/s, rest as longer waits at stops (Harold: "it does not stop at stops" on slow lines) | 194/199/211/227/266 vs 197; test 173 vs 173 | 3 m/s (same score, visible stops) |
 | 2026-10-21 | history 2026-10-06..20 (`variant` = shape id; Codex review fixed route_code, `s_m` -1 rows); table from tune days 06-15, test 8 one-hour windows 16-20 | SEG: walk 200 m bins at their historical mean speed per hour of week (TheTransitClock / Swiftly historical average) | test 144 vs SHIP 204 | wins (proposed, not shipped) |
 | 2026-10-21 | same | SEG all hours / SEG + own speed 1:1 | test 165 / 164 | no (hour of week and pure table are better) |
+| 2026-10-21 | same | SEG as the backend sends it: 200 m steps from the vehicle, up to 1.6 km / to the 3rd stop (city layer) | test 146 / 154 | yes: shipped as contract rev 6 `path_speeds` |
+| 2026-10-21 | table from 7 days (09-15) instead of 10 | SEG hour of week / steps | test 153 / 155 (5 windows; SHIP 217) | data amount barely matters |
 | 2026-10-21 | same | SEG mean speed of the next 180 s fed into `drive` (stops stay visible), pace 1 / 0.85 | test 184 / 184 | no: averaging loses most of the gain |
 
 ## Round 2026-10-21 (two weeks of history)
@@ -97,7 +99,7 @@ Fri 12:00 and Sat 00:00 were left out (1074 and 2108 cases: feed gaps); SEG also
   `SEG_TABLE=r/seg_tune.json bun lab/motion/prepare.ts r/t_<name>` (windows: `r/run.sh`; raw output: `r/test_results.txt`).
 - To ship: the table (1.3 M keys, 34 MB as JSON) cannot go to the browser. The backend would build it
   from its own history and send per vehicle the expected time to each point of `path`/`path_beyond`
-  (contract rev 5); the map walks that profile. Not started: Harold decides.
+  (contract rev 6 `path_speeds`, 200 m steps from the vehicle); the map walks that profile. Harold chose it on 2026-10-21, without the visible stop waits.
 
 ## Results
 

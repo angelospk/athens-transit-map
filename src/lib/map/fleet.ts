@@ -50,12 +50,12 @@ const hasPath = (v: CityVehicle | Vehicle) => !!(v.path || v.path_beyond);
 const ll = (path: [number, number][]) => path.map(([lat, lon]) => [lon, lat] as LngLat);
 
 // Along the backend `path` and its continuation `path_beyond` (rev 4; it starts at path's end, or
-// at the vehicle when path is null) when there is one, without a speed slowly; else straight to
-// the fix.
+// at the vehicle when path is null) when there is one: its typical step speeds (`path_speeds`, rev 6)
+// when given, else without a speed slowly; else straight to the fix.
 function ahead(shown: LngLat, v: CityVehicle | Vehicle, pos: LngLat, nowSec: number) {
   const geom = v.path && v.path_beyond ? [...v.path, ...v.path_beyond.slice(1)] : v.path ?? v.path_beyond;
   return geom
-    ? pathPlan(shown, ll(geom), v.speed ?? NO_SPEED, v.position_at, nowSec, v.path_stops ?? [])
+    ? pathPlan(shown, ll(geom), v.speed ?? NO_SPEED, v.position_at, nowSec, v.path_stops ?? [], v.path_speeds)
     : linePlan(shown, pos, v.bearing);
 }
 
@@ -94,7 +94,7 @@ export class Fleet {
       const before = e.track;
       e.track = route
         ? updateTrack(e.route === route ? e.track : null,
-          { pos, at: v.position_at, key: `${v.variant}/${v.trip_id}`, speed: v.speed }, route.route, nowSec)
+          { pos, at: v.position_at, key: `${v.variant}/${v.trip_id}`, speed: v.speed, steps: v.path_speeds }, route.route, nowSec)
         : null;
       const keepRoute = e.route === route && !!before && before.key === e.track?.key;
       e.route = e.track ? route : null;
