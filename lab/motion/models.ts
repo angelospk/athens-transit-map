@@ -2,7 +2,9 @@
 // A model gets what the map knows when fix A arrives and returns s(t): metres along the shape
 // at GPS time t. Times are unix seconds.
 
+import { readFileSync } from "node:fs";
 import { drive, MIN_CRUISE, NO_SPEED } from "../../src/lib/motion";
+import { BIN_M, hourKey } from "./segspeed";
 
 // The pre-2026-10-06 guess (src/lib/motion.ts aheadM), kept for the baseline.
 const aheadM = (v: number, dt: number) => v * 60 * (1 - Math.exp(-Math.min(Math.max(dt, 0), 150) / 60));
@@ -95,10 +97,33 @@ const ownMean = (w: number) => (c: Ctx): number | null => {
   return Math.max(0, Math.min(20, (A.s - old.s) / (A.at - old.at)));
 };
 
-function shipped(c: Ctx, maxStops: number, minCruise = MIN_CRUISE) {
+// 2026-10-21: historical speed per 200 m bin and hour of week (TheTransitClock / Swiftly
+// historical average), from a table built on the tune days only (segspeed.ts; SEG_TABLE=<file>).
+// Walk the bins ahead at their mean speed (waits included); `own` blends in the vehicle's speed.
+const segTable: Record<string, [number, number]> | null = process.env.SEG_TABLE ? JSON.parse(readFileSync(process.env.SEG_TABLE, "utf8")) : null;
+const segV = (variant: string, bin: number, hk: string | null): number | null => {
+  for (const k of hk ? [`${variant}:${bin}:${hk}`, `${variant}:${bin}:*`] : [`${variant}:${bin}:*`]) {
+    const c = segTable?.[k];
+    if (c && c[1] >= 60) return c[0] / c[1];
+  }
+  return null;
+};
+const segModel = (own: number, byHour = true, h = 180) => (c: Ctx) => {
+  const A = last(c.hist), hk = byHour ? hourKey(A.at) : null, out = [A.s];
+  let s = A.s;
+  for (let i = 1; i <= h; i++) {
+    const hv = segV(c.run.variant, Math.floor(s / BIN_M), hk), v = A.speed;
+    const sp = hv == null ? (v ?? NO_SPEED) : v == null ? hv : own * v + (1 - own) * hv;
+    s = Math.min(c.run.endS, s + sp);
+    out.push(s);
+  }
+  return (t: number) => out[Math.min(h, Math.max(0, Math.round(t - A.at)))];
+};
+
+function shipped(c: Ctx, maxStops: number, minCruise = MIN_CRUISE, speed?: number) {
   const A = last(c.hist), ahead = c.run.stopS.filter(x => x > A.s + 15).map(x => x - A.s);
   const end = ahead.length > maxStops ? ahead[maxStops - 1] : c.run.endS - A.s;
-  const f = drive(A.speed ?? NO_SPEED, maxStops === Infinity ? ahead : ahead.slice(0, maxStops - 1), end, undefined, minCruise);
+  const f = drive(speed ?? A.speed ?? NO_SPEED, maxStops === Infinity ? ahead : ahead.slice(0, maxStops - 1), end, undefined, minCruise);
   return (t: number) => A.s + f(t - A.at);
 }
 
@@ -127,4 +152,17 @@ export const MODELS: Model[] = [
   { name: "stops own+peer 0.85 (LastVehicle)", predict: profile(0.85, 15, 180, 1.5, 1, blended) },
   { name: "stops mean300 0.85", predict: profile(0.85, 15, 180, 1.5, 1, ownMean(300)) },
   { name: "kalman 0.85 h180 fb1.5", predict: constant(0.85, 180, 1.5, kalmanSpeed) },
+  ...(segTable ? [
+    { name: "SEG hist, hour of week", predict: segModel(0) },
+    { name: "SEG hist, all hours", predict: segModel(0, false) },
+    { name: "SEG hist + own 1:1", predict: segModel(0.5) },
+    // What could ship: the mean speed of the next 180 s of bins, fed into drive (visible stops).
+    ...[1, 0.85].map(pace => ({
+      name: `SEG speed into drive, pace ${pace}`,
+      predict: (c: Ctx) => {
+        const A = last(c.hist), v = (segModel(0)(c)(A.at + 180) - A.s) / 180;
+        return shipped(c, 3, MIN_CRUISE, v / (0.85 / pace));
+      },
+    })),
+  ] : []),
 ];
