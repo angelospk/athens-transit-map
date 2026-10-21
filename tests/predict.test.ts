@@ -64,6 +64,17 @@ describe("updateTrack", () => {
     expect(held.alts).toBeDefined();
     expect(held.steps ?? null).toBeNull();
   });
+  it("takes the step speeds of a fix it already has when they come only now (a restarted backend)", () => {
+    const t1 = updateTrack(null, sample(at(0.2), 1000), r, 1005)!;
+    const t2 = updateTrack(t1, sample(at(0.2), 1000, { steps: [5, null] }), r, 1010)!;
+    expect(t2).not.toBe(t1);
+    expect(t2.steps).toEqual([5, null]);
+    expect(t2.s).toBe(t1.s);
+    expect(t2.at).toBe(t1.at);
+    expect(updateTrack(t2, sample(at(0.2), 1000, { steps: [5, null] }), r, 1015)).toBe(t2);
+    expect(updateTrack(t2, sample(at(0.2), 1000), r, 1015)).toBe(t2);   // not dropped by a sample without
+    expect(updateTrack(t1, sample(at(0.2), 1000, { steps: [5] }), r, 1000 + 3600)).toBe(t1);   // late: no steps
+  });
   it("ignores repeated and older samples", () => {
     const t1 = updateTrack(updateTrack(null, sample(at(0.2), 1000), r, 1005), sample(at(0.5), 1030), r, 1035)!;
     expect(updateTrack(t1, sample(at(0.5), 1030), r, 1040)).toBe(t1);

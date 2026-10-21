@@ -107,7 +107,9 @@ export class Fleet {
         if (keepRoute && e.mover.plan?.geom === route.geom) e.mover.retarget(plan, nowSec);
         else {
           const h = bridge(e.mover, planOnto(e.mover.pos, plan, nowSec));
-          if (sameFix && !h.fix && e.guess) continue;   // same fix, different geometry: do not disturb the motion
+          // Same fix, different geometry: do not disturb the motion, unless the fix brought step speeds only now.
+          const newSteps = !!track.steps?.length && !before?.steps?.length;
+          if (sameFix && !h.fix && e.guess && !newSteps) continue;
           this.apply(e, h, nowSec, true, sameFix);
         }
         e.guess = true;

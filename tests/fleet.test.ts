@@ -167,6 +167,30 @@ describe("Fleet", () => {
     expect(f.entries.size).toBe(2);
   });
 
+  it("walks the step speeds that come only with a fix it already shows (a restarted backend)", () => {
+    const f = new Fleet();
+    f.line("040", [{ v: line(100, T), route }], T + 20);
+    run(f, T + 20, T + 25);
+    const crawl = { path_speeds: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1] };
+    f.line("040", [{ v: line(100, T, crawl), route }], T + 25);   // same position_at, now with path_speeds
+    expect(f.entries.get("040/1")!.track!.steps).toEqual(crawl.path_speeds);
+    const a = run(f, T + 25.05, T + 30), b = run(f, T + 30.05, T + 45);
+    expect(distanceM(a, b)).toBeLessThan(10);   // crawls at the typical speed, not at its own 8 m/s
+  });
+
+  it("walks the step speeds that come only with the line's second copy of a fix the city layer showed", () => {
+    const f = new Fleet();
+    f.city([city(100, T)], new Set(), T + 20);
+    run(f, T + 20, T + 25);
+    f.line("040", [{ v: line(100, T), route }], T + 25);          // same fix: the city plan goes on
+    const shown = run(f, T + 25.05, T + 30);
+    const crawl = { path_speeds: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1] };
+    f.line("040", [{ v: line(100, T, crawl), route }], T + 30);   // and again, now with path_speeds
+    expect(distanceM(shown, run(f, T + 30.05, T + 30.05))).toBeLessThan(1.5);   // hands over, no jump
+    const a = run(f, T + 30.1, T + 35), b = run(f, T + 35.05, T + 50);
+    expect(distanceM(a, b)).toBeLessThan(10);
+  });
+
   it("does not disturb a running handoff when the same line data comes again", () => {
     const f = new Fleet();
     const north: [number, number][] = [[37.97015, lonAt(100)], [37.97015, lonAt(1100)]];

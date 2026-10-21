@@ -113,10 +113,14 @@ const plausible = (from: number, to: number, dt: number) =>
 // Fold a new GPS sample into a vehicle's track. Returns `prev` itself when the sample is not newer.
 // The backend's speed wins over the two-sample one: it comes from a longer history.
 export function updateTrack(prev: Track | null, sample: Sample, route: Route, nowSec: number): Track | null {
-  if (prev && prev.key === sample.key && sample.at <= prev.at) return prev;
+  const late = nowSec - sample.at > MAX_LATE_S;
+  if (prev && prev.key === sample.key && sample.at <= prev.at) {
+    // The same fix, now with the step speeds it came without (a restarted backend): take them.
+    if (sample.at === prev.at && !prev.alts && !late && !prev.steps?.length && sample.steps?.length) return { ...prev, steps: sample.steps };
+    return prev;
+  }
   const cands = projectCandidates(route.shape, sample.pos).map(c => c.s);
   if (!cands.length) return null;
-  const late = nowSec - sample.at > MAX_LATE_S;
   const given = typeof sample.speed === "number" && sample.speed >= 0 && !late ? Math.min(sample.speed, MAX_SPEED) : null;
   const steps = (alts?: number[]) => (alts ? null : late ? null : (sample.steps ?? null));
   const fresh = (s: number, alts?: number[]): Track => ({
