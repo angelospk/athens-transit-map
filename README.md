@@ -1,6 +1,7 @@
 # athens-transit-map
 
-**Live map:** https://bus.haroldpoi.dev · **Public API (no key):** https://transit.haroldpoi.dev/v1/status ·
+**Live map:** https://bus.haroldpoi.dev · **Public API (no key), docs with try-it:**
+[bus.haroldpoi.dev/api](https://bus.haroldpoi.dev/api) (OpenAPI 3.1, base URL `https://transit.haroldpoi.dev`) ·
 **50 s demo (Greek):** [github.com/angelospk/athens-transit-map/releases/tag/demo-video-1](https://github.com/angelospk/athens-transit-map/releases/tag/demo-video-1)
 
 ## At a glance
@@ -33,7 +34,7 @@ map where you could see every bus of the city at once and follow your own lines.
 **One measured result.** The motion model between GPS fixes was chosen offline on recorded fixes: on a held-out
 test split, the median position error fell from 225 m to 122 m ([lab/motion/program.md](lab/motion/program.md)).
 
-Try the API: [`/v1/status`](https://transit.haroldpoi.dev/v1/status) ·
+Try the API ([full reference](https://angelospk.github.io/athens-transit-rt/)): [`/v1/status`](https://transit.haroldpoi.dev/v1/status) ·
 [`/v1/lines/040`](https://transit.haroldpoi.dev/v1/lines/040) (live vehicles of line 040).
 
 ---
