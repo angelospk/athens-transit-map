@@ -6,3 +6,5 @@ out
 frames
 audio/*.wav
 audio/track
+capture/replay
+public/promo-*.wav

@@ -1,0 +1,152 @@
+[
+ {
+  "claim": "1.000+ λεωφορεία στην αιχμή",
+  "source": "stats branch, days 2026-10-20..23: busiest hour 1087 (20/10 09:00), 1049, 1034, 1026 distinct vehicles",
+  "url": "https://raw.githubusercontent.com/angelospk/athens-transit-rt/stats/v1/latest.json"
+ },
+ {
+  "claim": "279 γραμμές / ~1.250 οχήματα τη μέρα",
+  "source": "stats 2026-10-23: \"vehicles\":1251,\"lines\":279; 2026-10-20: 1251, 278",
+  "url": "https://raw.githubusercontent.com/angelospk/athens-transit-rt/stats/v1/latest.json"
+ },
+ {
+  "claim": "Τρ 20/10 · 09:05 (replay of the city layer)",
+  "source": "backend fix history (atrt --history), hourly CSV 2026-10-20T05/06 UTC; 1026 vehicles in the 5 min window, replayed by capture/replay.mjs with the backend's snapshot rule",
+  "url": "file:capture/replay_extract.py"
+ },
+ {
+  "claim": "5 αιτήματα το δευτερόλεπτο στον ΟΑΣΑ",
+  "source": "~/services/atrt/compose.yaml: \"--rps\", \"5\"; /v1/status: \"budget_rps\":5",
+  "url": "https://transit.haroldpoi.dev/v1/status"
+ },
+ {
+  "claim": "ο ΟΑΣΑ απαντά μία γραμμή ανά αίτημα",
+  "source": "README: \"the only live source is an undocumented endpoint that answers one route per request\"",
+  "url": "README.md"
+ },
+ {
+  "claim": "server του ΟΑΣΑ σε PHP",
+  "source": "Harold's brief (2026-10-25): \"the OASA server is PHP so the backend stays gentle\"",
+  "url": "brief"
+ },
+ {
+  "claim": "«Γιατί η Αθήνα δεν έχει GTFS Realtime;» — ερώτηση στο Twitter",
+  "source": "Harold's brief (2026-10-25); the tweet itself is not shown",
+  "url": "brief"
+ },
+ {
+  "claim": "πρωτότυπο σε Python από τον Φοίβο",
+  "source": "README: built on foivospro/athens-gtfs-realtime; GitHub: AUEB-BALab/athens-gtfs-realtime, languages Python 93891 B, MIT",
+  "url": "https://github.com/AUEB-BALab/athens-gtfs-realtime"
+ },
+ {
+  "claim": "όλοι παίρνουν την ίδια απάντηση από την cache, άρα περισσότεροι χρήστες δεν φορτώνουν τον ΟΑΣΑ",
+  "source": "README: \"every user gets the same cached answer (max-age 10 s), so more users add no load on OASA\"",
+  "url": "README.md"
+ },
+ {
+  "claim": "ιστορικό θέσεων στο backend",
+  "source": "compose.yaml: --history --history-max-mb 3000 (hourly CSV, every fix)",
+  "url": "file:~/services/atrt/compose.yaml"
+ },
+ {
+  "claim": "ο κύκλος γεμίζει και κάθε γέμισμα φέρνει νέες θέσεις",
+  "source": "src/lib/ui/Panel.svelte: \"The ring round the panel fills over the refresh cycle of the feed\"",
+  "url": "src/lib/ui/Panel.svelte"
+ },
+ {
+  "claim": "στην ώρα του / 2–5′ / 5–10′ / 10′+ (χρώματα)",
+  "source": "README: \"City vehicles coloured by delay: up to 2′, 2–5′, 5–10′, over 10′, no trip\"; colours from src/app.css",
+  "url": "README.md"
+ },
+ {
+  "claim": "Μόνο με πρόσφατη θέση: κρύβει όσα δεν έστειλαν θέση 1½ λεπτό",
+  "source": "Panel.svelte: \"Μόνο με πρόσφατη θέση — Έστειλαν θέση τα τελευταία 1½ λεπτά.\"",
+  "url": "src/lib/ui/Panel.svelte"
+ },
+ {
+  "claim": "τυπική ταχύτητα ανά δρόμο, από 1,76 εκ. μετρήσεις GPS",
+  "source": "speed legend in the live app: \"6/10–14/10 · 1.762.294 μετρήσεις\"; README: typical (median) bus speed per stop-to-stop segment",
+  "url": "https://bus.haroldpoi.dev"
+ },
+ {
+  "claim": "μετρό, ΗΣΑΠ, τραμ στον χάρτη",
+  "source": "README: Metro, ISAP and tram stations always shown; pin a line to draw its track",
+  "url": "README.md"
+ },
+ {
+  "claim": "αστέρι: οι αγαπημένες μένουν για την επόμενη επίσκεψη",
+  "source": "README: \"Favourite lines: ☆ in the search list; the ★ chips under the search show or hide each one, Όλες shows them all\"; capture p-fav reopens / and the chips are there",
+  "url": "README.md"
+ },
+ {
+  "claim": "Από τη θέση μου ως τον προορισμό: ποιες γραμμές σε πάνε",
+  "source": "README trip planner: \"from where to where (my location, a stop name, an area or a street), and the map shows every line that goes there\"",
+  "url": "README.md"
+ },
+ {
+  "claim": "κοντινότερος σταθμός μετρό",
+  "source": "src/lib/trip.ts: label \"Κοντινότερος σταθμός μετρό\"",
+  "url": "src/lib/trip.ts"
+ },
+ {
+  "claim": "ειδοποίηση στον browser (web push) και στο Telegram",
+  "source": "README: stop alert (system notification, web push via push.haroldpoi.dev) and Telegram alerts via @oasa_bus_bot",
+  "url": "README.md"
+ },
+ {
+  "claim": "κάθε καθημερινή 07:30 — επανάληψη στο Telegram",
+  "source": "TripPlanner.svelte: Επανάληψη \"τις καθημερινές\", Από <time>; bot.ts: \"🔁 Τις καθημερινές HH:MM–HH:MM θα σου γράφω όταν ένα λεωφορείο είναι ...\"",
+  "url": "bot/bot.ts"
+ },
+ {
+  "claim": "μήνυμα ειδοποίησης «Το Χ14 είναι 3 στάσεις πριν από …»",
+  "source": "src/lib/alerts.ts hitText: \"Το ${line} είναι ${left} στάσεις πριν από ${stop}\" (example values, labelled as example)",
+  "url": "src/lib/alerts.ts"
+ },
+ {
+  "claim": "δημόσιο API χωρίς κλειδί: /v1/lines/{id}, /v1/vehicles, /v1/vehicles/tiles, /v1/gtfs-rt/vehicle_positions.pb, /v1/gtfs-rt/trip_updates.pb, /v1/stats, /v1/status",
+  "source": "docs/CONTRACT.md; all answered 200 on 2026-10-25 (curl)",
+  "url": "https://transit.haroldpoi.dev/v1/status"
+ },
+ {
+  "claim": "GTFS-Realtime feed για όλο το δίκτυο",
+  "source": "CONTRACT.md: \"GTFS-Realtime feeds (whole network, for journey planners)\"",
+  "url": "docs/CONTRACT.md"
+ },
+ {
+  "claim": "ανοιχτά δεδομένα: GTFS ΟΑΣΑ και ΣΤΑΣΥ (data.gov.gr), OpenStreetMap",
+  "source": "README: STASY GTFS on data.gov.gr, tracks from OSM (ODbL), OpenFreeMap tiles; InfoDialog: Αρχείο GTFS του ΟΑΣΑ (data.gov.gr)",
+  "url": "README.md"
+ },
+ {
+  "claim": "ανοιχτός κώδικας, MIT, δωρεάν",
+  "source": "LICENSE: MIT (athens-transit-map); GitHub API: athens-transit-rt MIT",
+  "url": "https://github.com/angelospk/athens-transit-map"
+ },
+ {
+  "claim": "backend σε Go",
+  "source": "GitHub API: angelospk/athens-transit-rt language \"Go\", license MIT; README: \"A Go backend (athens-transit-rt)\"",
+  "url": "https://github.com/angelospk/athens-transit-rt"
+ },
+ {
+  "claim": "Cache: Cloudflare, μία απάντηση για όλους",
+  "source": "README: \"Cloudflare cache and one request budget ... every user gets the same cached answer\"",
+  "url": "README.md"
+ },
+ {
+  "claim": "«1009 τώρα» (in-app count during the replay)",
+  "source": "the app's own layers menu in capture p-city (\"Και των άλλων γραμμών · 1009 τώρα\"), city layer fed from the 20/10 09:05 history",
+  "url": "public/cap/p-city.mp4"
+ },
+ {
+  "claim": "αντιστοίχιση θέσεων με το πρόγραμμα",
+  "source": "README: backend \"matches vehicles to scheduled trips\"",
+  "url": "README.md"
+ },
+ {
+  "claim": "Ανοιχτό API · bus.haroldpoi.dev/api (QR)",
+  "source": "Harold (2026-10-25, API docs thread): short link bus.haroldpoi.dev/api → https://angelospk.github.io/athens-transit-rt/ (OpenAPI 3.1 reference, no key); curl -IL 301 → 200 \"athens-transit-rt API\"; QR public/promo-api-qr.svg decoded from the render with jsQR as https://bus.haroldpoi.dev/api",
+  "url": "https://bus.haroldpoi.dev/api"
+ }
+]

@@ -1,0 +1,233 @@
+{
+ "name": "b",
+ "fps": 60,
+ "bpm": 115,
+ "beatFrames": 31.304347826086957,
+ "durationInFrames": 3005,
+ "scenes": {
+  "q": [
+   0,
+   250
+  ],
+  "proto": [
+   250,
+   501
+  ],
+  "pipe": [
+   501,
+   1252
+  ],
+  "scale": [
+   1252,
+   1503
+  ],
+  "live": [
+   1503,
+   1628
+  ],
+  "late": [
+   1628,
+   1753
+  ],
+  "speed": [
+   1753,
+   1878
+  ],
+  "fav": [
+   1878,
+   2003
+  ],
+  "plan": [
+   2003,
+   2129
+  ],
+  "alert": [
+   2129,
+   2254
+  ],
+  "pitch": [
+   2254,
+   2379
+  ],
+  "api": [
+   2379,
+   2755
+  ],
+  "open": [
+   2755,
+   2880
+  ],
+  "end": [
+   2880,
+   3005
+  ]
+ },
+ "music": {
+  "file": "audio/track/the_mountain-tech-corporate-593075.mp3",
+  "license": "Pixabay Content License",
+  "title": "Tech Corporate",
+  "by": "The_Mountain",
+  "url": "https://pixabay.com/music/corporate-tech-corporate-593075/",
+  "headFrom": 0.075,
+  "splice": 2755,
+  "tailFrom": 179.5532608695652
+ },
+ "sfx": [
+  [
+   250,
+   "whoosh"
+  ],
+  [
+   501,
+   "whoosh"
+  ],
+  [
+   1252,
+   "whoosh"
+  ],
+  [
+   1503,
+   "whoosh"
+  ],
+  [
+   1628,
+   "whoosh"
+  ],
+  [
+   1753,
+   "whoosh"
+  ],
+  [
+   1878,
+   "whoosh"
+  ],
+  [
+   1896,
+   "tap"
+  ],
+  [
+   1949,
+   "tap"
+  ],
+  [
+   2003,
+   "whoosh"
+  ],
+  [
+   2045,
+   "tap"
+  ],
+  [
+   2129,
+   "whoosh"
+  ],
+  [
+   2142,
+   "tap"
+  ],
+  [
+   2254,
+   "whoosh"
+  ],
+  [
+   2379,
+   "whoosh"
+  ],
+  [
+   2389,
+   "tick"
+  ],
+  [
+   2392,
+   "tick"
+  ],
+  [
+   2394,
+   "tick"
+  ],
+  [
+   2397,
+   "tick"
+  ],
+  [
+   2399,
+   "tick"
+  ],
+  [
+   2402,
+   "tick"
+  ],
+  [
+   2404,
+   "tick"
+  ],
+  [
+   2407,
+   "tick"
+  ],
+  [
+   2409,
+   "tick"
+  ],
+  [
+   2412,
+   "tick"
+  ],
+  [
+   2414,
+   "tick"
+  ],
+  [
+   2417,
+   "tick"
+  ],
+  [
+   2419,
+   "tick"
+  ],
+  [
+   2422,
+   "tick"
+  ],
+  [
+   2439,
+   "pop"
+  ],
+  [
+   2473,
+   "pop"
+  ],
+  [
+   2496,
+   "pop"
+  ],
+  [
+   2520,
+   "pop"
+  ],
+  [
+   2543,
+   "pop"
+  ],
+  [
+   2567,
+   "pop"
+  ],
+  [
+   2582,
+   "chime"
+  ],
+  [
+   2755,
+   "whoosh"
+  ],
+  [
+   2880,
+   "whoosh"
+  ],
+  [
+   2884,
+   "end"
+  ]
+ ]
+}

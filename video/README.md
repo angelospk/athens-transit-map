@@ -20,3 +20,21 @@ scripts/deliver.sh r1                # out/athens-transit-{16x9,9x16}.mp4, music
 The captures are not in git (≈100 MB); the committed `public/cap/*.json` are the cursor tracks and the API
 answer of the capture used for the current cut. A new capture changes the data; re-check the camera keys in
 `src/Film.tsx` (`BUS`, card rows, planner focus) against the new footage before rendering.
+
+## Promo films (two drafts)
+
+Two ~50 s marketing cuts from the same pipeline: A is a 9:16 product montage (`src/promo/FilmA.tsx`, 103 BPM), B
+is a 16:9 origin story with a diagram and the API (`src/promo/FilmB.tsx`, 115 BPM). Process notes in `promo/`:
+`brief.md`, `facts.json`, `ledger.md`, `HUMAN-CHECK.md`. Music (Pixabay Content License) goes in `audio/track/`
+(paths in `promo/timing-*.json` → `music.file`); it is not in git. The city layer is replayed from the backend's
+fix history, so the map shows a real weekday peak whatever time you capture.
+
+```bash
+docker cp atrt-atrt-1:/var/lib/atrt/history /tmp/hist/            # backend fix history (hourly CSV)
+python3 capture/replay_extract.py /tmp/hist/history 1792476300   # capture/replay/fixes.csv.gz (Tue 20/10 09:05)
+node --dns-result-order=ipv4first capture/promo.mjs city         # one shot: city speed fav plan stats (2-3 at a time)
+bun scripts/promo-timing.ts                                      # promo/timing-{a,b}.json (scenes, sfx, music)
+python3 promo/audio.py a && python3 promo/audio.py b             # public/promo-{a,b}.wav (−14 LUFS)
+for c in a b; do bunx remotion render src/index.ts promo-$c out/$c-r1.mp4 --concurrency=14 --crf=18 --audio-bitrate=256k --log=error; done
+scripts/promo-deliver.sh r1                                      # out/promo/: masters, -web, music-only, contact sheets
+```
