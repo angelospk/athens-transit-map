@@ -62,6 +62,6 @@ build("b", GB, 115, SB as never, SEGS_B as never, DURATION_B, (push, at) => {
   push(at("end") + 4, "cut_hit/sub");
   push(at("end") + 8, "mallet/glock");
 }, { file: "audio/track/the_mountain-tech-corporate-593075.mp3", license: "Pixabay Content License", title: "Tech Corporate", by: "The_Mountain",
-  url: "https://pixabay.com/music/corporate-tech-corporate-593075/", headFrom: 0.075, splice: GB.bar(SB.open[0]), tailFrom: 0.075 + 86 * 4 * 60 / 115,
-  stopDowns: [GB.bar(SB.pitch[0])] },   // the music drops out for 0.35 s before the pitch lands (earshot critique tip)
+  url: "https://pixabay.com/music/corporate-tech-corporate-593075/", headFrom: 0.075, splice: GB.bar(SB.open[0]), tailFrom: 0.075 + 86 * 4 * 60 / 115 },
+  // no stop-downs: Harold heard the 0.35 s drop before the pitch as an abrupt cut; the music stops only at the end
   { tap: "tap/finger", cut: "swish/flick" });
