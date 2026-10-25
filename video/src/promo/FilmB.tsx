@@ -52,7 +52,7 @@ const Phone: React.FC<{ children: React.ReactNode; ys: Pan[]; enter?: number }> 
 // Left-column headline (product scenes).
 const Side: React.FC<{ at: number; until: number; a: string; b?: string; bc?: string; y?: number }> = ({ at, until, a, b, bc = C.muted, y = 330 }) => (
   <div style={{ position: "absolute", left: 120, top: y, width: 900 }}>
-    <Words text={a} at={at} until={until} size={84} />
+    <Words text={a} at={at} until={until} size={a.length > 30 ? 64 : 84} />
     {b && <Words text={b} at={at + BEAT} until={until} size={52} weight={600} color={bc} style={{ marginTop: 22 }} />}
   </div>
 );
@@ -76,14 +76,14 @@ const Proto: React.FC = () => {
   const chip = ease(f, BEAT * 1.2, BEAT * 1.2 + 14) * (1 - ease(f, L - 16, L - 4, inn));
   return (
     <div style={{ position: "absolute", left: 160, right: 160, top: 260 }}>
-      <Words text="Η αρχή: ένα πρωτότυπο σε Python," at={0} until={L - 16} size={84} />
+      <Words text="Αρχικά: ένα πρωτότυπο σε Python," at={0} until={L - 16} size={84} />
       <Words text="από τον Φοίβο." at={BEAT * 0.6} until={L - 16} size={84} color="#ffd36b" style={{ marginTop: 10 }} />
       <div style={{ marginTop: 50, display: "inline-flex", gap: 18, alignItems: "center", padding: "20px 30px", borderRadius: 20, background: "#1c1c1f",
         border: "1px solid rgba(255,255,255,.12)", opacity: chip, transform: `translateY(${(1 - chip) * 20}px)` }}>
         <span style={{ fontFamily: MONO, fontSize: 44, color: C.paper }}>AUEB-BALab/athens-gtfs-realtime</span>
         <span style={{ fontFamily: FONT, fontWeight: 700, fontSize: 38, color: "#ffd36b" }}>Python · MIT</span>
       </div>
-      <Words text="Από εκεί: ένα backend σε Go, για όλη την πόλη." at={BEAT * 2.5} until={L - 16} size={52} weight={600} color={C.muted} style={{ marginTop: 50 }} />
+      <Words text="Το έκανα port σε Go και το hostάρα." at={BEAT * 2.5} until={L - 16} size={52} weight={600} color={C.muted} style={{ marginTop: 50 }} />
     </div>
   );
 };
@@ -141,7 +141,7 @@ const Pipe: React.FC = () => {
   const head = (k: number, a: string, b: string, bc = C.muted) => {
     const at = st[k] + 4, until = (k < 3 ? st[k + 1] : L) - 16;
     return <div key={k} style={{ position: "absolute", left: 140, top: 110, width: 1640 }}>
-      <Words text={a} at={at} until={until} size={76} stagger={2} />
+      <Words text={a} at={at} until={until} size={a.length > 40 ? 60 : 76} stagger={2} />
       <Words text={b} at={at + BEAT * 0.75} until={until} size={46} weight={600} color={bc} stagger={2} style={{ marginTop: 18 }} />
     </div>;
   };
@@ -149,10 +149,10 @@ const Pipe: React.FC = () => {
   const ctr = pB * (1 - out1);
   return (
     <AbsoluteFill style={{ opacity: 1 - out1 }}>
-      {head(0, "Η πηγή: ο server του ΟΑΣΑ.", "PHP. Απαντά μία γραμμή ανά αίτημα.")}
-      {head(1, "Ευγενικά: 5 αιτήματα το δευτερόλεπτο.", "Ρωτάμε για κάθε γραμμή, με τη σειρά. Ποτέ πιο γρήγορα.", "#7fb6ff")}
-      {head(2, "Κάθε θέση μένει στο ιστορικό.", "Από εκεί: τυπικές ταχύτητες και στατιστικά.")}
-      {head(3, "Μία απάντηση, για όλους.", "Περισσότεροι χρήστες: κανένα επιπλέον αίτημα στον ΟΑΣΑ.", "#5fd27a")}
+      {head(0, "Πηγή: server του ΟΑΣΑ.", "Σε PHP. Δίνει μία γραμμή ανά αίτημα.")}
+      {head(1, "Κάνουμε 5 αιτήματα / δευτερόλεπτο.", "Ρωτάμε για κάθε γραμμή, με τη σειρά.", "#7fb6ff")}
+      {head(2, "Κρατάμε ιστορικό θέσεων.", "Και βγάζουμε τυπικές ταχύτητες και στατιστικά.")}
+      {head(3, "Δίνουμε την αποθηκευμένη θέση σε όλους τους χρήστες παράλληλα.", "Δεν καταπονείται ο server του ΟΑΣΑ.", "#5fd27a")}
       {line(NODE.oasa.x + NODE.oasa.w, NODE.be.x, NODE.be.y + 125, pB)}
       {line(NODE.be.x + NODE.be.w, NODE.cache.x, NODE.be.y + 125, pC)}
       {dots}
@@ -182,7 +182,7 @@ const Pipe: React.FC = () => {
 // Stills of the app's statistics (capture/promo.mjs bstats): each chart on its own, no banner around it.
 type Card = { big: string; label: string; img?: string; crop?: [number, number]; color?: string };
 const CARDS: Card[] = [
-  { big: "279 γραμμές", label: "1.000+ λεωφορεία και τρόλεϊ στην αιχμή", color: C.paper },
+  { big: "279 γραμμές", label: "1.000+ λεωφορεία και τρόλεϊ σε ώρες αιχμής", color: C.paper },
   { big: "1.026", label: "λεωφορεία στον δρόμο, Παρ 23/10 στις 08:00", img: "cap/p-bstat-road.png", crop: [0, 768], color: "#7fb6ff" },
   { big: "1.051 / 655", label: "στον δρόμο στις 09:00: καθημερινές / Σαββατοκύριακα", img: "cap/p-bstat-week.png", crop: [0, 890], color: "#7fb6ff" },
   { big: "11,9 km/h", label: "μέση ταχύτητα στις 08:00 τις καθημερινές (17,4 τα Σαββατοκύριακα)", img: "cap/p-bstat-week.png", crop: [890, 1704], color: "#ffd36b" },
@@ -271,26 +271,26 @@ const Tag: React.FC<{ text: string; until: number; at?: number }> = ({ text, unt
 
 // Pans (capture y at frame centre). The capture is 2532 px tall; the frame shows about 1700 of it: y from 806 (top) to 1725 (bottom).
 const Live: React.FC = () => <Prod id="live" enter finger={false} ys={[{ t: 0, y: 1600 }, { t: len("live"), y: 1000 }]}
-  a="Ζωντανά. Όλη η πόλη." b="Η μπλε μπάρα γεμίζει: νέες θέσεις." bc="#7fb6ff" extra={<Tag text="Πραγματικά δεδομένα · Τρ 20/10, 09:05 · ×6" until={len("live") - 12} />} />;
+  a="Ζωντανά." b="Όλες οι γραμμές στην πόλη." bc="#7fb6ff" extra={<Tag text="Τρ 20/10, 09:05 " until={len("live") - 12} />} />;
 const Late: React.FC = () => <Prod id="late" ys={[{ t: 0, y: 1100 }, { t: len("late"), y: 1450 }]}
-  a="Ποιο αργεί, με μια ματιά." extra={<Legend at={BEAT} until={len("late") - 12} />} />;
+  a="Δες ποια λεωφορεία αργούν." extra={<Legend at={BEAT} until={len("late") - 12} />} />;
 const Speed: React.FC = () => <Prod id="speed" finger={false} ys={[{ t: 0, y: 1150 }, { t: len("speed"), y: 1550 }]}
-  a="Πού τρέχουν. Πού κολλάνε." extra={<SpeedBar at={BEAT} until={len("speed") - 12} />} />;
+  a="Τυπική ταχύτητα σχεδιασμένη στους δρόμους." extra={<SpeedBar at={BEAT} until={len("speed") - 12} />} />;
 const Focus: React.FC = () => <Prod id="focus" ys={[{ t: 0, y: 806 }, { t: 70, y: 1200 }, { t: 110, y: 1725 }, { t: 190, y: 1600 }, { t: len("focus"), y: 1100 }]}
-  a="Πάτα μια γραμμή." b="Η διαδρομή της, τα λεωφορεία της, μια κατεύθυνση. Ένα × και πίσω στην πόλη." bc="#7fb6ff"
+  a="Πάτα μια γραμμή." b="Δες τη διαδρομή της, τα λεωφορεία της, τις κατευθύνσεις." bc="#7fb6ff"
   extra={<Tag text="×8" at={130} until={190} />} />;
 const Fav: React.FC = () => <Prod id="fav" ys={[{ t: 0, y: 806 }, { t: len("fav"), y: 1150 }]}
-  a="Οι γραμμές σου, με ένα ☆." b="Σε περιμένουν την επόμενη φορά." bc="#ffd36b" />;
+  a="Αγαπημένες γραμμές με ☆." b="Αποθηκεύονται στη συσκευή." bc="#ffd36b" />;
 const Plan: React.FC = () => <Prod id="plan" ys={[{ t: 0, y: 806 }, { t: 60, y: 950 }, { t: len("plan"), y: 1350 }]}
-  a="Από εδώ ως εκεί:" b="ποιες γραμμές σε πάνε. Ή ο κοντινότερος σταθμός μετρό." bc="#7fb6ff" />;
+  a="Δες πώς πας κάπου:" b="Ή στον κοντινότερο σταθμό μετρό." bc="#7fb6ff" />;
 const Alert: React.FC = () => <Prod id="alert" ys={[{ t: 0, y: 1300 }, { t: len("alert"), y: 1725 }]}
-  a="Κάθε καθημερινή, 07:30." b="Σου γράφει στο Telegram όταν έρχεται. Ή στον browser." bc={APP.tg} />;
+  a="Ειδοποιήσεις άφιξης." b="Σου στέλνει στο Telegram. Ή στον browser." bc={APP.tg} />;
 
 const Pitch: React.FC = () => {
   const L = len("pitch");
   return (
     <div style={{ position: "absolute", left: 140, right: 140, top: 360 }}>
-      <Words text="Στήσε τη διαδρομή σου." at={0} until={L - 14} size={110} />
+      <Words text="Ρύθμισε το καθημερινό commute σου." at={0} until={L - 14} size={110} />
       <Words text="Μάθε πότε να φύγεις από το σπίτι." at={BEAT * 1.2} until={L - 14} size={84} color="#5fd27a" style={{ marginTop: 26 }} />
     </div>
   );
@@ -423,4 +423,4 @@ export const FilmB: React.FC<{ audio?: string }> = ({ audio }) => (
     {audio && <Audio src={staticFile(audio)} />}
   </AbsoluteFill>
 );
-void PH; void out; void Plate; 
+void PH; void out; void Plate;
