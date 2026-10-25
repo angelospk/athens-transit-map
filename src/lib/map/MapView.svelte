@@ -18,6 +18,7 @@
   import type { AppState } from "../state.svelte";
   import OldTimetable from "../ui/OldTimetable.svelte";
   import SpeedLegend from "../ui/SpeedLegend.svelte";
+  import { lightenDark } from "./basemap";
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
 
@@ -557,6 +558,8 @@
       failed = true;   // GPUInitializationError: no WebGL2
       return;
     }
+    // Every style load (the first and each restyle), before its tiles draw: the dark style is lightened (basemap.ts).
+    m.on("style.load", () => { if (styleDark) lightenDark(m); });
     m.touchZoomRotate.disableRotation();
     m.addControl(new NavigationControl({ showCompass: false }), "top-right");
     m.addControl({ onAdd: () => locateCtl, onRemove: () => locateCtl.remove() }, "top-right");
