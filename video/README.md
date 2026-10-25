@@ -32,9 +32,10 @@ fix history, so the map shows a real weekday peak whatever time you capture.
 ```bash
 docker cp atrt-atrt-1:/var/lib/atrt/history /tmp/hist/            # backend fix history (hourly CSV)
 python3 capture/replay_extract.py /tmp/hist/history 1792476300   # capture/replay/fixes.csv.gz (Tue 20/10 09:05)
-node --dns-result-order=ipv4first capture/promo.mjs city         # one shot: city speed fav plan stats (2-3 at a time)
+node --dns-result-order=ipv4first capture/promo.mjs city         # one shot: city speed fav plan stats; B: bcity bspeed bfav bplan bfocus bstats (2-3 at a time)
 bun scripts/promo-timing.ts                                      # promo/timing-{a,b}.json (scenes, sfx, music)
+promo/sfx.sh                                                     # B's sounds from the earshot bank → out/sfx/ (EARSHOT=<venv python>)
 python3 promo/audio.py a && python3 promo/audio.py b             # public/promo-{a,b}.wav (−14 LUFS)
 for c in a b; do bunx remotion render src/index.ts promo-$c out/$c-r1.mp4 --concurrency=14 --crf=18 --audio-bitrate=256k --log=error; done
-scripts/promo-deliver.sh r1                                      # out/promo/: masters, -web, music-only, contact sheets
+scripts/promo-deliver.sh r1 [a|b]                                # out/promo/: masters, -web, music-only, contact sheets
 ```

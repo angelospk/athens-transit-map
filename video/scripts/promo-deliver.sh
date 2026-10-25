@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# scripts/promo-deliver.sh r4 → out/promo/athens-transit-promo-{a-9x16,b-16x9}.mp4 (master, exact length, faststart),
+# scripts/promo-deliver.sh r4 [a|b] → out/promo/athens-transit-promo-{a-9x16,b-16x9}.mp4 (master, exact length, faststart),
 # *-web.mp4 (crf 23), music-only WAVs, contact sheets; prints size, duration, loudness.
 set -euo pipefail
 tag=$1
 cd "$(dirname "$0")/.."
 mkdir -p out/promo
-for c in a b; do
+for c in ${2:-a b}; do
   name=$([ $c = a ] && echo a-9x16 || echo b-16x9)
   secs=$(python3 -c "import json;t=json.load(open('promo/timing-$c.json'));print(t['durationInFrames']/t['fps'])")
   ffmpeg -hide_banner -loglevel error -y -i "out/$c-$tag.mp4" -c:v copy -af "atrim=end=$secs" -c:a aac -b:a 256k -t "$secs" -movflags +faststart "out/promo/athens-transit-promo-$name.mp4"

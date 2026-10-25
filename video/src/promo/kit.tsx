@@ -7,6 +7,11 @@ import city from "../../public/cap/p-city.json";
 import speed from "../../public/cap/p-speed.json";
 import fav from "../../public/cap/p-fav.json";
 import plan from "../../public/cap/p-plan.json";
+import bcity from "../../public/cap/p-bcity.json";
+import bspeed from "../../public/cap/p-bspeed.json";
+import bfav from "../../public/cap/p-bfav.json";
+import bplan from "../../public/cap/p-bplan.json";
+import bfocus from "../../public/cap/p-bfocus.json";
 
 export { C, FONT, MONO, inOut, inn, out };
 export const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
@@ -28,7 +33,7 @@ export const grid = (bpm: number) => {
 
 type Track = { x: number; y: number; c: number; d?: number; s?: number }[];
 export const PCAPS: Record<string, { w: number; h: number; frames: number; track: Track; marks: Record<string, number> }> =
-  { city, speed, fav, plan } as never;
+  { city, speed, fav, plan, bcity, bspeed, bfav, bplan, bfocus } as never;
 export const PW = 1170, PH = 2532;   // phone capture px (390x844 CSS at 3x)
 
 export type Key = { t: number; x: number; y: number; z: number };
@@ -49,12 +54,12 @@ export function camAt(keys: Key[], f: number): Key {
 // The phone capture in a w x h box. keys: focus (capture px) and z (screen px per capture px); never below cover.
 // Finger: a soft ring where the capture's finger is, pressed while it taps, a ripple after each tap.
 export const PCap: React.FC<{
-  shot: string; segs: Seg[]; keys: Key[]; w: number; h: number; finger?: boolean; still?: string;
+  shot: string; segs: Seg[]; keys: Key[]; w: number; h: number; finger?: boolean; still?: string; breath?: boolean;
   overlay?: (map: (x: number, y: number) => [number, number], s: number, cap: number) => React.ReactNode; style?: React.CSSProperties;
-}> = ({ shot, segs, keys, w, h, finger = true, still, overlay, style }) => {
+}> = ({ shot, segs, keys, w, h, finger = true, still, breath = true, overlay, style }) => {
   const f = useCurrentFrame();
   const k0 = camAt(keys, f);
-  const k = { ...k0, z: k0.z * (1 + 0.01 * Math.sin(f / 40)) };   // a slow breath: no hold is a still frame
+  const k = { ...k0, z: k0.z * (breath ? 1 + 0.01 * Math.sin(f / 40) : 1) };   // a slow breath: no hold is a still frame (B: off, fixed scale)
   const s = Math.max(w / PW, h / PH, k.z);
   const tx = Math.min(0, Math.max(w - PW * s, w / 2 - k.x * s));
   const ty = Math.min(0, Math.max(h - PH * s, h / 2 - k.y * s));

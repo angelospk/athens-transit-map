@@ -22,11 +22,13 @@ mkdirSync(OUT, { recursive: true });
 
 const ease = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
-async function shoot(name, url, script, { replay = false } = {}) {
+async function shoot(name, url, script, { replay = false, stations = true } = {}) {
   const rp = replay ? loadReplay(join(ROOT, "capture/replay")) : null;
   const browser = await chromium.launch({ args: ["--lang=el-GR", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
   const ctx = await browser.newContext({ viewport: { width: VW, height: VH }, deviceScaleFactor: DSF, locale: "el-GR", timezoneId: "Europe/Athens",
     colorScheme: "light", isMobile: true, hasTouch: true, geolocation: HOME, permissions: ["geolocation"], serviceWorkers: "block" });
+  // Promo B: no metro stations (its black hub rings read as stuck vehicles in a film).
+  if (!stations) await ctx.addInitScript(() => localStorage.setItem("stationsOn", "false"));
   const p = await ctx.newPage();
   p.setDefaultTimeout(120_000);
   // Page time (ms): runs in real time until the clock is paused, then only by the frame steps.
@@ -110,7 +112,7 @@ async function shoot(name, url, script, { replay = false } = {}) {
   try { marks = await script(s) || {}; } finally { await browser.close(); }
   if (rp) marks.vehiclesAtStart = rp.count(t0 / 1000 + 20);
   writeFileSync(join(OUT, "p-" + name + ".json"), JSON.stringify({ name, url, w: VW * DSF, h: VH * DSF, frames: f, marks, track,
-    capturedAt: new Date().toISOString(), pageTime: new Date(t0).toISOString(), replay }));
+    capturedAt: new Date().toISOString(), pageTime: new Date(t0).toISOString(), replay, stations }));
   execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-framerate", String(FPS), "-i", join(dir, "%05d.jpg"),
     "-c:v", "libx264", "-preset", "slow", "-crf", "14", "-pix_fmt", "yuv420p", "-g", "30", join(OUT, "p-" + name + ".mp4")]);
   console.log(name, f, "frames");
@@ -122,7 +124,7 @@ const sw = (p, text) => p.locator("label.switch", { hasText: text }).first();
 const SHOTS = {
   // The peak city (replayed): the refresh ring fills at 6× and every fill moves the vehicles; zoom into the centre;
   // the filter "Μόνο με πρόσφατη θέση" hides the vehicles whose fix is old.
-  city: () => shoot("city", "/", async s => {
+  city: (name = "city", o = {}) => shoot(name, "/", async s => {
     const p = s.page, m = {};
     await s.hold(20);
     s.speed(6);
@@ -146,9 +148,9 @@ const SHOTS = {
     await s.closeMenu();
     await s.hold(150);
     return m;
-  }, { replay: true }),
+  }, { replay: true, ...o }),
   // Typical speed per road, then a metro line (replayed peak underneath).
-  speed: () => shoot("speed", "/", async s => {
+  speed: (name = "speed", o = {}) => shoot(name, "/", async s => {
     const p = s.page, m = {};
     await s.hold(20);
     m.menu = s.frame;
@@ -182,9 +184,9 @@ const SHOTS = {
     m.metroShown = s.frame;
     await s.hold(150);
     return m;
-  }, { replay: true }),
+  }, { replay: true, ...o }),
   // Favourites: star two lines, then a new visit to the bare address shows them under the search.
-  fav: () => shoot("fav", "/", async s => {
+  fav: (name = "fav", o = {}) => shoot(name, "/", async s => {
     const p = s.page, m = {};
     const search = () => p.locator("button.find, input[aria-label='Αναζήτηση γραμμής']").first();
     await s.hold(20);
@@ -219,9 +221,9 @@ const SHOTS = {
     s.lift();
     await s.hold(200);
     return m;
-  }),
+  }, o),
   // Planner: my location → Syntagma, the lines, then a weekday 07:30 alert on Telegram.
-  plan: () => shoot("plan", "/", async s => {
+  plan: (name = "plan", o = {}) => shoot(name, "/", async s => {
     const p = s.page, m = {};
     await s.hold(20);
     await s.moveTo(p.getByLabel("Διαδρομή: ποιες γραμμές με πάνε"), 30);
@@ -264,10 +266,20 @@ const SHOTS = {
     await rep.selectOption("31");
     m.rep = s.frame;
     await s.hold(30);
+    // The start time: <input type=time> before 2026-10-25, hour and minute selects since.
     const time = p.locator("#trip-alert input[type=time]");
-    await s.moveTo(time, 24, 0.3);
-    await time.fill("07:30");
-    await time.evaluate(el => el.blur());
+    if (await time.count()) {
+      await s.moveTo(time, 24, 0.3);
+      await time.fill("07:30");
+      await time.evaluate(el => el.blur());
+    } else {
+      const hh = p.locator("#trip-alert select[aria-label='Ώρα']");
+      await s.moveTo(hh, 24);
+      await s.tap().catch(() => {});
+      await hh.selectOption("7");
+      await s.hold(12);
+      await p.locator("#trip-alert select[aria-label='Λεπτά']").selectOption("30");
+    }
     m.time = s.frame;
     await s.hold(30);
     await p.locator("a.tg").evaluate(el => el.scrollIntoView({ block: "center", behavior: "instant" }));
@@ -276,7 +288,55 @@ const SHOTS = {
     m.tg = s.frame;
     await s.hold(120);
     return m;
-  }),
+  }, o),
+  // Promo B: one line selected (trolley 11: short, central, fresh fixes on a Sunday morning), a bus tapped, its direction focused, the bus moving (8×), then the line removed.
+  bfocus: () => shoot("bfocus", "/", async s => {
+    const p = s.page, m = {};
+    await s.hold(20);
+    await s.press(p.locator("button.find, input[aria-label='Αναζήτηση γραμμής']").first());
+    await s.hold(10);
+    m.type = s.frame;
+    await s.type("11", 6);
+    await s.hold(20);
+    m.pick = s.frame;
+    await s.press(p.locator("#line-list li", { has: p.locator(".id", { hasText: /^11$/ }) }).locator(".name").first(), 24);
+    s.lift();
+    await s.until(() => p.getByLabel("Αφαίρεση γραμμής 11").isVisible(), 240);
+    m.picked = s.frame;
+    // Wait for the line's own vehicles (fresh fix first, if any).
+    const buses = p.locator("button[aria-label^='Γραμμή 11, όχημα']");
+    await s.until(() => buses.count().then(n => n > 0), 600);
+    await s.hold(70);
+    const fresh = p.locator("button[aria-label^='Γραμμή 11, όχημα']:not(.stale)");
+    const bus = (await fresh.count()) ? fresh.first() : buses.first();
+    m.bus = s.frame;
+    await s.press(bus, 30);
+    s.lift();
+    const dir = p.getByRole("button", { name: /^→/ });   // the card's direction buttons ("→ <terminus>")
+    await s.until(() => dir.first().isVisible(), 120);
+    await s.hold(40);
+    m.dir = s.frame;
+    await s.press(dir.first(), 26);
+    s.lift();
+    await s.hold(40);
+    // 8× so the motion along the route shows.
+    m.fast = s.frame;
+    s.speed(8);
+    await s.hold(150);
+    s.speed(1);
+    m.slow = s.frame;
+    await s.hold(10);
+    m.remove = s.frame;
+    await s.press(p.getByLabel("Αφαίρεση γραμμής 11"), 30);
+    s.lift();
+    m.removed = s.frame;
+    await s.hold(110);
+    return m;
+  }, { stations: false }),
+  bcity: () => SHOTS.city("bcity", { stations: false }),
+  bspeed: () => SHOTS.speed("bspeed", { stations: false }),
+  bfav: () => SHOTS.fav("bfav", { stations: false }),
+  bplan: () => SHOTS.plan("bplan", { stations: false }),
   // The ⓘ dialog: network statistics of the newest day. Real-time stills (a modal <dialog> stalls screenshots on
   // the paused fake clock); the film moves a camera over them.
   stats: async () => {
@@ -294,6 +354,40 @@ const SHOTS = {
       await p.waitForTimeout(2500);
       await p.screenshot({ path: join(OUT, "p-stats.png"), timeout: 600_000 });
       console.log("stats still", await p.getByText(/λεωφορεία και τρόλεϊ σε/).first().textContent());
+    } finally { await browser.close(); }
+  },
+  // Promo B: charts of the statistics, each as its own still (public/cap/p-bstat-<k>.png), no banner around it.
+  bstats: async () => {
+    const browser = await chromium.launch({ args: ["--lang=el-GR", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
+    try {
+      const ctx = await browser.newContext({ viewport: { width: VW, height: VH }, deviceScaleFactor: DSF, locale: "el-GR", timezoneId: "Europe/Athens",
+        colorScheme: "light", isMobile: true, hasTouch: true, serviceWorkers: "block" });
+      const p = await ctx.newPage();
+      await p.goto(SITE + "/", { waitUntil: "networkidle" });
+      await p.waitForTimeout(4000);
+      await p.locator(".maplibregl-ctrl-attrib-button").first().click({ force: true });
+      await p.waitForTimeout(1500);
+      await p.getByRole("tab", { name: "Στατιστικά δικτύου" }).click();
+      await p.getByText(/Περισσότερα στις/).first().waitFor();
+      await p.waitForTimeout(2500);
+      const sec = h => p.locator("section", { has: p.locator("h3", { hasText: h }) }).first();
+      // Not the day's speed chart or line ranking: on 23/10 they had gaps and only 2 ranked lines (promo/HUMAN-CHECK.md).
+      const shots = [["road", "Λεωφορεία στον δρόμο"]];
+      const out = {};
+      for (const [k, h] of shots) {
+        await sec(h).scrollIntoViewIfNeeded();
+        await p.waitForTimeout(800);
+        await sec(h).screenshot({ path: join(OUT, `p-bstat-${k}.png`), timeout: 600_000 });
+        out[k] = (await sec(h).locator(".read").first().textContent().catch(() => "")).trim();
+      }
+      const tabs = await p.locator("[role=tab][id^=stats-tab-]").allTextContents();
+      await p.locator("[role=tab][id^=stats-tab-]").last().click();
+      await p.getByText("Καθημερινές και Σαββατοκύριακα").first().waitFor();
+      await p.waitForTimeout(2500);
+      await sec("Καθημερινές και Σαββατοκύριακα").scrollIntoViewIfNeeded();
+      await p.waitForTimeout(800);
+      await sec("Καθημερινές και Σαββατοκύριακα").screenshot({ path: join(OUT, "p-bstat-week.png"), timeout: 600_000 });
+      console.log("bstats", JSON.stringify({ tabs, ...out }));
     } finally { await browser.close(); }
   },
 };

@@ -148,5 +148,35 @@
   "claim": "Ανοιχτό API · bus.haroldpoi.dev/api (QR)",
   "source": "Harold (2026-10-25, API docs thread): short link bus.haroldpoi.dev/api → https://angelospk.github.io/athens-transit-rt/ (OpenAPI 3.1 reference, no key); curl -IL 301 → 200 \"athens-transit-rt API\"; QR public/promo-api-qr.svg decoded from the render with jsQR as https://bus.haroldpoi.dev/api",
   "url": "https://bus.haroldpoi.dev/api"
+ },
+ {
+  "claim": "1.026 λεωφορεία στον δρόμο, Παρ 23/10 στις 08:00 (B, stats)",
+  "source": "the app's statistics, latest day, «Λεωφορεία στον δρόμο: Περισσότερα στις 08:00: 1.026» (capture bstats 2026-10-25; still public/cap/p-bstat-road.png)",
+  "url": "https://bus.haroldpoi.dev"
+ },
+ {
+  "claim": "1.051 / 655 στον δρόμο στις 09:00: καθημερινές / Σαββατοκύριακα (B, stats)",
+  "source": "the app's long-term statistics, «Καθημερινές και Σαββατοκύριακα»: «09:00: καθημερινές 1.051 · Σαββατοκύριακα 655» (13 weekdays, 4 weekend days; still p-bstat-week.png)",
+  "url": "https://bus.haroldpoi.dev"
+ },
+ {
+  "claim": "11,9 km/h μέση ταχύτητα στις 08:00 τις καθημερινές, 17,4 τα Σαββατοκύριακα (B, stats)",
+  "source": "same chart: «08:00: καθημερινές 11,9 km/h · Σαββατοκύριακα 17,4 km/h»",
+  "url": "https://bus.haroldpoi.dev"
+ },
+ {
+  "claim": "Πάτα μια γραμμή: διαδρομή, λεωφορεία, μια κατεύθυνση, × για πίσω (B, focus)",
+  "source": "capture bfocus (live, trolley 11, Sun 25/10 ~09:40): line chip, route drawn, a vehicle card with direction buttons («Όλες», «→ Ν. ΕΛΒΕΤΙΑ», «→ ΑΝΩ ΠΑΤΗΣΙΑ»), chip × «Αφαίρεση γραμμής 11»; motion shown at 8×, labelled",
+  "url": "public/cap/p-bfocus.json"
+ },
+ {
+  "claim": "github.com/angelospk/athens-transit-map (ο χάρτης), github.com/angelospk/athens-transit-rt (backend, API)",
+  "source": "gh repo view: both PUBLIC, MIT",
+  "url": "https://github.com/angelospk/athens-transit-map"
+ },
+ {
+  "claim": "QR: bus.haroldpoi.dev (B, open + end)",
+  "source": "Harold (2026-10-25): a QR for the site itself at the end; public/promo-site-qr.svg encodes https://bus.haroldpoi.dev",
+  "url": "https://bus.haroldpoi.dev"
  }
 ]

@@ -1,6 +1,7 @@
 // Promo B, "Από μια ερώτηση σε API για όλη την πόλη": a story-led 16:9 film. A question, the prototype, the pipeline
-// drawn as a diagram (ΟΑΣΑ → backend at 5 req/s with its history → cache → everyone), the scale, then the product in
-// one phone window that stays on the same pixels while its captures change, the API, open data. 115 BPM, cuts on bars.
+// drawn as a diagram (ΟΑΣΑ → backend at 5 req/s with its history → cache → everyone) in under 15 s; then the statistics
+// card by card, the product in one large phone (fixed scale, the camera only pans), the API, open data and code.
+// 115 BPM, cuts on bars. Captures p-b*: metro stations off.
 import React from "react";
 import { AbsoluteFill, Audio, Img, Sequence, staticFile, useCurrentFrame } from "remotion";
 import { Plate, Pill, Words } from "../ui";
@@ -9,8 +10,8 @@ import api from "../../public/cap/p-api.json";
 
 export const GB = grid(115);
 export const SB = {
-  q: [0, 2], proto: [2, 4], pipe: [4, 10], scale: [10, 12], live: [12, 13], late: [13, 14], speed: [14, 15], fav: [15, 16],
-  plan: [16, 17], alert: [17, 18], pitch: [18, 19], api: [19, 22], open: [22, 23], end: [23, 24],
+  q: [0, 1], proto: [1, 2], pipe: [2, 7], stats: [7, 9], live: [9, 10], late: [10, 11], speed: [11, 12], focus: [12, 14],
+  fav: [14, 15], plan: [15, 16], alert: [16, 18], pitch: [18, 19], api: [19, 22], open: [22, 23], end: [23, 24],
 } as const;
 export type SceneB = keyof typeof SB;
 export const DURATION_B = GB.bar(24);
@@ -19,26 +20,38 @@ const BEAT = GB.beat, BAR = GB.beat * 4;
 const len = (id: SceneB) => GB.bar(SB[id][1]) - GB.bar(SB[id][0]);
 const M = (shot: string) => PCAPS[shot].marks;
 
-// The phone window (screen px): same rect for every product scene.
-const PHONE = { x: 1180, y: 70, w: 440, h: 940 };
-const pz = PHONE.w / PW;
-
-const Phone: React.FC<{ children: React.ReactNode; enter?: number; exit?: number }> = ({ children, enter = -1, exit = 1e9 }) => {
+// The phone (screen px): one fixed scale for every product scene, taller than the frame. No zoom: the camera only
+// pans, i.e. the phone slides up or down so the part that matters sits in the frame. ys: capture y (px) at frame centre.
+const PZ = 0.62;
+const PHONE = { x: 1110, w: Math.round(PW * PZ), h: Math.round(PH * PZ) };
+const phoneTop = (ycap: number) => Math.min(40, Math.max(H - PHONE.h - 40, H / 2 - ycap * PZ));
+type Pan = { t: number; y: number };
+const panAt = (ys: Pan[], f: number) => {
+  if (f <= ys[0].t) return ys[0].y;
+  for (let i = 1; i < ys.length; i++) if (f <= ys[i].t) return ys[i - 1].y + (ys[i].y - ys[i - 1].y) * inOut((f - ys[i - 1].t) / Math.max(1, ys[i].t - ys[i - 1].t));
+  return ys[ys.length - 1].y;
+};
+const Phone: React.FC<{ children: React.ReactNode; ys: Pan[]; enter?: number }> = ({ children, ys, enter = -1 }) => {
   const f = useCurrentFrame();
   const p = enter < 0 ? 1 : ease(f, enter, enter + 18);
-  const q = ease(f, exit, exit + 14, inn);
+  const top = phoneTop(panAt(ys, f)) + Math.sin(f / 50) * 3;   // a slight float: no hold is a still frame
   return (
-    <div style={{ position: "absolute", left: PHONE.x - 14, top: PHONE.y - 14, width: PHONE.w + 28, height: PHONE.h + 28, borderRadius: 64,
-      background: "#050506", boxShadow: "0 40px 90px rgba(0,0,0,.6), inset 0 0 0 2px rgba(255,255,255,.08)",
-      opacity: p * (1 - q), transform: `translateY(${(1 - p) * 60 + q * -40}px) scale(${1 - 0.04 * q})` }}>
-      <div style={{ position: "absolute", left: 14, top: 14, width: PHONE.w, height: PHONE.h, borderRadius: 50, overflow: "hidden" }}>{children}</div>
-    </div>
+    <>
+      <div style={{ position: "absolute", left: PHONE.x - 16, top: top - 16, width: PHONE.w + 32, height: PHONE.h + 32, borderRadius: 78,
+        background: "#050506", boxShadow: "0 40px 90px rgba(0,0,0,.6), inset 0 0 0 2px rgba(255,255,255,.08)",
+        opacity: p, transform: `translateY(${(1 - p) * 80}px)` }}>
+        <div style={{ position: "absolute", left: 16, top: 16, width: PHONE.w, height: PHONE.h, borderRadius: 62, overflow: "hidden" }}>{children}</div>
+      </div>
+      {/* soft edges where the phone leaves the frame */}
+      <div style={{ position: "absolute", left: PHONE.x - 40, width: PHONE.w + 80, top: 0, height: 70, background: `linear-gradient(${C.ink}, ${C.ink}00)` }} />
+      <div style={{ position: "absolute", left: PHONE.x - 40, width: PHONE.w + 80, top: H - 70, height: 70, background: `linear-gradient(${C.ink}00, ${C.ink})` }} />
+    </>
   );
 };
 
 // Left-column headline (product scenes).
 const Side: React.FC<{ at: number; until: number; a: string; b?: string; bc?: string; y?: number }> = ({ at, until, a, b, bc = C.muted, y = 330 }) => (
-  <div style={{ position: "absolute", left: 140, top: y, width: 940 }}>
+  <div style={{ position: "absolute", left: 120, top: y, width: 900 }}>
     <Words text={a} at={at} until={until} size={84} />
     {b && <Words text={b} at={at + BEAT} until={until} size={52} weight={600} color={bc} style={{ marginTop: 22 }} />}
   </div>
@@ -52,7 +65,6 @@ const Q: React.FC = () => {
       <Words text="Κάποιος ρώτησε στο Twitter:" at={-40} until={L - 16} size={46} weight={600} color={C.muted} />
       <Words text="«Γιατί η Αθήνα δεν έχει | GTFS Realtime;»" at={-30} until={L - 16} size={112} stagger={4} style={{ marginTop: 30 }}
         colors={{ 5: "#7fb6ff", 6: "#7fb6ff" }} />
-      <Words text="Ζωντανές θέσεις λεωφορείων, σε ανοιχτή μορφή, για κάθε εφαρμογή." at={BEAT * 4} until={L - 16} size={42} weight={600} color={C.muted} stagger={2} style={{ marginTop: 40 }} />
     </div>
   );
 };
@@ -61,7 +73,7 @@ const Q: React.FC = () => {
 const Proto: React.FC = () => {
   const f = useCurrentFrame();
   const L = len("proto");
-  const chip = ease(f, BEAT * 1.5, BEAT * 1.5 + 16) * (1 - ease(f, L - 16, L - 4, inn));
+  const chip = ease(f, BEAT * 1.2, BEAT * 1.2 + 14) * (1 - ease(f, L - 16, L - 4, inn));
   return (
     <div style={{ position: "absolute", left: 160, right: 160, top: 260 }}>
       <Words text="Η αρχή: ένα πρωτότυπο σε Python," at={0} until={L - 16} size={84} />
@@ -71,7 +83,7 @@ const Proto: React.FC = () => {
         <span style={{ fontFamily: MONO, fontSize: 44, color: C.paper }}>AUEB-BALab/athens-gtfs-realtime</span>
         <span style={{ fontFamily: FONT, fontWeight: 700, fontSize: 38, color: "#ffd36b" }}>Python · MIT</span>
       </div>
-      <Words text="Από εκεί: ένα backend σε Go, για όλη την πόλη." at={BEAT * 4} until={L - 16} size={52} weight={600} color={C.muted} style={{ marginTop: 50 }} />
+      <Words text="Από εκεί: ένα backend σε Go, για όλη την πόλη." at={BEAT * 2.5} until={L - 16} size={52} weight={600} color={C.muted} style={{ marginTop: 50 }} />
     </div>
   );
 };
@@ -89,10 +101,11 @@ const Node: React.FC<{ b: Box; p: number; title: string; sub: string; accent: st
   </div>
 );
 
+export const PIPE_B = [0, 0.75, 2, 3].map(k => Math.round(k * BAR));   // oasa, rate, history, cache
 const Pipe: React.FC = () => {
   const f = useCurrentFrame();
   const L = len("pipe");
-  const st = [0, 1, 3, 4].map(k => Math.round(k * BAR));   // oasa, rate, history, cache
+  const st = PIPE_B;
   const pO = ease(f, 6, 24), pB = ease(f, st[1] + 12, st[1] + 30), pD = ease(f, st[2], st[2] + 20), pC = ease(f, st[3], st[3] + 20);
   const out1 = ease(f, L - 18, L - 4, inn);
   // OASA starts centred and big, moves to its place when the backend arrives.
@@ -165,56 +178,64 @@ const Pipe: React.FC = () => {
   );
 };
 
-// ---------- scale: numbers + the real statistics screen ----------
-const Count: React.FC<{ to: number; at: number; dur: number; size: number; color?: string; suffix?: string }> = ({ to, at, dur, size, color = C.paper, suffix = "" }) => {
+// ---------- stats: the real statistics, one card per two beats ----------
+// Stills of the app's statistics (capture/promo.mjs bstats): each chart on its own, no banner around it.
+type Card = { big: string; label: string; img?: string; crop?: [number, number]; color?: string };
+const CARDS: Card[] = [
+  { big: "279 γραμμές", label: "1.000+ λεωφορεία και τρόλεϊ στην αιχμή", color: C.paper },
+  { big: "1.026", label: "λεωφορεία στον δρόμο, Παρ 23/10 στις 08:00", img: "cap/p-bstat-road.png", crop: [0, 768], color: "#7fb6ff" },
+  { big: "1.051 / 655", label: "στον δρόμο στις 09:00: καθημερινές / Σαββατοκύριακα", img: "cap/p-bstat-week.png", crop: [0, 890], color: "#7fb6ff" },
+  { big: "11,9 km/h", label: "μέση ταχύτητα στις 08:00 τις καθημερινές (17,4 τα Σαββατοκύριακα)", img: "cap/p-bstat-week.png", crop: [890, 1704], color: "#ffd36b" },
+];
+export const STATS_B = CARDS.map((_, i) => Math.round(i * 2 * BEAT));
+const CW = 780, CS = CW / 1074;   // card width (screen px), still px → screen px
+const Stats: React.FC = () => {
   const f = useCurrentFrame();
-  void f; void dur;
-  const v = to;
-  return <span style={{ fontFamily: FONT, fontWeight: 800, fontSize: size, color, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>{v.toLocaleString("el-GR")}{suffix}</span>;
-};
-const Scale: React.FC = () => {
-  const f = useCurrentFrame();
-  const L = len("scale");
-  const o = 1 - ease(f, L - 14, L - 2, inn);
-  const row = (at: number, el: React.ReactNode, label: string) => {
-    const p = ease(f, at, at + 14);
-    return <div style={{ opacity: p * o, transform: `translateY(${(1 - p) * 24}px)`, marginBottom: 40 }}>
-      {el}<div style={{ fontFamily: FONT, fontWeight: 600, fontSize: 40, color: C.muted, marginTop: 2 }}>{label}</div></div>;
-  };
-  return (
-    <>
-      <div style={{ position: "absolute", left: 140, top: 170 }}>
-        {row(4, <Count to={279} at={4} dur={40} size={130} />, "γραμμές λεωφορείων και τρόλεϊ")}
-        {row(BEAT * 2, <Count to={1000} at={BEAT * 2} dur={40} size={130} color="#7fb6ff" suffix="+" />, "οχήματα στην αιχμή, κάθε καθημερινή")}
-        {row(BEAT * 4, <Count to={1251} at={BEAT * 4} dur={40} size={100} />, "διαφορετικά οχήματα σε μια μέρα (23/10)")}
+  const L = len("stats");
+  return <>{CARDS.map((c, i) => {
+    const a = STATS_B[i], z = i + 1 < CARDS.length ? STATS_B[i + 1] : L;
+    if (f < a - 2 || f >= z) return null;
+    const p = ease(f, a, a + 7), x = ease(f, z - 6, z, inn);
+    const slam = 1 + 0.14 * (1 - p);   // lands big, settles: the "bam"
+    const h = c.crop ? (c.crop[1] - c.crop[0]) * CS : 0;
+    return <AbsoluteFill key={i} style={{ opacity: Math.min(1, p * 1.6) * (1 - x), transform: `translateX(${-80 * x}px)` }}>
+      <div style={{ position: "absolute", left: 120, top: c.img ? 330 : 380, width: c.img ? 860 : 1680, transform: `scale(${slam})`, transformOrigin: "0 50%" }}>
+        <div style={{ fontFamily: FONT, fontWeight: 800, fontSize: c.img ? 150 : 190, lineHeight: 1, color: c.color, letterSpacing: "-0.02em" }}>{c.big}</div>
+        <div style={{ fontFamily: FONT, fontWeight: 600, fontSize: c.img ? 46 : 64, color: C.muted, marginTop: 26, lineHeight: 1.25 }}>{c.label}</div>
       </div>
-      <Phone enter={6}>
-        <PCap shot="city" segs={[fit(0, 1, 1)]} still="cap/p-stats.png" w={PHONE.w} h={PHONE.h} finger={false}
-          keys={[{ t: 0, x: 585, y: 1150, z: pz * 1.15 }, { t: L, x: 585, y: 1250, z: pz * 1.35 }]} />
-      </Phone>
-    </>
-  );
+      {c.img && <div style={{ position: "absolute", left: 1030, top: (H - h) / 2 - 24, width: CW + 48, padding: 24, boxSizing: "border-box", background: "#fff", borderRadius: 30,
+        boxShadow: "0 30px 80px rgba(0,0,0,.5)", transform: `scale(${slam}) rotate(${(1 - p) * -2}deg)`, transformOrigin: "50% 50%" }}>
+        <div style={{ width: CW, height: h, overflow: "hidden", position: "relative" }}>
+          <Img src={staticFile(c.img)} style={{ position: "absolute", left: 0, top: -c.crop![0] * CS, width: CW }} />
+        </div>
+      </div>}
+    </AbsoluteFill>;
+  })}</>;
 };
 
-// ---------- product: one phone window, captures swap inside ----------
-const city = M("city"), sp = M("speed"), fv = M("fav"), pl = M("plan");
+// ---------- product: one large phone, captures swap inside ----------
+const city = M("bcity"), sp = M("bspeed"), fv = M("bfav"), pl = M("bplan"), fo = M("bfocus");
 export const SEGS_B: Partial<Record<SceneB, { shot: string; segs: ReturnType<typeof fit>[] }>> = {
-  live: { shot: "city", segs: [fit(city.fast + 80, city.fast + 80 + len("live"), len("live"))] },
-  late: { shot: "city", segs: [fit(city.zoom + 20, city.menu, len("late"))] },
-  speed: { shot: "speed", segs: [fit(sp.zoomed - 40, sp.zoomed + 100, len("speed"))] },
-  fav: { shot: "fav", segs: [fit(fv.quick - 30, fv.all + 120, len("fav"))] },
-  plan: { shot: "plan", segs: [fit(pl.toPick - 50, pl.results + 100, len("plan"))] },
-  alert: { shot: "plan", segs: [fit(pl.rep - 20, pl.tg + 40, len("alert"))] },
+  live: { shot: "bcity", segs: [fit(city.fast + 80, city.fast + 80 + len("live"), len("live"))] },
+  late: { shot: "bcity", segs: [fit(city.zoom + 20, city.menu, len("late"))] },
+  speed: { shot: "bspeed", segs: [fit(sp.zoomed - 40, sp.zoomed + 100, len("speed"))] },
+  // pick the line → its route; tap a bus → its card, one direction; 8× motion; × → back to the city.
+  // Each tap and its 26-frame ripple stay inside a segment; the motion part plays at rate 1, so the capture's 8× is 8×.
+  focus: { shot: "bfocus", segs: [fit(fo.pick - 20, fo.bus + 60, 90), fit(fo.dir + 6, fo.dir + 58, 40), fit(fo.fast + 30, fo.fast + 90, 60),
+    fit(fo.remove - 4, fo.removed + 30, len("focus") - 190)] },
+  fav: { shot: "bfav", segs: [fit(fv.quick - 30, fv.all + 120, len("fav"))] },
+  plan: { shot: "bplan", segs: [fit(pl.toPick - 50, pl.results + 100, len("plan"))] },
+  alert: { shot: "bplan", segs: [fit(pl.rep - 20, pl.tg + 40, len("alert"))] },
 };
-const Prod: React.FC<{ id: SceneB; shot: string; segs: ReturnType<typeof fit>[]; keys: { t: number; x: number; y: number; z: number }[]; a: string; b?: string; bc?: string;
-  extra?: React.ReactNode; finger?: boolean; enter?: boolean }> = ({ id, shot, segs, keys, a, b, bc, extra, finger = true, enter }) => {
-  const L = len(id);
+const Prod: React.FC<{ id: SceneB; ys: Pan[]; a: string; b?: string; bc?: string; extra?: React.ReactNode; finger?: boolean; enter?: boolean }> =
+  ({ id, ys, a, b, bc, extra, finger = true, enter }) => {
+  const L = len(id), sg = SEGS_B[id]!;
   return (
     <>
       <Side at={2} until={L - 12} a={a} b={b} bc={bc} />
       {extra}
-      <Phone enter={enter ? 0 : -1}>
-        <PCap shot={shot} segs={segs} keys={keys.map(k => ({ ...k, z: k.z * pz }))} w={PHONE.w} h={PHONE.h} finger={finger} />
+      <Phone ys={ys} enter={enter ? 0 : -1}>
+        <PCap shot={sg.shot} segs={sg.segs} keys={[{ t: 0, x: PW / 2, y: PH / 2, z: PZ }]} w={PHONE.w} h={PHONE.h} finger={finger} breath={false} />
       </Phone>
     </>
   );
@@ -222,7 +243,7 @@ const Prod: React.FC<{ id: SceneB; shot: string; segs: ReturnType<typeof fit>[];
 const LEGEND: [string, string][] = [["στην ώρα του", APP.delay.ontime], ["2–5′", APP.delay.late1], ["5–10′", APP.delay.late2], ["10′+", APP.delay.late3]];
 const Legend: React.FC<{ at: number; until: number }> = ({ at, until }) => {
   const f = useCurrentFrame();
-  return <div style={{ position: "absolute", left: 140, top: 640, display: "flex", gap: 34 }}>
+  return <div style={{ position: "absolute", left: 120, top: 560, display: "grid", gridTemplateColumns: "auto auto", gap: "22px 44px" }}>
     {LEGEND.map(([t, c], i) => {
       const p = ease(f, at + i * 6, at + i * 6 + 12) * (1 - ease(f, until, until + 10, inn));
       return <div key={t} style={{ display: "flex", alignItems: "center", gap: 14, opacity: p, fontFamily: FONT, fontWeight: 700, fontSize: 46, color: C.paper }}>
@@ -233,38 +254,36 @@ const Legend: React.FC<{ at: number; until: number }> = ({ at, until }) => {
 const SpeedBar: React.FC<{ at: number; until: number }> = ({ at, until }) => {
   const f = useCurrentFrame();
   const p = ease(f, at, at + 14) * (1 - ease(f, until, until + 10, inn));
-  return <div style={{ position: "absolute", left: 140, top: 600, opacity: p }}>
+  return <div style={{ position: "absolute", left: 120, top: 560, opacity: p }}>
     <div style={{ display: "flex", gap: 8 }}>
-      {APP.speed.map(([v, c], i) => <div key={v} style={{ width: 140, height: 72, background: c, borderRadius: 12, display: "grid", placeItems: "center",
+      {APP.speed.map(([v, c], i) => <div key={v} style={{ width: 128, height: 72, background: c, borderRadius: 12, display: "grid", placeItems: "center",
         fontFamily: FONT, fontWeight: 800, fontSize: 38, color: i === 2 || i === 3 ? "#222" : "#fff" }}>{v}</div>)}
     </div>
     <div style={{ fontFamily: FONT, fontWeight: 600, fontSize: 40, color: C.muted, marginTop: 18 }}>km/h · από 1,76 εκατ. μετρήσεις GPS</div>
   </div>;
 };
-const Tag: React.FC<{ text: string; until: number }> = ({ text, until }) => {  // labelled replay
+const Tag: React.FC<{ text: string; until: number; at?: number }> = ({ text, until, at = 6 }) => {  // labelled replay / speed-up
   const f = useCurrentFrame();
-  const p = ease(f, 6, 18) * (1 - ease(f, until, until + 10, inn));
-  return <div style={{ position: "absolute", left: 140, top: 650, padding: "12px 24px", borderRadius: 999, background: "#1c1c1f", border: "1px solid rgba(255,255,255,.12)",
+  const p = ease(f, at, at + 12) * (1 - ease(f, until, until + 10, inn));
+  return <div style={{ position: "absolute", left: 120, top: 640, padding: "12px 24px", borderRadius: 999, background: "#1c1c1f", border: "1px solid rgba(255,255,255,.12)",
     fontFamily: FONT, fontWeight: 700, fontSize: 38, color: C.paper, opacity: p }}>{text}</div>;
 };
 
-const Live: React.FC = () => <Prod id="live" shot="city" segs={SEGS_B.live!.segs} enter
-  keys={[{ t: 0, x: 585, y: 1266, z: 1.0 }, { t: len("live"), x: 600, y: 1200, z: 1.1 }]} finger={false}
-  a="Ζωντανά. Όλη η πόλη." b="Ο κύκλος γεμίζει: νέες θέσεις." bc="#7fb6ff" extra={<Tag text="Πραγματικά δεδομένα · Τρ 20/10, 09:05 · ×6" until={len("live") - 12} />} />;
-const Late: React.FC = () => <Prod id="late" shot="city" segs={SEGS_B.late!.segs}
-  keys={[{ t: 0, x: 620, y: 1300, z: 1.5 }, { t: len("late"), x: 640, y: 1280, z: 1.75 }]}
+// Pans (capture y at frame centre). The capture is 2532 px tall; the frame shows about 1700 of it: y from 806 (top) to 1725 (bottom).
+const Live: React.FC = () => <Prod id="live" enter finger={false} ys={[{ t: 0, y: 1600 }, { t: len("live"), y: 1000 }]}
+  a="Ζωντανά. Όλη η πόλη." b="Η μπλε μπάρα γεμίζει: νέες θέσεις." bc="#7fb6ff" extra={<Tag text="Πραγματικά δεδομένα · Τρ 20/10, 09:05 · ×6" until={len("live") - 12} />} />;
+const Late: React.FC = () => <Prod id="late" ys={[{ t: 0, y: 1100 }, { t: len("late"), y: 1450 }]}
   a="Ποιο αργεί, με μια ματιά." extra={<Legend at={BEAT} until={len("late") - 12} />} />;
-const Speed: React.FC = () => <Prod id="speed" shot="speed" segs={SEGS_B.speed!.segs}
-  keys={[{ t: 0, x: 600, y: 1300, z: 1.4 }, { t: len("speed"), x: 600, y: 1260, z: 1.6 }]} finger={false}
+const Speed: React.FC = () => <Prod id="speed" finger={false} ys={[{ t: 0, y: 1150 }, { t: len("speed"), y: 1550 }]}
   a="Πού τρέχουν. Πού κολλάνε." extra={<SpeedBar at={BEAT} until={len("speed") - 12} />} />;
-const Fav: React.FC = () => <Prod id="fav" shot="fav" segs={SEGS_B.fav!.segs}
-  keys={[{ t: 0, x: 585, y: 500, z: 1.6 }, { t: len("fav"), x: 585, y: 900, z: 1.05 }]}
+const Focus: React.FC = () => <Prod id="focus" ys={[{ t: 0, y: 806 }, { t: 70, y: 1200 }, { t: 110, y: 1725 }, { t: 190, y: 1600 }, { t: len("focus"), y: 1100 }]}
+  a="Πάτα μια γραμμή." b="Η διαδρομή της, τα λεωφορεία της, μια κατεύθυνση. Ένα × και πίσω στην πόλη." bc="#7fb6ff"
+  extra={<Tag text="×8" at={130} until={190} />} />;
+const Fav: React.FC = () => <Prod id="fav" ys={[{ t: 0, y: 806 }, { t: len("fav"), y: 1150 }]}
   a="Οι γραμμές σου, με ένα ☆." b="Σε περιμένουν την επόμενη φορά." bc="#ffd36b" />;
-const Plan: React.FC = () => <Prod id="plan" shot="plan" segs={SEGS_B.plan!.segs}
-  keys={[{ t: 0, x: 420, y: 450, z: 1.5 }, { t: 50, x: 500, y: 700, z: 1.2 }, { t: len("plan"), x: 585, y: 1100, z: 1.0 }]}
+const Plan: React.FC = () => <Prod id="plan" ys={[{ t: 0, y: 806 }, { t: 60, y: 950 }, { t: len("plan"), y: 1350 }]}
   a="Από εδώ ως εκεί:" b="ποιες γραμμές σε πάνε. Ή ο κοντινότερος σταθμός μετρό." bc="#7fb6ff" />;
-const Alert: React.FC = () => <Prod id="alert" shot="plan" segs={SEGS_B.alert!.segs}
-  keys={[{ t: 0, x: 585, y: 1500, z: 1.35 }, { t: len("alert"), x: 585, y: 1380, z: 1.25 }]}
+const Alert: React.FC = () => <Prod id="alert" ys={[{ t: 0, y: 1300 }, { t: len("alert"), y: 1725 }]}
   a="Κάθε καθημερινή, 07:30." b="Σου γράφει στο Telegram όταν έρχεται. Ή στον browser." bc={APP.tg} />;
 
 const Pitch: React.FC = () => {
@@ -327,13 +346,22 @@ const Api: React.FC = () => {
   );
 };
 
+const REPOS: [string, string][] = [["github.com/angelospk/athens-transit-map", "ο χάρτης"], ["github.com/angelospk/athens-transit-rt", "το backend και το API"]];
 const Open: React.FC = () => {
+  const f = useCurrentFrame();
   const L = len("open");
   return (
-    <div style={{ position: "absolute", left: 140, right: 140, top: 270 }}>
-      <Words text="Ανοιχτά δεδομένα. Ανοιχτός κώδικας." at={0} until={L - 12} size={92} />
-      <Words text="Ελεύθερο να το χρησιμοποιήσεις. Και να το κάνεις καλύτερο." at={BEAT} until={L - 12} size={56} weight={600} color="#5fd27a" style={{ marginTop: 30 }} />
-      <Words text="GTFS ΟΑΣΑ & ΣΤΑΣΥ (data.gov.gr) · OpenStreetMap · άδεια MIT" at={BEAT * 2} until={L - 12} size={42} weight={600} color={C.muted} stagger={1} style={{ marginTop: 50 }} />
+    <div style={{ position: "absolute", left: 120, top: 150, width: 1100 }}>
+      <Words text="Ανοιχτά δεδομένα. Ανοιχτός κώδικας." at={0} until={L - 12} size={80} />
+      <Words text="GTFS ΟΑΣΑ & ΣΤΑΣΥ (data.gov.gr) · OpenStreetMap · MIT" at={BEAT * 0.75} until={L - 12} size={40} weight={600} color={C.muted} stagger={1} style={{ marginTop: 24 }} />
+      {REPOS.map(([r, d], i) => {
+        const p = ease(f, BEAT * (1.5 + i * 0.75), BEAT * (1.5 + i * 0.75) + 12) * (1 - ease(f, L - 12, L, inn));
+        return <div key={r} style={{ marginTop: i ? 22 : 54, padding: "22px 30px", borderRadius: 22, background: "#1c1c1f", border: "1px solid rgba(255,255,255,.12)",
+          opacity: p, transform: `translateY(${(1 - p) * 24}px)` }}>
+          <div style={{ fontFamily: MONO, fontWeight: 700, fontSize: 40, color: C.paper }}>{r}</div>
+          <div style={{ fontFamily: FONT, fontWeight: 600, fontSize: 34, color: C.muted, marginTop: 4 }}>{d}</div>
+        </div>;
+      })}
     </div>
   );
 };
@@ -341,9 +369,9 @@ const Open: React.FC = () => {
 const End: React.FC = () => {
   const f = useCurrentFrame();
   return (
-    <AbsoluteFill style={{ transform: `scale(${1 + 0.03 * (f / len("end"))})` }}>
-      <Pill scale={3.2 * (1 + 0.015 * Math.sin(f / 10))} ring={APP.delay.ontime} style={{ left: W / 2, top: 380 }} />
-      <div style={{ position: "absolute", left: 40, right: 40, top: 540 }}>
+    <AbsoluteFill style={{ transform: `scale(${1 + 0.03 * (f / len("end"))})`, transformOrigin: "30% 50%" }}>
+      <Pill scale={3.2 * (1 + 0.015 * Math.sin(f / 10))} ring={APP.delay.ontime} style={{ left: 640, top: 380 }} />
+      <div style={{ position: "absolute", left: 120, width: 1040, top: 540 }}>
         <Words text="bus.haroldpoi.dev" at={6} size={104} align="center" stagger={0} />
         <Words text="API: bus.haroldpoi.dev/api" at={22} size={58} weight={600} color={C.muted} align="center" stagger={0} style={{ marginTop: 26 }} />
       </div>
@@ -351,8 +379,21 @@ const End: React.FC = () => {
   );
 };
 
-const EL: Record<SceneB, React.FC> = { q: Q, proto: Proto, pipe: Pipe, scale: Scale, live: Live, late: Late, speed: Speed, fav: Fav, plan: Plan,
-  alert: Alert, pitch: Pitch, api: Api, open: Open, end: End };
+// The site's QR: from the open scene through the end card (≥ 3.5 s), on white so a phone can scan it.
+export const SITE_QR_B = { from: GB.bar(SB.open[0]) + Math.round(BEAT * 0.5), to: DURATION_B };
+const SiteQR: React.FC = () => {
+  const f = useCurrentFrame();
+  const p = ease(f, 0, 16);
+  return <div style={{ position: "absolute", left: 1290, top: 190, opacity: p, transform: `scale(${0.85 + 0.15 * p})`, transformOrigin: "50% 0" }}>
+    {/* QR of https://bus.haroldpoi.dev */}
+    <div style={{ padding: 28, background: "#fff", borderRadius: 30, width: 520, boxSizing: "border-box" }}><Img src={staticFile("promo-site-qr.svg")} style={{ display: "block", width: 464, height: 464 }} /></div>
+    <div style={{ fontFamily: FONT, fontWeight: 800, fontSize: 44, color: C.paper, marginTop: 22, width: 520, textAlign: "center" }}>Ο χάρτης</div>
+    <div style={{ fontFamily: MONO, fontWeight: 700, fontSize: 40, color: "#5fd27a", marginTop: 6, width: 520, textAlign: "center" }}>bus.haroldpoi.dev</div>
+  </div>;
+};
+
+const EL: Record<SceneB, React.FC> = { q: Q, proto: Proto, pipe: Pipe, stats: Stats, live: Live, late: Late, speed: Speed, focus: Focus, fav: Fav,
+  plan: Plan, alert: Alert, pitch: Pitch, api: Api, open: Open, end: End };
 
 // The ink stage: a faint light that drifts, so type-only holds never freeze.
 const Stage: React.FC = () => {
@@ -362,7 +403,7 @@ const Stage: React.FC = () => {
 };
 
 // Type-only scenes drift (3 % push), so no hold is a still frame.
-const DRIFT = new Set<SceneB>(["q", "proto", "pitch", "api", "open", "end", "scale"]);
+const DRIFT = new Set<SceneB>(["q", "proto", "stats", "pitch", "api", "open", "end"]);
 const Drift: React.FC<{ id: SceneB; children: React.ReactNode }> = ({ id, children }) => {
   const f = useCurrentFrame();
   if (!DRIFT.has(id)) return <>{children}</>;
@@ -378,7 +419,8 @@ export const FilmB: React.FC<{ audio?: string }> = ({ audio }) => (
       const from = GB.bar(SB[id][0]);
       return <Sequence key={id} from={from} durationInFrames={GB.bar(SB[id][1]) - from} name={id}><Drift id={id}><El /></Drift></Sequence>;
     })}
+    <Sequence from={SITE_QR_B.from} durationInFrames={SITE_QR_B.to - SITE_QR_B.from} name="site-qr"><SiteQR /></Sequence>
     {audio && <Audio src={staticFile(audio)} />}
   </AbsoluteFill>
 );
-void PH; void out; void Plate;
+void PH; void out; void Plate; 

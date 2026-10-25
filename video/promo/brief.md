@@ -73,22 +73,33 @@ sign-off:   bus.haroldpoi.dev (+ the API short link bus.haroldpoi.dev/api in B)
 | 20 | "Ανοιχτά δεδομένα. Ανοιχτός κώδικας. Δωρεάν." sources | open | splice to the track's end | cut |
 | 21 | bus pill + bus.haroldpoi.dev | sign-off | final hit + chime | end |
 
-## B — "Από μια ερώτηση, ένα API για όλη την πόλη" (16:9, bars of 2.09 s)
+## B — "Από μια ερώτηση, ένα API για όλη την πόλη" (16:9, bars of 2.09 s) — v2, 2026-10-25
+
+Harold's notes on v1: story too long (ended at 20.9 s), the phone too small and zoomed so its text was unreadable,
+black rings that look stuck (the metro hub stations), the stats screen with its yellow schedule note; wanted the
+statistics shown fast one after another, a line selected and removed with its bus moving, the GitHub repos, a QR for
+the site at the end, and sounds from earshot.
 
 | bars | on screen | purpose |
 |---|---|---|
-| 0–1 | "Κάποιος ρώτησε στο Twitter: «Γιατί η Αθήνα δεν έχει GTFS Realtime;»" (no tweet shown) | the question |
-| 2–3 | "Η αρχή: ένα πρωτότυπο σε Python, από τον Φοίβο." repo chip; "ένα backend σε Go" | the origin |
-| 4 | diagram: ΟΑΣΑ node (PHP, one line per request) | the constraint |
-| 5–6 | backend node; request dots exactly 5 per second, answers return | 5 req/s |
-| 7 | history cylinder under the backend | own history → speeds, stats |
-| 8–9 | cache node, clients multiply, the request rate does not | one answer for all |
-| 10–11 | counters 279 / 1.000+ / 1.251 + the stats screen in the phone window | scale |
-| 12–17 | one phone window on fixed pixels; captures change inside: live+ring, late, speed, favourites, planner, alert | the product |
-| 18 | "Στήσε τη διαδρομή σου. Μάθε πότε να φύγεις από το σπίτι." | pitch |
-| 19–21 | terminal: real `/v1/lines/040` answer; endpoints on beats; QR on a white frame, «Ανοιχτό API · bus.haroldpoi.dev/api» (decodes 43.25–45.75 s) | API |
-| 22 | open data, open code, sources | open |
+| 0 | "Κάποιος ρώτησε στο Twitter: «Γιατί η Αθήνα δεν έχει GTFS Realtime;»" (no tweet shown) | the question |
+| 1 | "Η αρχή: ένα πρωτότυπο σε Python, από τον Φοίβο." repo chip; "ένα backend σε Go" | the origin |
+| 2–3 | diagram: ΟΑΣΑ node, backend, request dots exactly 5 per second | 5 req/s |
+| 4 | history cylinder under the backend | own history → speeds, stats |
+| 5–6 | cache node, clients multiply, the request rate does not | one answer for all (story ends 14.6 s) |
+| 7–8 | four cards, one per two beats: 279 γραμμές / 1.000+; 1.026 on the road (chart); 1.051 / 655 weekdays vs weekends (chart); 11,9 km/h (chart) | scale, from the app's own statistics |
+| 9–11 | one large phone (0.62 of the capture, fixed; the camera only pans): live + ring, late, typical speed | the product |
+| 12–13 | trolley 11: pick → route → a bus → one direction → 8× motion → × back to the city | focus a line |
+| 14–17 | favourites, planner, weekday 07:30 alert + Telegram | the product |
+| 18 | "Στήσε τη διαδρομή σου. Μάθε πότε να φύγεις από το σπίτι." (a 0.35 s music stop-down before it) | pitch |
+| 19–21 | terminal: real `/v1/lines/040` answer; endpoints on beats; QR «Ανοιχτό API · bus.haroldpoi.dev/api» (decodes 43.25–45.75 s) | API |
+| 22 | open data, the two GitHub repos; the site's QR (bus.haroldpoi.dev) appears and stays to the end (46.25–50 s) | open |
 | 23 | pill + bus.haroldpoi.dev + «API: bus.haroldpoi.dev/api» | sign-off |
+
+Decisions (v2): captures `b*` with `stationsOn=false` (A keeps its own captures); trolley 11 for the focus because on a
+Sunday morning it was one of the few lines with fresh fixes (040's were 3 min old and drew a stale warning); the
+latest day's average-speed chart and the line ranking were left out (gaps, a 0,1 km/h low, only 2 ranked lines);
+sounds from the earshot bank (`promo/sfx.sh`), placed by `scripts/promo-timing.ts`; `earshot critique`: launch-grade.
 
 ## Style (both)
 

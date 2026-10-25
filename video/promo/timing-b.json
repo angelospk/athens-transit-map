@@ -7,42 +7,46 @@
  "scenes": {
   "q": [
    0,
-   250
+   125
   ],
   "proto": [
-   250,
-   501
+   125,
+   250
   ],
   "pipe": [
-   501,
-   1252
+   250,
+   877
   ],
-  "scale": [
-   1252,
-   1503
+  "stats": [
+   877,
+   1127
   ],
   "live": [
-   1503,
-   1628
+   1127,
+   1252
   ],
   "late": [
-   1628,
-   1753
+   1252,
+   1377
   ],
   "speed": [
+   1377,
+   1503
+  ],
+  "focus": [
+   1503,
+   1753
+  ],
+  "fav": [
    1753,
    1878
   ],
-  "fav": [
+  "plan": [
    1878,
    2003
   ],
-  "plan": [
-   2003,
-   2129
-  ],
   "alert": [
-   2129,
+   2003,
    2254
   ],
   "pitch": [
@@ -70,164 +74,315 @@
   "url": "https://pixabay.com/music/corporate-tech-corporate-593075/",
   "headFrom": 0.075,
   "splice": 2755,
-  "tailFrom": 179.5532608695652
+  "tailFrom": 179.5532608695652,
+  "stopDowns": [
+   2254
+  ]
  },
  "sfx": [
   [
-   250,
-   "whoosh"
+   24,
+   "ui_pop/soft"
   ],
   [
-   501,
-   "whoosh"
+   125,
+   "swish/flick"
+  ],
+  [
+   163,
+   "knock/plastic"
+  ],
+  [
+   250,
+   "swish/flick"
+  ],
+  [
+   256,
+   "knock/wood"
+  ],
+  [
+   356,
+   "knock/wood"
+  ],
+  [
+   374,
+   "ui_pop/blip"
+  ],
+  [
+   386,
+   "ui_pop/blip"
+  ],
+  [
+   398,
+   "ui_pop/blip"
+  ],
+  [
+   410,
+   "ui_pop/blip"
+  ],
+  [
+   422,
+   "ui_pop/blip"
+  ],
+  [
+   500,
+   "knock/desk"
+  ],
+  [
+   626,
+   "knock/wood"
+  ],
+  [
+   648,
+   "drip/plink"
+  ],
+  [
+   659,
+   "drip/plink"
+  ],
+  [
+   671,
+   "drip/plink"
+  ],
+  [
+   683,
+   "drip/plink"
+  ],
+  [
+   694,
+   "drip/plink"
+  ],
+  [
+   706,
+   "drip/plink"
+  ],
+  [
+   718,
+   "drip/plink"
+  ],
+  [
+   730,
+   "drip/plink"
+  ],
+  [
+   741,
+   "drip/plink"
+  ],
+  [
+   753,
+   "drip/plink"
+  ],
+  [
+   765,
+   "drip/plink"
+  ],
+  [
+   776,
+   "drip/plink"
+  ],
+  [
+   877,
+   "cut_hit/sub"
+  ],
+  [
+   877,
+   "swish/flick"
+  ],
+  [
+   940,
+   "cut_hit/punch"
+  ],
+  [
+   1002,
+   "cut_hit/punch"
+  ],
+  [
+   1065,
+   "cut_hit/punch"
+  ],
+  [
+   1127,
+   "swish/flick"
   ],
   [
    1252,
-   "whoosh"
+   "swish/flick"
+  ],
+  [
+   1377,
+   "swish/flick"
   ],
   [
    1503,
-   "whoosh"
+   "swish/flick"
   ],
   [
-   1628,
-   "whoosh"
+   1527,
+   "tap/finger"
+  ],
+  [
+   1580,
+   "tap/finger"
+  ],
+  [
+   1611,
+   "tap/finger"
+  ],
+  [
+   1633,
+   "riser/snatch"
+  ],
+  [
+   1726,
+   "tap/finger"
   ],
   [
    1753,
-   "whoosh"
+   "swish/flick"
+  ],
+  [
+   1771,
+   "tap/finger"
+  ],
+  [
+   1824,
+   "tap/finger"
   ],
   [
    1878,
-   "whoosh"
+   "swish/flick"
   ],
   [
-   1896,
-   "tap"
-  ],
-  [
-   1949,
-   "tap"
+   1919,
+   "tap/finger"
   ],
   [
    2003,
-   "whoosh"
+   "swish/flick"
   ],
   [
-   2045,
-   "tap"
+   2027,
+   "tap/finger"
   ],
   [
-   2129,
-   "whoosh"
+   2034,
+   "notify/mid_tine"
   ],
   [
-   2142,
-   "tap"
+   2097,
+   "tap/finger"
   ],
   [
    2254,
-   "whoosh"
+   "swish/flick"
   ],
   [
    2379,
-   "whoosh"
+   "swish/flick"
   ],
   [
    2389,
-   "tick"
+   "pro_typing_key/tick"
   ],
   [
    2392,
-   "tick"
+   "pro_typing_key/tick"
   ],
   [
    2394,
-   "tick"
+   "pro_typing_key/tick"
   ],
   [
    2397,
-   "tick"
+   "pro_typing_key/tick"
   ],
   [
    2399,
-   "tick"
+   "pro_typing_key/tick"
   ],
   [
    2402,
-   "tick"
+   "pro_typing_key/tick"
   ],
   [
    2404,
-   "tick"
+   "pro_typing_key/tick"
   ],
   [
    2407,
-   "tick"
+   "pro_typing_key/tick"
   ],
   [
    2409,
-   "tick"
+   "pro_typing_key/tick"
   ],
   [
    2412,
-   "tick"
+   "pro_typing_key/tick"
   ],
   [
    2414,
-   "tick"
+   "pro_typing_key/tick"
   ],
   [
    2417,
-   "tick"
+   "pro_typing_key/tick"
   ],
   [
    2419,
-   "tick"
+   "pro_typing_key/tick"
   ],
   [
    2422,
-   "tick"
+   "pro_typing_key/tick"
   ],
   [
    2439,
-   "pop"
+   "ui_pop/boop"
   ],
   [
    2473,
-   "pop"
+   "ui_pop/step"
   ],
   [
    2496,
-   "pop"
+   "ui_pop/step"
   ],
   [
    2520,
-   "pop"
+   "ui_pop/step"
   ],
   [
    2543,
-   "pop"
+   "ui_pop/step"
   ],
   [
    2567,
-   "pop"
+   "ui_pop/step"
   ],
   [
    2582,
-   "chime"
+   "mallet/flourish"
   ],
   [
    2755,
-   "whoosh"
+   "swish/flick"
+  ],
+  [
+   2771,
+   "mallet/up4"
   ],
   [
    2880,
-   "whoosh"
+   "swish/flick"
   ],
   [
    2884,
-   "end"
+   "cut_hit/sub"
+  ],
+  [
+   2888,
+   "mallet/glock"
   ]
  ]
 }

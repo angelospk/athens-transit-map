@@ -46,6 +46,17 @@ fade = int(0.03 * SR)
 music[:fade] *= np.linspace(0, 1, fade)[:, None]
 end = int(0.25 * SR)
 music[-end:] *= np.linspace(1, 0, end)[:, None] ** 2
+# Stop-downs: the music drops out for 0.35 s before a frame (40 ms ramps), so the next hit lands in silence.
+for sd in M.get("stopDowns", []):
+    b, r = int(SR * sd / FPS), int(0.04 * SR)
+    a = b - int(0.35 * SR)
+    g = np.ones(N)
+    # Ramps and the dip clipped to [0, N): a stop-down near either end of the film stays inside it.
+    for lo, hi, ramp in ((a - r, a, np.linspace(1, 0.05, r)), (a, b, None), (b, b + r, np.linspace(0.05, 1, r))):
+        i, j = max(0, lo), min(N, hi)
+        if i < j:
+            g[i:j] = 0.05 if ramp is None else ramp[i - lo:j - lo]
+    music *= g[:, None]
 
 
 def envlp(n, a, r):
@@ -107,9 +118,22 @@ def chime(notes=(1046.5, 1318.5, 1568.0), dur=0.9):
 
 
 SFX = {"tap": tap, "tick": tick, "pop": pop, "whoosh": whoosh, "chime": chime, "end": lambda: chime((783.99, 1046.5, 1318.5, 1568.0), 1.4)}
+# Promo B: earshot bank sounds (kind/member), rendered by promo/sfx.sh to out/sfx/<kind>__<member>.wav; each at a
+# peak set by its role (hits loudest, keys and blips quietest), the same band above the music as the numpy sounds.
+PEAK = {"cut_hit": 0.6, "mallet": 0.35, "notify": 0.4, "riser": 0.3, "swish": 0.22, "knock": 0.4, "ui_pop": 0.32, "drip": 0.25, "pro_typing_key": 0.2, "tap": 0.4}
+bank = {}
+
+
+def earshot(k):
+    if k not in bank:
+        x = load(ROOT / "out/sfx" / (k.replace("/", "__") + ".wav")).mean(axis=1)
+        bank[k] = x / np.max(np.abs(x)) * PEAK[k.split("/")[0]]
+    return bank[k]
+
+
 sfx = np.zeros(N)
 for f, k in T["sfx"]:
-    s = SFX[k]()
+    s = earshot(k) if "/" in k else SFX[k]()
     i = int(SR * f / FPS)
     j = min(N, i + len(s))
     sfx[i:j] += s[:j - i]
