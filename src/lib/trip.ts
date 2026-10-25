@@ -359,8 +359,10 @@ export function parsePhoton(body: unknown): Place[] {
     const lon = Number(c[0]), lat = Number(c[1]);
     const label = p.name ?? (p.street ? [p.street, p.housenumber].filter(Boolean).join(" ") : null);
     if (typeof label !== "string" || !label || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return [];
-    const hint = [...new Set([p.district ?? p.locality, p.city].filter((x): x is string => typeof x === "string" && x !== label))].join(", ");
     const kind = p.osm_key === "place" ? "area" : p.type === "street" || (p.housenumber && !p.name) ? "street" : "poi";
+    const place = [p.district ?? p.locality, p.city].filter((x): x is string => typeof x === "string" && x !== label);
+    const street = kind === "poi" && p.street ? [[p.street, p.housenumber].filter(Boolean).join(" ")] : [];
+    const hint = [...new Set([...street, ...place].filter(x => x !== label))].join(", ");
     const key = `${label}|${hint}`;
     if (seen.has(key)) return [];
     seen.add(key);
@@ -368,13 +370,14 @@ export function parsePhoton(body: unknown): Place[] {
   });
 }
 
-// One short list: areas first (what people type: "Ταύρος"), then stop places, streets, and one other
-// place. An area with a stop place of its name within 1 km is that place: the stops have the lines.
+// One short list: areas first (what people type: "Ταύρος"), then stop places, streets, and up to three
+// other places (shops, chargers). An area with a stop place of its name within 1 km is that place: the
+// stops have the lines.
 export function suggest(own: Place[], geo: Place[], max = 7): Place[] {
   const covered = (a: Place) => own.some(o => fold(o.label) === fold(a.label) && o.pts.some(p => distM(p, a.pts[0]) < 1000));
   const areas = geo.filter(g => g.kind === "area" && !covered(g)).slice(0, 2);
-  const rest = [...geo.filter(g => g.kind === "street"), ...geo.filter(g => g.kind === "poi").slice(0, 1)];
-  const stops = own.slice(0, Math.max(max - areas.length - Math.min(rest.length, 2), 0));
+  const rest = [...geo.filter(g => g.kind === "street"), ...geo.filter(g => g.kind === "poi").slice(0, 3)];
+  const stops = own.slice(0, Math.max(max - areas.length - Math.min(rest.length, 4), 0));
   return [...areas, ...stops, ...rest].slice(0, max);
 }
 
@@ -390,19 +393,31 @@ export function loadTripIndex(): Promise<TripIndex> {
 }
 
 // Areas and streets (Ταύρος has no stop of its name), from Photon (OpenStreetMap data, made for search
-// as you type; the caller waits for a pause in typing). Answers are cached.
+// as you type; the caller waits for a pause in typing). Answers are cached; a point biases them to the
+// places near it, and a house number the map does not know falls back to its street.
 const GEOCODE_URL = import.meta.env.VITE_GEOCODE_URL || "https://photon.komoot.io/api/";
 const geocoded = new Map<string, Place[]>();
-export async function geocode(query: string, signal?: AbortSignal): Promise<Place[]> {
-  const q = query.trim(), key = fold(q);
+export async function geocode(query: string, signal?: AbortSignal, near?: Pt): Promise<Place[]> {
+  // About 1 km: the point is sent as it is cached, so one answer serves the points near it.
+  const at = near?.map(x => Number(x.toFixed(2)));
+  const q = query.trim(), key = `${fold(q)}|${at ?? ""}`;
   const hit = geocoded.get(key);
   if (hit) return hit;
-  const u = new URL(GEOCODE_URL);
-  // Attica only.
-  Object.entries({ q, bbox: "23.35,37.65,24.15,38.25", limit: "8" }).forEach(([k, v]) => u.searchParams.set(k, v));
-  const r = await fetch(u, { signal });
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  const found = parsePhoton(await r.json());
+  const ask = async (qq: string) => {
+    const u = new URL(GEOCODE_URL);
+    // Attica only.
+    Object.entries({ q: qq, bbox: "23.35,37.65,24.15,38.25", limit: "8" }).forEach(([k, v]) => u.searchParams.set(k, v));
+    if (at) {
+      u.searchParams.set("lat", String(at[0]));
+      u.searchParams.set("lon", String(at[1]));
+    }
+    const r = await fetch(u, { signal });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return parsePhoton(await r.json());
+  };
+  let found = await ask(q);
+  const num = /\s+\d+(?:\s*-\s*\d+)?(?:\s*[α-ωa-z])?$/i;   // "30", "30-32", "30Α", "30 Α"
+  if (!found.length && num.test(q)) found = await ask(q.replace(num, ""));
   geocoded.set(key, found);
   return found;
 }

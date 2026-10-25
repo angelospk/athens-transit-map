@@ -14,6 +14,7 @@
   import { encodeAlert, type Rep } from "../tglink";
   import type { AppState } from "../state.svelte";
   import Bell from "./Bell.svelte";
+  import { walkUrl } from "../maps";
   import { alertTargets, anyMetro, boardings, centre, distM, findTransfers, findTrips, geocode, legTrip, loadTripIndex, metroDirect, metroPlaces, nearestStation, places, searchPlaces,
     suggest, termini, toggleTripLine, type Pt, type TripIndex, type TripLine, type TripTransfer } from "../trip";
 
@@ -96,10 +97,12 @@
     const q = text.trim();
     if (q.length < 3) return;
     const g = gen;
+    const other = ends[f === "from" ? "to" : "from"].place;
+    const near = other && other.kind !== "metro-any" ? centre(other.pts) : undefined;   // the nearest shop of a chain
     geoBusy = true;
     timer = setTimeout(() => {
       ctl = new AbortController();
-      geocode(q, ctl.signal).then(
+      geocode(q, ctl.signal, near).then(
         r => { if (g === gen) geo = { text: q, places: r }; },
         () => {},   // offline or busy: the stops still answer
       ).finally(() => { if (g === gen) geoBusy = false; });
@@ -169,6 +172,8 @@
     return s ? { name: s.name, d: st.d, pt: [s.lat, s.lon] as Pt } : null;
   };
   const anyEnd = $derived(to?.kind === "metro-any");
+  // Google Maps, on foot to the first stop: from where the phone is, or from the chosen start.
+  const mapsTo = (k: number) => walkUrl(ptOf(k), from && from.kind !== "me" ? centre(from.pts) : undefined);
   const walkTo = $derived(anyEnd && from ? stationAt(centre(from.pts)) : null);
   // Both ends near one metro or tram line: said before the buses.
   const byMetro = $derived(app.metro && from && to && !anyEnd && !tooClose ? metroDirect(app.metro, from.pts, to.pts, radius) : null);
@@ -269,12 +274,11 @@
     return `${p.hour}:${String(Math.floor(+p.minute / 5) * 5).padStart(2, "0")}`;
   };
   let repDays = $state(0);
-  let repStart = $state(nextFive());
+  // Hours and minutes as two lists: a time input shows AM/PM on phones set to 12 hours.
+  const [h0, m0] = nextFive().split(":").map(Number);
+  let repH = $state(h0), repM = $state(m0);
   let repLen = $state(60);
-  const rep = $derived.by((): Rep | undefined => {
-    const [h, m] = repStart.split(":").map(Number);
-    return repDays && Number.isFinite(h) && Number.isFinite(m) ? { days: repDays, start: h * 60 + Math.floor(m / 5) * 5, len: repLen } : undefined;
-  });
+  const rep = $derived.by((): Rep | undefined => (repDays ? { days: repDays, start: repH * 60 + repM, len: repLen } : undefined));
   const tgPayload = $derived(repDays ? (rep && data && !data.stale ? encodeAlert(data.ix, n, targets, rep) : null) : payload);
 
   // Stop alert for the chosen lines, at the chosen stop: in the page, and as web push where the browser
@@ -453,6 +457,9 @@
               <span><b>{mins(t.min)}</b> {stop(v.from)} → {offAt(v.to)}</span>
               <small>{#if going(t)}προς {going(t)} · {/if}{t.stops} {t.stops === 1 ? "στάση" : "στάσεις"} · περπάτημα {metres(t.walk)}{#if k >= MAX_LINES} · εκτός χάρτη (έως {MAX_LINES}){/if}</small>
             </button>
+            <a class="maps" href={mapsTo(v.from)} target="_blank" rel="noopener" title="Με τα πόδια ως τη στάση {stop(v.from)}, στο Google Maps"
+              aria-label="Με τα πόδια ως τη στάση {stop(v.from)}, στο Google Maps"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z" /><circle cx="12" cy="10" r="2.3" /></svg></a>
           </li>
         {/each}
       </ol>
@@ -470,6 +477,9 @@
                 <span><b>{mins(x.min)}</b> {stop(a.from)} → {stop(a.to)}, αλλαγή: {stop(b.from)} → {offAt(b.to)}</span>
                 <small>{a.stops + b.stops} στάσεις · περπάτημα {metres(x.walk)}{#if x.xfer >= 50} και {metres(x.xfer)} στην αλλαγή{/if} · με ~5′ αναμονή</small>
               </button>
+              <a class="maps" href={mapsTo(a.from)} target="_blank" rel="noopener" title="Με τα πόδια ως τη στάση {stop(a.from)}, στο Google Maps"
+                aria-label="Με τα πόδια ως τη στάση {stop(a.from)}, στο Google Maps"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z" /><circle cx="12" cy="10" r="2.3" /></svg></a>
             </li>
           {/each}
         </ol>
@@ -516,7 +526,9 @@
               </select>
             </label>
             {#if repDays}
-              <label>Από <input type="time" step="300" bind:value={repStart} />
+              <label>Από
+                <select class="hm" bind:value={repH} aria-label="Ώρα">{#each { length: 24 }, h (h)}<option value={h}>{String(h).padStart(2, "0")}</option>{/each}</select>:<select
+                  class="hm" bind:value={repM} aria-label="Λεπτά">{#each { length: 12 }, k (k)}<option value={k * 5}>{String(k * 5).padStart(2, "0")}</option>{/each}</select>
                 για <select bind:value={repLen}>{#each [[30, "½ ώρα"], [60, "1 ώρα"], [90, "1½ ώρα"], [120, "2 ώρες"]] as const as [m, t] (m)}<option value={m}>{t}</option>{/each}</select>
               </label>
             {/if}
@@ -615,11 +627,13 @@
     border: 0; border-radius: 8px; background: none; color: var(--fg); font-size: 13px; text-align: left; cursor: pointer; }
   .pick:hover, .picked .pick { background: var(--control); }
   .pick b { font-variant-numeric: tabular-nums; }
+  .maps { flex: none; display: grid; place-items: center; width: 34px; height: 34px; margin: -3px -4px 0 0; border-radius: 8px; color: var(--muted); }
+  .maps:hover { background: var(--control); color: var(--fg); }
+  .maps svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
   .metro { margin: 8px 0 0; padding: 6px 8px; border-radius: 8px; background: var(--control); font-size: 13px; }
   .sub { margin: 10px 0 0; font-size: 12px; color: var(--muted); font-weight: 600; }
   .all { margin-top: 6px; font-size: 12px; padding: 0; }
-  .form input[type="time"] { min-height: 34px; padding: 0 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--control);
-    color: var(--fg); font-size: 16px; }
+  .form > label select.hm { flex: none; font-variant-numeric: tabular-nums; }
   .alert { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
   .alert span { flex: 1; }
   .alert .lead { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 8px; margin-left: -8px; border: 0;

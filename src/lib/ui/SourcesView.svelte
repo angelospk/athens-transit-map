@@ -1,6 +1,6 @@
 <script lang="ts">
   import { MediaQuery } from "svelte/reactivity";
-  import { BACKEND_REPO, FRONTEND_REPO, GTFS_PAGE, STASY_GTFS_PAGE, TILE_CREDITS } from "../sources";
+  import { API_DOCS, BACKEND_REPO, FRONTEND_REPO, GTFS_PAGE, STASY_GTFS_PAGE, TILE_CREDITS } from "../sources";
 
   let { motion }: { motion: boolean } = $props();
 
@@ -63,7 +63,8 @@
     <li>
       <h3><span>3</span> Λεωφορεία, ζωντανά</h3>
       <p>Η τρέχουσα θέση κάθε οχήματος, από τον δικό μας διακομιστή δεδομένων.</p>
-      <p class="src"><a href={BACKEND_REPO} target="_blank" rel="noopener">Κώδικας του backend (GitHub)</a></p>
+      <p class="src"><a href={BACKEND_REPO} target="_blank" rel="noopener">Κώδικας του backend (GitHub)</a><span aria-hidden="true">&nbsp;·&nbsp;</span><a
+        href={API_DOCS} target="_blank" rel="noopener">Δημόσιο API (τεκμηρίωση)</a></p>
     </li>
     <li>
       <h3><span>2</span> Γραμμές και δρομολόγια</h3>

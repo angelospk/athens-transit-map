@@ -119,7 +119,7 @@ describe("parsePhoton", () => {
       { label: "Ταύρος", hint: "Δημοτική Ενότητα Ταύρου", pts: [[37.97, 23.69]], lines: [], kind: "area" },
       { label: "Γαλατσίου", hint: "Γαλάτσι, Δήμος Γαλατσίου", pts: [[38.01, 23.75]], lines: [], kind: "street" },
       { label: "Μαρασλή 20", hint: "Αθήνα", pts: [[37.98, 23.74]], lines: [], kind: "street" },
-      { label: "EKO", hint: "Γαλάτσι", pts: [[37.98, 23.74]], lines: [], kind: "poi" },
+      { label: "EKO", hint: "Γαλατσίου 88, Γαλάτσι", pts: [[37.98, 23.74]], lines: [], kind: "poi" },
     ]);
   });
   it("keeps one of the same name and area (pieces of one street)", () => {
@@ -141,9 +141,15 @@ describe("suggest", () => {
     const r = suggest(own, [geo("Οδός", 37, "street"), geo("Περιοχή", 37.5, "area")], 6);
     expect(r.map(p => p.label)).toEqual(["Περιοχή", "Α", "Β", "Γ", "Δ", "Οδός"]);
   });
-  it("shows at most one point of interest (shops, chargers), after streets", () => {
-    const r = suggest([], [geo("Φορτιστής", 37, "poi"), geo("Κατάστημα", 37.1, "poi"), geo("Οδός", 37.2, "street")]);
-    expect(r.map(p => p.label)).toEqual(["Οδός", "Φορτιστής"]);
+  it("shows at most three points of interest (shops, chargers), after streets", () => {
+    const pois = ["Α", "Β", "Γ", "Δ"].map((l, k) => geo(`Κατάστημα ${l}`, 37 + k / 10, "poi"));
+    const r = suggest([], [...pois, geo("Οδός", 37.9, "street")]);
+    expect(r.map(p => p.label)).toEqual(["Οδός", "Κατάστημα Α", "Κατάστημα Β", "Κατάστημα Γ"]);
+  });
+  it("keeps room for shops when many stops match", () => {
+    const own = ["Α", "Β", "Γ", "Δ", "Ε", "Ζ"].map((l, k) => stop(l, 38 + k));
+    const r = suggest(own, [geo("Μασούτης", 37, "poi"), geo("Μασούτης", 37.1, "poi")], 7);
+    expect(r.map(p => p.label)).toEqual(["Α", "Β", "Γ", "Δ", "Ε", "Μασούτης", "Μασούτης"]);
   });
   it("drops an area that a stop place of the same name already covers", () => {
     const r = suggest([stop("ΑΜΠΕΛΟΚΗΠΟΙ", 37.987)], [geo("Αμπελόκηποι", 37.989, "area"), geo("Αμπελόκηποι", 37.5, "area")]);
