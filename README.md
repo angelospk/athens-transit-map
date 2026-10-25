@@ -3,7 +3,7 @@
 **Live map:** https://bus.haroldpoi.dev · **Public API (no key), docs with try-it:**
 [bus.haroldpoi.dev/api](https://bus.haroldpoi.dev/api) (OpenAPI 3.1, base URL `https://transit.haroldpoi.dev`)
 
-https://github.com/user-attachments/assets/320b5137-c218-4fed-a6e5-b282d63cb999
+https://github.com/user-attachments/assets/7949d8bc-1fb0-4a36-8a2c-bae249b19fcb
 
 ## At a glance
 
