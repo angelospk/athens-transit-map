@@ -3,7 +3,7 @@
 import { writeFileSync } from "node:fs";
 import { PCAPS, sceneOf } from "../src/promo/kit";
 import { API_A, DURATION_A, GA, SA, SEGS_A } from "../src/promo/FilmA";
-import { API_B, DURATION_B, GB, PIPE_B, SB, SEGS_B, SITE_QR_B, STATS_B } from "../src/promo/FilmB";
+import { API_B, DURATION_B, GB, PIPE_B, SB, SEGS_B, STATS_B } from "../src/promo/FilmB";
 
 type G = typeof GA;
 // sfx names: A uses the numpy sounds of promo/audio.py (tap, tick, pop, whoosh, chime, end); B uses ids of the earshot
@@ -53,13 +53,12 @@ build("b", GB, 115, SB as never, SEGS_B as never, DURATION_B, (push, at) => {
   push(p0 + PIPE_B[3], "knock/wood");                                   // cache
   for (let i = 1; i <= 12; i++) push(p0 + PIPE_B[3] + 10 + Math.round((BAR * 1.2 - 10) * i / 12), "drip/plink");   // clients
   STATS_B.forEach((f, i) => { push(at("stats") + f, i ? "cut_hit/punch" : "cut_hit/sub"); });
-  push(at("focus") + 130, "riser/snatch");                              // ×8
+  push(at("focus") + 130, "riser/snatch");                              // the 8× part
   push(at("alert") + Math.round(B), "notify/mid_tine");
   for (let k = 0; k < 41; k += 3) push(at("api") + API_B.type + Math.round(k / 1.2), "pro_typing_key/tick");
   push(at("api") + API_B.json, "ui_pop/boop");
   for (const h of API_B.hits) push(at("api") + h, "ui_pop/step");
   push(at("api") + API_B.qr, "mallet/flourish");
-  push(SITE_QR_B.from, "mallet/up4");
   push(at("end") + 4, "cut_hit/sub");
   push(at("end") + 8, "mallet/glock");
 }, { file: "audio/track/the_mountain-tech-corporate-593075.mp3", license: "Pixabay Content License", title: "Tech Corporate", by: "The_Mountain",

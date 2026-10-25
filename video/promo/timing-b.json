@@ -3,67 +3,67 @@
  "fps": 60,
  "bpm": 115,
  "beatFrames": 31.304347826086957,
- "durationInFrames": 3005,
+ "durationInFrames": 3631,
  "scenes": {
   "q": [
    0,
-   125
+   188
   ],
   "proto": [
-   125,
-   250
+   188,
+   407
   ],
   "pipe": [
-   250,
-   877
-  ],
-  "stats": [
-   877,
-   1127
-  ],
-  "live": [
-   1127,
+   407,
    1252
   ],
-  "late": [
+  "stats": [
    1252,
-   1377
+   1628
   ],
-  "speed": [
-   1377,
-   1503
-  ],
-  "focus": [
-   1503,
+  "live": [
+   1628,
    1753
   ],
-  "fav": [
+  "late": [
    1753,
-   1878
+   1910
+  ],
+  "speed": [
+   1910,
+   2097
+  ],
+  "focus": [
+   2097,
+   2348
+  ],
+  "fav": [
+   2348,
+   2504
   ],
   "plan": [
-   1878,
-   2003
+   2504,
+   2661
   ],
   "alert": [
-   2003,
-   2254
+   2661,
+   2911
   ],
   "pitch": [
-   2254,
-   2379
+   2911,
+   3037
   ],
   "api": [
-   2379,
-   2755
+   3037,
+   3381
   ],
   "open": [
-   2755,
-   2880
+   3381,
+   3506
   ],
   "end": [
-   2880,
-   3005
+   3506,
+   3631
   ]
  },
  "music": {
@@ -73,10 +73,10 @@
   "by": "The_Mountain",
   "url": "https://pixabay.com/music/corporate-tech-corporate-593075/",
   "headFrom": 0.075,
-  "splice": 2755,
+  "splice": 3381,
   "tailFrom": 179.5532608695652,
   "stopDowns": [
-   2254
+   2911
   ]
  },
  "sfx": [
@@ -85,303 +85,299 @@
    "ui_pop/soft"
   ],
   [
-   125,
+   188,
    "swish/flick"
   ],
   [
-   163,
+   226,
    "knock/plastic"
   ],
   [
-   250,
+   407,
    "swish/flick"
   ],
   [
-   256,
+   413,
    "knock/wood"
   ],
   [
-   356,
+   576,
    "knock/wood"
   ],
   [
-   374,
+   594,
    "ui_pop/blip"
   ],
   [
-   386,
+   606,
    "ui_pop/blip"
   ],
   [
-   398,
+   618,
    "ui_pop/blip"
   ],
   [
-   410,
+   630,
    "ui_pop/blip"
   ],
   [
-   422,
+   642,
    "ui_pop/blip"
   ],
   [
-   500,
+   751,
    "knock/desk"
   ],
   [
-   626,
+   970,
    "knock/wood"
   ],
   [
-   648,
+   992,
    "drip/plink"
   ],
   [
-   659,
+   1003,
    "drip/plink"
   ],
   [
-   671,
+   1015,
    "drip/plink"
   ],
   [
-   683,
+   1027,
    "drip/plink"
   ],
   [
-   694,
+   1038,
    "drip/plink"
   ],
   [
-   706,
+   1050,
    "drip/plink"
   ],
   [
-   718,
+   1062,
    "drip/plink"
   ],
   [
-   730,
+   1074,
    "drip/plink"
   ],
   [
-   741,
+   1085,
    "drip/plink"
   ],
   [
-   753,
+   1097,
    "drip/plink"
   ],
   [
-   765,
+   1109,
    "drip/plink"
   ],
   [
-   776,
+   1120,
    "drip/plink"
   ],
   [
-   877,
+   1252,
    "cut_hit/sub"
-  ],
-  [
-   877,
-   "swish/flick"
-  ],
-  [
-   940,
-   "cut_hit/punch"
-  ],
-  [
-   1002,
-   "cut_hit/punch"
-  ],
-  [
-   1065,
-   "cut_hit/punch"
-  ],
-  [
-   1127,
-   "swish/flick"
   ],
   [
    1252,
    "swish/flick"
   ],
   [
-   1377,
+   1346,
+   "cut_hit/punch"
+  ],
+  [
+   1440,
+   "cut_hit/punch"
+  ],
+  [
+   1534,
+   "cut_hit/punch"
+  ],
+  [
+   1628,
    "swish/flick"
-  ],
-  [
-   1503,
-   "swish/flick"
-  ],
-  [
-   1527,
-   "tap/finger"
-  ],
-  [
-   1580,
-   "tap/finger"
-  ],
-  [
-   1611,
-   "tap/finger"
-  ],
-  [
-   1633,
-   "riser/snatch"
-  ],
-  [
-   1726,
-   "tap/finger"
   ],
   [
    1753,
    "swish/flick"
   ],
   [
-   1771,
-   "tap/finger"
-  ],
-  [
-   1824,
-   "tap/finger"
-  ],
-  [
-   1878,
+   1910,
    "swish/flick"
-  ],
-  [
-   1919,
-   "tap/finger"
-  ],
-  [
-   2003,
-   "swish/flick"
-  ],
-  [
-   2027,
-   "tap/finger"
-  ],
-  [
-   2034,
-   "notify/mid_tine"
   ],
   [
    2097,
+   "swish/flick"
+  ],
+  [
+   2121,
    "tap/finger"
   ],
   [
-   2254,
+   2174,
+   "tap/finger"
+  ],
+  [
+   2205,
+   "tap/finger"
+  ],
+  [
+   2227,
+   "riser/snatch"
+  ],
+  [
+   2321,
+   "tap/finger"
+  ],
+  [
+   2348,
    "swish/flick"
   ],
   [
-   2379,
+   2371,
+   "tap/finger"
+  ],
+  [
+   2437,
+   "tap/finger"
+  ],
+  [
+   2504,
    "swish/flick"
   ],
   [
-   2389,
-   "pro_typing_key/tick"
+   2556,
+   "tap/finger"
   ],
   [
-   2392,
-   "pro_typing_key/tick"
+   2661,
+   "swish/flick"
   ],
   [
-   2394,
-   "pro_typing_key/tick"
+   2685,
+   "tap/finger"
   ],
   [
-   2397,
-   "pro_typing_key/tick"
-  ],
-  [
-   2399,
-   "pro_typing_key/tick"
-  ],
-  [
-   2402,
-   "pro_typing_key/tick"
-  ],
-  [
-   2404,
-   "pro_typing_key/tick"
-  ],
-  [
-   2407,
-   "pro_typing_key/tick"
-  ],
-  [
-   2409,
-   "pro_typing_key/tick"
-  ],
-  [
-   2412,
-   "pro_typing_key/tick"
-  ],
-  [
-   2414,
-   "pro_typing_key/tick"
-  ],
-  [
-   2417,
-   "pro_typing_key/tick"
-  ],
-  [
-   2419,
-   "pro_typing_key/tick"
-  ],
-  [
-   2422,
-   "pro_typing_key/tick"
-  ],
-  [
-   2439,
-   "ui_pop/boop"
-  ],
-  [
-   2473,
-   "ui_pop/step"
-  ],
-  [
-   2496,
-   "ui_pop/step"
-  ],
-  [
-   2520,
-   "ui_pop/step"
-  ],
-  [
-   2543,
-   "ui_pop/step"
-  ],
-  [
-   2567,
-   "ui_pop/step"
-  ],
-  [
-   2582,
-   "mallet/flourish"
+   2692,
+   "notify/mid_tine"
   ],
   [
    2755,
+   "tap/finger"
+  ],
+  [
+   2911,
    "swish/flick"
   ],
   [
-   2771,
-   "mallet/up4"
-  ],
-  [
-   2880,
+   3037,
    "swish/flick"
   ],
   [
-   2884,
+   3047,
+   "pro_typing_key/tick"
+  ],
+  [
+   3050,
+   "pro_typing_key/tick"
+  ],
+  [
+   3052,
+   "pro_typing_key/tick"
+  ],
+  [
+   3055,
+   "pro_typing_key/tick"
+  ],
+  [
+   3057,
+   "pro_typing_key/tick"
+  ],
+  [
+   3060,
+   "pro_typing_key/tick"
+  ],
+  [
+   3062,
+   "pro_typing_key/tick"
+  ],
+  [
+   3065,
+   "pro_typing_key/tick"
+  ],
+  [
+   3067,
+   "pro_typing_key/tick"
+  ],
+  [
+   3070,
+   "pro_typing_key/tick"
+  ],
+  [
+   3072,
+   "pro_typing_key/tick"
+  ],
+  [
+   3075,
+   "pro_typing_key/tick"
+  ],
+  [
+   3077,
+   "pro_typing_key/tick"
+  ],
+  [
+   3080,
+   "pro_typing_key/tick"
+  ],
+  [
+   3097,
+   "ui_pop/boop"
+  ],
+  [
+   3131,
+   "ui_pop/step"
+  ],
+  [
+   3154,
+   "ui_pop/step"
+  ],
+  [
+   3178,
+   "ui_pop/step"
+  ],
+  [
+   3201,
+   "ui_pop/step"
+  ],
+  [
+   3225,
+   "ui_pop/step"
+  ],
+  [
+   3240,
+   "mallet/flourish"
+  ],
+  [
+   3381,
+   "swish/flick"
+  ],
+  [
+   3506,
+   "swish/flick"
+  ],
+  [
+   3510,
    "cut_hit/sub"
   ],
   [
-   2888,
+   3514,
    "mallet/glock"
   ]
  ]

@@ -10,11 +10,13 @@ import api from "../../public/cap/p-api.json";
 
 export const GB = grid(115);
 export const SB = {
-  q: [0, 1], proto: [1, 2], pipe: [2, 7], stats: [7, 9], live: [9, 10], late: [10, 11], speed: [11, 12], focus: [12, 14],
-  fav: [14, 15], plan: [15, 16], alert: [16, 18], pitch: [18, 19], api: [19, 22], open: [22, 23], end: [23, 24],
+  // Lengths from reading speed: each text stays on screen for about 20-25 characters per second.
+  q: [0, 1.5], proto: [1.5, 3.25], pipe: [3.25, 10], stats: [10, 13], live: [13, 14], late: [14, 15.25], speed: [15.25, 16.75],
+  focus: [16.75, 18.75], fav: [18.75, 20], plan: [20, 21.25], alert: [21.25, 23.25], pitch: [23.25, 24.25], api: [24.25, 27],
+  open: [27, 28], end: [28, 29],
 } as const;
 export type SceneB = keyof typeof SB;
-export const DURATION_B = GB.bar(24);
+export const DURATION_B = GB.bar(29);
 const W = 1920, H = 1080;
 const BEAT = GB.beat, BAR = GB.beat * 4;
 const len = (id: SceneB) => GB.bar(SB[id][1]) - GB.bar(SB[id][0]);
@@ -101,7 +103,7 @@ const Node: React.FC<{ b: Box; p: number; title: string; sub: string; accent: st
   </div>
 );
 
-export const PIPE_B = [0, 0.75, 2, 3].map(k => Math.round(k * BAR));   // oasa, rate, history, cache
+export const PIPE_B = [0, 1.25, 2.75, 4.5].map(k => Math.round(k * BAR));   // oasa, rate, history, cache
 const Pipe: React.FC = () => {
   const f = useCurrentFrame();
   const L = len("pipe");
@@ -141,7 +143,7 @@ const Pipe: React.FC = () => {
   const head = (k: number, a: string, b: string, bc = C.muted) => {
     const at = st[k] + 4, until = (k < 3 ? st[k + 1] : L) - 16;
     return <div key={k} style={{ position: "absolute", left: 140, top: 110, width: 1640 }}>
-      <Words text={a} at={at} until={until} size={a.length > 40 ? 60 : 76} stagger={2} />
+      <Words text={a} at={at} until={until} size={76} stagger={2} />
       <Words text={b} at={at + BEAT * 0.75} until={until} size={46} weight={600} color={bc} stagger={2} style={{ marginTop: 18 }} />
     </div>;
   };
@@ -178,7 +180,7 @@ const Pipe: React.FC = () => {
   );
 };
 
-// ---------- stats: the real statistics, one card per two beats ----------
+// ---------- stats: the real statistics, one card per three beats ----------
 // Stills of the app's statistics (capture/promo.mjs bstats): each chart on its own, no banner around it.
 type Card = { big: string; label: string; img?: string; crop?: [number, number]; color?: string };
 const CARDS: Card[] = [
@@ -187,7 +189,7 @@ const CARDS: Card[] = [
   { big: "1.051 / 655", label: "στον δρόμο στις 09:00: καθημερινές / Σαββατοκύριακα", img: "cap/p-bstat-week.png", crop: [0, 890], color: "#7fb6ff" },
   { big: "11,9 km/h", label: "μέση ταχύτητα στις 08:00 τις καθημερινές (17,4 τα Σαββατοκύριακα)", img: "cap/p-bstat-week.png", crop: [890, 1704], color: "#ffd36b" },
 ];
-export const STATS_B = CARDS.map((_, i) => Math.round(i * 2 * BEAT));
+export const STATS_B = CARDS.map((_, i) => Math.round(i * 3 * BEAT));
 const CW = 780, CS = CW / 1074;   // card width (screen px), still px → screen px
 const Stats: React.FC = () => {
   const f = useCurrentFrame();
@@ -217,8 +219,8 @@ const Stats: React.FC = () => {
 const city = M("bcity"), sp = M("bspeed"), fv = M("bfav"), pl = M("bplan"), fo = M("bfocus");
 export const SEGS_B: Partial<Record<SceneB, { shot: string; segs: ReturnType<typeof fit>[] }>> = {
   live: { shot: "bcity", segs: [fit(city.fast + 80, city.fast + 80 + len("live"), len("live"))] },
-  late: { shot: "bcity", segs: [fit(city.zoom + 20, city.menu, len("late"))] },
-  speed: { shot: "bspeed", segs: [fit(sp.zoomed - 40, sp.zoomed + 100, len("speed"))] },
+  late: { shot: "bcity", segs: [fit(city.zoom, city.menu, len("late"))] },
+  speed: { shot: "bspeed", segs: [fit(sp.zoomed - 40, sp.zoomed - 40 + len("speed"), len("speed"))] },
   // pick the line → its route; tap a bus → its card, one direction; 8× motion; × → back to the city.
   // Each tap and its 26-frame ripple stay inside a segment; the motion part plays at rate 1, so the capture's 8× is 8×.
   focus: { shot: "bfocus", segs: [fit(fo.pick - 20, fo.bus + 60, 90), fit(fo.dir + 6, fo.dir + 58, 40), fit(fo.fast + 30, fo.fast + 90, 60),
@@ -277,8 +279,7 @@ const Late: React.FC = () => <Prod id="late" ys={[{ t: 0, y: 1100 }, { t: len("l
 const Speed: React.FC = () => <Prod id="speed" finger={false} ys={[{ t: 0, y: 1150 }, { t: len("speed"), y: 1550 }]}
   a="Τυπική ταχύτητα σχεδιασμένη στους δρόμους." extra={<SpeedBar at={BEAT} until={len("speed") - 12} />} />;
 const Focus: React.FC = () => <Prod id="focus" ys={[{ t: 0, y: 806 }, { t: 70, y: 1200 }, { t: 110, y: 1725 }, { t: 190, y: 1600 }, { t: len("focus"), y: 1100 }]}
-  a="Πάτα μια γραμμή." b="Δες τη διαδρομή της, τα λεωφορεία της, τις κατευθύνσεις." bc="#7fb6ff"
-  extra={<Tag text="×8" at={130} until={190} />} />;
+  a="Πάτα μια γραμμή." b="Δες τη διαδρομή της, τα λεωφορεία της, τις κατευθύνσεις." bc="#7fb6ff" />;
 const Fav: React.FC = () => <Prod id="fav" ys={[{ t: 0, y: 806 }, { t: len("fav"), y: 1150 }]}
   a="Αγαπημένες γραμμές με ☆." b="Αποθηκεύονται στη συσκευή." bc="#ffd36b" />;
 const Plan: React.FC = () => <Prod id="plan" ys={[{ t: 0, y: 806 }, { t: 60, y: 950 }, { t: len("plan"), y: 1350 }]}

@@ -120,13 +120,18 @@ def chime(notes=(1046.5, 1318.5, 1568.0), dur=0.9):
 SFX = {"tap": tap, "tick": tick, "pop": pop, "whoosh": whoosh, "chime": chime, "end": lambda: chime((783.99, 1046.5, 1318.5, 1568.0), 1.4)}
 # Promo B: earshot bank sounds (kind/member), rendered by promo/sfx.sh to out/sfx/<kind>__<member>.wav; each at a
 # peak set by its role (hits loudest, keys and blips quietest), the same band above the music as the numpy sounds.
-PEAK = {"cut_hit": 0.6, "mallet": 0.35, "notify": 0.4, "riser": 0.3, "swish": 0.22, "knock": 0.4, "ui_pop": 0.32, "drip": 0.25, "pro_typing_key": 0.2, "tap": 0.4}
+PEAK = {"cut_hit": 0.4, "mallet": 0.35, "notify": 0.4, "riser": 0.3, "swish": 0.22, "knock": 0.4, "ui_pop": 0.32, "drip": 0.25, "pro_typing_key": 0.2, "tap": 0.4}
+LOWPASS = {"cut_hit": 1500}   # Hz
 bank = {}
 
 
 def earshot(k):
     if k not in bank:
         x = load(ROOT / "out/sfx" / (k.replace("/", "__") + ".wav")).mean(axis=1)
+        if k.split("/")[0] in LOWPASS:   # the stats hits: softer, no click on top
+            X = np.fft.rfft(x)
+            X[np.fft.rfftfreq(len(x), 1 / SR) > LOWPASS[k.split("/")[0]]] = 0
+            x = np.fft.irfft(X, len(x))
         bank[k] = x / np.max(np.abs(x)) * PEAK[k.split("/")[0]]
     return bank[k]
 
