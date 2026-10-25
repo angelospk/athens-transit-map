@@ -14,6 +14,7 @@
 
 import { AlertWatch, hitText, type AlertSpec } from "../src/lib/alerts";
 import { clock } from "../src/lib/format";
+import { walkUrl } from "../src/lib/maps";
 import { decodeAlert, type Rep } from "../src/lib/tglink";
 import type { TripIndex } from "../src/lib/trip";
 import type { LineLive, LineStatic } from "../src/lib/types";
@@ -346,22 +347,24 @@ export class Bot {
   }
 
   private check(line: string, live: LineLive, stat: LineStatic, nowS: number) {
-    const out: { a: SavedAlert; text: string }[] = [];
+    const out: { a: SavedAlert; text: string; url?: string }[] = [];
     for (const a of this.state.alerts) {   // read now: alerts stopped during the request are gone
       if (!a.spec.lines.some(l => l.line === line) || !this.live(a, this.d.now())) continue;
       const w = this.watches.get(a.id) ?? new AlertWatch(a.watch);
       this.watches.set(a.id, w);
-      for (const h of w.check(a.spec, { [line]: live }, { [line]: stat }, nowS))
-        out.push({ a, text: `🚌 ${hitText(h, stat.stops[h.stop]?.name.trim() ?? a.label)}` });
+      for (const h of w.check(a.spec, { [line]: live }, { [line]: stat }, nowS)) {
+        const stop = stat.stops[h.stop];
+        out.push({ a, text: `🚌 ${hitText(h, stop?.name.trim() ?? a.label)}`, url: stop ? walkUrl([stop.lat, stop.lon]) : undefined });
+      }
       a.watch = w.snapshot();
     }
-    if (out.length && this.save()) for (const m of out) this.tell(m.a, m.text);
+    if (out.length && this.save()) for (const m of out) this.tell(m.a, m.text, m.url);
   }
 
   // To the alert's chat (with its stop buttons) or push subscription.
-  private tell(a: SavedAlert, text: string) {
+  private tell(a: SavedAlert, text: string, url?: string) {
     if (a.push) this.queue.push({ method: "push", body: { alert: a.id, sub: a.push, data: JSON.stringify({ title: "Λεωφορείο", body: text, tag: a.id }) } });
-    else if (a.chat != null) this.send(a.chat, text, a.id);
+    else if (a.chat != null) this.send(a.chat, text, a.id, url);
   }
 
   // 404/410: the browser dropped the subscription, so its alerts go.
@@ -374,11 +377,14 @@ export class Bot {
     } else if (status < 200 || status >= 300) console.error(`push: ${status || "network"}`);
   }
 
-  private send(chat: number, text: string, alertId?: string) {
+  private send(chat: number, text: string, alertId?: string, url?: string) {
     const body: Record<string, unknown> = { chat_id: chat, text, disable_web_page_preview: true };
-    if (alertId) body.reply_markup = { inline_keyboard: [[
-      { text: "Σταμάτα", callback_data: `stop:${alertId}` }, { text: "Απεγγραφή από όλα", callback_data: "all" },
-    ]] };
+    if (alertId) body.reply_markup = { inline_keyboard: [
+      ...(url ? [[{ text: "🚶 Πώς πάω στη στάση", url }]] : []),
+      [
+        { text: "Σταμάτα", callback_data: `stop:${alertId}` }, { text: "Απεγγραφή από όλα", callback_data: "all" },
+      ],
+    ] };
     this.queue.push({ method: "sendMessage", body });
   }
 

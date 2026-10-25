@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Bot, windowEnd, type BotDeps, type BotState, type Fetched, type PushSub } from "../bot/bot";
 import { encodeAlert } from "../src/lib/tglink";
+import { walkUrl } from "../src/lib/maps";
 import type { TripIndex } from "../src/lib/trip";
 
 const T0 = Date.UTC(2026, 9, 8, 7, 0, 0);   // 10:00 in Athens
@@ -8,7 +9,7 @@ const URLS = { trips: "https://t/trips.json", static: "https://s", api: "https:/
 const stops = ["s0", "s1", "s2", "s3", "s4", "s5"];
 const ix: TripIndex = { v: "2026-07-08", s: stops.map((id, k) => [`ΣΤΑΣΗ ${k}`, 38, 23.7]), l: { "622": { A: [0, 1, 2, 3, 4, 5] } } };
 const lineStatic = { id: "622", variants: { A: { headsign: "", direction: 0, shape: [], stops } },
-  stops: Object.fromEntries(stops.map((id, k) => [id, { name: `ΣΤΑΣΗ ${k}`, lat: 38, lon: 23.7 }])) };
+  stops: Object.fromEntries(stops.map((id, k) => [id, { name: `ΣΤΑΣΗ ${k}`, lat: 38 + k / 100, lon: 23.7 }])) };
 const payload = encodeAlert(ix, 3, [{ line: "622", variants: [{ id: "A", i: 4 }] }])!;
 
 type Opts = { saved?: BotState; trips?: TripIndex; staticVer?: string; gate?: Promise<void>; failSave?: () => boolean };
@@ -157,6 +158,9 @@ describe("Bot alerts", () => {
     await t.bot.tick();
     await t.bot.flush();
     expect(t.texts().at(-1)).toBe("🚌 Το 622 είναι 3 στάσεις πριν από ΣΤΑΣΗ 4 (καθυστέρηση 3′).");
+    const keys = (t.sent.filter(s => s.method === "sendMessage").at(-1)!.body.reply_markup as { inline_keyboard: object[][] }).inline_keyboard;
+    expect(keys[0]).toEqual([{ text: "🚶 Πώς πάω στη στάση", url: walkUrl([38.04, 23.7]) }]);
+    expect(keys[1].map(k => (k as { callback_data: string }).callback_data)).toEqual([expect.stringMatching(/^stop:/), "all"]);
     t.advance(35_000);
     t.live.vehicles = [bus("s3", { position_at: T0 / 1000 + 35 })];
     await t.bot.tick();
