@@ -2,7 +2,8 @@
 
 **Live map:** https://bus.haroldpoi.dev · **Public API (no key), docs with try-it:**
 [bus.haroldpoi.dev/api](https://bus.haroldpoi.dev/api) (OpenAPI 3.1, base URL `https://transit.haroldpoi.dev`) ·
-**50 s demo (Greek):** [github.com/angelospk/athens-transit-map/releases/tag/demo-video-1](https://github.com/angelospk/athens-transit-map/releases/tag/demo-video-1)
+**50 s demo (Greek):** [github.com/angelospk/athens-transit-map/releases/tag/demo-video-1](https://github.com/angelospk/athens-transit-map/releases/tag/demo-video-1) ·
+**50 s promo (Greek, 16:9):** [github.com/angelospk/athens-transit-map/releases/tag/promo-video-1](https://github.com/angelospk/athens-transit-map/releases/tag/promo-video-1)
 
 ## At a glance
 
