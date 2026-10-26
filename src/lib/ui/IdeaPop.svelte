@@ -27,7 +27,7 @@
   </div>
 {:else}
   <form onsubmit={submit}>
-    <h3>Τα Λεωφορεία γίνονται εφαρμογή</h3>
+    <h3>Η σελίδα γίνεται εφαρμογή</h3>
     <p>Τι θα ήθελες να έχει; Αν μπορούσε να κάνει κάτι που καμία άλλη εφαρμογή για λεωφορεία δεν κάνει, τι θα ήταν;</p>
     <textarea id="idea-text" bind:value={draft} maxlength={MAX_IDEA} rows="4" aria-label="Η ιδέα σου" readonly={status === "sending"}
       placeholder="π.χ. ειδοποίηση όταν το 040 είναι 5′ μακριά από τη στάση μου"></textarea>
