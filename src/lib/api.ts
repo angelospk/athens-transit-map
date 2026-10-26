@@ -1,6 +1,6 @@
 // Network access. With VITE_MOCK=1 every call is answered by mock.ts (left out of prod builds).
 
-import { API_BASE, STATIC_BASE } from "./config";
+import { API_BASE, OASA_BASE, STATIC_BASE } from "./config";
 import type { FetchResult } from "./poller";
 import { loadTiles, tileKey, tileOf, tileUrlPath, type CityTiles, type Tile } from "./tiles";
 import type { CityLive, LineStatic, LinesIndex, Status } from "./types";
@@ -36,6 +36,18 @@ export async function fetchTile(t: Tile, signal?: AbortSignal): Promise<FetchRes
     return { ...r, body: { ...b, vehicles: b.vehicles.filter(v => tileKey(tileOf(v.lat, v.lon, t.z)) === tileKey(t)) } };
   }
   return getJSON(tileUrl(t), signal);
+}
+
+export const stopUrl = (id: string) => `${API_BASE}/v1/stops/${encodeURIComponent(id)}`;
+
+export const hasOasa = () => !!OASA_BASE && import.meta.env.VITE_MOCK !== "1";
+export const fetchOasa = (id: string, signal: AbortSignal) =>
+  getJSON(`${OASA_BASE}/stops/${encodeURIComponent(id)}`, signal);
+
+// A stop's board from the server (rev 7). The mock has none: the page estimates it.
+export async function fetchStop(id: string, signal: AbortSignal): Promise<FetchResult> {
+  if (import.meta.env.VITE_MOCK === "1") return { status: 404, body: { error: "not_found" } };
+  return getJSON(stopUrl(id), signal);
 }
 
 // The city layer: the tiles of the current view (tiles.ts), refreshed all together.

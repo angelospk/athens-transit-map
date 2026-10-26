@@ -126,12 +126,37 @@ bun run build      # static site in dist/
 | Variable | Default | Meaning |
 |---|---|---|
 | `VITE_API_BASE` | `https://transit.haroldpoi.dev` | Live API (`/v1/lines/{id}`, `/v1/status`) |
+| `VITE_OASA_BASE` | `/oasa` in dev; disabled in production | OASA arrivals proxy base URL; empty disables OASA arrivals |
 | `VITE_STATIC_BASE` | `https://angelospk.github.io/athens-transit-rt/static/v1` | Static data (`lines.json`, `lines/{id}.json`) |
 | `VITE_GEOCODE_URL` | `https://photon.komoot.io/api/` | Area and street search of the trip planner (Photon API) |
 | `VITE_DEMO_VIDEO_URL` | `DEMO_VIDEO_URL` in `src/lib/config.ts` (this README) | Video linked from the "no connection" banner; empty: no link |
 | `VITE_MOCK` | unset | `1` = answer every request from `src/fixtures/` (moving vehicles, 30 s cycle) |
 
 Mock code and fixtures are not included in production builds.
+
+### OASA stop arrivals
+
+In `bun run dev`, tapping a bus stop calls OASA's `getStopArrivals` through a local Vite
+proxy. The card prefers those predictions, refreshes about every 30 seconds while open,
+and labels the source. An empty OASA response means no predictions; it does not substitute
+our estimates. On failure the card labels the fallback estimate and retries OASA with backoff.
+Mock mode does not call OASA.
+
+The proxy also asks `webRoutesForStop` for the actual OASA route → line mapping, cached
+for six hours (rechecked after five minutes if arrivals include a new route). OASA route
+codes are independent of GTFS shape ids: for example, route 5205 belongs to line 130,
+whose static shape is 5514. If metadata fails, predictions stay visible under their route
+codes and metadata is retried; the app never guesses the line from a matching GTFS id.
+
+OASA does not send CORS headers, so the static GitHub Pages build needs a separately hosted
+proxy. `bun run oasa:proxy` serves the same handler on `127.0.0.1:8096`; `OASA_HOST` and
+`OASA_PORT` override the listen address. Route `/oasa/stops/{stop_id}` to this process over
+HTTPS, then build with `VITE_OASA_BASE=https://your-proxy-host/oasa`. It accepts only GET
+requests for numeric stop ids, caches each stop for 30 seconds, combines concurrent requests,
+and paces upstream requests at most four per second. This is a separate request budget from
+the existing transit backend. Deploying beside that backend requires coordinating their
+combined OASA load. Run it on a host that can reach OASA; see the hosting tradeoff above.
+Plain production builds without `VITE_OASA_BASE` keep estimates.
 
 ## Request pacing
 

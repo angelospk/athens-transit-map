@@ -1,6 +1,23 @@
 /// <reference types="vitest/config" />
 import { defineConfig, type Plugin } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { oasaProxy } from "./server/oasa.ts";
+
+function oasa(): Plugin {
+  const handle = oasaProxy();
+  return {
+    name: "oasa-arrivals",
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        const response = await handle(new Request(new URL(req.url ?? "/", "http://localhost"), { method: req.method }));
+        if (!response) return next();
+        res.statusCode = response.status;
+        response.headers.forEach((value, key) => res.setHeader(key, value));
+        res.end(await response.text());
+      });
+    },
+  };
+}
 
 // `import workerUrl from "virtual:maplibre-worker"`. In the build, MapLibre's worker is an
 // extra chunk of the main bundle, so it shares the maplibre-gl-shared chunk (a `?worker`
@@ -22,7 +39,7 @@ function maplibreWorker(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [svelte(), maplibreWorker()],
+  plugins: [svelte(), maplibreWorker(), oasa()],
   build: { chunkSizeWarningLimit: 700 },
   test: { include: ["tests/**/*.test.ts"], environment: "node" },
 });

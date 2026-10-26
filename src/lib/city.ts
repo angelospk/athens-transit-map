@@ -27,6 +27,8 @@ export function cleanCity(rows: unknown[]): CityVehicle[] {
       delay_s: finite(r.delay_s) ? r.delay_s : null,
       speed: finite(r.speed) && r.speed >= 0 ? r.speed : null,
       path: Array.isArray(r.path) && r.path.length >= 2 && r.path.every(isPair) ? r.path : null,
+      // The stop board's arrival estimate walks them (stopboard.ts).
+      path_speeds: Array.isArray(r.path_speeds) && r.path_speeds.every(x => x === null || (finite(x) && x > 0)) ? r.path_speeds : null,
     });
   }
   return out;

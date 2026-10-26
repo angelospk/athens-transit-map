@@ -4,6 +4,7 @@
   import Panel from "./lib/ui/Panel.svelte";
   import InfoCard from "./lib/ui/InfoCard.svelte";
   import StationCard from "./lib/ui/StationCard.svelte";
+  import StopCard from "./lib/ui/StopCard.svelte";
   import { applyTheme } from "./lib/theme";
 
   const app = new AppState();
@@ -16,3 +17,4 @@
 <Panel {app} />
 <InfoCard {app} />
 <StationCard {app} />
+<StopCard {app} />

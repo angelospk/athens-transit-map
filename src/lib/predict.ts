@@ -7,6 +7,7 @@ import { drive, NO_SPEED, walk } from "./motion";
 
 const NEAR_ROUTE_M = 150;    // farther than this, the shape says nothing about the vehicle
 const TIE_M = 20;            // other legs this close to the nearest are candidates too
+const STOP_TIE_M = 100;      // the same, when placing stops (stopOffsets picks among them by order)
 const AMBIGUOUS_M = 50;      // candidates farther apart than this along the shape: ambiguous
 const BACK_TOLERANCE_M = 30; // GPS noise backwards along the route
 const STANDING_M = 20;       // smaller moves count as standing
@@ -42,8 +43,8 @@ function nearestOnSegment(p: LngLat, a: LngLat, b: LngLat): [number, number] {
   return [t, Math.hypot(ax + t * dx, ay + t * dy) * 111_320];
 }
 
-// Every leg of the shape that passes within TIE_M of the nearest one (and within NEAR_ROUTE_M), by s.
-export function projectCandidates(shape: [number, number][], p: LngLat): { s: number; offM: number }[] {
+// Every leg of the shape that passes within `tie` metres of the nearest one (and within NEAR_ROUTE_M), by s.
+export function projectCandidates(shape: [number, number][], p: LngLat, tie = TIE_M): { s: number; offM: number }[] {
   const hits: { s: number; offM: number }[] = [];
   let walked = 0;
   for (let i = 1; i < shape.length; i++) {
@@ -55,7 +56,7 @@ export function projectCandidates(shape: [number, number][], p: LngLat): { s: nu
   const min = Math.min(...hits.map(h => h.offM));
   if (!(min <= NEAR_ROUTE_M)) return [];
   // One candidate per leg: merge neighbours (consecutive segments meeting at a vertex).
-  const near = hits.filter(h => h.offM <= min + TIE_M).sort((x, y) => x.s - y.s);
+  const near = hits.filter(h => h.offM <= min + tie).sort((x, y) => x.s - y.s);
   const out: { s: number; offM: number }[] = [];
   for (const h of near) {
     const last = out[out.length - 1];
@@ -95,9 +96,41 @@ export function shapeLength(shape: [number, number][]): number {
   return d;
 }
 
-// s of each stop, in order: among the legs at or after the previous stop, the closest one
-// (a stop stands on the side of the street its direction uses), then the earliest.
+// s of each stop, in order: one leg per stop, the stops in order with the least total distance off the
+// shape (Viterbi, as the backend's geo.SnapStops; a stop stands on the side of the street its direction
+// uses). The first stop of a circular route is at the shape's start, not at its end where the shape comes
+// back past it. A stop away from the shape has the previous stop's s. When no order fits, greedy.
 export function stopOffsets(shape: [number, number][], stops: LngLat[]): number[] {
+  // Every leg near the stop, not only the nearest few: the right one may be a little farther.
+  const layers = stops.map(p => projectCandidates(shape, p, STOP_TIE_M));
+  const on = layers.flatMap((c, i) => (c.length ? [i] : []));
+  if (!on.length) return stops.map(() => 0);
+  let cost = layers[on[0]].map(c => c.offM);
+  const back: number[][] = [];
+  for (let n = 1; n < on.length; n++) {
+    const prev = layers[on[n - 1]], next: number[] = [], ptr: number[] = [];
+    for (const c of layers[on[n]]) {
+      let best = Infinity, bk = -1;   // ties: the earlier leg
+      prev.forEach((pc, k) => { if (pc.s <= c.s + BACK_TOLERANCE_M && cost[k] < best) { best = cost[k]; bk = k; } });
+      next.push(best + c.offM);
+      ptr.push(bk);
+    }
+    cost = next;
+    back.push(ptr);
+  }
+  let k = cost.reduce((b, x, j) => (x < cost[b] ? j : b), 0);
+  if (!Number.isFinite(cost[k])) return greedyOffsets(shape, stops);
+  const at = new Map<number, number>();
+  for (let n = on.length - 1; n >= 0; n--) {
+    at.set(on[n], layers[on[n]][k].s);
+    if (n) k = back[n - 1][k];
+  }
+  let prev = 0;
+  return stops.map((_, i) => (prev = at.get(i) ?? prev));
+}
+
+// Among the legs at or after the previous stop, the closest one, then the earliest.
+function greedyOffsets(shape: [number, number][], stops: LngLat[]): number[] {
   let prev = 0;
   return stops.map(p => {
     const c = projectCandidates(shape, p).filter(x => x.s >= prev - BACK_TOLERANCE_M);

@@ -32,7 +32,7 @@ for (const f of files) {
       let k = at.get(sid);
       if (k == null) {
         at.set(sid, (k = data.s.length));
-        data.s.push([s.name.trim(), +s.lat.toFixed(5), +s.lon.toFixed(5)]);
+        data.s.push([s.name.trim(), +s.lat.toFixed(5), +s.lon.toFixed(5), sid]);
       }
       return k;
     });

@@ -44,6 +44,18 @@ describe("geometry", () => {
     expect(s[0]).toBeLessThan(500);
     expect(s[1]).toBeGreaterThan(1200);
   });
+  it("puts a circular route's first stop at its start, though the shape's end passes closer", () => {
+    // Out on one side, back on the other; the terminus (first and last stop) stands nearer the way back.
+    const s = stopOffsets(outBack, [[23.7001, 37.970008], [23.705, 37.97], [23.7001, 37.970008]]);
+    expect(s[0]).toBeLessThan(50);
+    expect(s[1]).toBeCloseTo(0.5 * M, -1);
+    expect(s[2]).toBeGreaterThan(1600);
+  });
+  it("gives a stop away from the shape the previous stop's s", () => {
+    const s = stopOffsets(east, [at(0.2), [23.705, 37.98], at(0.6)]);
+    expect(s[1]).toBe(s[0]);
+    expect(s[2]).toBeCloseTo(0.6 * M, -1);
+  });
 });
 
 describe("updateTrack", () => {

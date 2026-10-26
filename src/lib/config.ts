@@ -2,6 +2,8 @@
 const strip = (s: string) => s.replace(/\/+$/, "");
 
 export const API_BASE = strip(import.meta.env.VITE_API_BASE || "https://transit.haroldpoi.dev");
+// GitHub Pages needs a separately hosted proxy; OASA itself does not allow browser fetches.
+export const OASA_BASE = strip(import.meta.env.VITE_OASA_BASE ?? (import.meta.env.DEV ? "/oasa" : ""));
 export const STATIC_BASE = strip(import.meta.env.VITE_STATIC_BASE || "https://angelospk.github.io/athens-transit-rt/static/v1");
 export const STATS_BASE = strip(import.meta.env.VITE_STATS_BASE || "https://raw.githubusercontent.com/angelospk/athens-transit-rt/stats/v1");
 

@@ -23,6 +23,11 @@ describe("city data", () => {
     expect(out.map(v => v.id)).toEqual(["1", "2"]);
     expect(out[1]).toMatchObject({ speed: null, path: null, delay_s: null, bearing: null });
   });
+  it("keeps the typical speeds ahead when they are well formed", () => {
+    const out = cleanCity([veh({ path_speeds: [5.2, null, 3] }), veh({ id: "2", path_speeds: [5, "x"] as never }),
+      veh({ id: "3", path_speeds: [0] }), veh({ id: "4" })]);
+    expect(out.map(v => v.path_speeds)).toEqual([[5.2, null, 3], null, null, null]);
+  });
   it("keys vehicles by line and id", () => {
     expect(cityKey(veh())).not.toBe(cityKey(veh({ line: "550" })));
   });

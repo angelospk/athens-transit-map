@@ -31,6 +31,7 @@
   const DELAY_CLASSES = ["ontime", "late1", "late2", "late3", "none"];
   const STYLE = (dark: boolean) => `https://tiles.openfreemap.org/styles/${dark ? "dark" : "positron"}`;
   const EMPTY = { type: "FeatureCollection" as const, features: [] };
+  const STOPS_ZOOM = 15;          // every bus stop is drawn (and tappable) from this zoom
   const COS_LAT = Math.cos((37.98 * Math.PI) / 180);
   const M_PER_PX_Z0 = 156_543.03 * COS_LAT;   // metres per pixel at zoom 0, at Athens
 
@@ -240,6 +241,13 @@
   // Fainter while a line is followed: the line and its vehicles come first.
   const speedOpacity = () => (app.detailLines.length ? 0.3 : 0.6);
 
+  // Every bus stop (the stop index), keyed by its index for the board.
+  const allStops = $derived.by((): GeoJSON.FeatureCollection<GeoJSON.Point> | null => {
+    const ix = app.stopIndex;
+    return ix && { type: "FeatureCollection", features: ix.s.map(([name, lat, lon], k) => ({ type: "Feature", id: k,
+      properties: { k, name }, geometry: { type: "Point", coordinates: [lon, lat] } })) };
+  });
+
   function addLayers(m: MlMap) {
     addSpeed(m);
     addMetroLayers(m);
@@ -290,11 +298,21 @@
     m.addLayer({ id: "stops", type: "circle", source: "stops",
       paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 3, 16, 6], "circle-color": "#ffffff",
         "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2 } });
+    // Every bus stop, close up: a tap opens its board (StopCard). Under the vehicles and a picked line's stops.
+    m.addSource("all-stops", { type: "geojson", data: allStops ?? EMPTY });
+    m.addLayer({ id: "all-stops", type: "circle", source: "all-stops", minzoom: STOPS_ZOOM,
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], STOPS_ZOOM, 3, 18, 6], "circle-color": "#ffffff",
+        "circle-stroke-color": "#80868b", "circle-stroke-width": 1.5 } }, "city-dot");
+    // Ring round the stop whose board is open.
+    m.addSource("stop-selected", { type: "geojson", data: EMPTY });
+    m.addLayer({ id: "stop-selected", type: "circle", source: "stop-selected",
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 7, 16, 11], "circle-opacity": 0,
+        "circle-stroke-color": accent, "circle-stroke-width": 3 } });
   }
 
-  // The metro station under a click, with a finger-sized margin r; the nearest if several.
-  function nearestStation(m: MlMap, p: { x: number; y: number }, r = 10) {
-    const hits = m.queryRenderedFeatures([[p.x - r, p.y - r], [p.x + r, p.y + r]], { layers: ["metro-station"] });
+  // The metro station (or bus stop) under a click, with a finger-sized margin r; the nearest if several.
+  function nearestStation(m: MlMap, p: { x: number; y: number }, r = 10, layer = "metro-station") {
+    const hits = m.queryRenderedFeatures([[p.x - r, p.y - r], [p.x + r, p.y + r]], { layers: [layer] });
     const d = (f: (typeof hits)[number]) => {
       const q = m.project((f.geometry as GeoJSON.Point).coordinates as [number, number]);
       return Math.hypot(q.x - p.x, q.y - p.y);
@@ -582,6 +600,10 @@
     const ticked = (e: object) => "follow" in e;
     m.on("movestart", e => { if (ticked(e)) return; reportSoon.cancel(); reportFollow.cancel(); app.setCityMoving(); });
     m.on("moveend", e => (ticked(e) ? reportFollow() : reportSoon()));
+    // The stop index loads on the way to the zoom that draws every stop.
+    const nearStops = () => { if (m.getZoom() >= STOPS_ZOOM - 1) void app.loadStopIndex(); };
+    m.on("load", nearStops);
+    m.on("zoomend", nearStops);
 
     const popup = new Popup({ closeButton: false, offset: 10, maxWidth: "240px" });
     m.on("load", () => {
@@ -609,7 +631,8 @@
         }, () => {});
     } catch { /* storage blocked */ }
     // One dispatcher: DOM marker (its own handler) → station right under the finger (drawn over the city
-    // vehicles, under a picked line's stops) → city vehicle → stop → station near the finger → route → empty map.
+    // vehicles, under a picked line's stops) → city vehicle → a picked line's stop → any bus stop → station
+    // near the finger → route → empty map. A stop opens its board.
     m.on("click", e => {
       if (!loaded) return;   // the style is being replaced: our layers are not there to hit
       if ((e.originalEvent.target as Element | null)?.closest?.(".bus")) return;
@@ -626,8 +649,16 @@
       }
       const stop = m.queryRenderedFeatures(e.point, { layers: ["stops"] })[0];
       if (stop) {
-        popup.setLngLat((stop.geometry as GeoJSON.Point).coordinates as [number, number])
-          .setText(String(stop.properties.name)).addTo(m);
+        popup.remove();
+        const at = (stop.geometry as GeoJSON.Point).coordinates as [number, number], name = String(stop.properties.name);
+        // A stop the stop index does not know (other GTFS data, or no index): its name, as before.
+        void app.selectStopId(String(stop.properties.id)).then(ok => { if (!ok) popup.setLngLat(at).setText(name).addTo(m); });
+        return;
+      }
+      const any = nearestStation(m, e.point, 8, "all-stops");
+      if (any) {
+        popup.remove();
+        app.selectStop(Number(any.properties.k));
         return;
       }
       const station = nearestStation(m, e.point);
@@ -647,9 +678,10 @@
         return;
       }
       app.selectStation(null);
+      app.selectStop(null);
       app.clearSelection();
     });
-    for (const layer of ["routes-hit", "stops", "city-dot", "metro-station", "speed"]) {
+    for (const layer of ["routes-hit", "stops", "all-stops", "city-dot", "metro-station", "speed"]) {
       m.on("mouseenter", layer, () => (m.getCanvas().style.cursor = "pointer"));
       m.on("mouseleave", layer, () => (m.getCanvas().style.cursor = ""));
     }
@@ -719,6 +751,18 @@
 
   $effect(() => {
     if (loaded) (map!.getSource("routes") as GeoJSONSource).setData(routesFC(drawn));
+  });
+
+  $effect(() => {
+    const d = allStops;
+    if (loaded && d) (map!.getSource("all-stops") as GeoJSONSource).setData(d);
+  });
+
+  $effect(() => {
+    if (!loaded) return;
+    const s = app.stopInfo;
+    (map!.getSource("stop-selected") as GeoJSONSource).setData(s ? { type: "FeatureCollection",
+      features: [{ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [s.at[1], s.at[0]] } }] } : EMPTY);
   });
 
   $effect(() => {

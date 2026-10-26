@@ -50,6 +50,30 @@ export interface CityLive {
   vehicles: CityVehicle[];
 }
 
+// GET /v1/stops/{stop_id} (rev 7): a vehicle on its way ("live") or a trip that has not left yet ("schedule").
+export interface StopArrival {
+  line: string;
+  variant: string | null;
+  headsign: string;
+  trip_id: string | null;
+  vehicle: string | null;
+  eta: number | null;          // null: waiting at its first stop, departure unknown
+  scheduled: number | null;
+  position_at: number | null;
+  stops_away: number | null;
+  distance_m: number | null;
+  source: "live" | "schedule";
+}
+
+export interface StopLive {
+  stop_id: string;
+  name: string;
+  updated_at: number;
+  next_update_at: number;
+  lines: string[];
+  arrivals: StopArrival[];
+}
+
 export interface Status {
   ok: boolean;
   gtfs_version: string;

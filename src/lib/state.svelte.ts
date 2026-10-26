@@ -2,7 +2,8 @@
 
 import { isHidden } from "./directions";
 import type { Only } from "./format";
-import { fetchCity, fetchLine, fetchLines, fetchLineStatic, fetchStatus, fetchTile } from "./api";
+import { fetchCity, fetchLine, fetchLines, fetchLineStatic, fetchStatus, fetchStop, fetchTile, fetchOasa, hasOasa } from "./api";
+import { isOasaBoard, type OasaBoard } from "./oasa";
 import { cityKey, isCityLive } from "./city";
 import { loadMetro, type MetroData } from "./metro";
 import { LinePoller, type PollState } from "./poller";
@@ -13,13 +14,18 @@ import { MAX_LINES, selectionIds, serializeSelection, splitKnown, toggle } from 
 import { hitText, type AlertHit, type AlertSpec } from "./alerts";
 import { assignSlots, colorOf, type LineColor } from "./lineColors";
 import { retryStops, stopPush } from "./push";
-import type { CityLive, CityVehicle, LineInfo, LineLive, LineStatic, Status, Vehicle } from "./types";
+import { latestDay } from "./stats";
+import { boardRows, isStopLive, lineCruise, serverRows, oasaRows, stopLines, twins, type BoardRow, type BoardVehicle } from "./stopboard";
+import type { TripIndex } from "./trip";
+import type { CityLive, CityVehicle, LineInfo, LineLive, LineStatic, Status, StopLive, Vehicle } from "./types";
 
 export const STALE_S = 120;
 // A picked line whose feed has no vehicles for this many updates in a row is taken off the map.
 const EMPTY_DROPS = 2;
 const STATUS_EVERY_MS = 60_000;
 const TILE_TIMEOUT_MS = 15_000;
+// The stop board loads the city tiles this far around its stop: ≈ 15 minutes of driving.
+const STOP_AREA_M = 4000;
 
 export type Selection =
   | { kind: "vehicle"; line: string; id: string }
@@ -116,6 +122,25 @@ export class AppState {
   tripEnds = $state.raw<{ from: [number, number]; to: [number, number] } | null>(null);
   // The stops of the trip picked in the planner: where to get on, change and get off ([lat, lon]).
   tripStops = $state.raw<{ at: [number, number]; name: string }[]>([]);
+  // Stop board (stopboard.ts): every bus stop (public/trips.json, loaded with the stop layer), the tapped
+  // one as an index into it, its lines' static files, and the vehicles of the city tiles around it.
+  stopIndex = $state.raw<TripIndex | null>(null);
+  stop = $state<number | null>(null);
+  stopStatics = $state.raw<Record<string, LineStatic>>({});
+  stopReady = $state(false);   // every tile around the stop has loaded
+  private stopCity = $state.raw<CityVehicle[]>([]);
+  private stopCruise = $state.raw<Record<string, number> | null>(null);   // each line's speed (daily stats)
+  private stopTiles = new CityTiles();
+  private stopPoller: LinePoller<CityLive> | null = null;
+  private stopIndexLoad: Promise<TripIndex | null> | null = null;
+  // The server's board for the tapped stop (contract rev 7); without one the page estimates it from the tiles.
+  stopServer = $state.raw<StopLive | null>(null);
+  private stopServerPoller: LinePoller<StopLive> | null = null;
+  private stopEndpoint = true;   // false after a 404 other than unknown_stop: a server without /v1/stops
+  stopOasa = $state.raw<OasaBoard | null>(null);
+  stopOasaState = $state<"off" | "loading" | "ok" | "error">("off");
+  private stopOasaPoller: LinePoller<OasaBoard> | null = null;
+  private stopFallbackStarted = false;
 
   // Set by MapView: frame the given lines once their shapes are loaded.
   fit: (ids: string[]) => void = () => {};
@@ -198,6 +223,34 @@ export class AppState {
     return s?.kind === "vehicle" ? this.cityByKey.get(cityKey(s)) ?? null : null;
   });
 
+  // The tapped stop: its name, place, GTFS id ("" in an index from before ids), the lines that serve it
+  // or end there, and the stops of its name across the street.
+  stopInfo = $derived.by(() => {
+    const ix = this.stopIndex, k = this.stop;
+    if (!ix || k == null || !ix.s[k]) return null;
+    const [name, lat, lon, id] = ix.s[k];
+    return { k, name, at: [lat, lon] as [number, number], id: id ?? "", ...stopLines(ix, k), twins: twins(ix, k) };
+  });
+
+  // The buses coming to the tapped stop: OASA, then the server's board, then the page's estimate. A line on
+  // the map has its own data (fresher, with the next stop): it wins over the tiles' copy of the same
+  // vehicle unless that one is newer.
+  stopRows = $derived.by((): BoardRow[] => {
+    const s = this.stopInfo;
+    if (!s?.id) return [];
+    if (this.stopOasa?.stop_id === s.id) {
+      const vehicles = [...this.cityByKey.values(), ...Object.entries(this.live).flatMap(([line, d]) => d.vehicles.map(v => ({ line, id: v.id })))];
+      return oasaRows(this.stopOasa, vehicles, this.serverNow / 1000);
+    }
+    if (this.stopServer?.stop_id === s.id) return serverRows(this.stopServer, this.serverNow / 1000);
+    const best = new Map<string, BoardVehicle>(this.stopCity.map(v => [cityKey(v), v]));
+    for (const [line, d] of Object.entries(this.live)) for (const v of d.vehicles) {
+      const k = cityKey({ line, id: v.id }), b = best.get(k);
+      if (!b || v.position_at >= b.position_at) best.set(k, { ...v, line });
+    }
+    return boardRows(s.id, this.stopStatics, [...best.values()], this.serverNow / 1000, this.stopCruise ?? {});
+  });
+
   // The variant to emphasise on the map, from a clicked vehicle or route.
   highlight = $derived.by((): { line: string; variant: string } | null => {
     const s = this.selection;
@@ -225,6 +278,9 @@ export class AppState {
       this.now = Date.now();
       for (const p of this.pollers.values()) p.visibilityChanged();
       this.cityPoller?.visibilityChanged();
+      this.stopPoller?.visibilityChanged();
+      this.stopServerPoller?.visibilityChanged();
+      this.stopOasaPoller?.visibilityChanged();
     });
   }
 
@@ -285,10 +341,143 @@ export class AppState {
     store("metroLines", ids);
   }
 
-  // A station tapped on the map (null: none). Its card replaces a vehicle's or route's.
+  // A station tapped on the map (null: none). Its card replaces a vehicle's, route's or stop's.
   selectStation(name: string | null) {
-    if (name) this.clearSelection();
+    if (name) {
+      this.clearSelection();
+      this.selectStop(null);
+    }
     this.metroStation = name;
+  }
+
+  // Every bus stop, for the stop layer and the board. trip.ts is loaded with the planner otherwise.
+  loadStopIndex(): Promise<TripIndex | null> {
+    this.stopIndexLoad ??= import("./trip").then(m => m.loadTripIndex()).then(
+      ix => (this.stopIndex = ix),
+      () => { this.stopIndexLoad = null; return null; });   // the next call tries again
+    return this.stopIndexLoad;
+  }
+
+  // A bus stop tapped on the map, as an index into the stop index (null: none). Its card replaces a
+  // vehicle's, route's or station's. Its lines' static files (for the directions) load now, and its board
+  // is kept fresh while the card is open: OASA first, then server/tile estimates on failure.
+  selectStop(k: number | null) {
+    const ix = this.stopIndex;
+    if (k != null && !ix?.s[k]) return;
+    if (k === this.stop) return;
+    this.stopServerPoller?.stop();
+    this.stopServerPoller = null;
+    this.stopOasaPoller?.stop();
+    this.stopOasa = null;
+    this.stopOasaState = "off";
+    this.stopFallbackStarted = false;
+    this.stopServer = null;
+    this.stopReady = false;
+    this.stopCity = [];
+    this.stopPoller?.stop();
+    if (k == null || !ix) {
+      this.stop = null;
+      return;
+    }
+    this.metroStation = null;
+    this.clearSelection();
+    this.stop = k;
+    for (const { line } of stopLines(ix, k).serve)
+      fetchLineStatic(line).then(s => (this.stopStatics = { ...this.stopStatics, [line]: s }), () => {});
+    const id = ix.s[k][3];
+    if (id && hasOasa()) {
+      this.stopOasaState = "loading";
+      this.stopOasaPoller = new LinePoller<OasaBoard>({
+        line: id, fetchLine: (_, signal) => fetchOasa(id, signal), validate: (b): b is OasaBoard => isOasaBoard(b) && b.stop_id === id,
+        onData: d => {
+          this.stopOasa = d;
+          for (const line of new Set(d.routes.map(r => r.line))) {
+            if (!this.stopStatics[line])
+              fetchLineStatic(line).then(s => (this.stopStatics = { ...this.stopStatics, [line]: s }), () => {});
+          }
+          this.stopOasaState = "ok";
+          this.stopReady = true;
+          this.stopServerPoller?.stop();
+          this.stopServerPoller = null;
+          this.stopPoller?.stop();
+          this.stopFallbackStarted = false;
+        },
+        onState: s => {
+          if ((s === "backoff" || s === "unknown") && this.stop === k) {
+            this.stopOasa = null;
+            this.stopOasaState = "error";
+            this.startStopFallback(k, id);
+          }
+        },
+      });
+      this.stopOasaPoller.start();
+    } else this.startStopFallback(k, id);
+  }
+
+  private startStopFallback(k: number, id: string | undefined) {
+    if (this.stopFallbackStarted) return;
+    this.stopFallbackStarted = true;
+    if (id && this.stopEndpoint) {
+      this.stopPoller?.stop();
+      this.askStopServer(k, id);
+    } else this.watchStopTiles(k);
+  }
+
+  // The server's board at its own pace. A server without the endpoint, or failing, leaves the board to
+  // the estimate.
+  private askStopServer(k: number, id: string) {
+    this.stopReady = false;
+    this.stopServerPoller = new LinePoller<StopLive>({
+      line: id,
+      fetchLine: async (_, signal) => {
+        const r = await fetchStop(id, signal);
+        if (r.status === 404 && (r.body as { error?: string } | null)?.error !== "unknown_stop") this.stopEndpoint = false;
+        return r;
+      },
+      validate: isStopLive,
+      clock: this.clock,
+      onData: d => { this.stopServer = d; this.stopReady = true; },
+      onState: s => { if ((s === "unknown" || s === "backoff") && this.stop === k) this.watchStopTiles(k); },
+    });
+    this.stopServerPoller.start();
+  }
+
+  // The estimate: the line speeds and the city tiles around the stop, kept fresh while its card is open.
+  private watchStopTiles(k: number) {
+    if (!this.stopCruise) latestDay().then(d => (this.stopCruise = lineCruise(d)), () => {});   // tried again at the next stop
+    const [, lat, lon] = this.stopIndex!.s[k], dLat = STOP_AREA_M / 111_320, dLon = dLat / Math.cos(lat * Math.PI / 180);
+    const missing = this.stopTiles.want(viewTiles({ north: lat + dLat, south: lat - dLat, east: lon + dLon, west: lon - dLon }, 13));
+    this.stopReady = !missing.length;
+    if (!this.stopPoller) {
+      this.stopPoller = new LinePoller<CityLive>({
+        line: "stop",
+        fetchLine: (_, signal) => loadTiles(this.stopTiles, this.stopTiles.tiles, fetchTile, signal),
+        validate: isCityLive,
+        clock: this.clock,
+        onData: () => this.publishStop(),
+        onState: () => {},
+      });
+    } else if (missing.length) {
+      // Another stop's area: its new tiles now, then all of them at the poller's pace.
+      void loadTiles(this.stopTiles, missing, fetchTile).then(() => this.publishStop());
+    }
+    this.stopPoller.start();   // a new poller asks for every tile at once
+  }
+
+  // A stop id from a picked line's stops (GTFS id): false when the stop index does not know it.
+  async selectStopId(id: string): Promise<boolean> {
+    const ix = await this.loadStopIndex();
+    const k = ix ? ix.s.findIndex(x => x[3] === id) : -1;
+    if (k >= 0) this.selectStop(k);
+    return k >= 0;
+  }
+
+  // Until every tile of a new area is in, the vehicles of the last complete set stay.
+  private publishStop() {
+    const c = this.stopTiles.snapshot();
+    if (!c) return;
+    this.stopCity = c.vehicles;
+    this.stopReady = true;
   }
 
   setTheme(t: Theme) {
@@ -325,6 +514,7 @@ export class AppState {
     const keep = lines.slice(0, MAX_LINES), ids = keep.map(l => l.id), left = lines.slice(MAX_LINES).map(l => l.id);
     if (!keepAlert || this.alert?.lines.some(l => !ids.includes(l.line))) this.setAlert(null);   // a new trip: the old alert no longer fits
     this.metroStation = null;
+    this.selectStop(null);
     this.selection = null;
     if (this.tempLine && ids.includes(this.tempLine)) this.tempLine = null;   // now a pick
     this.dropTemp();
@@ -420,6 +610,7 @@ export class AppState {
   // A vehicle clicked on the city layer: select it and show its line in detail for a while.
   selectCityVehicle(line: string, id: string) {
     this.metroStation = null;
+    this.selectStop(null);
     if (this.tempLine !== line) {
       this.dropTemp();
       if (!this.selected.includes(line)) {
@@ -442,12 +633,14 @@ export class AppState {
 
   selectVehicle(line: string, id: string) {
     this.metroStation = null;
+    this.selectStop(null);
     if (line !== this.tempLine) this.dropTemp();
     this.selection = { kind: "vehicle", line, id };
   }
 
   selectRoute(line: string, variant: string) {
     this.metroStation = null;
+    this.selectStop(null);
     if (line !== this.tempLine) this.dropTemp();
     this.selection = { kind: "route", line, variant };
   }

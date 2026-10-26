@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PALETTE } from "../src/lib/lineColors";
 import { AppState } from "../src/lib/state.svelte";
+import type { TripIndex } from "../src/lib/trip";
+import type { LineStatic } from "../src/lib/types";
 
 vi.stubGlobal("history", { state: null, replaceState: () => {} });
 vi.stubGlobal("location", { pathname: "/", search: "", hash: "" });
@@ -568,5 +570,186 @@ describe("AppState push alert", () => {
     const app = fresh();
     app.setAlert(spec());
     expect(app.alert).toBeNull();
+  });
+});
+
+describe("AppState stop board", () => {
+  // Stops A, B, C on one street; 040 east serves A and B (C is its end).
+  const ix: TripIndex = { v: "x", s: [["Α", 37.97, 23.70, "A"], ["Β", 37.97, 23.71, "B"], ["Γ", 37.97, 23.72, "C"]],
+    l: { "040": { east: [0, 1, 2] } } };
+  const st: LineStatic = { id: "040", stops: { A: { name: "Α", lat: 37.97, lon: 23.70 }, B: { name: "Β", lat: 37.97, lon: 23.71 },
+    C: { name: "Γ", lat: 37.97, lon: 23.72 } },
+    variants: { east: { headsign: "Γ", direction: 0, shape: [[37.97, 23.70], [37.97, 23.72]], stops: ["A", "B", "C"] } } };
+  const urls: string[] = [];
+  const fresh = () => {
+    vi.stubGlobal("fetch", (u: string) => { urls.push(u); return new Promise(() => {}); });   // never settles
+    const app = new AppState();
+    app.stopIndex = ix;
+    return app;
+  };
+
+  it("a tapped stop, a station and a selected vehicle exclude each other", () => {
+    const app = fresh();
+    app.selectStation("ΟΜΟΝΟΙΑ");
+    app.selectStop(1);
+    expect(app.metroStation).toBeNull();
+    expect(app.stopInfo).toMatchObject({ name: "Β", id: "B", serve: [{ line: "040", variants: ["east"] }], end: [] });
+    app.selectCityVehicle("550", "1");
+    expect(app.stop).toBeNull();
+    app.selectStop(1);
+    expect(app.selection).toBeNull();
+    expect(app.tempLine).toBeNull();
+    app.selectStation("ΟΜΟΝΟΙΑ");
+    expect(app.stop).toBeNull();
+    app.selectStop(1);
+    app.showTrip([{ id: "040", variants: ["east"] }]);
+    expect(app.stop).toBeNull();
+  });
+
+  it("ignores a stop the index does not have", () => {
+    const app = fresh();
+    app.selectStop(7);
+    expect(app.stop).toBeNull();
+  });
+
+  const ticks = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setTimeout(r, 0)); };
+  // fetch answers /v1/stops with stops(id); everything else never settles.
+  const serving = (stops: (id: string) => [number, unknown]) => {
+    vi.stubGlobal("fetch", (u: string) => {
+      urls.push(u);
+      if (u.startsWith("/oasa/")) return Promise.resolve(new Response("{}", { status: 502 }));
+      const m = /\/v1\/stops\/([^/?]+)$/.exec(u);
+      if (!m) return new Promise(() => {});
+      const [status, body] = stops(decodeURIComponent(m[1]));
+      return Promise.resolve(new Response(JSON.stringify(body), { status }));
+    });
+    const app = new AppState();
+    app.stopIndex = ix;
+    return app;
+  };
+
+  it("loads its lines' static files and asks the server; a server without stop boards leaves them to the tiles around the stop", async () => {
+    const app = serving(() => [404, { error: "not_found" }]);
+    app.stopIndex = { ...ix, l: { "Χ0": ix.l["040"] } };   // static files are fetched once per page: a line no test asked for
+    await ticks();   // pollers of the apps of earlier tests fire now, not below
+    urls.length = 0;
+    app.selectStop(1);
+    await ticks();   // the server's 404, then the tiles' poller
+    expect(urls.some(u => u.endsWith(`/lines/${encodeURIComponent("Χ0")}.json`))).toBe(true);
+    expect(urls.filter(u => u.includes("/v1/stops/"))).toHaveLength(1);
+    const tiles = urls.filter(u => u.includes("/v1/vehicles/tiles/13/"));
+    expect(tiles.length).toBeGreaterThanOrEqual(9);
+    expect(urls.filter(u => u.includes("/v1/lines/") && !u.endsWith(".json"))).toEqual([]);   // live feeds, not static files
+    urls.length = 0;
+    app.selectStop(0);   // that server is not asked again
+    await ticks();
+    expect(urls.filter(u => u.includes("/v1/stops/"))).toEqual([]);
+  });
+
+  it("shows the server's board, without loading the tiles", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const arrival = { line: "040", variant: "east", headsign: "Γ", trip_id: "T1", vehicle: "7", eta: now + 120, scheduled: now + 60,
+      position_at: now - 20, stops_away: 2, distance_m: 600, source: "live" };
+    const app = serving(id => [200, { stop_id: id, name: "Β", updated_at: now, next_update_at: now + 30, lines: ["040"],
+      arrivals: [arrival, { ...arrival, vehicle: null, trip_id: "T2", eta: now + 900, scheduled: now + 900, position_at: null,
+        stops_away: null, distance_m: null, source: "schedule" }, { ...arrival, vehicle: "8", eta: now - 60 }] }]);
+    await ticks();
+    urls.length = 0;
+    app.selectStop(1);
+    await ticks();
+    expect(app.stopReady).toBe(true);
+    expect(app.stopRows.map(r => [r.vehicle, r.etaS! - now, r.stopsAway])).toEqual([["7", 120, 2], [null, 900, null]]);   // 8 is past
+    expect(urls.filter(u => u.includes("/v1/vehicles/tiles/"))).toEqual([]);
+  });
+
+  it("prefers OASA, treats an empty official board as authoritative, and stops requests when closed", async () => {
+    const now = Math.floor(Date.now() / 1000), signals: AbortSignal[] = [];
+    vi.stubGlobal("fetch", (u: string, options: { signal?: AbortSignal }) => {
+      if (!u.startsWith("/oasa/")) return new Promise(() => {});
+      urls.push(u);
+      signals.push(options.signal!);
+      const id = u.split("/").at(-1);
+      return Promise.resolve(Response.json({ stop_id: id, updated_at: now, next_update_at: now + 30, routes: [{ code: "east", line: "040", description: "Γ" }],
+        arrivals: id === "B" ? [{ route_code: "east", veh_code: "7", minutes: 8 }] : [] }));
+    });
+    const app = new AppState();
+    app.stopIndex = ix;
+    app.selectStop(1);
+    await ticks();
+    expect(app.stopOasaState).toBe("ok");
+    expect(app.stopRows).toMatchObject([{ line: "040", vehicle: "7", etaS: now + 480, stopsAway: null }]);
+    expect(app.stopServer).toBeNull();
+    app.selectStop(0);
+    expect(app.stopOasa).toBeNull();
+    await ticks();
+    expect(app.stopReady).toBe(true);
+    expect(app.stopRows).toEqual([]);
+    app.selectStop(null);
+    expect(app.stopOasa).toBeNull();
+    expect(app.stopOasaState).toBe("off");
+    expect(signals).toHaveLength(2);
+  });
+
+  it("aborts an OASA request when switching stops and ignores its late response", async () => {
+    let resolveOld!: (r: Response) => void;
+    let oldSignal: AbortSignal | undefined;
+    const now = Math.floor(Date.now() / 1000);
+    vi.stubGlobal("fetch", (u: string, options: { signal?: AbortSignal }) => {
+      if (u === "/oasa/stops/B") {
+        oldSignal = options.signal;
+        return new Promise<Response>(r => { resolveOld = r; });
+      }
+      if (u === "/oasa/stops/A") return Promise.resolve(Response.json({ stop_id: "A", updated_at: now, next_update_at: now + 30, routes: [], arrivals: [] }));
+      return new Promise(() => {});
+    });
+    const app = new AppState();
+    app.stopIndex = ix;
+    app.selectStop(1);
+    await ticks();
+    app.selectStop(0);
+    expect(oldSignal?.aborted).toBe(true);
+    resolveOld(Response.json({ stop_id: "B", updated_at: now, next_update_at: now + 30, routes: [], arrivals: [] }));
+    await ticks();
+    expect(app.stopOasa?.stop_id).toBe("A");
+    app.selectStop(null);
+  });
+
+  it("uses OASA line metadata when its route code differs from every GTFS variant", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    vi.stubGlobal("fetch", (u: string) => u === "/oasa/stops/B"
+      ? Promise.resolve(Response.json({ stop_id: "B", updated_at: now, next_update_at: now + 30, routes: [{ code: "changed", line: "550", description: "Γ" }],
+        arrivals: [{ route_code: "changed", veh_code: "9", minutes: 4 }] }))
+      : new Promise(() => {}));
+    const app = new AppState();
+    app.stopIndex = { ...ix, l: { ...ix.l, "550": { gtfs_shape: [0, 2] } } };
+    app.selectStop(1);
+    await ticks();
+    expect(app.stopRows).toMatchObject([{ line: "550", variant: "changed", etaS: now + 240 }]);
+    app.selectStop(null);
+  });
+
+  it("estimates a stop the server does not know, and asks the server for the next one", async () => {
+    const app = serving(id => (id === "B" ? [404, { error: "unknown_stop" }] : [503, { error: "warming_up" }]));
+    await ticks();
+    urls.length = 0;
+    app.selectStop(1);
+    await ticks();
+    expect(urls.filter(u => u.includes("/v1/vehicles/tiles/13/")).length).toBeGreaterThanOrEqual(9);
+    app.selectStop(0);
+    await ticks();
+    expect(urls.filter(u => u.includes("/v1/stops/"))).toEqual([expect.stringMatching(/\/B$/), expect.stringMatching(/\/A$/)]);
+  });
+
+  it("estimates the buses coming from a line on the map, and not those past the stop", () => {
+    const app = fresh();
+    const now = Math.floor(Date.now() / 1000);
+    const v = (id: string, lon: number) => ({ id, lat: 37.97, lon, bearing: 90, position_at: now, route_code: "1", variant: "east",
+      trip_id: null, trip_label: null, delay_s: null, next_stop_id: null, speed: 5 });
+    app.stopStatics = { "040": st };
+    app.live = { "040": { line: "040", updated_at: now, next_update_at: now + 30, vehicles: [v("1", 23.705), v("2", 23.715)] } };
+    app.selectStop(1);
+    expect(app.stopRows.map(r => [r.vehicle, r.stopsAway])).toEqual([["1", 1]]);
+    app.selectStop(0);
+    expect(app.stopRows).toEqual([]);   // both are past A
   });
 });
