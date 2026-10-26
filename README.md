@@ -158,6 +158,42 @@ the existing transit backend. Deploying beside that backend requires coordinatin
 combined OASA load. Run it on a host that can reach OASA; see the hosting tradeoff above.
 Plain production builds without `VITE_OASA_BASE` keep estimates.
 
+### Deploy on Cloudflare
+
+The Cloudflare deployment serves `dist/` as static assets and `/oasa/stops/{stop_id}`
+through a Worker. One SQLite-backed Durable Object shares the OASA cache and the four
+requests/second queue across all edge locations. It uses the existing proxy handler;
+OASA fetches run in the requesting edge Worker through an RPC callback, because direct
+Durable Object egress timed out while edge egress succeeded. Static assets bypass Worker
+execution. No KV, D1, paid-only namespace, or Go backend is deployed.
+Worker runtime types are generated locally by `check:worker` and are not committed.
+
+```bash
+bun install --frozen-lockfile
+bun run cf:types        # regenerate after changing wrangler.jsonc
+bun run check
+bun run check:worker
+bun run cf:dev          # builds with VITE_OASA_BASE=/oasa, runs Cloudflare locally
+bun scripts/check-cloudflare.ts http://localhost:8787
+bun run deploy         # builds and publishes to your workers.dev hostname
+bun scripts/check-cloudflare.ts https://your-worker.workers.dev
+```
+
+Authenticate with `bunx wrangler login` before the first deployment. `wrangler.jsonc` uses
+the name `athens-transit-map`, SPA asset routing, and a SQLite Durable Object migration
+compatible with Workers Free. OASA's arrivals and route metadata endpoints both responded
+from a remote Cloudflare Worker preview on 2026-10-26; recheck if connectivity changes.
+
+On Workers Free, static asset requests are free and unlimited; dynamic Worker requests and
+Durable Object requests each have a 100,000/day allowance. Every stop refresh uses one of
+each (roughly 120 per open stop-hour); cache hits save OASA calls but still use those
+dynamic request allowances. Other Workers on the account share its Worker quota. Free
+limits fail requests when exhausted rather than enabling a paid plan automatically.
+See [Worker limits](https://developers.cloudflare.com/workers/platform/limits/) and
+[Durable Object pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/).
+Keep the account on Workers Free to use its hard free-tier limits; deployment does not
+change account billing. The live vehicle map continues to use `transit.haroldpoi.dev`.
+
 ## Request pacing
 
 One request per chosen line: `GET /v1/lines/{id}`, plus `GET /v1/vehicles` for the city layer (same

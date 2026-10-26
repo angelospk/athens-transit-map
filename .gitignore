@@ -2,3 +2,5 @@ node_modules
 dist
 .env*.local
 dist-bot
+.wrangler
+worker-configuration.d.ts

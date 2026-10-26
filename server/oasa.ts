@@ -1,20 +1,24 @@
 import { parseOasa, parseOasaRoutes, type OasaRoute } from "../src/lib/oasa.ts";
 
+export type OasaAction = "getStopArrivals" | "webRoutesForStop";
+export type OasaJSON = (act: OasaAction, id: string) => Promise<unknown>;
+
 // Fixed arrivals and route-metadata actions. One paced queue also covers rapid stop switching.
 export function oasaProxy(fetchUpstream: typeof fetch = fetch) {
   const cache = new Map<string, { until: number; response: Response }>();
   const pending = new Map<string, Promise<Response>>();
   const routes = new Map<string, { checked: number; retry: number; rows: OasaRoute[] }>();
   let queue = Promise.resolve(), next = 0;
-  const upstreamJSON = async (act: "getStopArrivals" | "webRoutesForStop", id: string) => {
+  const upstreamJSON = async (act: OasaAction, id: string, remote?: OasaJSON) => {
     if (next > Date.now()) await new Promise(r => setTimeout(r, next - Date.now()));
     next = Date.now() + 250;
+    if (remote) return remote(act, id);
     const response = await fetchUpstream(`https://telematics.oasa.gr/api/?act=${act}&p1=${id}`,
       { signal: AbortSignal.timeout(6000) });
     if (!response.ok) throw new Error("upstream");
     return response.json();
   };
-  return async (request: Request): Promise<Response | null> => {
+  return async (request: Request, remote?: OasaJSON): Promise<Response | null> => {
     const url = new URL(request.url);
     if (!url.pathname.startsWith("/oasa/")) return null;
     const match = /^\/oasa\/stops\/([1-9]\d{0,8})$/.exec(url.pathname);
@@ -36,14 +40,14 @@ export function oasaProxy(fetchUpstream: typeof fetch = fetch) {
         await turn;
         let response: Response;
         try {
-          const arrivals = parseOasa(await upstreamJSON("getStopArrivals", id));
+          const arrivals = parseOasa(await upstreamJSON("getStopArrivals", id, remote));
           if (!arrivals) throw new Error("invalid arrivals");
           const now = Math.floor(Date.now() / 1000);
           const known = routes.get(id);
           const missing = arrivals.some(a => !known?.rows.some(r => r.code === a.route_code));
           if (!known || (now >= known.retry && (now - known.checked >= 21600 || missing && now - known.checked >= 300))) {
             try {
-              const rows = parseOasaRoutes(await upstreamJSON("webRoutesForStop", id));
+              const rows = parseOasaRoutes(await upstreamJSON("webRoutesForStop", id, remote));
               if (!rows) throw new Error("invalid routes");
               routes.delete(id);
               routes.set(id, { checked: now, retry: now + 300, rows });

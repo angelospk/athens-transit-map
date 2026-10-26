@@ -9,6 +9,11 @@
     "dev:mock": "VITE_MOCK=1 vite",
     "oasa:proxy": "bun server/oasa-proxy.ts",
     "build": "vite build",
+    "build:cloudflare": "VITE_OASA_BASE=/oasa vite build",
+    "check:worker": "wrangler types && tsc -p tsconfig.worker.json",
+    "cf:types": "wrangler types",
+    "cf:dev": "bun run build:cloudflare && wrangler dev",
+    "deploy": "bun run build:cloudflare && wrangler deploy",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
@@ -24,7 +29,8 @@
     "typescript": "^6.0.3",
     "vite": "^8.3.2",
     "vitest": "^5.0.3",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "wrangler": "4"
   },
   "dependencies": {
     "maplibre-gl": "^6.12.0"

@@ -112,5 +112,19 @@ describe("OASA proxy", () => {
     expect(upstream).toHaveBeenCalledTimes(4);
   });
 
-
+  it("paces and caches edge callbacks without fetching from the coordinator", async () => {
+    vi.useFakeTimers();
+    const direct = vi.fn();
+    const edge = vi.fn(async (act: string) => act === "getStopArrivals" ? raw : metadata);
+    const handle = oasaProxy(direct);
+    const response = handle(request(), edge);
+    await vi.advanceTimersByTimeAsync(249);
+    expect(edge).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await (await response)!.json()).toHaveProperty("routes", parseOasaRoutes(metadata));
+    const otherEdge = vi.fn();
+    expect((await handle(request(), otherEdge))!.status).toBe(200);
+    expect(otherEdge).not.toHaveBeenCalled();
+    expect(direct).not.toHaveBeenCalled();
+  });
 });
