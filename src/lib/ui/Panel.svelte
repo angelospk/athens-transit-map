@@ -7,6 +7,8 @@
   import { STALE_S, type AppState } from "../state.svelte";
   import Bell from "./Bell.svelte";
   import HelpPop from "./HelpPop.svelte";
+  import IdeaPop from "./IdeaPop.svelte";
+  import { PEEK_MS, canSend, countVisit, markPeeked, markSent, peekDelayMs, sendIdea, wasPeeked, type IdeaState, type IdeaStatus } from "../idea";
   import LinePicker from "./LinePicker.svelte";
   import MetroToggles from "./MetroToggles.svelte";
   import StatusBanner from "./StatusBanner.svelte";
@@ -16,13 +18,14 @@
   // Phones start compact: the map matters more than the stats at a bus stop.
   let collapsed = $state(matchMedia("(max-width: 719px)").matches);
   // One popover at a time, opened from the buttons on the right: the map menu, what the symbols mean, or the
-  // trip planner (loaded on first open).
-  let pop = $state<"layers" | "help" | "trip" | null>(null);
+  // trip planner (loaded on first open), or the idea box.
+  let pop = $state<"layers" | "help" | "trip" | "idea" | null>(null);
   // On a phone a popover covers the panel: what it covers cannot be reached by the keyboard either.
   const narrow = new MediaQuery("(max-width: 719px)");
   let tripButton: HTMLButtonElement | undefined = $state();
   let layersButton: HTMLButtonElement | undefined = $state();
   let helpButton: HTMLButtonElement | undefined = $state();
+  let ideaButton: HTMLButtonElement | undefined = $state();
   let foldButton: HTMLButtonElement | undefined = $state();
   let focusOpen = $state(false);   // the direction rows of several lines, under their one summary row
   // Folded, the search field is hidden; the magnifier shows it (and the list under it) until a line is picked.
@@ -31,18 +34,60 @@
   const compact = $derived(collapsed && !searching);
 
   // Focus returns to the button that opened a popover.
-  async function refocus(p: "layers" | "help" | "trip") {
+  async function refocus(p: "layers" | "help" | "trip" | "idea") {
     await tick();
-    ({ layers: layersButton, help: helpButton, trip: tripButton })[p]?.focus();
+    ({ layers: layersButton, help: helpButton, trip: tripButton, idea: ideaButton })[p]?.focus();
   }
   const closeTrip = () => { pop = null; void refocus("trip"); };   // its A and B stay on the map until its own ×
-  const toggle = (p: "layers" | "help" | "trip") => {
+  const toggle = (p: "layers" | "help" | "trip" | "idea") => {
     pop = pop === p ? null : p;
+    peek = false;
     if (pop === "help") void tick().then(() => document.getElementById("pop-help")?.focus());
+    if (pop === "idea") void tick().then(() => document.getElementById("idea-text")?.focus());
     if (pop !== "layers") return;
     app.loadMetro();   // again, if the first load failed
     app.selectStation(null);   // its card would cover the menu's metro lines on a phone
   };
+  // The idea box: blue until an idea was sent. Its label opens by itself once, after some seconds of visible use,
+  // only on the first two visits and once per tab (lib/idea.ts); it waits while a popover is open.
+  const session = (): Pick<Storage, "getItem" | "setItem"> | null => { try { return sessionStorage; } catch { return null; } };
+  let idea = $state<IdeaState>((() => { try { return countVisit(localStorage, sessionStorage); } catch { return { sent: false, visits: 0 }; } })());
+  let ideaDraft = $state("");
+  // Kept here, not in the popover: closing it while the request runs must not lose the request.
+  let ideaStatus = $state<IdeaStatus>("edit");
+  let peek = $state(false);
+  $effect(() => {
+    const delay = peekDelayMs(idea);   // tracked: sending an idea cancels a pending peek
+    const s = session();
+    if (delay == null || !s || wasPeeked(s)) return;
+    let used = 0, last = performance.now(), shut: ReturnType<typeof setTimeout> | undefined;
+    // Only visible time counts: the clock restarts whenever the tab is hidden or shown again.
+    const restart = () => (last = performance.now());
+    document.addEventListener("visibilitychange", restart);
+    const iv = setInterval(() => {
+      const now = performance.now();
+      if (!document.hidden) used += Math.min(now - last, 2000);   // the cap: timers frozen in a suspended page
+      last = now;
+      if (used < delay || document.hidden || untrack(() => pop)) return;
+      clearInterval(iv);
+      markPeeked(s);
+      peek = true;
+      shut = setTimeout(() => (peek = false), PEEK_MS);
+    }, 1000);
+    return () => { clearInterval(iv); clearTimeout(shut); document.removeEventListener("visibilitychange", restart); };
+  });
+  // Back to the form when the thanks are closed: the button stays there for another idea.
+  $effect(() => { if (pop !== "idea" && ideaStatus === "done") ideaStatus = "edit"; });
+  async function submitIdea() {
+    if (ideaStatus === "sending" || !canSend(ideaDraft)) return;
+    ideaStatus = "sending";
+    if (!(await sendIdea(ideaDraft))) { ideaStatus = "failed"; return; }
+    ideaDraft = "";
+    ideaStatus = "done";
+    try { markSent(localStorage); } catch { /* storage blocked */ }
+    idea = { ...idea, sent: true };
+  }
+
   // The chevron: opens and closes the dropdown.
   function fold() {
     searching = false;
@@ -245,6 +290,10 @@
       {:catch}
         <div class="pop"><p class="hint">Δεν φόρτωσε. Έλεγξε τη σύνδεση και πάτα ξανά την πυξίδα.</p></div>
       {/await}
+    {:else if pop === "idea"}
+      <div class="pop" id="pop-idea" role="dialog" aria-label="Ιδέες για την εφαρμογή">
+        <IdeaPop bind:draft={ideaDraft} status={ideaStatus} onsubmit={submitIdea} />
+      </div>
     {:else if pop === "help"}
       <div class="pop" id="pop-help" role="dialog" tabindex="-1" aria-label="Τι σημαίνει κάθε σύμβολο">
         <HelpPop />
@@ -350,6 +399,13 @@
       <circle cx="10" cy="10" r="8" /><path d="M7.8 7.9a2.3 2.3 0 1 1 3.3 2.1c-.7.4-1.1.8-1.1 1.6" /><circle cx="10" cy="14.2" r=".5" fill="currentColor" />
     </svg>
   </button>
+  <button type="button" class="tool idea" class:fresh={!idea.sent} class:on={pop === "idea"} class:peek aria-expanded={pop === "idea"} aria-controls="pop-idea"
+    bind:this={ideaButton} aria-label="Έρχεται εφαρμογή: πες μας τι να έχει" data-tip={peek ? "" : "Έρχεται εφαρμογή · Τι να έχει;"} onclick={() => toggle("idea")}>
+    <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+      <rect x="5.5" y="2" width="9" height="16" rx="2.2" /><path d="M9 15h2" />
+    </svg>
+    <span class="peek-label" aria-hidden="true">Έρχεται εφαρμογή · Τι να έχει;</span>
+  </button>
 </div>
 
 <style>
@@ -388,6 +444,15 @@
   .rail .tool:hover, .rail .tool.on { background: rgba(0, 0, 0, .08); color: #333; }
   .rail .tool.on { color: var(--accent); }
   .rail .tool.filtering::after, .rail .tool.pinned::after { top: 3px; right: 3px; }
+  /* The idea button: blue until an idea was sent. Its label slides out to the left, joined to the rail. */
+  .rail .tool.idea.fresh { color: var(--accent); }
+  .peek-label { position: absolute; right: 100%; top: 0; height: 29px; display: flex; align-items: center; padding: 0 10px;
+    white-space: nowrap; background: #fff; color: #333; font-size: 12px; font-weight: 600; border-radius: 4px 0 0 4px;
+    box-shadow: -2px 0 0 0 rgba(0, 0, 0, .1), 0 2px 0 0 rgba(0, 0, 0, .1), 0 -2px 0 0 rgba(0, 0, 0, .1);
+    clip-path: inset(-3px 0 -3px 100%); pointer-events: none; transition: clip-path .45s ease; }
+  .rail .tool.peek .peek-label { clip-path: inset(-3px -1px -3px -3px); pointer-events: auto; }
+  .rail .tool.peek::before { display: none; }
+  @media (prefers-reduced-motion: reduce) { .peek-label { transition: none; } }
   /* What a button does: beside it, on hover or keyboard focus (no tooltip on a touch screen; the popover itself opens). */
   .rail .tool::before { content: attr(data-tip); position: absolute; right: calc(100% + 10px); top: 50%; translate: 0 -50%; width: max-content;
     max-width: 220px; padding: 6px 9px; border-radius: 8px; background: var(--panel); color: var(--fg); border: 1px solid var(--border);
