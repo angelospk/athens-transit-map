@@ -4,9 +4,13 @@ import { STATS_BASE } from "./config";
 
 export type HourStats = { h: number; fixes: number; vehicles: number; lines: number; dist_m: number; time_s: number };
 export type LineStats = { line: string; fixes: number; vehicles: number; dist_m: number; time_s: number };
+type TripCount = { planned: number; run: number; partial: number; missed: number; unmeasured: number };
+export type TripLine = TripCount & { line: string; missed_trips: string[] | null };
+export type TripStats = TripCount & { gtfs: string; gtfs_expired: boolean; min_coverage: number; by_line: TripLine[] };
 export type DayStats = {
   version: number; date: string; tz: string; generated_at: number; first_fix: number; last_fix: number;
   files: number; fixes: number; vehicles: number; lines: number; hours: HourStats[]; by_line: LineStats[];
+  trips?: TripStats; // missing on days before 2026-10-27 or without a static GTFS
 };
 export type Ranked = { line: string; kmh: number; km: number; hours: number };
 
@@ -26,6 +30,25 @@ export function ranking(d: DayStats, n: number, minHours = MIN_LINE_HOURS) {
     .sort((a, b) => a.kmh - b.kmh || a.line.localeCompare(b.line));
   const k = Math.min(n, Math.floor(all.length / 2));
   return { slow: all.slice(0, k), fast: all.slice(Math.max(all.length - n, k)).reverse(), eligible: all.length };
+}
+
+export const MIN_LINE_TRIPS = 20; // measured trips before a line is ranked by missed trips
+
+// Share of the measured scheduled trips that ran, and the n lines with the largest share never seen.
+// A line with no trip seen at all is counted in `unseen`, not ranked: it may not have run at all,
+// or its timetable changed (an expired GTFS still lists it).
+export function tripShare(d: DayStats, n = 5) {
+  const t = d.trips;
+  const measured = t ? t.planned - t.unmeasured : 0;
+  if (!t || measured <= 0) return null;
+  const worst = t.by_line
+    .filter(l => l.run + l.partial > 0)
+    .map(l => ({ line: l.line, missed: l.missed, measured: l.planned - l.unmeasured }))
+    .filter(l => l.missed > 0 && l.measured >= MIN_LINE_TRIPS)
+    .sort((a, b) => b.missed / b.measured - a.missed / a.measured || a.line.localeCompare(b.line))
+    .slice(0, n);
+  const unseen = t.by_line.filter(l => l.planned > l.unmeasured && l.run + l.partial === 0).length;
+  return { share: t.run / measured, run: t.run, measured, expired: t.gtfs_expired, gtfs: t.gtfs, worst, unseen };
 }
 
 // Hours the day is partial in: before its first fix or after its last (history started late,

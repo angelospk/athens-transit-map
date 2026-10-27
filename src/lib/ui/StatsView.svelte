@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { DATA_URL, gaps, hourly, latestDay, MIN_LINE_HOURS, ranking, type DayStats } from "../stats";
+  import { DATA_URL, gaps, hourly, latestDay, MIN_LINE_HOURS, ranking, tripShare, type DayStats } from "../stats";
 
   let data = $state<{ kind: "loading" } | { kind: "ok"; day: DayStats } | { kind: "none" } | { kind: "error" }>({ kind: "loading" });
 
@@ -28,6 +28,8 @@
   const day = $derived(data.kind === "ok" ? data.day : null);
   const hours = $derived(day ? hourly(day) : []);
   const rank = $derived(day ? ranking(day, 10) : null);
+  const trips = $derived(day ? tripShare(day) : null);
+  const pct = (v: number) => v.toLocaleString("el-GR", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const missing = $derived(day ? gaps(day) : []);
   const dateText = $derived(day ? new Date(`${day.date}T12:00:00Z`).toLocaleDateString("el-GR",
     { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }) : "");
@@ -81,6 +83,24 @@
 {:else}
   <p class="lede">{dateText}: {nf(day.vehicles)} λεωφορεία και τρόλεϊ σε {nf(day.lines)} γραμμές.
     {#if missingText}<br /><span class="warn">Μερική μέρα: χωρίς δεδομένα {missingText}.</span>{/if}</p>
+
+  {#if trips}
+    <section>
+      <h3>Δρομολόγια που έγιναν</h3>
+      <p class="read"><b>{pct(trips.share)}</b> των προγραμματισμένων ({nf(trips.run)} από {nf(trips.measured)})</p>
+      {#if trips.worst.length}
+        <h4>Γραμμές με το μεγαλύτερο ποσοστό δρομολογίων που δεν φάνηκαν</h4>
+        <ol>
+          {#each trips.worst as l (l.line)}
+            <li class="miss"><b>{l.line}</b><span class="v">{nf(l.missed)} από {nf(l.measured)}</span></li>
+          {/each}
+        </ol>
+      {/if}
+      {#if trips.unseen}<p class="note">{trips.unseen === 1 ? "1 γραμμή του προγράμματος δεν φάνηκε καθόλου και δεν μπαίνει" : `${nf(trips.unseen)} γραμμές του προγράμματος δεν φάνηκαν καθόλου και δεν μπαίνουν`} στη λίστα.</p>{/if}
+      <p class="note">Ένα δρομολόγιο μετράει ως εκτελεσμένο όταν ένα όχημα κάλυψε τουλάχιστον το μισό της διαδρομής του, κοντά στην ώρα του. Όχημα χωρίς GPS φαίνεται σαν δρομολόγιο που δεν έγινε.
+        {#if trips.expired}<span class="warn">Το επίσημο πρόγραμμα (GTFS) του ΟΑΣΑ έχει λήξει. Η σύγκριση γίνεται με το πρόγραμμα της ίδιας μέρας της εβδομάδας, από την έκδοση {trips.gtfs}.</span>{/if}</p>
+    </section>
+  {/if}
 
   <section bind:clientWidth={measured}>
     <h3>Λεωφορεία στον δρόμο</h3>
@@ -187,6 +207,7 @@
   .track { height: 10px; border-radius: 2px; background: var(--control); }
   .track span { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
   .v { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+  li.miss { grid-template-columns: 40px auto; max-width: 220px; }
   .foot { margin: 18px 0 0; font-size: 12px; color: var(--muted); }
   .foot a { color: var(--accent); }
   @media (max-width: 719px) {

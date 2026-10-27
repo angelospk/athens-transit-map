@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byDayType, complete, gaps, hourBand, hourly, isWeekend, kmh, lineTrends, ranking, type DayStats, type LineStats } from "../src/lib/stats";
+import { byDayType, complete, gaps, hourBand, hourly, isWeekend, kmh, lineTrends, ranking, tripShare, type TripLine, type DayStats, type LineStats } from "../src/lib/stats";
 
 const line = (id: string, speed: number, hours: number): LineStats =>
   ({ line: id, fixes: 1, vehicles: 1, time_s: hours * 3600, dist_m: (speed / 3.6) * hours * 3600 });
@@ -146,5 +146,28 @@ describe("lineTrends", () => {
     const d = days([]);
     expect(lineTrends(d.slice(0, 3), 5)).toBeNull(); // latest Saturday, no earlier weekend day
     expect(lineTrends([d[0], d[3]], 5)).toBeNull();
+  });
+});
+
+describe("tripShare", () => {
+  const tl = (line: string, planned: number, run: number, missed: number, unmeasured = 0): TripLine =>
+    ({ line, planned, run, partial: planned - run - missed - unmeasured, missed, unmeasured, missed_trips: null });
+
+  it("is null for a day without trips, or with no measured trip", () => {
+    expect(tripShare(day([]))).toBeNull();
+    const none = { gtfs: "g", gtfs_expired: false, min_coverage: 0.5, planned: 3, run: 0, partial: 0, missed: 0, unmeasured: 3, by_line: [] };
+    expect(tripShare({ ...day([]), trips: none })).toBeNull();
+  });
+
+  it("shares the run trips of the measured ones and lists the lines that missed most", () => {
+    const by_line = [tl("040", 100, 80, 15), tl("Α1", 100, 98, 2), tl("Χ96", 10, 2, 8), tl("550", 60, 30, 20, 10), tl("Β2", 40, 40, 0),
+      tl("122Θ", 52, 0, 52)];
+    const trips = { gtfs: "2026-07-08", gtfs_expired: true, min_coverage: 0.5, planned: 310, run: 250, partial: 5, missed: 45, unmeasured: 10, by_line };
+    const s = tripShare({ ...day([]), trips }, 3)!;
+    expect(s.share).toBeCloseTo(250 / 300);
+    expect(s).toMatchObject({ run: 250, measured: 300, expired: true, gtfs: "2026-07-08", unseen: 1 });
+    // Χ96 has too few trips to rank (MIN_LINE_TRIPS); 550 missed 20 of 50 measured; Β2 missed none;
+    // 122Θ was never seen at all (no service that day, or a timetable that changed): counted, not ranked.
+    expect(s.worst).toEqual([{ line: "550", missed: 20, measured: 50 }, { line: "040", missed: 15, measured: 100 }, { line: "Α1", missed: 2, measured: 100 }]);
   });
 });
