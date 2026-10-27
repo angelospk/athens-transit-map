@@ -50,10 +50,10 @@ for its direction and stops. The chosen lines stay in the URL, so links can be s
 
 This is the frontend. Data comes from the backend
 [`angelospk/athens-transit-rt`](https://github.com/angelospk/athens-transit-rt). The interface between
+the two is fixed in [`docs/CONTRACT.md`](docs/CONTRACT.md); the backend owns it.
 The Android app (Flutter) lives in
 [`angelospk/athens-transit-app`](https://github.com/angelospk/athens-transit-app); it reads the same API and
 this site's `trips.json` and `metro.json`.
-the two is fixed in [`docs/CONTRACT.md`](docs/CONTRACT.md); the backend owns it.
 The UI follows the viewer of [foivospro/athens-gtfs-realtime](https://github.com/foivospro/athens-gtfs-realtime).
 
 ## Features
