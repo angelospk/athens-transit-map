@@ -101,3 +101,14 @@ export async function mockLineStatic(line: string): Promise<LineStatic> {
   if (!st) throw new Error("no fixture for line " + line);
   return st;
 }
+
+// A STASY board for any station: two trains each way of M2, every 4 min (times in Athens).
+export async function mockStasy(name: string): Promise<FetchResult> {
+  const now = Date.now() / 1000;
+  const hm = (s: number) => new Date(s * 1000).toLocaleTimeString("el-GR", { timeZone: "Europe/Athens", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const departures = ["ΕΛΛΗΝΙΚΟ", "ΑΝΘΟΥΠΟΛΗ"].flatMap((headsign, k) => [0, 1].map(i => {
+    const in_s = 60 + k * 90 + i * 240;
+    return { line: "M2", route_color: "#e30613", headsign, t: hm(now + in_s), in_s };
+  }));
+  return { status: 200, body: { stop: name, indicative: false, departures } };
+}

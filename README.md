@@ -68,6 +68,8 @@ The UI follows the viewer of [foivospro/athens-gtfs-realtime](https://github.com
 - Direction chips on the vehicle and route cards; ⇄ on the "μόνο → …" pill switches direction.
 - Metro, ISAP and tram: stations always shown (from the STASY GTFS on
   [data.gov.gr](https://data.gov.gr/dataset/4e897a75-975a-4ce7-af65-f32ea01f93b9)), static (no live data exists).
+  A tapped station's card lists the next trains of the coming hour from the STASY timetable
+  (`GET /v1/rail/stasy/departures`, not live; an interchange named twice in the feed asks both names).
   Pin a line in the layers menu or on a tapped station's card to draw its track. Rebuild
   `public/metro.json` with `bun scripts/metro.ts <unzipped GTFS dir>`, then `bun scripts/metro-osm.ts`:
   the feed has no shapes, so the tracks come from OpenStreetMap route relations (© OSM contributors, ODbL).
