@@ -11,6 +11,9 @@
   import { metroFC } from "../metro";
   import { suburbanFC } from "../suburban";
   import { trainsFC } from "../trains";
+  import { RailGlide, trackStops, type Track } from "../rails";
+  import { fetchStasy, fetchSuburban, fetchTrainRun } from "../api";
+  import { PREFETCH_ZOOM, wanted, type Want } from "../prefetch";
   import { Locator, userPlan, type Fix, type LocState } from "../locate";
   import { Mover, planOnto } from "../motion";
   import { shapeLength, stopOffsets } from "../predict";
@@ -660,13 +663,21 @@
     }
     m.on("dragstart", () => (follow = false));   // only user gestures fire it
     // The city layer loads the tiles of the view: at first, and 300 ms after the map stops moving (never during a move).
-    const reportView = () => { const b = m.getBounds(); app.setCityView({ north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() }, m.getZoom()); };
+    const reportView = () => {
+      const b = m.getBounds();
+      app.setCityView({ north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() }, m.getZoom());
+      prefetchSoon();
+    };
     const reportSoon = debounce(reportView, VIEW_SETTLE_MS);
     m.on("load", reportView);
     // Follow mode moves the map every frame: it never rests, so its view is reported on a clock instead.
     const reportFollow = throttle(reportView, FOLLOW_VIEW_MS);
     const ticked = (e: object) => "follow" in e;
-    m.on("movestart", e => { if (ticked(e)) return; reportSoon.cancel(); reportFollow.cancel(); app.setCityMoving(); });
+    m.on("movestart", e => {
+      prefetchSoon.cancel(); ahead = [];   // the old view's: not wanted any more (follow mode too)
+      if (ticked(e)) return;
+      reportSoon.cancel(); reportFollow.cancel(); app.setCityMoving();
+    });
     m.on("moveend", e => (ticked(e) ? reportFollow() : reportSoon()));
 
     const popup = new Popup({ closeButton: false, offset: 10, maxWidth: "240px" });
@@ -760,6 +771,7 @@
       disposed = true;
       cancelAnimationFrame(raf);
       reportSoon.cancel();
+      prefetchSoon.cancel();
       reportFollow.cancel();
       document.removeEventListener("visibilitychange", onVisible);
       locator.stop();
@@ -802,11 +814,63 @@
     if (loaded) for (const id of ["train-dot", "train-icon", "train-heading", "train-route", "train-route-casing"]) map!.setLayoutProperty(id, "visibility", vis);
   });
 
-  // The trains, moved every second (serverNow ticks): the metro's along their two stops' times.
+  // The rail cards' data of what is on screen, loaded while the map rests (prefetch.ts), by at most
+  // four requests at a time from one queue that each view replaces; what the cache holds fresh is
+  // not asked again. Also after each trains poll (they move into view), unless the map is moving.
+  const loadAhead = (w: Want) =>
+    w.kind === "stasy" ? fetchStasy(w.id) : w.kind === "suburban-station" ? fetchSuburban(w.id)
+      : fetchTrainRun(w.kind === "metro-run" ? "metro" : "suburban", w.id);
+  let ahead: Want[] = [], workers = 0;
+  const work = async () => {
+    workers++;
+    for (let w = ahead.shift(); w; w = ahead.shift()) await loadAhead(w);
+    workers--;
+  };
+  const prefetchSoon = debounce(() => {
+    const m = map;
+    if (!m || !loaded || document.hidden || m.isMoving() || m.getZoom() < PREFETCH_ZOOM) return;
+    const layers = ["train-dot", "metro-station", "suburban-station"].filter(id => m.getLayer(id) && m.getLayoutProperty(id, "visibility") !== "none");
+    if (!layers.length) return;
+    const c = m.getCanvas();
+    const seen = m.queryRenderedFeatures({ layers }).map(f => {
+      const q = m.project((f.geometry as GeoJSON.Point).coordinates as [number, number]);
+      return { layer: f.layer.id, px: [q.x, q.y] as [number, number], props: f.properties };
+    });
+    ahead = wanted(seen, [c.clientWidth / 2, c.clientHeight / 2], app.metro?.stations ?? []);
+    while (workers < 4 && ahead.length) void work();
+  }, VIEW_SETTLE_MS);
+
+  $effect(() => {
+    void app.stasyTrains; void app.suburbanTrains;
+    prefetchSoon();
+  });
+
+  // Each metro/tram line's tracks as [lat, lon] shapes (rails.ts), and the Proastiakos trains snapped
+  // onto their corridor, run on along it at their speed between fixes (server time: fixes carry it).
+  const tracks = $derived(Object.fromEntries((app.metro?.lines ?? []).map(l =>
+    [l.id, l.paths.map(p => p.map(([lon, lat]) => [lat, lon] as [number, number]))])) as Record<string, Track[]>);
+  const glide = new RailGlide(2_000);
+  // Each corridor's stations along it: a train runs on no farther than the next one.
+  const corridorStops = $derived.by(() => {
+    const d = app.suburban;
+    if (!d) return {} as Record<string, number[]>;
+    const at = new Map(d.stations.map(st => [st.id, [st.lon, st.lat] as [number, number]]));
+    return Object.fromEntries(Object.entries(d.corridors).map(([id, c]) => [id, trackStops(c.path, c.stations.flatMap(x => { const q = at.get(x); return q ? [q] : []; }))]));
+  });
+  $effect(() => {
+    const corridors = app.suburban?.corridors, stops = corridorStops, now = app.serverMs();
+    for (const t of app.suburbanTrains)
+      glide.update(t.train, corridors?.[t.corridor]?.path ?? null, [t.lon, t.lat], now,
+        { kmh: t.speed_kmh, course: t.course, at: t.position_at * 1000 }, stops[t.corridor]);
+    glide.keep(new Set(app.suburbanTrains.map(t => t.train)));
+  });
+
+  // The trains, moved every second (serverNow ticks): the metro's along their track by their two stops' times.
   $effect(() => {
     if (!loaded) return;
+    const now = app.serverMs();
     const fc = trainsFC({ stasy: app.stasyTrains, suburban: app.suburbanTrains, corridors: app.suburban?.corridors ?? {},
-      nowS: app.serverNow / 1000, sel: app.train });
+      nowS: app.serverNow / 1000, sel: app.train, tracks, glide: t => glide.at(t.train, now) });
     (map!.getSource("trains") as GeoJSONSource).setData(fc);
   });
 

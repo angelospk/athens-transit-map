@@ -46,9 +46,15 @@ export function boardRows(boards: StasyBoard[], elapsedS: number, max = 3): Boar
 // (404: a name the server's feed lacks, so no trains): a missing name would hide its lines. A failed
 // round drops the boards, so old rows never turn into "no trains".
 export interface Boards { boards: StasyBoard[] | null; at: number; failed: "" | "warming" | "error" }
-export function nextBoards(rs: { status: number; body: unknown }[], nowMs: number): Boards {
+// A cached answer (`at`: client ms when it came) has its trains counted down by its own age, so
+// boards of different ages merge at nowMs.
+export function nextBoards(rs: { status: number; body: unknown; at?: number }[], nowMs: number): Boards {
   const ok = rs.filter(r => r.status === 200 && r.body);
+  const aged = (r: (typeof rs)[number]) => {
+    const b = r.body as StasyBoard, age = r.at == null ? 0 : Math.max(0, (nowMs - r.at) / 1000);
+    return age ? { ...b, departures: b.departures.map(d => ({ ...d, in_s: d.in_s - age })) } : b;
+  };
   if (ok.length && rs.every(r => (r.status === 200 && r.body) || r.status === 404))
-    return { boards: ok.map(r => r.body as StasyBoard), at: nowMs, failed: "" };
+    return { boards: ok.map(aged), at: nowMs, failed: "" };
   return { boards: null, at: nowMs, failed: rs.some(r => r.status === 503) ? "warming" : "error" };
 }

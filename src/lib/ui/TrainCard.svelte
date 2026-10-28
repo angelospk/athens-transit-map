@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { fetchTrainRun } from "../api";
+  import { fetchTrainRun, peekTrainRun } from "../api";
   import { stopRows, type StasyTrip, type SuburbanRun } from "../trains";
   import type { AppState } from "../state.svelte";
+  import type { FetchResult } from "../poller";
 
   // The tapped train: its line and destination, where its position comes from (the STASY timetable,
   // or the GPS of the Proastiakos with its age and speed), and its run's stops with their times. The
@@ -33,24 +34,29 @@
     sel && `Τρένο ${sel.id}`, "Hellenic Train",
   ].filter(Boolean).join(" · "));
 
+  const runOf = (r: FetchResult | undefined) => {
+    const b = r?.body as { stops?: unknown } | null;
+    return r?.status === 200 && Array.isArray(b?.stops) ? (b as StasyTrip | SuburbanRun) : null;
+  };
+
   $effect(() => {
     const t = sel;
     if (!t) return;
     const ac = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let busy = false;
-    run = null;
+    run = runOf(peekTrainRun(t.kind, t.id));   // loaded already by the map: shown at once
     failed = false;
     const load = async () => {
       if (busy) return;
       clearTimeout(timer);
       if (document.visibilityState !== "hidden") {
         busy = true;
-        const r = await fetchTrainRun(t.kind, t.id, AbortSignal.any([ac.signal, AbortSignal.timeout(10_000)]));
+        const r = await fetchTrainRun(t.kind, t.id);
         busy = false;
         if (ac.signal.aborted) return;
-        const b = r.body as { stops?: unknown } | null;
-        if (r.status === 200 && Array.isArray(b?.stops)) { run = b as StasyTrip | SuburbanRun; failed = false; }
+        const got = runOf(r);
+        if (got) { run = got; failed = false; }
         else failed = !run;   // keep the last run through a failed refresh
       }
       timer = setTimeout(load, REFRESH_MS);

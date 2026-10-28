@@ -89,6 +89,14 @@ describe("nextBoards", () => {
     expect(nextBoards([{ status: 200, body: b("Α") }, { status: 200, body: b("Β") }], 1000))
       .toEqual({ boards: [b("Α"), b("Β")], at: 1000, failed: "" });
   });
+  it("a cached answer (at: when it came) counts its trains down by its own age", () => {
+    const dep = { line: "M2", route_color: "#e30613", headsign: "ΕΛΛΗΝΙΚΟ", t: "10:02", in_s: 120 };
+    const board = (stop: string): StasyBoard => ({ stop, indicative: false, departures: [dep] });
+    const got = nextBoards([{ status: 200, body: board("Α"), at: 0 }, { status: 200, body: board("Β") }], 60_000);
+    expect(got.boards!.map(x => x.departures[0].in_s)).toEqual([60, 120]);
+    expect(got.at).toBe(60_000);
+    expect(dep.in_s).toBe(120);   // the cached answer itself is left as it was
+  });
   it("a name the server does not know adds no trains", () => {
     expect(nextBoards([{ status: 200, body: b("Α") }, { status: 404, body: null }], 1000).boards).toEqual([b("Α")]);
     expect(nextBoards([{ status: 404, body: null }], 1000)).toEqual({ boards: null, at: 1000, failed: "error" });

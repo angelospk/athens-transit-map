@@ -20,6 +20,13 @@ describe("stasyPlace", () => {
     expect(stasyPlace(veh(1000, 1100), 1200).pos).toEqual([23.02, 38.01]);
     expect(stasyPlace(veh(1000, 1000), 1000).pos).toEqual([23.02, 38.01]);
   });
+  it("on the line's track when it has one: round a corner, not across it", () => {
+    // from [23, 38] east to the corner [23.02, 38], then north to [23.02, 38.01] (the `to` stop).
+    const track: [number, number][] = [[38, 23], [38, 23.02], [38.01, 23.02]];
+    const p = stasyPlace(veh(1000, 1100), 1099, [track]);
+    expect(p.pos[0]).toBeCloseTo(23.02, 4);   // on the north leg: the straight line would be west of it
+    expect(p.h).toBeCloseTo(0, 0);
+  });
   it("a train standing at a stop (both places that stop) stays there with no heading", () => {
     const v = veh(1000, 1040);
     v.to = { ...v.from, at: 1040 };

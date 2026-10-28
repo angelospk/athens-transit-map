@@ -6,6 +6,7 @@
 import { API_BASE } from "./config";
 import { bearingDeg } from "./heading";
 import type { LngLat } from "./glide";
+import { railPlace, railSegment, type Place, type Segment, type Track } from "./rails";
 import type { Corridor, SuburbanData, TrainRow } from "./suburban";
 
 export interface StasyPlace { name: string; lat: number; lon: number; at: number }   // at: unix s
@@ -27,20 +28,35 @@ export const suburbanTrainUrl = (no: string) => `${API_BASE}/v1/rail/suburban/tr
 export const STALE_S = 90;    // an older GPS fix is drawn faded
 export const OLD_S = 600;     // an older one is not drawn
 
-// Where a timetable train is at nowS: on the straight line between its two stops, by time. A train
-// standing at a stop has that stop as both, and no heading.
-export function stasyPlace(v: StasyVehicle, nowS: number): { pos: LngLat; h: number | null } {
+// The stretch of track between two stops, found once per pair (the timetable repeats them all day).
+const segments = new Map<string, Segment | null>();
+function segmentOf(line: string, tracks: Track[], a: LngLat, b: LngLat): Segment | null {
+  const key = `${line}|${a}|${b}`;
+  if (!segments.has(key)) {
+    if (segments.size > 5000) segments.clear();
+    segments.set(key, railSegment(tracks, a, b));
+  }
+  return segments.get(key)!;
+}
+
+// Where a timetable train is at nowS, by time: along its line's tracks between its two stops, or on
+// the straight line when no track passes both. A train standing at a stop has that stop as both,
+// and no heading.
+export function stasyPlace(v: StasyVehicle, nowS: number, tracks: Track[] = []): Place {
   const a: LngLat = [v.from.lon, v.from.lat], b: LngLat = [v.to.lon, v.to.lat];
   const span = v.to.at - v.from.at;
   const k = span > 0 ? Math.min(1, Math.max(0, (nowS - v.from.at) / span)) : 1;
+  const seg = tracks.length ? segmentOf(v.line, tracks, a, b) : null;
+  if (seg) return railPlace(seg, k);
   const h = a[0] === b[0] && a[1] === b[1] ? null : bearingDeg(a, b);
   return { pos: k === 0 ? a : k === 1 ? b : [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k], h };
 }
 
 // The trains to draw: the metro ones in their line's colour, the suburban ones of a known corridor
 // in its colour (other trains of Greece are left out). `sel` marks the tapped one.
+// tracks: each metro/tram line's tracks; glide: a GPS train's place on its corridor (rails.ts), if known.
 export function trainsFC(o: { stasy: StasyVehicle[]; suburban: SuburbanTrain[]; corridors: Record<string, Corridor>;
-  nowS: number; sel: TrainSel | null }): GeoJSON.FeatureCollection {
+  nowS: number; sel: TrainSel | null; tracks?: Record<string, Track[]>; glide?: (t: SuburbanTrain) => Place | null }): GeoJSON.FeatureCollection {
   const isSel = (kind: string, id: string) => o.sel?.kind === kind && o.sel.id === id;
   const point = (pos: LngLat, properties: Record<string, unknown>): GeoJSON.Feature =>
     ({ type: "Feature", geometry: { type: "Point", coordinates: pos }, properties });
@@ -48,14 +64,15 @@ export function trainsFC(o: { stasy: StasyVehicle[]; suburban: SuburbanTrain[]; 
     type: "FeatureCollection",
     features: [
       ...o.stasy.map(v => {
-        const p = stasyPlace(v, o.nowS);
+        const p = stasyPlace(v, o.nowS, o.tracks?.[v.line]);
         return point(p.pos, { kind: "metro", id: v.trip, color: v.route_color, ...(p.h == null ? {} : { h: p.h }), stale: false,
           sel: isSel("metro", v.trip) });
       }),
       ...o.suburban.flatMap(t => {
         const c = o.corridors[t.corridor], age = o.nowS - t.position_at;
         if (!c || age > OLD_S) return [];
-        return [point([t.lon, t.lat], { kind: "suburban", id: t.train, color: c.color, ...(t.course == null ? {} : { h: t.course }),
+        const g = o.glide?.(t), h = g?.h ?? t.course;
+        return [point(g?.pos ?? [t.lon, t.lat], { kind: "suburban", id: t.train, color: c.color, ...(h == null ? {} : { h }),
           stale: age > STALE_S, sel: isSel("suburban", t.train) })];
       }),
     ],

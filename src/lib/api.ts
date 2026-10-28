@@ -3,6 +3,7 @@
 import { API_BASE, STATIC_BASE } from "./config";
 import type { FetchResult } from "./poller";
 import { stasyUrl } from "./rail";
+import { SwrCache } from "./swr";
 import { scheduleUrl } from "./timetable";
 import { suburbanUrl } from "./suburban";
 import { stasyTripUrl, stasyVehiclesUrl, suburbanTrainUrl, suburbanVehiclesUrl } from "./trains";
@@ -78,20 +79,24 @@ export const fetchLineStatic = (line: string) =>
   once("line:" + line, async (): Promise<LineStatic> =>
     import.meta.env.VITE_MOCK === "1" ? (await import("./mock")).mockLineStatic(line) : staticJSON(lineStaticUrl(line)));
 
-export async function fetchStasy(name: string, signal?: AbortSignal): Promise<FetchResult> {
-  if (import.meta.env.VITE_MOCK === "1") return (await import("./mock")).mockStasy(name);
-  return getJSON(stasyUrl(name), signal);
-}
+// The rail cards' data goes through one cache: the map loads what is on screen while it rests
+// (prefetch), and a card shows that at once (peek) and asks again only past the server's cache time.
+export const railCache = new SwrCache();
+const railGet = (url: string, ttl: number, mock: () => Promise<FetchResult>) =>
+  railCache.get(url, ttl, () => (import.meta.env.VITE_MOCK === "1" ? mock() : getJSON(url, AbortSignal.timeout(10_000))));
+
+export const fetchStasy = (name: string) =>
+  railGet(stasyUrl(name), 30_000, async () => (await import("./mock")).mockStasy(name));
+export const peekStasy = (name: string) => railCache.peek(stasyUrl(name));
 
 export async function fetchSchedule(line: string, signal?: AbortSignal): Promise<FetchResult> {
   if (import.meta.env.VITE_MOCK === "1") return (await import("./mock")).mockSchedule(line);
   return getJSON(scheduleUrl(line), signal);
 }
 
-export async function fetchSuburban(id: string, signal?: AbortSignal): Promise<FetchResult> {
-  if (import.meta.env.VITE_MOCK === "1") return (await import("./mock")).mockSuburban(id);
-  return getJSON(suburbanUrl(id), signal);
-}
+export const fetchSuburban = (id: string) =>
+  railGet(suburbanUrl(id), 60_000, async () => (await import("./mock")).mockSuburban(id));
+export const peekSuburban = (id: string) => railCache.peek(suburbanUrl(id));
 
 // Trains on the map (trains.ts): the vehicles of both networks, and the run of a tapped train.
 export async function fetchTrains(kind: "metro" | "suburban", signal?: AbortSignal): Promise<FetchResult> {
@@ -99,7 +104,8 @@ export async function fetchTrains(kind: "metro" | "suburban", signal?: AbortSign
   return getJSON(kind === "metro" ? stasyVehiclesUrl : suburbanVehiclesUrl, signal);
 }
 
-export async function fetchTrainRun(kind: "metro" | "suburban", id: string, signal?: AbortSignal): Promise<FetchResult> {
-  if (import.meta.env.VITE_MOCK === "1") return (await import("./mock")).mockTrainRun(kind, id);
-  return getJSON(kind === "metro" ? stasyTripUrl(id) : suburbanTrainUrl(id), signal);
-}
+// A metro run is the timetable's (it changes once a day); a Proastiakos run carries its live delay.
+const runUrl = (kind: "metro" | "suburban", id: string) => (kind === "metro" ? stasyTripUrl(id) : suburbanTrainUrl(id));
+export const fetchTrainRun = (kind: "metro" | "suburban", id: string) =>
+  railGet(runUrl(kind, id), kind === "metro" ? 600_000 : 30_000, async () => (await import("./mock")).mockTrainRun(kind, id));
+export const peekTrainRun = (kind: "metro" | "suburban", id: string) => railCache.peek(runUrl(kind, id));

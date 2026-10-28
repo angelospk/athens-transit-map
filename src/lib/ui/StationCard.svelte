@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { AppState } from "../state.svelte";
-  import { fetchStasy } from "../api";
+  import type { FetchResult } from "../poller";
+  import { fetchStasy, peekStasy } from "../api";
   import { boardRows, nextBoards, stationNames, type Boards } from "../rail";
   import MetroToggles from "./MetroToggles.svelte";
 
@@ -10,7 +11,7 @@
   const station = $derived(app.metroStation ? app.metro?.stations.find(s => s.name === app.metroStation) : undefined);
 
   // The next trains, from the STASY timetable: asked again every 30 s while the card is open and the tab
-  // visible (the server caches 30 s), the minutes counted down in between.
+  // visible (the server caches 30 s; a copy the map loaded is shown at once), the minutes counted down in between.
   const REFRESH_MS = 30_000;
   let st = $state.raw<Boards>({ boards: null, at: 0, failed: "" });
   let now = $state(Date.now());
@@ -24,7 +25,11 @@
     const names = stationNames(all, name);
     const ac = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    st = { boards: null, at: 0, failed: "" };
+    // Loaded already (the map loads the stations on screen while it rests): shown at once.
+    const seen = names.map(peekStasy);
+    const opened = Date.now();   // not `now`: reading it would rerun this effect on every tick
+    now = opened;   // the tick stops while the card is closed
+    st = seen.every(r => r) ? nextBoards(seen as FetchResult[], opened) : { boards: null, at: 0, failed: "" };
     let busy = false;   // one round at a time: a tab shown again during one does not start a second loop
     const load = async () => {
       if (busy) return;
@@ -32,7 +37,7 @@
       if (document.visibilityState !== "hidden") {
         busy = true;
         // A stalled request must not hold the card on "loading": each gets 10 s.
-        const rs = await Promise.all(names.map(n => fetchStasy(n, AbortSignal.any([ac.signal, AbortSignal.timeout(10_000)]))));
+        const rs = await Promise.all(names.map(fetchStasy));
         busy = false;
         if (ac.signal.aborted) return;
         st = nextBoards(rs, (now = Date.now()));

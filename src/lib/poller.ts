@@ -4,7 +4,7 @@ import { ClockOffset, gapFloor, outcomeDelay, type Outcome } from "./schedule";
 import type { LineLive } from "./types";
 
 export type PollState = "loading" | "ok" | "warming" | "backoff" | "unknown";
-export interface FetchResult { status: number; body: unknown; date?: number }   // date: server ms
+export interface FetchResult { status: number; body: unknown; date?: number; at?: number }   // date: server ms; at: client ms of a cached answer
 
 // Anything with the contract's pacing fields: a line, or the whole city (/v1/vehicles).
 export interface Paced { updated_at: number; next_update_at: number }

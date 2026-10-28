@@ -78,9 +78,12 @@ The UI follows the viewer of [foivospro/athens-gtfs-realtime](https://github.com
   delay when it is not 0 (`GET /v1/rail/suburban/stations/{id}/departures`, railway.gov.gr through the backend,
   which has no CORS).
 - Trains on the map (layers menu → Τρένα, on by default): metro and tram trains placed from the STASY
-  timetable and moved between their two stops on the clock (`GET /v1/rail/stasy/vehicles`, an estimate:
-  no live data exists), and the Proastiakos trains of the three Attica corridors at their GPS position
-  (`GET /v1/rail/suburban/vehicles`; a fix older than 90 s is faded, older than 10 min left out). A tapped
+  timetable and moved along their line's track between their two stops on the clock
+  (`GET /v1/rail/stasy/vehicles`, an estimate: no live data exists), and the Proastiakos trains of the
+  three Attica corridors snapped onto their corridor and run on along it at their GPS speed until the
+  next fix (`GET /v1/rail/suburban/vehicles`; a fix older than 90 s is faded, older than 10 min left out).
+  While the map rests at zoom 13 or closer, it loads the boards of the stations and the runs of the
+  trains on screen, so a tap shows them at once (`src/lib/prefetch.ts`, `src/lib/swr.ts`). A tapped
   train draws its line and shows its stops with their times (`/v1/rail/stasy/trips/{id}`,
   `/v1/rail/suburban/trains/{no}`), and for the Proastiakos the GPS age, the speed and the delay.
   `public/suburban.json` is a copy of the Android app's `assets/suburban.json` (railway.gov.gr corridors, places

@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { fetchSuburban } from "../api";
+  import { fetchSuburban, peekSuburban } from "../api";
   import { trainRows, type Train } from "../suburban";
   import { byDestination, destColor } from "../trains";
   import { athensClock } from "../timetable";
   import type { AppState } from "../state.svelte";
+  import type { FetchResult } from "../poller";
 
   // The tapped suburban station: its corridors and the next trains by destination, in minutes, from the
   // Hellenic Train board (railway.gov.gr through the backend) with the delay when it is not 0. Asked
@@ -21,27 +22,31 @@
   const groups = $derived(station && app.suburban ? byDestination(rows).map(g => ({ ...g, color: destColor(app.suburban!, station.id, g.to) })) : []);
   const when = (m: number) => (m === 0 ? "τώρα" : `${m}′`);
 
+  const depsOf = (r: FetchResult | undefined) => {
+    const deps = (r?.body as { departures?: unknown } | null)?.departures;
+    return r?.status === 200 && Array.isArray(deps) ? (deps as Train[]) : null;
+  };
+
   $effect(() => {
     const id = station?.id;
     if (!id) return;
     const ac = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let busy = false;
-    trains = null;
+    now = Date.now();   // the tick stops while the card is closed
+    trains = depsOf(peekSuburban(id));   // loaded already by the map: shown at once
     failed = "";
     const load = async () => {
       if (busy) return;
       clearTimeout(timer);
       if (document.visibilityState !== "hidden") {
         busy = true;
-        const r = await fetchSuburban(id, AbortSignal.any([ac.signal, AbortSignal.timeout(10_000)]));
+        const r = await fetchSuburban(id);
         busy = false;
         if (ac.signal.aborted) return;
         now = Date.now();
-        const deps = (r.body as { departures?: unknown } | null)?.departures;
-        const ok = r.status === 200 && Array.isArray(deps);
-        trains = ok ? (deps as Train[]) : null;
-        failed = ok ? "" : r.status === 502 ? "upstream" : "error";
+        trains = depsOf(r);
+        failed = trains ? "" : r.status === 502 ? "upstream" : "error";
       }
       timer = setTimeout(load, REFRESH_MS);
     };
