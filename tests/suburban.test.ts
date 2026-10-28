@@ -27,8 +27,8 @@ describe("suburbanFC", () => {
 });
 
 describe("suburbanUrl", () => {
-  it("asks the station's next 6 trains", () => {
-    expect(suburbanUrl("6928c3c150ab5bc72b39cee5")).toBe("https://transit.haroldpoi.dev/v1/rail/suburban/stations/6928c3c150ab5bc72b39cee5/departures?n=6");
+  it("asks the station's next 10 trains", () => {
+    expect(suburbanUrl("6928c3c150ab5bc72b39cee5")).toBe("https://transit.haroldpoi.dev/v1/rail/suburban/stations/6928c3c150ab5bc72b39cee5/departures?n=10");
   });
 });
 
@@ -39,9 +39,9 @@ describe("trainRows", () => {
   it("expected time with the delay, platform when known", () => {
     const rows = trainRows([tr("17:34", "Χαλκίδα"), tr("17:41", "Κιάτο", 7, "delayed", "3"), tr("17:44", "Πειραιάς", null)], 17 * 60 + 30);
     expect(rows).toEqual([
-      { t: "17:34", expected: "17:34", delay: 0, to: "Χαλκίδα", platform: null },
-      { t: "17:44", expected: "17:44", delay: null, to: "Πειραιάς", platform: null },
-      { t: "17:41", expected: "17:48", delay: 7, to: "Κιάτο", platform: "3" },
+      { t: "17:34", expected: "17:34", delay: 0, to: "Χαλκίδα", platform: null, in: 4 },
+      { t: "17:44", expected: "17:44", delay: null, to: "Πειραιάς", platform: null, in: 14 },
+      { t: "17:41", expected: "17:48", delay: 7, to: "Κιάτο", platform: "3", in: 18 },
     ]);
   });
   it("leaves out completed runs and trains gone more than a minute ago (by their expected time)", () => {
@@ -54,7 +54,7 @@ describe("trainRows", () => {
   });
   it("past midnight, a late train of the evening before is yesterday's", () => {
     const rows = trainRows([tr("00:20", "Κιάτο"), tr("23:55", "Χαλκίδα", 20), tr("23:50", "Πειραιάς", 10)], 5);
-    expect(rows.map(r => [r.to, r.expected])).toEqual([["Χαλκίδα", "00:15"], ["Κιάτο", "00:20"]]);
+    expect(rows.map(r => [r.to, r.expected, r.in])).toEqual([["Χαλκίδα", "00:15", 10], ["Κιάτο", "00:20", 15]]);
     expect(trainRows([tr("23:55", "Χαλκίδα", 20)], 17)).toEqual([]);
     expect(trainRows([tr("23:59", "Χαλκίδα")], 0).map(r => r.expected)).toEqual(["23:59"]);
   });

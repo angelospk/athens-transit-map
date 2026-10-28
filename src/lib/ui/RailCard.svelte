@@ -1,11 +1,13 @@
 <script lang="ts">
   import { fetchSuburban } from "../api";
   import { trainRows, type Train } from "../suburban";
+  import { byDestination, destColor } from "../trains";
   import { athensClock } from "../timetable";
   import type { AppState } from "../state.svelte";
 
-  // The tapped suburban station: its corridors and its live board (railway.gov.gr through the backend),
-  // asked again every 60 s while the card is open and the tab visible (the server caches 60 s).
+  // The tapped suburban station: its corridors and the next trains by destination, in minutes, from the
+  // Hellenic Train board (railway.gov.gr through the backend) with the delay when it is not 0. Asked
+  // again every 60 s while the card is open and the tab visible (the server caches 60 s).
   let { app }: { app: AppState } = $props();
 
   const station = $derived(app.railStation ? app.suburban?.stations.find(s => s.id === app.railStation) : undefined);
@@ -16,6 +18,8 @@
   let failed = $state<"" | "upstream" | "error">("");
   let now = $state(Date.now());
   const rows = $derived(trains ? trainRows(trains, athensClock(now, new Date(now).toLocaleDateString("sv-SE", { timeZone: "Europe/Athens" }))) : []);
+  const groups = $derived(station && app.suburban ? byDestination(rows).map(g => ({ ...g, color: destColor(app.suburban!, station.id, g.to) })) : []);
+  const when = (m: number) => (m === 0 ? "τώρα" : `${m}′`);
 
   $effect(() => {
     const id = station?.id;
@@ -59,21 +63,17 @@
     </header>
     <p class="lines">{#each corridors as c (c.name)}<span style:--accent={c.color}>{c.name}</span>{/each}</p>
     {#if trains}
-      {#if rows.length}
+      {#if groups.length}
         <ul class="deps" aria-label="Επόμενα τρένα">
-          {#each rows as r, i (i)}
-            <li>
-              <b class:late={(r.delay ?? 0) > 0}>{r.expected}</b>
-              <span class="to">→ {r.to}</span>
-              {#if (r.delay ?? 0) > 0}<span class="delay" title="Προγραμματισμένο {r.t}">+{r.delay}′</span>{/if}
-              {#if r.platform}<span class="pf" title="Αποβάθρα">Αποβ. {r.platform}</span>{/if}
-            </li>
+          {#each groups as g (g.to)}
+            <li><i style:--accent={g.color} aria-hidden="true"></i><span class="to">→ {g.to}</span>
+              <span class="when">{#each g.times as t, i (i)}{#if i}{" · "}{/if}{when(t.in)}{#if t.delay}{" "}<em>{t.delay > 0 ? "+" : ""}{t.delay}′</em>{/if}{/each}</span></li>
           {/each}
         </ul>
       {:else}
         <p>Κανένα τρένο στον πίνακα τώρα.</p>
       {/if}
-      <p class="src">Ζωντανά από τη Hellenic Train (railway.gov.gr).</p>
+      <p class="src">Πρόγραμμα Hellenic Train.</p>
     {:else if failed}
       <p>{failed === "upstream" ? "Η Hellenic Train δεν απαντά τώρα. Ξαναδοκιμάζω σε ένα λεπτό." : "Δεν φόρτωσαν τα επόμενα τρένα."}</p>
     {:else}
@@ -93,11 +93,10 @@
   .lines span { padding: 1px 7px; border-radius: 6px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 600; }
   .deps { list-style: none; margin: 0 0 4px; padding: 0; }
   .deps li { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: 13px; }
-  .deps b { flex: none; font-variant-numeric: tabular-nums; }
-  .deps b.late, .delay { color: var(--late2); }
+  .deps i { flex: none; width: 6px; height: 18px; border-radius: 3px; background: var(--accent); }
   .to { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .delay { flex: none; font-weight: 600; }
-  .pf { flex: none; color: var(--muted); font-size: 12px; }
+  .when { flex: none; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .when em { font-style: normal; font-size: 11px; color: var(--late2); }
   .src { margin: 6px 0 0; font-size: 11px; }
   .close { width: 36px; height: 36px; margin: -8px -10px -8px 0; border: 0; background: none; font-size: 22px;
     color: var(--muted); cursor: pointer; border-radius: 8px; }

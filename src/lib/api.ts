@@ -5,6 +5,7 @@ import type { FetchResult } from "./poller";
 import { stasyUrl } from "./rail";
 import { scheduleUrl } from "./timetable";
 import { suburbanUrl } from "./suburban";
+import { stasyTripUrl, stasyVehiclesUrl, suburbanTrainUrl, suburbanVehiclesUrl } from "./trains";
 import { loadTiles, tileKey, tileOf, tileUrlPath, type CityTiles, type Tile } from "./tiles";
 import type { CityLive, LineStatic, LinesIndex, Status } from "./types";
 
@@ -90,4 +91,15 @@ export async function fetchSchedule(line: string, signal?: AbortSignal): Promise
 export async function fetchSuburban(id: string, signal?: AbortSignal): Promise<FetchResult> {
   if (import.meta.env.VITE_MOCK === "1") return (await import("./mock")).mockSuburban(id);
   return getJSON(suburbanUrl(id), signal);
+}
+
+// Trains on the map (trains.ts): the vehicles of both networks, and the run of a tapped train.
+export async function fetchTrains(kind: "metro" | "suburban", signal?: AbortSignal): Promise<FetchResult> {
+  if (import.meta.env.VITE_MOCK === "1") return (await import("./mock")).mockTrains(kind);
+  return getJSON(kind === "metro" ? stasyVehiclesUrl : suburbanVehiclesUrl, signal);
+}
+
+export async function fetchTrainRun(kind: "metro" | "suburban", id: string, signal?: AbortSignal): Promise<FetchResult> {
+  if (import.meta.env.VITE_MOCK === "1") return (await import("./mock")).mockTrainRun(kind, id);
+  return getJSON(kind === "metro" ? stasyTripUrl(id) : suburbanTrainUrl(id), signal);
 }

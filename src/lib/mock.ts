@@ -138,3 +138,30 @@ export async function mockSuburban(id: string): Promise<FetchResult> {
   ]);
   return { status: 200, body: { station: id, departures } };
 }
+
+// Two metro trains between Σύνταγμα and Ακρόπολη, and two Proastiakos trains (one with an old fix).
+export async function mockTrains(kind: "metro" | "suburban"): Promise<FetchResult> {
+  const now = Math.floor(Date.now() / 1000), t0 = now - (now % 120);
+  if (kind === "metro") {
+    const place = (name: string, lat: number, lon: number, at: number) => ({ name, lat, lon, at });
+    const vehicles = [
+      { trip: "m1", line: "M2", route_color: "#e30613", headsign: "ΕΛΛΗΝΙΚΟ",
+        from: place("ΣΥΝΤΑΓΜΑ", 37.9755, 23.7355, t0), to: place("ΑΚΡΟΠΟΛΗ", 37.9686, 23.7295, t0 + 120) },
+      { trip: "m2", line: "M3", route_color: "#0072bc", headsign: "ΑΕΡΟΔΡΟΜΙΟ",
+        from: place("ΣΥΝΤΑΓΜΑ", 37.9755, 23.7355, t0), to: place("ΕΥΑΓΓΕΛΙΣΜΟΣ", 37.9765, 23.7469, t0 + 120) },
+    ];
+    return { status: 200, body: { updated_at: now, indicative: false, vehicles } };
+  }
+  const tr = (train: string, lat: number, lon: number, age: number, delay: number) => ({ train, corridor: "PIRAIR", service: "Suburban",
+    lat, lon, course: 80, speed_kmh: 72, delay_min: delay, from: "Πειραιάς", to: "Αεροδρόμιο", next_station: "Πλακεντίας", position_at: now - age });
+  return { status: 200, body: { updated_at: now, trains: [tr("1226", 38.0235, 23.8335, 8, 3), tr("1230", 37.97, 23.66, 150, 0)] } };
+}
+
+export async function mockTrainRun(kind: "metro" | "suburban", id: string): Promise<FetchResult> {
+  const now = Math.floor(Date.now() / 1000);
+  const names = kind === "metro" ? ["ΣΥΓΓΡΟΥ-ΦΙΞ", "ΣΥΝΤΑΓΜΑ", "ΑΚΡΟΠΟΛΗ", "ΝΕΟΣ ΚΟΣΜΟΣ"] : ["Πειραιάς", "Νερατζιώτισσα", "Πλακεντίας", "Αεροδρόμιο"];
+  const stops = names.map((name, i) => ({ id: `s${i}`, name, lat: 38, lon: 23.7, t: "", at: now + (i - 1) * 240, platform: null, delay_min: null }));
+  return kind === "metro"
+    ? { status: 200, body: { trip: id, line: "M2", route_color: "#e30613", headsign: "ΕΛΛΗΝΙΚΟ", stops } }
+    : { status: 200, body: { train: id, from: "Πειραιάς", to: "Αεροδρόμιο", status: "in_progress", delay_min: 3, stops } };
+}

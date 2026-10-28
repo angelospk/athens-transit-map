@@ -5,6 +5,7 @@
   import InfoCard from "./lib/ui/InfoCard.svelte";
   import StationCard from "./lib/ui/StationCard.svelte";
   import RailCard from "./lib/ui/RailCard.svelte";
+  import TrainCard from "./lib/ui/TrainCard.svelte";
   import { applyTheme } from "./lib/theme";
 
   const app = new AppState();
@@ -18,3 +19,4 @@
 <InfoCard {app} />
 <StationCard {app} />
 <RailCard {app} />
+<TrainCard {app} />

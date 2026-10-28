@@ -2,10 +2,11 @@
 
 import { isHidden } from "./directions";
 import type { Only } from "./format";
-import { fetchCity, fetchLine, fetchLines, fetchLineStatic, fetchStatus, fetchTile } from "./api";
+import { fetchCity, fetchLine, fetchLines, fetchLineStatic, fetchStatus, fetchTile, fetchTrains } from "./api";
 import { cityKey, isCityLive } from "./city";
 import { loadMetro, type MetroData } from "./metro";
 import { loadSuburban, type SuburbanData } from "./suburban";
+import type { StasyVehicle, SuburbanTrain, TrainSel } from "./trains";
 import { LinePoller, type PollState } from "./poller";
 import { BACKOFF_MS, ClockOffset } from "./schedule";
 import { CityTiles, loadTiles, viewTiles, type Tile, type View } from "./tiles";
@@ -103,6 +104,12 @@ export class AppState {
   suburbanOn = $state(stored("suburbanOn", false, isBool));
   suburban = $state.raw<SuburbanData | null>(null);
   railStation = $state<string | null>(null);
+  // Trains on the map (metro and tram from the timetable, Proastiakos by GPS), while trainsOn. train:
+  // the tapped one, whose card shows its run and whose line is drawn.
+  trainsOn = $state(stored("trainsOn", true, isBool));
+  stasyTrains = $state.raw<StasyVehicle[]>([]);
+  suburbanTrains = $state.raw<SuburbanTrain[]>([]);
+  train = $state.raw<TrainSel | null>(null);
   // Starred bus lines: a chip row under the search, to show several at once.
   favorites = $state.raw<string[]>(stored("favorites", [], isIds));
   // Stop alert: the planner's lines that are still picked (a line taken off the map stops alerting; put
@@ -226,12 +233,14 @@ export class AppState {
     if (this.cityOn) this.startCity();
     this.loadMetro();
     if (this.suburbanOn) this.loadSuburban();
+    this.startTrains();
     setInterval(() => (this.now = Date.now()), 1000);
     setInterval(() => { if (!document.hidden) void this.refreshStatus(); }, STATUS_EVERY_MS);
     document.addEventListener("visibilitychange", () => {
       this.now = Date.now();
       for (const p of this.pollers.values()) p.visibilityChanged();
       this.cityPoller?.visibilityChanged();
+      if (!document.hidden) this.startTrains();   // the trains of now, not of the last poll
     });
   }
 
@@ -294,13 +303,13 @@ export class AppState {
 
   // A station tapped on the map (null: none). Its card replaces a vehicle's or route's.
   selectStation(name: string | null) {
-    if (name) { this.clearSelection(); this.railStation = null; }
+    if (name) { this.clearSelection(); this.railStation = this.train = null; }
     this.metroStation = name;
   }
 
   // A suburban station tapped on the map (its id; null: none). Its card replaces any other.
   selectRailStation(id: string | null) {
-    if (id) { this.clearSelection(); this.metroStation = null; }
+    if (id) { this.clearSelection(); this.metroStation = this.train = null; }
     this.railStation = id;
   }
 
@@ -337,7 +346,7 @@ export class AppState {
     if (!lines.length) return [];
     const keep = lines.slice(0, MAX_LINES), ids = keep.map(l => l.id), left = lines.slice(MAX_LINES).map(l => l.id);
     if (!keepAlert || this.alert?.lines.some(l => !ids.includes(l.line))) this.setAlert(null);   // a new trip: the old alert no longer fits
-    this.metroStation = this.railStation = null;
+    this.metroStation = this.railStation = this.train = null;
     this.selection = null;
     if (this.tempLine && ids.includes(this.tempLine)) this.tempLine = null;   // now a pick
     this.dropTemp();
@@ -387,6 +396,45 @@ export class AppState {
     store("suburbanOn", on);
     if (on) this.loadSuburban();
     else this.selectRailStation(null);
+  }
+
+  // A train tapped on the map (null: none). Its card replaces any other.
+  selectTrain(t: TrainSel | null) {
+    if (t) { this.clearSelection(); this.metroStation = this.railStation = null; }
+    this.train = t;
+  }
+
+  setTrainsOn(on: boolean) {
+    this.trainsOn = on;
+    store("trainsOn", on);
+    this.startTrains();
+    if (!on) { this.selectTrain(null); this.stasyTrains = this.suburbanTrains = []; }
+  }
+
+  // Polls both networks while trainsOn and the tab is visible: the metro's every 15 s (the client moves
+  // the trains between polls), the Proastiakos's GPS every 10 s. A failed poll keeps the last trains.
+  // Each start ends the loops of the one before (trainGen).
+  private trainGen = 0;
+  private startTrains() {
+    const gen = ++this.trainGen;
+    if (!this.trainsOn) return;
+    this.loadSuburban();   // the corridors' colours and paths
+    const poll = async (kind: "metro" | "suburban", every: number) => {
+      if (gen !== this.trainGen) return;
+      if (!document.hidden) {
+        const r = await fetchTrains(kind, AbortSignal.timeout(10_000));
+        if (gen !== this.trainGen) return;
+        const b = r.body as { vehicles?: unknown; trains?: unknown } | null;
+        const list = kind === "metro" ? b?.vehicles : b?.trains;
+        if (r.status === 200 && Array.isArray(list)) {
+          if (kind === "metro") this.stasyTrains = list as StasyVehicle[];
+          else this.suburbanTrains = list as SuburbanTrain[];
+        }
+      }
+      setTimeout(() => void poll(kind, every), every);
+    };
+    void poll("metro", 15_000);
+    void poll("suburban", 10_000);
   }
 
   // Loads the suburban data once, when the layer is first on; after a failure the switch goes off.
@@ -448,7 +496,7 @@ export class AppState {
 
   // A vehicle clicked on the city layer: select it and show its line in detail for a while.
   selectCityVehicle(line: string, id: string) {
-    this.metroStation = this.railStation = null;
+    this.metroStation = this.railStation = this.train = null;
     if (this.tempLine !== line) {
       this.dropTemp();
       if (!this.selected.includes(line)) {
@@ -470,13 +518,13 @@ export class AppState {
   }
 
   selectVehicle(line: string, id: string) {
-    this.metroStation = this.railStation = null;
+    this.metroStation = this.railStation = this.train = null;
     if (line !== this.tempLine) this.dropTemp();
     this.selection = { kind: "vehicle", line, id };
   }
 
   selectRoute(line: string, variant: string) {
-    this.metroStation = this.railStation = null;
+    this.metroStation = this.railStation = this.train = null;
     if (line !== this.tempLine) this.dropTemp();
     this.selection = { kind: "route", line, variant };
   }

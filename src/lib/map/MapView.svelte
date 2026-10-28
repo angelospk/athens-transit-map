@@ -10,6 +10,7 @@
   import { vehicleHeading } from "../heading";
   import { metroFC } from "../metro";
   import { suburbanFC } from "../suburban";
+  import { trainsFC } from "../trains";
   import { Locator, userPlan, type Fix, type LocState } from "../locate";
   import { Mover, planOnto } from "../motion";
   import { shapeLength, stopOffsets } from "../predict";
@@ -137,6 +138,50 @@
     g.strokeStyle = "#fff"; g.lineWidth = 3; g.stroke();
     g.fillStyle = "#222"; g.fill();
     return g.getImageData(0, 0, c.width, c.height);
+  }
+
+  // A white train front for the train discs (their colour is the line's).
+  function trainImage(): ImageData {
+    const r = 2, c = document.createElement("canvas");
+    c.width = c.height = 24 * r;
+    const g = c.getContext("2d")!;
+    g.scale(r, r);
+    g.fillStyle = "#fff";
+    g.beginPath(); g.roundRect(6.5, 3.5, 11, 13, 3); g.fill();
+    g.lineWidth = 1.6; g.strokeStyle = "#fff"; g.lineCap = "round";
+    g.beginPath(); g.moveTo(9, 17.5); g.lineTo(7.5, 20.5); g.moveTo(15, 17.5); g.lineTo(16.5, 20.5); g.stroke();
+    g.globalCompositeOperation = "destination-out";   // the window and the lamps, cut through
+    g.beginPath(); g.roundRect(8.5, 5.5, 7, 4.5, 1); g.fill();
+    g.beginPath(); g.arc(9.5, 13.5, 1.1, 0, 2 * Math.PI); g.arc(14.5, 13.5, 1.1, 0, 2 * Math.PI); g.fill();
+    return g.getImageData(0, 0, c.width, c.height);
+  }
+
+  // Trains (metro and tram from the timetable, Proastiakos by GPS): discs in the line's colour with a
+  // train on them, over everything else; a fix too old is faded. Under them, the tapped train's line.
+  function addTrainLayers(m: MlMap) {
+    const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#3b5bdb";
+    const byZoom = (stops: unknown[]) => ["interpolate", ["linear"], ["zoom"], ...stops] as ExpressionSpecification;
+    const vis = app.trainsOn ? "visible" : "none";
+    const fade = ["case", ["get", "stale"], 0.45, 1] as ExpressionSpecification;
+    m.addSource("train-route", { type: "geojson", data: EMPTY });
+    m.addSource("trains", { type: "geojson", data: EMPTY });
+    m.addLayer({ id: "train-route-casing", type: "line", source: "train-route", layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": "#ffffff", "line-width": byZoom([9, 5, 14, 8, 17, 11]), "line-opacity": 0.9 } }, "metro-station");
+    m.addLayer({ id: "train-route", type: "line", source: "train-route", layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": ["get", "color"], "line-width": byZoom([9, 3, 14, 5, 17, 7]) } }, "metro-station");
+    m.addLayer({ id: "train-dot", type: "circle", source: "trains", layout: { visibility: vis },
+      paint: { "circle-radius": byZoom([9, 4, 12, 6.5, 14, 10, 17, 13]), "circle-color": ["get", "color"], "circle-opacity": fade,
+        "circle-stroke-color": ["case", ["get", "sel"], accent, "#ffffff"], "circle-stroke-opacity": fade,
+        "circle-stroke-width": byZoom([9, ["case", ["get", "sel"], 3, 1], 14, ["case", ["get", "sel"], 3.5, 2]]) } });
+    m.addImage("train-icon", trainImage(), { pixelRatio: 2 });
+    m.addLayer({ id: "train-icon", type: "symbol", source: "trains", minzoom: 12,
+      layout: { "icon-image": "train-icon", "icon-size": byZoom([12, 0.55, 14, 0.8, 17, 1.05]), "icon-allow-overlap": true,
+        "icon-ignore-placement": true, visibility: vis },
+      paint: { "icon-opacity": fade } });
+    m.addLayer({ id: "train-heading", type: "symbol", source: "trains", minzoom: 13, filter: ["has", "h"],
+      layout: { "icon-image": "city-pointer", "icon-rotate": ["get", "h"], "icon-rotation-alignment": "map",
+        "icon-size": byZoom([13, 0.5, 14, 0.85, 17, 1.05]), "icon-allow-overlap": true, "icon-ignore-placement": true, visibility: vis },
+      paint: { "icon-opacity": fade } });
   }
 
   // City layer: every live vehicle, drawn by the GPU (DOM markers would not cope with ~1500).
@@ -269,6 +314,7 @@
     addSuburbanLayers(m);
     addCityLayers(m);
     for (const id of ["metro-station", "metro-label", "suburban-station", "suburban-label"]) m.moveLayer(id);
+    addTrainLayers(m);
     // Trails of corrections (the route a vehicle glided along) and, with motion off, of moves to a
     // new fix. Always under the vehicle: city dots' trails under the dots, detailed lines' trails
     // over the route lines (their vehicles are DOM markers, above the map).
@@ -315,6 +361,19 @@
       paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 3, 16, 6], "circle-color": "#ffffff",
         "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2 } });
   }
+
+  // The train under a click (finger margin r), the nearest if several.
+  function nearestTrain(m: MlMap, p: { x: number; y: number }, r: number) {
+    if (!app.trainsOn) return null;
+    const hits = m.queryRenderedFeatures([[p.x - r, p.y - r], [p.x + r, p.y + r]], { layers: ["train-dot"] });
+    const d = (f: (typeof hits)[number]) => {
+      const q = m.project((f.geometry as GeoJSON.Point).coordinates as [number, number]);
+      return Math.hypot(q.x - p.x, q.y - p.y);
+    };
+    return hits.sort((a, b) => d(a) - d(b))[0] ?? null;
+  }
+  const openTrain = (f: MapGeoJSONFeature) =>
+    app.selectTrain({ kind: f.properties.kind === "metro" ? "metro" : "suburban", id: String(f.properties.id) });
 
   // The metro or suburban station under a click, with a finger-sized margin r; the nearest if several.
   function nearestStation(m: MlMap, p: { x: number; y: number }, r = 10) {
@@ -635,11 +694,16 @@
           if (r.state === "granted" && !disposed) locator.start();
         }, () => {});
     } catch { /* storage blocked */ }
-    // One dispatcher: DOM marker (its own handler) → station right under the finger (drawn over the city
+    // One dispatcher: DOM marker (its own handler) → train right under the finger → station right under the finger (drawn over the city
     // vehicles, under a picked line's stops) → city vehicle → stop → station near the finger → route → empty map.
     m.on("click", e => {
       if (!loaded) return;   // the style is being replaced: our layers are not there to hit
       if ((e.originalEvent.target as Element | null)?.closest?.(".bus")) return;
+      const onTrain = nearestTrain(m, e.point, 4);
+      if (onTrain) {
+        popup.remove();
+        return openTrain(onTrain);
+      }
       const onStation = nearestStation(m, e.point, 3);
       if (onStation && !m.queryRenderedFeatures(e.point, { layers: ["stops"] }).length) {   // a line's stop is drawn over it
         popup.remove();
@@ -663,6 +727,11 @@
         openStation(station);
         return;
       }
+      const train = nearestTrain(m, e.point, 12);
+      if (train) {
+        popup.remove();
+        return openTrain(train);
+      }
       const route = m.queryRenderedFeatures(e.point, { layers: ["routes-hit"] })[0];
       if (route) return app.selectRoute(String(route.properties.line), String(route.properties.variant));
       const box: [[number, number], [number, number]] = [[e.point.x - 8, e.point.y - 8], [e.point.x + 8, e.point.y + 8]];
@@ -675,9 +744,10 @@
       }
       app.selectStation(null);
       app.selectRailStation(null);
+      app.selectTrain(null);
       app.clearSelection();
     });
-    for (const layer of ["routes-hit", "stops", "city-dot", "metro-station", "suburban-station", "speed"]) {
+    for (const layer of ["routes-hit", "stops", "city-dot", "metro-station", "suburban-station", "speed", "train-dot"]) {
       m.on("mouseenter", layer, () => (m.getCanvas().style.cursor = "pointer"));
       m.on("mouseleave", layer, () => (m.getCanvas().style.cursor = ""));
     }
@@ -725,6 +795,39 @@
     if (!loaded) return;
     const data = app.suburban;
     (map!.getSource("suburban") as GeoJSONSource).setData(data ? suburbanFC(data, app.railStation) : EMPTY);
+  });
+
+  $effect(() => {
+    const vis = app.trainsOn ? "visible" : "none";
+    if (loaded) for (const id of ["train-dot", "train-icon", "train-heading", "train-route", "train-route-casing"]) map!.setLayoutProperty(id, "visibility", vis);
+  });
+
+  // The trains, moved every second (serverNow ticks): the metro's along their two stops' times.
+  $effect(() => {
+    if (!loaded) return;
+    const fc = trainsFC({ stasy: app.stasyTrains, suburban: app.suburbanTrains, corridors: app.suburban?.corridors ?? {},
+      nowS: app.serverNow / 1000, sel: app.train });
+    (map!.getSource("trains") as GeoJSONSource).setData(fc);
+  });
+
+  // The tapped train's line: the metro line's track, or the suburban corridor.
+  const trainRoute = $derived.by((): GeoJSON.FeatureCollection => {
+    const t = app.train;
+    if (!t) return EMPTY;
+    if (t.kind === "metro") {
+      const id = app.stasyTrains.find(v => v.trip === t.id)?.line;
+      const line = app.metro?.lines.find(l => l.id === id);
+      return line ? { type: "FeatureCollection", features: [{ type: "Feature", properties: { color: line.color },
+        geometry: { type: "MultiLineString", coordinates: line.paths } }] } : EMPTY;
+    }
+    const c = app.suburban?.corridors[app.suburbanTrains.find(v => v.train === t.id)?.corridor ?? ""];
+    return c ? { type: "FeatureCollection", features: [{ type: "Feature", properties: { color: c.color },
+      geometry: { type: "LineString", coordinates: c.path.map(([lat, lon]) => [lon, lat]) } }] } : EMPTY;
+  });
+
+  $effect(() => {
+    const fc = trainRoute;
+    if (loaded) (map!.getSource("train-route") as GeoJSONSource).setData(fc);
   });
 
   $effect(() => {
