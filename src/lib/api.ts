@@ -108,4 +108,9 @@ export async function fetchTrains(kind: "metro" | "suburban", signal?: AbortSign
 const runUrl = (kind: "metro" | "suburban", id: string) => (kind === "metro" ? stasyTripUrl(id) : suburbanTrainUrl(id));
 export const fetchTrainRun = (kind: "metro" | "suburban", id: string) =>
   railGet(runUrl(kind, id), kind === "metro" ? 600_000 : 30_000, async () => (await import("./mock")).mockTrainRun(kind, id));
+// A bus stop's lines and live arrivals (backend, cached 15 s), shared like the rail boards.
+export const stopUrl = (id: string) => `${API_BASE}/v1/stops/${encodeURIComponent(id)}`;
+export const fetchStop = (id: string) =>
+  railGet(stopUrl(id), 15_000, async () => (await import("./mock")).mockStop(id));
+export const peekStop = (id: string) => railCache.peek(stopUrl(id));
 export const peekTrainRun = (kind: "metro" | "suburban", id: string) => railCache.peek(runUrl(kind, id));

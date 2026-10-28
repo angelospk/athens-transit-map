@@ -26,6 +26,8 @@
   import { lightenDark } from "./basemap";
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
+  import { STOPS_ZOOM, busStopsFC, stopIndex } from "../stops";
+  import type { TripIndex } from "../trip";
 
   setWorkerUrl(workerUrl);
 
@@ -360,6 +362,14 @@
         "icon-rotation-alignment": "map", "icon-keep-upright": false, "icon-offset": [0, LANE_PX],
         "icon-allow-overlap": true, "icon-ignore-placement": true } }, under);
     trail("trails-line", true, under);
+    // Every bus and trolley stop, from STOPS_ZOOM: over the routes, under the vehicles. The tapped one ringed.
+    m.addSource("bus-stops", { type: "geojson", data: app.stopIx ? busStopsFC(app.stopIx) : EMPTY });
+    m.addLayer({ id: "bus-stop", type: "circle", source: "bus-stops", minzoom: STOPS_ZOOM,
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], STOPS_ZOOM, 3.5, 17, 6], "circle-color": "#ffffff",
+        "circle-stroke-color": "#5f6368", "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], STOPS_ZOOM, 1.5, 17, 2] } }, under);
+    m.addLayer({ id: "bus-stop-selected", type: "circle", source: "bus-stops", filter: ["==", ["get", "i"], app.busStop ?? -1],
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 12, 6, 17, 11], "circle-opacity": 0,
+        "circle-stroke-color": accent, "circle-stroke-width": 3 } });
     m.addLayer({ id: "stops", type: "circle", source: "stops",
       paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 3, 16, 6], "circle-color": "#ffffff",
         "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2 } });
@@ -390,6 +400,23 @@
   const openStation = (f: MapGeoJSONFeature) =>
     f.layer.id === "suburban-station" ? app.selectRailStation(String(f.properties.id)) : app.selectStation(String(f.properties.name));
 
+
+  // The bus stop under a click, with a finger-sized margin; the nearest if several.
+  function nearestBusStop(m: MlMap, p: { x: number; y: number }, r = 10) {
+    if (!m.getLayer("bus-stop") || m.getZoom() < STOPS_ZOOM) return null;
+    const hits = m.queryRenderedFeatures([[p.x - r, p.y - r], [p.x + r, p.y + r]], { layers: ["bus-stop"] });
+    const d = (f: (typeof hits)[number]) => {
+      const q = m.project((f.geometry as GeoJSON.Point).coordinates as [number, number]);
+      return Math.hypot(q.x - p.x, q.y - p.y);
+    };
+    return hits.reduce<(typeof hits)[number] | null>((b, f) => (!b || d(f) < d(b) ? f : b), null);
+  }
+
+  // The stop index (public/trips.json, shared with the planner), loaded the first time the map comes
+  // close enough to show stops; a failed load is tried again at the next rest.
+  function loadStops(): Promise<TripIndex | null> {
+    return import("../trip").then(t => t.loadTripIndex()).then(ix => (app.stopIx = ix), () => null);
+  }
 
   // The city vehicle under a click, with a finger-sized margin; the nearest if several.
   function nearestCity(m: MlMap, p: { x: number; y: number }) {
@@ -664,6 +691,7 @@
     m.on("dragstart", () => (follow = false));   // only user gestures fire it
     // The city layer loads the tiles of the view: at first, and 300 ms after the map stops moving (never during a move).
     const reportView = () => {
+      if (m.getZoom() >= STOPS_ZOOM - 0.5 && !app.stopIx) loadStops();
       const b = m.getBounds();
       app.setCityView({ north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() }, m.getZoom());
       prefetchSoon();
@@ -707,7 +735,9 @@
     } catch { /* storage blocked */ }
     // One dispatcher: DOM marker (its own handler) → train right under the finger → station right under the finger (drawn over the city
     // vehicles, under a picked line's stops) → city vehicle → stop → station near the finger → route → empty map.
+    let taps = 0;   // a later tap wins over a stop card still waiting for the stop index
     m.on("click", e => {
+      const tap = ++taps;
       if (!loaded) return;   // the style is being replaced: our layers are not there to hit
       if ((e.originalEvent.target as Element | null)?.closest?.(".bus")) return;
       const onTrain = nearestTrain(m, e.point, 4);
@@ -728,9 +758,22 @@
       }
       const stop = m.queryRenderedFeatures(e.point, { layers: ["stops"] })[0];
       if (stop) {
-        popup.setLngLat((stop.geometry as GeoJSON.Point).coordinates as [number, number])
-          .setText(String(stop.properties.name)).addTo(m);
+        // Its card; the stop index loads first when the map was never close enough to show stops.
+        const id = String(stop.properties.id), name = String(stop.properties.name);
+        const ll = (stop.geometry as GeoJSON.Point).coordinates as [number, number];
+        popup.remove();
+        void (app.stopIx ? Promise.resolve(app.stopIx) : loadStops()).then(ix => {
+          if (tap !== taps || disposed) return;
+          const at = ix ? stopIndex(ix, id) : -1;
+          if (at >= 0) app.selectBusStop(at);
+          else popup.setLngLat(ll).setText(name).addTo(m);
+        });
         return;
+      }
+      const bus = nearestBusStop(m, e.point);
+      if (bus) {
+        popup.remove();
+        return app.selectBusStop(Number(bus.properties.i));
       }
       const station = nearestStation(m, e.point);
       if (station) {
@@ -756,6 +799,7 @@
       app.selectStation(null);
       app.selectRailStation(null);
       app.selectTrain(null);
+      app.selectBusStop(null);
       app.clearSelection();
     });
     for (const layer of ["routes-hit", "stops", "city-dot", "metro-station", "suburban-station", "speed", "train-dot"]) {
@@ -990,6 +1034,14 @@
     m.setFilter("city-selected", sel);
     const vis = app.cityOn ? "visible" : "none";
     for (const id of ["city-dot", "city-label", "city-heading", "city-selected"]) m.setLayoutProperty(id, "visibility", vis);
+  });
+
+  $effect(() => {
+    const ix = app.stopIx;
+    if (loaded && ix) (map!.getSource("bus-stops") as GeoJSONSource | undefined)?.setData(busStopsFC(ix));
+  });
+  $effect(() => {
+    if (loaded) map!.setFilter("bus-stop-selected", ["==", ["get", "i"], app.busStop ?? -1]);
   });
 
   $effect(() => {

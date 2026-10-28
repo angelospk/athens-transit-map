@@ -7,8 +7,9 @@ import type { AppState } from "./state.svelte";
 
 export type Pt = [number, number];   // [lat, lon]
 
-// s: every stop [name, lat, lon]; l: line → variant → its stops, as indexes into s.
-export interface TripIndex { v: string; s: [string, number, number][]; l: Record<string, Record<string, number[]>> }
+// s: every stop [name, lat, lon, GTFS stop_id] (files before the id lack it); l: line → variant → its
+// stops, as indexes into s.
+export interface TripIndex { v: string; s: [string, number, number, string?][]; l: Record<string, Record<string, number[]>> }
 
 // A place to start or end at: stops of one name close together, an area or street (geocoder), or the
 // user's location.

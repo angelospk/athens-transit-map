@@ -7,6 +7,7 @@ import { cityKey, isCityLive } from "./city";
 import { loadMetro, type MetroData } from "./metro";
 import { loadSuburban, type SuburbanData } from "./suburban";
 import type { StasyVehicle, SuburbanTrain, TrainSel } from "./trains";
+import type { TripIndex } from "./trip";
 import { LinePoller, type PollState } from "./poller";
 import { BACKOFF_MS, ClockOffset } from "./schedule";
 import { CityTiles, loadTiles, viewTiles, type Tile, type View } from "./tiles";
@@ -110,6 +111,10 @@ export class AppState {
   stasyTrains = $state.raw<StasyVehicle[]>([]);
   suburbanTrains = $state.raw<SuburbanTrain[]>([]);
   train = $state.raw<TrainSel | null>(null);
+  // Bus and trolley stops (stops.ts), drawn from zoom 15 once the map has loaded their index. busStop: the
+  // tapped one (an index into stopIx.s), whose card shows its lines and live arrivals.
+  stopIx = $state.raw<TripIndex | null>(null);
+  busStop = $state<number | null>(null);
   // Starred bus lines: a chip row under the search, to show several at once.
   favorites = $state.raw<string[]>(stored("favorites", [], isIds));
   // Stop alert: the planner's lines that are still picked (a line taken off the map stops alerting; put
@@ -303,14 +308,28 @@ export class AppState {
 
   // A station tapped on the map (null: none). Its card replaces a vehicle's or route's.
   selectStation(name: string | null) {
-    if (name) { this.clearSelection(); this.railStation = this.train = null; }
+    if (name) { this.clearSelection(); this.railStation = this.train = this.busStop = null; }
     this.metroStation = name;
   }
 
   // A suburban station tapped on the map (its id; null: none). Its card replaces any other.
   selectRailStation(id: string | null) {
-    if (id) { this.clearSelection(); this.metroStation = this.train = null; }
+    if (id) { this.clearSelection(); this.metroStation = this.train = this.busStop = null; }
     this.railStation = id;
+  }
+
+  // A bus stop tapped on the map (its index in stopIx; null: none). Its card replaces any other.
+  selectBusStop(i: number | null) {
+    if (i != null) { this.clearSelection(); this.metroStation = this.railStation = this.train = null; }
+    this.busStop = i;
+  }
+
+  // A line tapped on a stop's card: shown for a while (as a city vehicle's line is) on its variants
+  // through the stop, with the given bus selected, or else the route of the first variant.
+  openLineAt(line: string, variants: string[], vehicle?: string) {
+    this.selectCityVehicle(line, vehicle ?? "");
+    if (variants.length) this.setFocus(line, variants);
+    this.selection = vehicle ? { kind: "vehicle", line, id: vehicle } : variants.length ? { kind: "route", line, variant: variants[0] } : null;
   }
 
   setTheme(t: Theme) {
@@ -346,7 +365,7 @@ export class AppState {
     if (!lines.length) return [];
     const keep = lines.slice(0, MAX_LINES), ids = keep.map(l => l.id), left = lines.slice(MAX_LINES).map(l => l.id);
     if (!keepAlert || this.alert?.lines.some(l => !ids.includes(l.line))) this.setAlert(null);   // a new trip: the old alert no longer fits
-    this.metroStation = this.railStation = this.train = null;
+    this.metroStation = this.railStation = this.train = this.busStop = null;
     this.selection = null;
     if (this.tempLine && ids.includes(this.tempLine)) this.tempLine = null;   // now a pick
     this.dropTemp();
@@ -400,7 +419,7 @@ export class AppState {
 
   // A train tapped on the map (null: none). Its card replaces any other.
   selectTrain(t: TrainSel | null) {
-    if (t) { this.clearSelection(); this.metroStation = this.railStation = null; }
+    if (t) { this.clearSelection(); this.metroStation = this.railStation = this.busStop = null; }
     this.train = t;
   }
 
@@ -496,7 +515,7 @@ export class AppState {
 
   // A vehicle clicked on the city layer: select it and show its line in detail for a while.
   selectCityVehicle(line: string, id: string) {
-    this.metroStation = this.railStation = this.train = null;
+    this.metroStation = this.railStation = this.train = this.busStop = null;
     if (this.tempLine !== line) {
       this.dropTemp();
       if (!this.selected.includes(line)) {
@@ -518,13 +537,13 @@ export class AppState {
   }
 
   selectVehicle(line: string, id: string) {
-    this.metroStation = this.railStation = this.train = null;
+    this.metroStation = this.railStation = this.train = this.busStop = null;
     if (line !== this.tempLine) this.dropTemp();
     this.selection = { kind: "vehicle", line, id };
   }
 
   selectRoute(line: string, variant: string) {
-    this.metroStation = this.railStation = this.train = null;
+    this.metroStation = this.railStation = this.train = this.busStop = null;
     if (line !== this.tempLine) this.dropTemp();
     this.selection = { kind: "route", line, variant };
   }

@@ -165,3 +165,11 @@ export async function mockTrainRun(kind: "metro" | "suburban", id: string): Prom
     ? { status: 200, body: { trip: id, line: "M2", route_color: "#e30613", headsign: "ΕΛΛΗΝΙΚΟ", stops } }
     : { status: 200, body: { train: id, from: "Πειραιάς", to: "Αεροδρόμιο", status: "in_progress", delay_min: 3, stops } };
 }
+
+export async function mockStop(id: string): Promise<FetchResult> {
+  const now = Math.floor(Date.now() / 1000);
+  const arr = (line: string, headsign: string, variant: string, vehicle: string, eta: number, delay: number) =>
+    ({ line, headsign, variant, vehicle, eta_s: eta, at: now + eta, delay_s: delay, position_at: now - 20 });
+  return { status: 200, body: { stop: { id, name: "MOCK", lat: 37.98, lon: 23.73 }, lines: ["040", "550"], updated_at: now,
+    arrivals: [arr("040", "ΠΕΙΡΑΙΑΣ", "v1", "1", 120, 60), arr("550", "ΚΗΦΙΣΙΑ", "v2", "2", 300, 420), arr("040", "ΠΕΙΡΑΙΑΣ", "v1", "3", 780, 0)] } };
+}

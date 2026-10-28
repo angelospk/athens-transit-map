@@ -88,6 +88,11 @@ The UI follows the viewer of [foivospro/athens-gtfs-realtime](https://github.com
   `/v1/rail/suburban/trains/{no}`), and for the Proastiakos the GPS age, the speed and the delay.
   `public/suburban.json` is a copy of the Android app's `assets/suburban.json` (railway.gov.gr corridors, places
   from OpenStreetMap; see that repo's `docs/research/rail-data.md`); copy it again when the app's file changes.
+- Bus and trolley stops from zoom 15 (`public/trips.json`, loaded the first time the map comes that close).
+  A tapped stop, or a stop of a picked line, opens its card: the lines that call there (a tap shows the
+  line in the direction through the stop), the buses on their way by line and destination in minutes
+  (`GET /v1/stops/{id}`: the timetable time plus each bus's live delay, refreshed every 20 s), and
+  «Απέναντι στάση», the stop of the same name within 200 m (the other direction; `src/lib/stops.ts`).
 - Trip planner (🧭 in the panel): from where to where (my location, a stop name, an area or a street), and
   the map shows every line that goes there with no change, each in the right direction, with A and B pins
   (max 5 lines; the list names the rest). On a phone the planner replaces the panel's content and folds to one
