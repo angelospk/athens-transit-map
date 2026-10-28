@@ -3,6 +3,7 @@
 
 import type { FetchResult } from "./poller";
 import { pointAt, projectCandidates, shapeLength, stopOffsets } from "./predict";
+import { athensClock } from "./timetable";
 import type { CityLive, CityVehicle, LineLive, LineStatic, LinesIndex, Status, Vehicle } from "./types";
 
 const files = import.meta.glob<{ default: unknown }>("../fixtures/*.json", { eager: true });
@@ -111,4 +112,18 @@ export async function mockStasy(name: string): Promise<FetchResult> {
     return { line: "M2", route_color: "#e30613", headsign, t: hm(now + in_s), in_s };
   }));
   return { status: 200, body: { stop: name, indicative: false, departures } };
+}
+
+// Today's timetable: a run every 20 min, 05:00-23:40, to the end of each variant; every fifth one
+// gone is missed.
+export async function mockSchedule(line: string): Promise<FetchResult> {
+  const st = fixture<LineStatic>(`lines-${line}`);
+  if (!st) return { status: 404, body: { error: "unknown_line" } };
+  const date = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Athens" }), nowMin = athensClock(Date.now(), date);
+  const heads = [...new Set(Object.values(st.variants).map(v => v.headsign.split(" - ").pop()!))];
+  const directions = heads.map((headsign, direction) => ({ direction, headsign, departures: Array.from({ length: 57 }, (_, i) => {
+    const m = 300 + i * 20, t = `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+    return m + 10 < nowMin ? { t, trip: "", seen: i % 5 !== 4 } : { t, trip: "" };
+  }) }));
+  return { status: 200, body: { line, date, expired: false, source: "oasa-daily", directions } };
 }

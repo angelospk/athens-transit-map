@@ -6,6 +6,7 @@
   import { clampDrag, settle, type SheetState } from "../sheet";
   import type { AppState } from "../state.svelte";
   import type { DirectionGroup } from "../directions";
+  import Timetable from "./Timetable.svelte";
 
   let { app }: { app: AppState } = $props();
 
@@ -78,6 +79,9 @@
     sheet = g.moved ? settle(g.from, e.type === "pointerup" ? e.clientY - g.y : drag, g.range) : e.type === "pointerup" ? flip(g.from) : g.from;
     drag = 0;
   }
+  // Today's runs of the route's direction, opened on demand (they stay open for the next route).
+  let showTimes = $state(false);
+
   const flip = (s: SheetState): SheetState => (s === "open" ? "peek" : "open");
 
   const route = $derived.by(() => {
@@ -192,6 +196,12 @@
         {#if route.groups.length > 1}
           {@render dirs(route.line, route.groups, route.focus, groupOf(route.groups, route.id))}
         {/if}
+        <button type="button" class="times" aria-expanded={showTimes} aria-controls="card-times" onclick={() => (showTimes = !showTimes)}>
+          Δρομολόγια σήμερα <svg viewBox="0 0 12 8" width="9" height="6" aria-hidden="true" class={{ up: showTimes }}><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+        {#if showTimes}
+          <div id="card-times"><Timetable line={route.line} headsign={route.variant.headsign} now={app.serverNow} /></div>
+        {/if}
       {/if}
     </div>
   </section>
@@ -231,6 +241,10 @@
     background: var(--control); cursor: pointer; font-size: 13px; }
   .dirs button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
   .dirs button.mine:not([aria-pressed="true"]) { border-color: var(--accent); }
+  .times { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; margin-top: 8px; padding: 0;
+    border: 0; background: none; color: var(--accent); font-size: 13px; cursor: pointer; }
+  .times svg { transition: transform .15s; }
+  .times svg.up { transform: rotate(180deg); }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
   @media (prefers-reduced-motion: reduce) { .card { transition: none !important; } }
   @media (max-width: 719px) {

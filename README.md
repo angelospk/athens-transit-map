@@ -102,6 +102,9 @@ The UI follows the viewer of [foivospro/athens-gtfs-realtime](https://github.com
 - Line picker with search (Greek, accent-insensitive; `a1` finds `Α1`, `40` finds `040`).
 - Vehicle details: delay, trip ("00:35 ΠΕΙΡΑΙΑΣ → ΣΥΝΤΑΓΜΑ"), next stop, GPS age. The trip's route and stops are highlighted.
 - Route details: direction, number of stops, vehicles on it now. Tap a stop for its name.
+  "Δρομολόγια σήμερα" on the route card opens today's runs of its direction (`GET /v1/lines/{id}/schedule`,
+  OASA's daily timetable): gone runs muted, the next three bold, a run no bus was seen leaving the start for
+  struck through, and "έγιναν N από M ως τώρα".
 - Max 5 lines at once. Selection kept in the URL (`?l=…`).
 - Banner from `/v1/status` (server problem, expired GTFS) and per-line staleness.
 - Mobile first: compact panel and bottom sheet on phones. Light and dark map.
