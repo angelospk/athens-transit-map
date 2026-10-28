@@ -375,6 +375,13 @@
             <p class="hint">Φόρτωση…</p>
           {/if}
         </section>
+        <section>
+          <h4>Προαστιακός</h4>
+          <label class="switch">
+            <input type="checkbox" checked={app.suburbanOn} onchange={e => app.setSuburbanOn(e.currentTarget.checked)} />
+            <span>Γραμμές και σταθμοί<br /><small>Πάτα έναν σταθμό για τα επόμενα τρένα, ζωντανά με τις καθυστερήσεις.</small></span>
+          </label>
+        </section>
       </div>
     {/if}
   </div>

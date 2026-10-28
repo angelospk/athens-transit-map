@@ -4,6 +4,7 @@ import { API_BASE, STATIC_BASE } from "./config";
 import type { FetchResult } from "./poller";
 import { stasyUrl } from "./rail";
 import { scheduleUrl } from "./timetable";
+import { suburbanUrl } from "./suburban";
 import { loadTiles, tileKey, tileOf, tileUrlPath, type CityTiles, type Tile } from "./tiles";
 import type { CityLive, LineStatic, LinesIndex, Status } from "./types";
 
@@ -84,4 +85,9 @@ export async function fetchStasy(name: string, signal?: AbortSignal): Promise<Fe
 export async function fetchSchedule(line: string, signal?: AbortSignal): Promise<FetchResult> {
   if (import.meta.env.VITE_MOCK === "1") return (await import("./mock")).mockSchedule(line);
   return getJSON(scheduleUrl(line), signal);
+}
+
+export async function fetchSuburban(id: string, signal?: AbortSignal): Promise<FetchResult> {
+  if (import.meta.env.VITE_MOCK === "1") return (await import("./mock")).mockSuburban(id);
+  return getJSON(suburbanUrl(id), signal);
 }

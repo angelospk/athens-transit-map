@@ -73,6 +73,11 @@ The UI follows the viewer of [foivospro/athens-gtfs-realtime](https://github.com
   Pin a line in the layers menu or on a tapped station's card to draw its track. Rebuild
   `public/metro.json` with `bun scripts/metro.ts <unzipped GTFS dir>`, then `bun scripts/metro-osm.ts`:
   the feed has no shapes, so the tracks come from OpenStreetMap route relations (© OSM contributors, ODbL).
+- Suburban rail (Προαστιακός; layers menu, off by default): the corridors dashed and the stations; a tapped station
+  shows its corridors and the next trains live, with delay and platform when known
+  (`GET /v1/rail/suburban/stations/{id}/departures`, railway.gov.gr through the backend, which has no CORS).
+  `public/suburban.json` is a copy of the Android app's `assets/suburban.json` (railway.gov.gr corridors, places
+  from OpenStreetMap; see that repo's `docs/research/rail-data.md`); copy it again when the app's file changes.
 - Trip planner (🧭 in the panel): from where to where (my location, a stop name, an area or a street), and
   the map shows every line that goes there with no change, each in the right direction, with A and B pins
   (max 5 lines; the list names the rest). On a phone the planner replaces the panel's content and folds to one

@@ -127,3 +127,14 @@ export async function mockSchedule(line: string): Promise<FetchResult> {
   }) }));
   return { status: 200, body: { line, date, expired: false, source: "oasa-daily", directions } };
 }
+
+// A suburban board: a train every 15 min each way, one of them late.
+export async function mockSuburban(id: string): Promise<FetchResult> {
+  const now = athensClock(Date.now(), new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Athens" }));
+  const hm = (m: number) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  const departures = [0, 1, 2].flatMap(i => [
+    { train: `${1300 + i}`, from: "Πειραιάς", to: "Κιάτο", t: hm(now + 4 + 15 * i), delay_min: i === 0 ? 6 : 0, platform: "1", status: i === 0 ? "delayed" : "scheduled" },
+    { train: `${1500 + i}`, from: "Χαλκίδα", to: "Αθήνα", t: hm(now + 11 + 15 * i), delay_min: null, platform: null, status: "scheduled" },
+  ]);
+  return { status: 200, body: { station: id, departures } };
+}

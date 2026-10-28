@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Map as MlMap, Marker, NavigationControl, Popup, setWorkerUrl, type ExpressionSpecification, type GeoJSONSource } from "maplibre-gl";
+  import { Map as MlMap, Marker, NavigationControl, Popup, setWorkerUrl, type ExpressionSpecification, type GeoJSONSource, type MapGeoJSONFeature } from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
   import workerUrl from "virtual:maplibre-worker";
   import { debounce, throttle } from "../debounce";
@@ -9,6 +9,7 @@
   import type { LngLat } from "../glide";
   import { vehicleHeading } from "../heading";
   import { metroFC } from "../metro";
+  import { suburbanFC } from "../suburban";
   import { Locator, userPlan, type Fix, type LocState } from "../locate";
   import { Mover, planOnto } from "../motion";
   import { shapeLength, stopOffsets } from "../predict";
@@ -193,6 +194,28 @@
       paint: { "text-color": "#333333", "text-halo-color": "#ffffff", "text-halo-width": 1.5 } });
   }
 
+  // Suburban rail: its corridors dashed (under the bus lines), its stations as dots filled
+  // with their corridor's colour (moved over the city vehicles in addLayers, like the metro's).
+  function addSuburbanLayers(m: MlMap) {
+    const sel = (a: unknown, b: unknown) => ["case", ["get", "sel"], a, b] as ExpressionSpecification;
+    const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#3b5bdb";
+    const byZoom = (stops: unknown[]) => ["interpolate", ["linear"], ["zoom"], ...stops] as ExpressionSpecification;
+    const vis = app.suburbanOn ? "visible" : "none";
+    m.addSource("suburban", { type: "geojson", data: EMPTY });
+    m.addLayer({ id: "suburban-line", type: "line", source: "suburban", filter: ["==", ["get", "kind"], "line"],
+      layout: { "line-join": "round", visibility: vis },
+      paint: { "line-color": ["get", "color"], "line-width": byZoom([9, 2, 14, 3.5, 17, 5]), "line-dasharray": [2, 1.5], "line-opacity": 0.85 } });
+    m.addLayer({ id: "suburban-station", type: "circle", source: "suburban", filter: ["==", ["get", "kind"], "station"],
+      layout: { visibility: vis },
+      paint: { "circle-radius": byZoom([9, sel(5, 3), 14, sel(8, 5.5), 17, 7.5]), "circle-color": ["get", "color"],
+        "circle-stroke-color": sel(accent, "#ffffff"), "circle-stroke-width": byZoom([9, sel(3, 1.5), 14, sel(3.5, 2)]) } });
+    m.addLayer({ id: "suburban-label", type: "symbol", source: "suburban", minzoom: 12,
+      filter: ["==", ["get", "kind"], "station"],
+      layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Bold"], "text-size": 11,
+        "text-offset": [0, 1.1], "text-anchor": "top", "text-optional": true, visibility: vis },
+      paint: { "text-color": "#333333", "text-halo-color": "#ffffff", "text-halo-width": 1.5 } });
+  }
+
   // My location's accuracy circle: a circle in map metres, px = metres · 2^zoom / metres-per-pixel at zoom 0.
   function addMeAcc(m: MlMap) {
     m.addSource("me-acc", { type: "geojson", data: EMPTY });
@@ -243,8 +266,9 @@
   function addLayers(m: MlMap) {
     addSpeed(m);
     addMetroLayers(m);
+    addSuburbanLayers(m);
     addCityLayers(m);
-    for (const id of ["metro-station", "metro-label"]) m.moveLayer(id);
+    for (const id of ["metro-station", "metro-label", "suburban-station", "suburban-label"]) m.moveLayer(id);
     // Trails of corrections (the route a vehicle glided along) and, with motion off, of moves to a
     // new fix. Always under the vehicle: city dots' trails under the dots, detailed lines' trails
     // over the route lines (their vehicles are DOM markers, above the map).
@@ -292,15 +316,18 @@
         "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2 } });
   }
 
-  // The metro station under a click, with a finger-sized margin r; the nearest if several.
+  // The metro or suburban station under a click, with a finger-sized margin r; the nearest if several.
   function nearestStation(m: MlMap, p: { x: number; y: number }, r = 10) {
-    const hits = m.queryRenderedFeatures([[p.x - r, p.y - r], [p.x + r, p.y + r]], { layers: ["metro-station"] });
+    const hits = m.queryRenderedFeatures([[p.x - r, p.y - r], [p.x + r, p.y + r]], { layers: ["metro-station", "suburban-station"] });
     const d = (f: (typeof hits)[number]) => {
       const q = m.project((f.geometry as GeoJSON.Point).coordinates as [number, number]);
       return Math.hypot(q.x - p.x, q.y - p.y);
     };
     return hits.reduce<(typeof hits)[number] | null>((b, f) => (!b || d(f) < d(b) ? f : b), null);
   }
+  const openStation = (f: MapGeoJSONFeature) =>
+    f.layer.id === "suburban-station" ? app.selectRailStation(String(f.properties.id)) : app.selectStation(String(f.properties.name));
+
 
   // The city vehicle under a click, with a finger-sized margin; the nearest if several.
   function nearestCity(m: MlMap, p: { x: number; y: number }) {
@@ -616,7 +643,7 @@
       const onStation = nearestStation(m, e.point, 3);
       if (onStation && !m.queryRenderedFeatures(e.point, { layers: ["stops"] }).length) {   // a line's stop is drawn over it
         popup.remove();
-        return app.selectStation(String(onStation.properties.name));
+        return openStation(onStation);
       }
       const city = nearestCity(m, e.point);
       if (city) {
@@ -633,7 +660,7 @@
       const station = nearestStation(m, e.point);
       if (station) {
         popup.remove();
-        app.selectStation(String(station.properties.name));
+        openStation(station);
         return;
       }
       const route = m.queryRenderedFeatures(e.point, { layers: ["routes-hit"] })[0];
@@ -647,9 +674,10 @@
         return;
       }
       app.selectStation(null);
+      app.selectRailStation(null);
       app.clearSelection();
     });
-    for (const layer of ["routes-hit", "stops", "city-dot", "metro-station", "speed"]) {
+    for (const layer of ["routes-hit", "stops", "city-dot", "metro-station", "suburban-station", "speed"]) {
       m.on("mouseenter", layer, () => (m.getCanvas().style.cursor = "pointer"));
       m.on("mouseleave", layer, () => (m.getCanvas().style.cursor = ""));
     }
@@ -687,6 +715,17 @@
     line("Με τον χρόνο στις στάσεις.");
     return el;
   }
+
+  $effect(() => {
+    const vis = app.suburbanOn ? "visible" : "none";
+    if (loaded) for (const id of ["suburban-line", "suburban-station", "suburban-label"]) map!.setLayoutProperty(id, "visibility", vis);
+  });
+
+  $effect(() => {
+    if (!loaded) return;
+    const data = app.suburban;
+    (map!.getSource("suburban") as GeoJSONSource).setData(data ? suburbanFC(data, app.railStation) : EMPTY);
+  });
 
   $effect(() => {
     const vis = app.stationsOn ? "visible" : "none";
