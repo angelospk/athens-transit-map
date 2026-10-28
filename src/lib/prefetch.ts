@@ -11,7 +11,7 @@ export interface Seen { layer: string; px: [number, number]; props: Record<strin
 
 export const PREFETCH_ZOOM = 13;   // farther out, too much is on screen to be worth it
 
-export function wanted(seen: Seen[], center: [number, number], stations: MetroStation[], max = 24): Want[] {
+export function wanted(seen: Seen[], center: [number, number], stations: MetroStation[], max = 6): Want[] {
   const d = (s: Seen) => Math.hypot(s.px[0] - center[0], s.px[1] - center[1]);
   const out: Want[] = [], keys = new Set<string>();
   const add = (w: Want) => { const k = `${w.kind}|${w.id}`; if (!keys.has(k)) { keys.add(k); out.push(w); } };

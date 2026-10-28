@@ -31,4 +31,8 @@ describe("wanted", () => {
     const many = Array.from({ length: 30 }, (_, i) => f("train-dot", i, { kind: "metro", id: `t${i}` }));
     expect(wanted(many, [0, 0], stations, 5).map(w => w.id)).toEqual(["t0", "t1", "t2", "t3", "t4"]);
   });
+  it("6 by default: a zoom asks no more than that at once (Cloudflare: 30 requests / 10 s an IP)", () => {
+    const many = Array.from({ length: 30 }, (_, i) => f("train-dot", i, { kind: "metro", id: `t${i}` }));
+    expect(wanted(many, [0, 0], stations)).toHaveLength(6);
+  });
 });
