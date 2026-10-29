@@ -95,16 +95,40 @@ export function shapeLength(shape: [number, number][]): number {
   return d;
 }
 
-// s of each stop, in order: among the legs at or after the previous stop, the closest one
-// (a stop stands on the side of the street its direction uses), then the earliest.
+// s of each stop, in order. Each stop takes one of its legs (a stop stands on the side of the street its
+// direction uses) so that the stops keep their order along the shape and stand, all together, closest to
+// it; on a tie, the earlier leg. Chosen for the whole run, not stop by stop: on a loop the first stop is
+// near both ends of the shape, and taking the end would push every later stop to the end too (web#16).
+// A stop off the shape takes the place of the stop before it.
+const OUT_OF_ORDER_M = 1e6;   // the cost of a stop placed behind the one before it
 export function stopOffsets(shape: [number, number][], stops: LngLat[]): number[] {
-  let prev = 0;
-  return stops.map(p => {
-    const c = projectCandidates(shape, p).filter(x => x.s >= prev - BACK_TOLERANCE_M);
-    const s = c.reduce<{ s: number; offM: number } | null>((b, x) => (!b || x.offM < b.offM - 0.5 ? x : b), null)?.s ?? prev;
-    prev = Math.max(prev, s);
-    return s;
-  });
+  type Step = { s: number; cost: number; from: number };
+  const steps: Step[][] = [];
+  for (const p of stops) {
+    const before = steps[steps.length - 1] ?? [{ s: 0, cost: 0, from: -1 }];
+    const cands = projectCandidates(shape, p);
+    if (!cands.length) {   // keeps the place (and cost) of each option of the stop before
+      steps.push(before.map((b, k) => ({ s: b.s, cost: b.cost, from: k })));
+      continue;
+    }
+    steps.push(cands.map(c => {
+      let best: Step | null = null;
+      before.forEach((b, k) => {
+        const cost = b.cost + c.offM + (c.s >= b.s - BACK_TOLERANCE_M ? 0 : OUT_OF_ORDER_M);
+        if (!best || cost < best.cost - 0.5) best = { s: c.s, cost, from: k };
+      });
+      return best!;
+    }));
+  }
+  const last = steps[steps.length - 1];
+  if (!last) return [];
+  let k = last.reduce((b, x, i) => (x.cost < last[b].cost - 0.5 ? i : b), 0);
+  const out: number[] = [];
+  for (let i = steps.length - 1; i >= 0; i--) {
+    out.push(steps[i][k].s);
+    k = steps[i][k].from;
+  }
+  return out.reverse();
 }
 
 const plausible = (from: number, to: number, dt: number) =>

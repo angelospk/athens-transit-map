@@ -44,6 +44,16 @@ describe("geometry", () => {
     expect(s[0]).toBeLessThan(500);
     expect(s[1]).toBeGreaterThan(1200);
   });
+  it("puts a loop's first stop at its start, also when the shape's end passes closer to it (web#16)", () => {
+    // A closed loop east, north, west, south; the shape ends 2 m nearer the first stop than it starts.
+    const loop: [number, number][] = [[37.97, 23.70], [37.97, 23.71], [37.98, 23.71], [37.98, 23.70], [37.97002, 23.70]];
+    const first: [number, number] = [23.70, 37.97003];
+    const s = stopOffsets(loop, [first, [23.705, 37.97], [23.71, 37.975], [23.705, 37.98]]);
+    expect(s[0]).toBeLessThan(50);
+    expect(s[1]).toBeCloseTo(0.5 * M, -1);
+    expect(s[1]).toBeLessThan(s[2]);
+    expect(s[2]).toBeLessThan(s[3]);
+  });
 });
 
 describe("updateTrack", () => {
