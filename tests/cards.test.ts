@@ -237,6 +237,18 @@ describe("CardNav", () => {
     nav.retitle("x");   // no card: nothing to name
     expect(nav.stack).toEqual([]);
   });
+  it("replaces the top card in place (a gone vehicle becomes its line)", () => {
+    nav.start(null);
+    nav.open(stop("s"));
+    nav.push(vehicle("v", "l"));
+    nav.replaceTop(line("l"));
+    expect(nav.stack).toEqual([stop("s"), line("l")]);
+    expect(h.entries).toHaveLength(3);
+    expect(h.url).toBe("/?top=l");
+    expect(seen[seen.length - 1]).toEqual([stop("s"), line("l")]);
+    nav.back(); pop();
+    expect(nav.stack).toEqual([stop("s")]);
+  });
   it("an entry it did not write (another page state) reads as no card", () => {
     nav.start(null);
     nav.open(stop("a"));
