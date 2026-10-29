@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  dirLabels, dirOf, freshness, headsignName, lineVehicleRows, nextStops, stopRows, vehicleDir,
+  dirLabels, dirOf, freshness, headsignName, lineVehicleRows, withDirections, nextStops, stopRows, vehicleDir,
   type V2Arrival, type V2Pattern, type V2Run, type V2Stop, type V2Vehicle,
 } from "../src/lib/v2";
 
@@ -22,6 +22,11 @@ describe("headsignName", () => {
   it("gives an all-caps headsign the case of the stop it names", () => {
     expect(headsignName("ΔΗΜΟΤΙΚΟ ΘΕΑΤΡΟ", m3stops)).toBe("Δημοτικό Θέατρο");
     expect(headsignName("ΕΛΛΗΝΙΚΟ", [stopOf("e", "Ελληνικό")])).toBe("Ελληνικό");
+  });
+  it("takes the case of a stop whose words an abbreviated headsign starts", () => {
+    expect(headsignName("Δ. ΠΛΑΚΕΝΤΙΑΣ", [stopOf("d", "Δουκίσσης Πλακεντίας")])).toBe("Δ. Πλακεντίας");
+    expect(headsignName("ΑΓ. ΑΝΤΩΝΙΟΣ", [stopOf("d", "Άγιος Αντώνιος")])).toBe("Αγ. Αντώνιος");
+    expect(headsignName("Δ. ΠΛΑΚΕΝΤΙΑΣ", [stopOf("d", "Δουκίσσης Πλακεντίας Νέα")])).toBe("Δ. ΠΛΑΚΕΝΤΙΑΣ");
   });
   it("leaves a headsign in mixed case, or one that names no stop", () => {
     expect(headsignName("Πικροδάφνη", m3stops)).toBe("Πικροδάφνη");
@@ -114,5 +119,18 @@ describe("line card", () => {
     expect(lineVehicleRows([v], m3, stops, 0).map(r => r.id)).toEqual(["x"]);
     expect(lineVehicleRows([v], m3, stops, 1).map(r => r.id)).toEqual(["x"]);
     expect(lineVehicleRows([{ ...v, direction: 1 }], m3, stops, 0)).toEqual([]);
+  });
+});
+
+describe("bus directions", () => {
+  // /v2 gives every OASA pattern direction 0 (2026-10-30); the line's two direction groups of /v1 split them.
+  const bus = [pat("oasa:5512", 0, "ΠΕΙΡΑΙΑΣ - ΣΥΝΤΑΓΜΑ"), pat("oasa:5513", 0, "ΣΥΝΤΑΓΜΑ - ΠΕΙΡΑΙΑΣ"), pat("oasa:5535", 0, "ΠΕΙΡΑΙΑΣ - ΣΥΝΤΑΓΜΑ")];
+  const groups = [{ to: "ΣΥΝΤΑΓΜΑ", variants: ["5512", "5535"] }, { to: "ΠΕΙΡΑΙΑΣ", variants: ["5513"] }];
+  it("takes each pattern's direction from the group of its variant", () => {
+    expect(withDirections(bus, groups).map(p => p.direction)).toEqual([0, 1, 0]);
+  });
+  it("keeps the patterns' own directions when they differ, or without two groups", () => {
+    expect(withDirections(m3, groups)).toBe(m3);
+    expect(withDirections(bus, groups.slice(0, 1))).toBe(bus);
   });
 });

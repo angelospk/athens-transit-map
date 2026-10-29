@@ -21,7 +21,6 @@
   import { resolveDark } from "../theme";
   import type { Variant } from "../types";
   import type { AppState } from "../state.svelte";
-  import OldTimetable from "../ui/OldTimetable.svelte";
   import SpeedLegend from "../ui/SpeedLegend.svelte";
   import { lightenDark } from "./basemap";
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
@@ -1146,7 +1145,6 @@
 <div class="map" class:no-ages={!app.showAges && app.motion} {@attach setup}></div>
 {#if app.speedOn}<SpeedLegend meta={speedData?.meta ?? null} onclose={() => app.setSpeedOn(false)} />{/if}
 {#if Info}<Info bind:open={infoOpen} motion={app.motion} {ended} />{/if}
-{#if ended}<OldTimetable {ended} onmore={openInfo} />{/if}
 {#if failed}
   <div class="nogl" role="alert">
     Ο χάρτης δεν μπορεί να εμφανιστεί: ο browser δεν υποστηρίζει WebGL2. Δοκίμασε άλλον browser ή ενεργοποίησε την

@@ -321,6 +321,8 @@ export class AppState {
   push(c: Card) { this.nav?.push(c); }
   back() { this.nav?.back(); }
   closeCards() { this.nav?.close(); }
+  // Swaps the top card for another in the same history entry (a line card's direction).
+  replaceTop(c: Card) { this.nav?.replaceTop(c); }
 
   // A train's card, from what its feed says about it.
   cardOfTrain(sel: TrainSel): Card {

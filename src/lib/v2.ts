@@ -49,11 +49,21 @@ type Stops = Record<string, V2Stop> | V2Stop[];
 
 const key = (s: string) => fold(s).replace(/\s+/g, " ").trim();
 
-// An all-caps headsign that names a stop takes that stop's name (and case).
+// An all-caps headsign that names a stop takes that stop's name (and case). One that abbreviates a stop's words
+// («Δ. ΠΛΑΚΕΝΤΙΑΣ» for Δουκίσσης Πλακεντίας) takes the case of each word: «Δ. Πλακεντίας».
 export function headsignName(h: string, stops?: Stops): string {
   if (!stops || h !== h.toLocaleUpperCase("el")) return h;
   const k = key(h);
-  return Object.values(stops).find(s => key(s.name) === k)?.name ?? h;
+  const all = Object.values(stops);
+  const exact = all.find(s => key(s.name) === k);
+  if (exact) return exact.name;
+  const hw = h.trim().split(/\s+/);
+  const fits = (sw: string[]) => sw.length === hw.length && hw.every((w, i) =>
+    w.endsWith(".") ? key(sw[i]).startsWith(key(w.slice(0, -1))) : key(sw[i]) === key(w));
+  const sw = all.map(s => s.name.trim().split(/\s+/)).find(fits);
+  if (!sw) return h;
+  const abbr = (w: string) => w[0] + w.slice(1).toLocaleLowerCase("el");
+  return hw.map((w, i) => (w.endsWith(".") ? abbr(w) : sw[i])).join(" ");
 }
 
 export function dirOf(patterns: V2Pattern[], headsign: string): 0 | 1 | null {
@@ -148,4 +158,15 @@ export function lineVehicleRows(vehicles: V2Vehicle[], patterns: V2Pattern[], st
     .map(({ v }) => ({
       id: v.id, label: v.label, next: v.next_stop ? stops[v.next_stop]?.name ?? null : null, delay_s: v.delay_s, vehicle: v,
     }));
+}
+
+// /v2 gives every OASA pattern direction 0 (2026-10-30). Then the line's two direction groups (directions.ts,
+// from /v1) set each pattern's direction, by its variant (pattern id "oasa:<variant>"). Real directions stay.
+export function withDirections(patterns: V2Pattern[], groups: { variants: string[] }[]): V2Pattern[] {
+  if (groups.length !== 2 || new Set(patterns.map(p => p.direction)).size !== 1) return patterns;
+  return patterns.map(p => {
+    const v = p.id.slice(p.id.indexOf(":") + 1);
+    const d = groups.findIndex(g => g.variants.includes(v));
+    return d < 0 ? p : { ...p, direction: d as 0 | 1 };
+  });
 }

@@ -2,12 +2,10 @@
   import { AppState } from "./lib/state.svelte";
   import MapView from "./lib/map/MapView.svelte";
   import Panel from "./lib/ui/Panel.svelte";
-  import InfoCard from "./lib/ui/InfoCard.svelte";
-  import StationCard from "./lib/ui/StationCard.svelte";
-  import RailCard from "./lib/ui/RailCard.svelte";
-  import TrainCard from "./lib/ui/TrainCard.svelte";
   import StopCard from "./lib/ui/StopCard.svelte";
-  import RailLineCard from "./lib/ui/RailLineCard.svelte";
+  import VehicleCard from "./lib/ui/VehicleCard.svelte";
+  import LineCard from "./lib/ui/LineCard.svelte";
+  import RailStopCard from "./lib/ui/RailStopCard.svelte";
   import { applyTheme } from "./lib/theme";
 
   const app = new AppState();
@@ -18,9 +16,7 @@
 
 <MapView {app} />
 <Panel {app} />
-<InfoCard {app} />
-<StationCard {app} />
-<RailCard {app} />
-<TrainCard {app} />
 <StopCard {app} />
-<RailLineCard {app} />
+<VehicleCard {app} />
+<LineCard {app} />
+<RailStopCard {app} />
