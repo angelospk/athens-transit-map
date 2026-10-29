@@ -499,7 +499,7 @@
     }
   }
 
-  // One frame loop for every moving dot. It runs as often as needed for steps of under half a
+  // One frame loop for every moving dot (buses and trains). It runs as often as needed for steps of under half a
   // pixel at 20 m/s (zoomed out: once a second), faster during corrections and trails; nothing while
   // the tab is hidden. Off-screen city vehicles are not stepped: they snap when they come back.
   // With motion off, every vehicle is drawn at its last fix; a move to a new fix leaves a trail.
@@ -567,6 +567,10 @@
     if (app.cityOn && (features.length || !cityWasEmpty)) {
       (m.getSource("city") as GeoJSONSource).setData({ type: "FeatureCollection", features });
       cityWasEmpty = !features.length;
+    }
+    if (app.stasyTrains.length || app.suburbanTrains.length || !trainsWereEmpty) {
+      drawTrains();
+      trainsWereEmpty = !app.stasyTrains.length && !app.suburbanTrains.length;
     }
     if (trails.length || !trailsWereEmpty) {
       (m.getSource("trails") as GeoJSONSource).setData({ type: "FeatureCollection", features: trails });
@@ -914,13 +918,18 @@
     glide.keep(new Set(app.suburbanTrains.map(t => t.train)));
   });
 
-  // The trains, moved every second (serverNow ticks): the metro's along their track by their two stops' times.
-  $effect(() => {
-    if (!loaded) return;
+  // The trains, stepped in the frame loop as the buses are, and at once on new data or a tap: the
+  // metro's by their run's knots (else along their track by their two stops' times).
+  function drawTrains() {
     const now = app.serverMs();
     const fc = trainsFC({ stasy: app.stasyTrains, suburban: app.suburbanTrains, corridors: app.suburban?.corridors ?? {},
-      nowS: app.serverNow / 1000, sel: app.train, tracks, glide: t => glide.at(t.train, now) });
+      nowS: now / 1000, sel: app.train, tracks, motions: app.stasyMotion, glide: t => glide.at(t.train, now) });
     (map!.getSource("trains") as GeoJSONSource).setData(fc);
+  }
+  let trainsWereEmpty = true;
+  $effect(() => {
+    void app.stasyTrains; void app.suburbanTrains; void app.stasyMotion; void app.train; void app.suburban; void tracks;
+    if (loaded) untrack(drawTrains);
   });
 
   // The picked rail line, or the tapped train's: the metro line's track, or the suburban corridor.

@@ -2,11 +2,11 @@
 
 import { isHidden } from "./directions";
 import type { Only } from "./format";
-import { fetchCity, fetchLine, fetchLines, fetchLineStatic, fetchStatus, fetchTile, fetchTrains } from "./api";
+import { fetchCity, fetchLine, fetchLines, fetchLineStatic, fetchRailMotion, fetchStatus, fetchTile, fetchTrains } from "./api";
 import { cityKey, isCityLive } from "./city";
 import { loadMetro, type MetroData } from "./metro";
 import { loadSuburban, type SuburbanData } from "./suburban";
-import type { StasyVehicle, SuburbanTrain, TrainSel } from "./trains";
+import { railMotions, type RailMotion, type StasyVehicle, type SuburbanTrain, type TrainSel } from "./trains";
 import type { TripIndex } from "./trip";
 import { LinePoller, type PollState } from "./poller";
 import { BACKOFF_MS, ClockOffset } from "./schedule";
@@ -109,6 +109,8 @@ export class AppState {
   trainsOn = $state(stored("trainsOn", true, isBool));
   railLine = $state.raw<RailLine | null>(null);
   stasyTrains = $state.raw<StasyVehicle[]>([]);
+  // Each metro/tram trip's /v2 track and knots, by trip number: it runs on past its /v1 pair's stop.
+  stasyMotion = $state.raw<Record<string, RailMotion>>({});
   suburbanTrains = $state.raw<SuburbanTrain[]>([]);
   train = $state.raw<TrainSel | null>(null);
   // Bus and trolley stops (stops.ts), drawn from zoom 15 once the map has loaded their index. busStop: the
@@ -427,11 +429,13 @@ export class AppState {
     if (!on) {
       this.selectTrain(null); this.selectRailLine(null); this.selectStation(null); this.selectRailStation(null);
       this.stasyTrains = this.suburbanTrains = [];
+      this.stasyMotion = {};
     }
   }
 
-  // Polls both networks while trainsOn and the tab is visible: the metro's every 15 s (the client moves
-  // the trains between polls), the Proastiakos's GPS every 10 s. A failed poll keeps the last trains.
+  // Polls both networks while trainsOn and the tab is visible: the metro's every 15 s with its /v2 knots
+  // (the client moves the trains between polls; without knots, by their /v1 pair), the Proastiakos's GPS
+  // every 10 s. A failed poll keeps the last trains.
   // Each start ends the loops of the one before (trainGen).
   private trainGen = 0;
   private startTrains() {
@@ -441,6 +445,9 @@ export class AppState {
     const poll = async (kind: "metro" | "suburban", every: number) => {
       if (gen !== this.trainGen) return;
       if (!document.hidden) {
+        if (kind === "metro") void fetchRailMotion(AbortSignal.timeout(10_000)).then(m => {   // not waited for
+          if (gen === this.trainGen) this.stasyMotion = m?.status === 200 ? railMotions(m.body) : {};
+        });
         const r = await fetchTrains(kind, AbortSignal.timeout(10_000));
         if (gen !== this.trainGen) return;
         const b = r.body as { vehicles?: unknown; trains?: unknown } | null;

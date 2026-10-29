@@ -6,6 +6,7 @@
 import { API_BASE } from "./config";
 import { bearingDeg } from "./heading";
 import type { LngLat } from "./glide";
+import { headingAt, pointAt } from "./predict";
 import { railPlace, railSegment, type Place, type Segment, type Track } from "./rails";
 import type { Corridor, SuburbanData, TrainRow } from "./suburban";
 
@@ -19,9 +20,11 @@ export interface SuburbanTrain {
 export interface SuburbanStop { id: string; name: string; t: string; at: number; platform: string | null; delay_min: number | null }
 export interface SuburbanRun { train: string; from: string; to: string; status: string; delay_min: number | null; stops: SuburbanStop[] }
 export type TrainSel = { kind: "metro" | "suburban"; id: string };
+export interface RailMotion { track: Track; knots: [number, number][] }   // knots: [metres along track, unix s]
 
 export const stasyVehiclesUrl = `${API_BASE}/v1/rail/stasy/vehicles`;
 export const suburbanVehiclesUrl = `${API_BASE}/v1/rail/suburban/vehicles`;
+export const railMotionUrl = `${API_BASE}/v2/vehicles/rail`;
 export const stasyTripUrl = (id: string) => `${API_BASE}/v1/rail/stasy/trips/${encodeURIComponent(id)}`;
 export const suburbanTrainUrl = (no: string) => `${API_BASE}/v1/rail/suburban/trains/${encodeURIComponent(no)}`;
 
@@ -39,10 +42,41 @@ function segmentOf(line: string, tracks: Track[], a: LngLat, b: LngLat): Segment
   return segments.get(key)!;
 }
 
+// Metres along the track at time t from a run's knots: linear between two, held before the first
+// and after the last (equal metres on two knots = dwell).
+export function knotMetres(knots: [number, number][], t: number): number {
+  if (!knots.length) return 0;
+  if (t <= knots[0][1]) return knots[0][0];
+  for (let i = 1; i < knots.length; i++) {
+    const [m0, t0] = knots[i - 1], [m1, t1] = knots[i];
+    if (t <= t1) return m0 + (m1 - m0) * (t - t0) / (t1 - t0);
+  }
+  return knots[knots.length - 1][0];
+}
+
+// The runs' tracks and knots from GET /v2/vehicles/rail, by /v1 trip number (the run id's third part).
+// Runs without a run id, a motion, knots or a two-point track are left out.
+export function railMotions(body: unknown): Record<string, RailMotion> {
+  const list = (body as { vehicles?: unknown } | null)?.vehicles;
+  const out: Record<string, RailMotion> = {};
+  if (!Array.isArray(list)) return out;
+  for (const v of list) {
+    const trip = typeof v?.run === "string" ? v.run.split(":")[2] : undefined, m = v?.motion;
+    if (!trip || !m || !Array.isArray(m.knots) || !m.knots.length) continue;
+    const track: Track = [...(m.path ?? []), ...(m.path_beyond ?? [])];
+    if (track.length >= 2) out[trip] = { track, knots: m.knots };
+  }
+  return out;
+}
+
 // Where a timetable train is at nowS, by time: along its line's tracks between its two stops, or on
 // the straight line when no track passes both. A train standing at a stop has that stop as both,
-// and no heading.
-export function stasyPlace(v: StasyVehicle, nowS: number, tracks: Track[] = []): Place {
+// and no heading. With `motion` (its run's knots) it is placed by those instead, heading only while moving.
+export function stasyPlace(v: StasyVehicle, nowS: number, tracks: Track[] = [], motion?: RailMotion): Place {
+  if (motion) {
+    const s = knotMetres(motion.knots, nowS);
+    return { pos: pointAt(motion.track, s), h: knotMetres(motion.knots, nowS + 1) > s ? headingAt(motion.track, s) : null };
+  }
   const a: LngLat = [v.from.lon, v.from.lat], b: LngLat = [v.to.lon, v.to.lat];
   const span = v.to.at - v.from.at;
   const k = span > 0 ? Math.min(1, Math.max(0, (nowS - v.from.at) / span)) : 1;
@@ -56,7 +90,7 @@ export function stasyPlace(v: StasyVehicle, nowS: number, tracks: Track[] = []):
 // in its colour (other trains of Greece are left out). `sel` marks the tapped one.
 // tracks: each metro/tram line's tracks; glide: a GPS train's place on its corridor (rails.ts), if known.
 export function trainsFC(o: { stasy: StasyVehicle[]; suburban: SuburbanTrain[]; corridors: Record<string, Corridor>;
-  nowS: number; sel: TrainSel | null; tracks?: Record<string, Track[]>; glide?: (t: SuburbanTrain) => Place | null }): GeoJSON.FeatureCollection {
+  nowS: number; sel: TrainSel | null; tracks?: Record<string, Track[]>; motions?: Record<string, RailMotion>; glide?: (t: SuburbanTrain) => Place | null }): GeoJSON.FeatureCollection {
   const isSel = (kind: string, id: string) => o.sel?.kind === kind && o.sel.id === id;
   const point = (pos: LngLat, properties: Record<string, unknown>): GeoJSON.Feature =>
     ({ type: "Feature", geometry: { type: "Point", coordinates: pos }, properties });
@@ -64,7 +98,7 @@ export function trainsFC(o: { stasy: StasyVehicle[]; suburban: SuburbanTrain[]; 
     type: "FeatureCollection",
     features: [
       ...o.stasy.map(v => {
-        const p = stasyPlace(v, o.nowS, o.tracks?.[v.line]);
+        const p = stasyPlace(v, o.nowS, o.tracks?.[v.line], o.motions?.[v.trip]);
         return point(p.pos, { kind: "metro", id: v.trip, color: v.route_color, ...(p.h == null ? {} : { h: p.h }), stale: false,
           sel: isSel("metro", v.trip) });
       }),
@@ -118,12 +152,13 @@ export function destColor(data: SuburbanData, stationId: string, to: string): st
 
 // The trains of one line now, for its card: where each goes, its next stop and (metro/tram) when it is
 // there, grouped by destination in the order of their next time. at: unix s; null for the Proastiakos,
-// whose GPS gives no time. pos: where to look on the map ([lon, lat]; the metro's by its two stops' times).
+// whose GPS gives no time. pos: where to look on the map ([lon, lat]; the metro's by its knots, else its two stops' times).
 export interface LineTrain { sel: TrainSel; to: string; next: string; at: number | null; delay: number | null; pos: LngLat }
-export function lineTrains(line: { kind: "metro" | "suburban"; id: string }, stasy: StasyVehicle[], suburban: SuburbanTrain[], nowS: number): LineTrain[] {
+export function lineTrains(line: { kind: "metro" | "suburban"; id: string }, stasy: StasyVehicle[], suburban: SuburbanTrain[], nowS: number,
+  motions: Record<string, RailMotion> = {}): LineTrain[] {
   const out: LineTrain[] = line.kind === "metro"
     ? stasy.filter(v => v.line === line.id).map(v => ({ sel: { kind: "metro", id: v.trip }, to: v.headsign, next: v.to.name,
-      at: v.to.at, delay: null, pos: stasyPlace(v, nowS).pos }))
+      at: v.to.at, delay: null, pos: stasyPlace(v, nowS, [], motions[v.trip]).pos }))
     : suburban.filter(t => t.corridor === line.id && nowS - t.position_at <= OLD_S).map(t => ({ sel: { kind: "suburban", id: t.train },
       to: t.to, next: t.next_station, at: null, delay: t.delay_min, pos: [t.lon, t.lat] }));
   const first = new Map<string, number>();
