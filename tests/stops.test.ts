@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrivalGroups, timeText, toward, linesAt, busStopsFC, stopIndex, twins, alertLinesAt, type StopArrival } from "../src/lib/stops";
+import { arrivalGroups, timeText, toward, linesAt, busStopsFC, stopIndex, twins, alertLinesAt, arrivalNote, stopBack, mineFirst, type StopArrival } from "../src/lib/stops";
 import type { TripIndex } from "../src/lib/trip";
 
 // 0 and 1: one stop on both sides of a street (~44 m), 2: the same name 1 km away, 3: another name close by.
@@ -128,5 +128,39 @@ describe("alertLinesAt", () => {
   it("keeps only the given lines, and takes the hinted pass of a loop", () => {
     expect(alertLinesAt(ix, 1, ["550"], { "9": 2 })).toEqual([{ line: "550", variants: [{ id: "9", i: 2, from: 1 }] }]);
     expect(alertLinesAt(ix, 1, ["550"], { "9": 1 })).toEqual([{ line: "550", variants: [{ id: "9", i: 0, from: 1 }] }]);
+  });
+});
+
+describe("arrivalNote", () => {
+  it("says where the bus is and whether it is on time", () => {
+    expect(arrivalNote({ min: 4, vehicle: "v", late: 0 })).toEqual({ text: "στην ώρα του", tone: "ok" });
+    expect(arrivalNote({ min: 4, vehicle: "v", late: 1 })).toEqual({ text: "στην ώρα του", tone: "ok" });
+    expect(arrivalNote({ min: 9, vehicle: "v", late: 3, away: 4 })).toEqual({ text: "4 στάσεις πριν · αργεί 3′", tone: "late" });
+    expect(arrivalNote({ min: 0, vehicle: "v", late: 0, here: true })).toEqual({ text: "στη στάση", tone: "ok" });
+  });
+  it("says estimate, never a delay, for a bus with no trip", () => {
+    expect(arrivalNote({ min: 6, vehicle: "v", late: 0, est: true, away: 2 })).toEqual({ text: "2 στάσεις πριν · εκτίμηση", tone: "muted" });
+  });
+  it("counts an early bus as on time", () => {
+    expect(arrivalNote({ min: 6, vehicle: "v", late: -3 })).toEqual({ text: "στην ώρα του", tone: "ok" });
+  });
+});
+
+describe("stopBack", () => {
+  it("names the stop n stops before place i of a variant", () => {
+    expect(stopBack(ix, "10", "c", 2, 1)).toBe("Άγιος Νικόλαος");
+    expect(stopBack(ix, "10", "c", 2, 2)).toBe("Πλατεία");
+  });
+  it("is null before the first stop or for an unknown line or variant", () => {
+    expect(stopBack(ix, "10", "c", 1, 2)).toBeNull();
+    expect(stopBack(ix, "99", "c", 2, 1)).toBeNull();
+    expect(stopBack(ix, "10", "z", 2, 1)).toBeNull();
+  });
+});
+
+describe("mineFirst", () => {
+  const g = (line: string) => ({ line, headsign: "Α - Β", variant: "x", times: [] });
+  it("splits the groups into the user's lines and the others, keeping their order", () => {
+    expect(mineFirst([g("10"), g("040"), g("Α1"), g("040")], ["040"])).toEqual({ mine: [g("040"), g("040")], also: [g("10"), g("Α1")] });
   });
 });

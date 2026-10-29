@@ -107,3 +107,25 @@ export function alertLinesAt(ix: TripIndex, k: number, lines?: string[], hint?: 
     }),
   }));
 }
+
+// The line under an arrival's headsign: where the bus is (stops to go) and how it runs. est: no trip,
+// so no delay to tell; late of 2 minutes or more is late (an early bus is on time).
+export function arrivalNote(t: ArrivalTime): { text: string; tone: "ok" | "late" | "muted" } {
+  if (t.here) return { text: "στη στάση", tone: "ok" };
+  const where = t.away ? [`${t.away} στάσεις πριν`] : [];
+  if (t.est) return { text: [...where, "εκτίμηση"].join(" · "), tone: "muted" };
+  if (t.late >= 2) return { text: [...where, `αργεί ${t.late}′`].join(" · "), tone: "late" };
+  return { text: [...where, "στην ώρα του"].join(" · "), tone: "ok" };
+}
+
+// The name of the stop n stops before place i of a line's variant (where the bus is when an alert
+// n stops before fires), or null.
+export function stopBack(ix: TripIndex, line: string, variant: string, i: number, n: number): string | null {
+  const seq = ix.l[line]?.[variant], k = i - n;
+  return seq && k >= 0 && k < seq.length ? ix.s[seq[k]]?.[0] ?? null : null;
+}
+
+// A stop's arrival groups split into the user's lines (favourites and lines on the map) and the others.
+export function mineFirst<G extends { line: string }>(groups: G[], mine: string[]): { mine: G[]; also: G[] } {
+  return { mine: groups.filter(g => mine.includes(g.line)), also: groups.filter(g => !mine.includes(g.line)) };
+}

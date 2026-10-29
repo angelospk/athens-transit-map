@@ -11,7 +11,7 @@
   import Bell from "./Bell.svelte";
   import { upcomingStops } from "../eta";
   import { clockHM } from "../trains";
-  import { stopIndex } from "../stops";
+  import { stopIndex, toward } from "../stops";
 
   let { app }: { app: AppState } = $props();
 
@@ -95,15 +95,18 @@
     return m <= 0 ? "τώρα" : m < 60 ? `~${m}′` : `~${clockHM(at)}`;
   };
   // The alert form at one of those stops (AlertForm, loaded on the first bell): the stop's id and its place.
-  let alertAt = $state.raw<{ id: string; i: number; from: number | null } | null>(null);
+  let alertAt = $state.raw<{ id: string; i: number; from: number | null; name: string; line: string; variant: string } | null>(null);
   $effect(() => { void selKey; alertAt = null; });
-  async function bellAt(id: string, i: number) {
-    if (alertAt?.id === id && alertAt.i === i) { alertAt = null; return; }
-    alertAt = { id, i, from: null };
+  async function bellAt(a: { id: string; i: number; name: string }) {
+    const sv = app.selectedVehicle, variant = sv?.v.variant;
+    if (!sv || !variant || (alertAt?.id === a.id && alertAt.i === a.i)) { alertAt = null; return; }
+    const at = { id: a.id, i: a.i, name: a.name, line: sv.line, variant };
+    alertAt = { ...at, from: null };
     const ix = await app.loadStops();
-    if (alertAt?.id !== id || alertAt.i !== i) return;
-    alertAt = { id, i, from: ix ? stopIndex(ix, id) : -1 };
+    if (alertAt?.id !== a.id || alertAt.i !== a.i) return;
+    alertAt = { ...at, from: ix ? stopIndex(ix, a.id) : -1 };
   }
+  const sheetHs = $derived(alertAt ? app.statics[alertAt.line]?.variants[alertAt.variant]?.headsign : undefined);
 
   // Today's runs of the route's direction, opened on demand (they stay open for the next route).
   let showTimes = $state(false);
@@ -157,7 +160,7 @@
   </div>
 {/snippet}
 
-<svelte:window onkeydown={e => { if (e.key === "Escape" && app.selection) app.clearSelection(); }} />
+<svelte:window onkeydown={e => { if (e.key === "Escape" && app.selection && !alertAt) app.clearSelection(); }} />
 
 {#if vehicle || route}
   {@const line = vehicle?.line ?? route!.line}
@@ -222,27 +225,10 @@
                 <span class="t">{eta(a.at)}</span><span class="name">{a.name}</span>
                 <button type="button" class="bell" class:on={alertAt?.id === a.id && alertAt.i === a.i} aria-expanded={alertAt?.id === a.id && alertAt.i === a.i}
                   title="Ειδοποίηση άφιξης σε αυτή τη στάση" aria-label="Ειδοποίηση άφιξης του {vehicle.line} στη στάση {a.name}"
-                  onclick={() => bellAt(a.id, a.i)}><Bell /></button>
+                  onclick={() => bellAt(a)}><Bell /></button>
               </li>
-              {#if alertAt?.id === a.id && alertAt.i === a.i}
-                <li class="alert">
-                  {#if alertAt.from == null}
-                    <p class="muted">Φόρτωση…</p>
-                  {:else if alertAt.from < 0 || !v.variant}
-                    <p class="muted">Αυτή η στάση δεν είναι στα δεδομένα στάσεων.</p>
-                  {:else}
-                    {@const from = alertAt.from}
-                    {@const variant = v.variant}
-                    {#await import("./AlertForm.svelte")}
-                      <p class="muted">Φόρτωση…</p>
-                    {:then m}
-                      <m.default {app} label={a.name} onstarted={() => (alertAt = null)}
-                        lines={[{ line: vehicle.line, variants: [{ id: variant, i: a.i, from }] }]} />
-                    {:catch}
-                      <p class="muted">Δεν φόρτωσε η ειδοποίηση. Δοκίμασε ξανά.</p>
-                    {/await}
-                  {/if}
-                </li>
+              {#if alertAt?.id === a.id && alertAt.i === a.i && (alertAt.from == null || alertAt.from < 0)}
+                <li class="alert"><p class="muted">{alertAt.from == null ? "Φόρτωση…" : "Αυτή η στάση δεν είναι στα δεδομένα στάσεων."}</p></li>
               {/if}
             {/each}
           </ol>
@@ -285,6 +271,16 @@
     </div>
   </section>
 {/if}
+
+{#if alertAt && alertAt.from != null && alertAt.from >= 0}
+  {@const a = alertAt}
+  {@const from = alertAt.from}
+  {#await import("./AlertSheet.svelte") then m}
+    <m.default {app} label={a.name} line={a.line} toward={sheetHs ? toward(sheetHs) : undefined} onclose={() => (alertAt = null)}
+      lines={[{ line: a.line, variants: [{ id: a.variant, i: a.i, from }] }]} />
+  {/await}
+{/if}
+
 
 <style>
   .card { position: absolute; z-index: 6; left: 12px; bottom: 28px; width: 340px; padding: 12px 14px;
@@ -331,7 +327,6 @@
   .ahead .t { flex: none; min-width: 48px; font-variant-numeric: tabular-nums; }
   .ahead .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ahead li.alert { display: block; margin: 2px 0 6px; padding: 8px 10px; border-radius: 10px; background: var(--control); font-weight: 400; }
-  .ahead li.alert :global(select) { background: var(--panel); }
   .bell { flex: none; display: grid; place-items: center; width: 32px; height: 30px; border: 0; border-radius: 8px; background: none;
     color: var(--muted); cursor: pointer; }
   .bell:hover, .bell.on { background: var(--control); color: var(--accent); }

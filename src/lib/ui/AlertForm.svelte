@@ -8,13 +8,14 @@
   import { fetchLines } from "../api";
   import { MAX_LINES } from "../selection";
   import { canPush, startPush, stopPush } from "../push";
+  import { stopBack } from "../stops";
   import { encodeAlert, MAX_N, type Rep } from "../tglink";
   import { loadTripIndex, type BoardAt, type TripIndex } from "../trip";
   import type { AppState } from "../state.svelte";
 
   // A stop alert, set up in one place for the trip planner, a stop's card and a vehicle's next stops: how
-  // early (stops before), repeat (Telegram only), which lines, then "Εδώ" (web push when the browser has it,
-  // else in the page) or "Στο Telegram". lines: the lines that can be watched, each with its variants and the
+  // early (stops before, with the stop that means now), which lines, then "Ειδοποίησέ με" (web push when the
+  // browser has it, else in the page) or "Στο Telegram"; a weekly repeat goes to Telegram only. lines: the lines that can be watched, each with its variants and the
   // boarding stop in each (indexes of public/trips.json); ticked: the lines ticked at first (all when not
   // given). label: the boarding stop's name. extra: fields the caller adds on top (the planner's stop choice).
   let { app, lines, label, ticked, extra, onstarted }: {
@@ -44,6 +45,15 @@
   $effect(() => { const all = lines.map(l => l.line), t = ticked; off = t ? all.filter(l => !t.includes(l)) : []; });
   const targets = $derived(lines.filter(l => !off.includes(l.line)));
   const setTicked = (line: string, on: boolean) => { off = on ? off.filter(l => l !== line) : [...off, line]; };
+
+  // Where the bus is when the alert fires, for one line: the stop n before, when every variant has the same.
+  const meaning = $derived.by(() => {
+    const t = targets.length === 1 ? targets[0] : undefined, ix = data?.ix;
+    if (!t || !ix) return null;
+    const names = new Set(t.variants.map(v => stopBack(ix, t.line, v.id, v.i, n)));
+    return names.size === 1 ? [...names][0] : null;
+  });
+  const stopsText = (k: number) => (k === 1 ? "1 στάση πριν" : `${k} στάσεις πριν`);
 
   const payload = $derived(data && !data.stale ? encodeAlert(data.ix, n, targets) : null);
   // Athens time, as the bot reads it.
@@ -118,25 +128,14 @@
   {:else if data.stale}
     <p class="note">Ειδοποίηση: όχι με παλιά δεδομένα στάσεων.</p>
   {:else}
-    <label>Πότε
-      <select bind:value={n}>
-        {#each { length: MAX_N }, k (k)}<option value={k + 1}>{k === 0 ? "στην προηγούμενη στάση" : `${k + 1} στάσεις πριν`}</option>{/each}
-      </select>
-    </label>
-    <label>Επανάληψη
-      <select bind:value={repDays}>
-        <option value={0}>όχι, μόνο τώρα</option>
-        <option value={31}>τις καθημερινές</option>
-        <option value={127}>κάθε μέρα</option>
-        <option value={96}>τα Σαββατοκύριακα</option>
-      </select>
-    </label>
-    {#if repDays}
-      <label>Από
-        <select class="hm" bind:value={repH} aria-label="Ώρα">{#each { length: 24 }, h (h)}<option value={h}>{String(h).padStart(2, "0")}</option>{/each}</select>:<select
-          class="hm" bind:value={repM} aria-label="Λεπτά">{#each { length: 12 }, k (k)}<option value={k * 5}>{String(k * 5).padStart(2, "0")}</option>{/each}</select>
-        για <select bind:value={repLen}>{#each [[30, "½ ώρα"], [60, "1 ώρα"], [90, "1½ ώρα"], [120, "2 ώρες"]] as const as [m, t] (m)}<option value={m}>{t}</option>{/each}</select>
-      </label>
+    <div class="step" role="group" aria-label="Πόσες στάσεις πριν">
+      <button type="button" class="pm" aria-label="Μία στάση λιγότερη" disabled={n <= 1} onclick={() => n--}>−</button>
+      <p class="num" aria-live="polite"><b>{n}</b><small>{n === 1 ? "στάση πριν" : "στάσεις πριν"}</small></p>
+      <button type="button" class="pm" aria-label="Μία στάση περισσότερη" disabled={n >= MAX_N} onclick={() => n++}>+</button>
+    </div>
+    {#if meaning}
+      <div class="mean"><small>Τώρα αυτό σημαίνει</small>
+        <p>όταν είναι στο <b>{meaning}</b>, {stopsText(n)}</p></div>
     {/if}
     {#if lines.length > 1 || off.length}
       <fieldset>
@@ -148,20 +147,38 @@
         {/each}
       </fieldset>
     {/if}
+    <button type="button" class="rep" aria-expanded={!!repDays} onclick={() => (repDays = repDays ? 0 : 31)}>
+      <span aria-hidden="true">⟳</span> Κάθε εβδομάδα τέτοια ώρα;<span class="chev" aria-hidden="true">{repDays ? "▾" : "›"}</span></button>
+    {#if repDays}
+      <label>Μέρες
+        <select bind:value={repDays}>
+          <option value={31}>τις καθημερινές</option>
+          <option value={127}>κάθε μέρα</option>
+          <option value={96}>τα Σαββατοκύριακα</option>
+        </select>
+      </label>
+      <label>Από
+        <select class="hm" bind:value={repH} aria-label="Ώρα">{#each { length: 24 }, h (h)}<option value={h}>{String(h).padStart(2, "0")}</option>{/each}</select>:<select
+          class="hm" bind:value={repM} aria-label="Λεπτά">{#each { length: 12 }, k (k)}<option value={k * 5}>{String(k * 5).padStart(2, "0")}</option>{/each}</select>
+        για <select bind:value={repLen}>{#each [[30, "½ ώρα"], [60, "1 ώρα"], [90, "1½ ώρα"], [120, "2 ώρες"]] as const as [m, t] (m)}<option value={m}>{t}</option>{/each}</select>
+      </label>
+    {/if}
     <div class="go">
-      {#if !repDays}<button type="button" class="bell" disabled={!targets.length || pushing} onclick={alertMe}>{pushing ? "…" : "Εδώ"}</button>{/if}
-      {#if tgLink}<a class="bell tg" href={tgLink} target="_blank" rel="noopener">Στο Telegram</a>
-      {:else if repDays && targets.length}<small class="warn">Διάλεξε ώρα έναρξης, ώστε να τελειώνει ως τα μεσάνυχτα.</small>{/if}
+      {#if !repDays}
+        <button type="button" class="main" disabled={!targets.length || pushing} onclick={alertMe}>{pushing ? "…" : `Ειδοποίησέ με ${stopsText(n)}`}</button>
+        {#if tgLink}<a class="tg" href={tgLink} target="_blank" rel="noopener">ή στο Telegram</a>{/if}
+      {:else if tgLink}
+        <a class="main" href={tgLink} target="_blank" rel="noopener">Στο Telegram, κάθε εβδομάδα</a>
+      {:else if targets.length}<small class="warn">Διάλεξε ώρα έναρξης, ώστε να τελειώνει ως τα μεσάνυχτα.</small>{/if}
     </div>
     {#if err}<p class="warn" role="status">{err}</p>{/if}
     {#if repDays}
       <p class="note">Η επανάληψη γίνεται στο Telegram (@{BOT}): σου γράφει κάθε φορά που ένα λεωφορείο πλησιάζει, μόνο σε αυτές τις ώρες.
         Εκεί, /list δείχνει τις ειδοποιήσεις σου και τις σταματάει.</p>
     {:else}
-      <p class="note">Για 2 ώρες.
-        {#if canPush()}Εδώ: και με κλειστή σελίδα ή κλειδωμένη οθόνη.
-        {:else}Εδώ: όσο η σελίδα είναι ανοιχτή{canNotify ? "" : ", μόνο μέσα στη σελίδα"}.{/if}
-        Telegram: και με κλειδωμένη οθόνη, από το @{BOT}.</p>
+      <p class="note">Για 2 ώρες,
+        {#if canPush()}και με κλειστή σελίδα ή κλειδωμένη οθόνη.
+        {:else}όσο η σελίδα είναι ανοιχτή{canNotify ? "" : ", μόνο μέσα στη σελίδα"}. Στο Telegram και με κλειδωμένη οθόνη.{/if}</p>
     {/if}
     {#if iosTab && !repDays}
       <p class="note">iPhone, για ειδοποίηση εδώ με κλειδωμένη οθόνη: Κοινοποίηση → «Προσθήκη στην οθόνη Αφετηρίας», και άνοιξε τον χάρτη από το εικονίδιο.</p>
@@ -179,11 +196,24 @@
   .ln { display: inline-flex; align-items: center; gap: 4px; min-height: 30px; padding: 0 8px; border: 2px solid var(--c);
     border-radius: 12px; font-size: 12px; cursor: pointer; }
   .ln input { margin: 0; accent-color: var(--c); }
-  .go { display: flex; gap: 6px; }
-  .bell { min-height: 34px; padding: 0 12px; border: 0; border-radius: 9px; background: var(--accent); color: #fff; font-weight: 600;
-    font-size: 14px; cursor: pointer; }
-  .bell:disabled { opacity: .5; cursor: default; }
-  .bell.tg { display: inline-grid; place-items: center; background: #229ed9; text-decoration: none; }
+  .step { display: flex; align-items: center; justify-content: center; gap: 24px; margin: 4px 0 0; }
+  .pm { width: 48px; height: 48px; border: 0; border-radius: 50%; background: var(--control); color: var(--fg);
+    font-size: 24px; line-height: 1; cursor: pointer; }
+  .pm:disabled { opacity: .35; cursor: default; }
+  .num { display: flex; flex-direction: column; align-items: center; min-width: 96px; margin: 0; }
+  .num b { font-size: 44px; line-height: 1; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .num small { color: var(--muted); font-size: 13px; }
+  .mean { padding: 10px 12px; border-radius: 12px; background: var(--control); }
+  .mean small { display: block; color: var(--muted); font-size: 12px; font-weight: 600; }
+  .mean p { margin: 2px 0 0; font-size: 14px; }
+  .rep { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 2px; border: 0; background: none; color: var(--fg);
+    font: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer; }
+  .rep .chev { margin-left: auto; color: var(--muted); }
+  .go { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+  .main { display: grid; place-items: center; min-height: 46px; padding: 0 16px; border: 0; border-radius: 23px; background: var(--fg);
+    color: var(--bg); font: inherit; font-size: 15px; font-weight: 600; text-decoration: none; cursor: pointer; }
+  .main:disabled { opacity: .5; cursor: default; }
+  .tg { align-self: center; color: var(--accent); font-size: 13px; font-weight: 600; }
   select { min-height: 34px; padding: 0 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--control);
     color: var(--fg); font-size: 16px; }
   .note { display: block; margin: 0; color: var(--muted); font-size: 12px; }
