@@ -88,13 +88,13 @@ describe("stopRows", () => {
 });
 
 describe("byDestination", () => {
-  const row = (to: string, inMin: number, delay: number | null = 0) => ({ t: "", expected: "", delay, to, platform: null, in: inMin });
+  const row = (to: string, inMin: number, delay: number | null = 0, live = false) => ({ t: "", expected: "", delay, to, platform: null, in: inMin, live });
 
   it("one row per destination, in the order of its first train, at most three times each", () => {
-    const g = byDestination([row("Αεροδρόμιο", 4), row("Κιάτο", 9, 3), row("Αεροδρόμιο", 33), row("Αεροδρόμιο", 50), row("Αεροδρόμιο", 70)]);
+    const g = byDestination([row("Αεροδρόμιο", 4, 0, true), row("Κιάτο", 9, 3, true), row("Αεροδρόμιο", 33), row("Αεροδρόμιο", 50), row("Αεροδρόμιο", 70)]);
     expect(g).toEqual([
-      { to: "Αεροδρόμιο", times: [{ in: 4, delay: 0 }, { in: 33, delay: 0 }, { in: 50, delay: 0 }] },
-      { to: "Κιάτο", times: [{ in: 9, delay: 3 }] },
+      { to: "Αεροδρόμιο", times: [{ in: 4, delay: 0, live: true }, { in: 33, delay: 0, live: false }, { in: 50, delay: 0, live: false }] },
+      { to: "Κιάτο", times: [{ in: 9, delay: 3, live: true }] },
     ]);
   });
 });

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fetchSuburban, peekSuburban } from "../api";
-  import { trainRows, type Train } from "../suburban";
+  import { boardNote, trainRows, type Train } from "../suburban";
   import { byDestination, destColor } from "../trains";
   import { athensClock } from "../timetable";
   import type { AppState } from "../state.svelte";
@@ -73,13 +73,13 @@
         <ul class="deps" aria-label="Επόμενα τρένα">
           {#each groups as g (g.to)}
             <li><i style:--accent={g.color} aria-hidden="true"></i><span class="to">→ {g.to}</span>
-              <span class="when">{#each g.times as t, i (i)}{#if i}{" · "}{/if}{when(t.in)}{#if t.delay}{" "}<em>{t.delay > 0 ? "+" : ""}{t.delay}′</em>{/if}{/each}</span></li>
+              <span class="when">{#each g.times as t, i (i)}{#if i}{" · "}{/if}{#if t.live}<b class="live" title="Ζωντανά" aria-label="ζωντανά">●</b>{/if}{when(t.in)}{#if t.delay}{" "}<em>{t.delay > 0 ? "+" : ""}{t.delay}′</em>{/if}{/each}</span></li>
           {/each}
         </ul>
       {:else}
         <p>Κανένα τρένο στον πίνακα τώρα.</p>
       {/if}
-      <p class="src">Πρόγραμμα Hellenic Train.</p>
+      <p class="src">{boardNote(groups.flatMap(g => g.times))}</p>
     {:else if failed}
       <p>{failed === "upstream" ? "Η Hellenic Train δεν απαντά τώρα. Ξαναδοκιμάζω σε ένα λεπτό." : "Δεν φόρτωσαν τα επόμενα τρένα."}</p>
     {:else}
@@ -104,6 +104,7 @@
   .to { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .when { flex: none; font-weight: 600; font-variant-numeric: tabular-nums; }
   .when em { font-style: normal; font-size: 11px; color: var(--late2); }
+  .live { margin-right: 2px; font-size: 9px; color: var(--ontime); vertical-align: 1px; }
   .src { margin: 6px 0 0; font-size: 11px; }
   .close { width: 36px; height: 36px; margin: -8px -10px -8px 0; border: 0; background: none; font-size: 22px;
     color: var(--muted); cursor: pointer; border-radius: 8px; }
