@@ -10,8 +10,9 @@ export interface Corridor { name: string; color: string; stations: string[]; pat
 export interface RailStation { id: string; name: string; en: string; lat: number; lon: number; corridors: string[] }
 export interface SuburbanData { corridors: Record<string, Corridor>; stations: RailStation[] }
 export interface Train { train: string; from: string; to: string; t: string; delay_min: number | null; platform: string | null; status: string }
-// in: minutes from now to the expected time (0 for a train due or just gone).
-export interface TrainRow { t: string; expected: string; delay: number | null; to: string; platform: string | null; in: number }
+// in: minutes from now to the expected time (0 for a train due or just gone). live: the delay is
+// observed, the train is under way (0 too: on time); else the time is the timetable's.
+export interface TrainRow { t: string; expected: string; delay: number | null; to: string; platform: string | null; in: number; live: boolean }
 
 export const suburbanUrl = (id: string) => `${API_BASE}/v1/rail/suburban/stations/${encodeURIComponent(id)}/departures?n=10`;
 
@@ -50,6 +51,12 @@ export function trainRows(deps: Train[], nowMin: number): TrainRow[] {
     if (min < nowMin - 720) min += 1440;          // after midnight
     else if (min > nowMin + 720) min -= 1440;     // the evening before, seen after midnight
     const exp = min + Math.max(0, d.delay_min ?? 0);
-    return exp < nowMin - 1 ? [] : [{ exp, row: { t: d.t, expected: hm(exp), delay: d.delay_min, to: d.to, platform: d.platform, in: Math.max(0, exp - nowMin) } }];
+    const live = d.delay_min != null && (d.status === "in_progress" || d.status === "delayed");
+    return exp < nowMin - 1 ? [] : [{ exp, row: { t: d.t, expected: hm(exp), delay: d.delay_min, to: d.to, platform: d.platform, in: Math.max(0, exp - nowMin), live } }];
   }).sort((a, b) => a.exp - b.exp).map(x => x.row);
 }
+
+// The card's note on where its times come from: live ones are marked ●.
+export const boardNote = (times: { live: boolean }[]) => times.some(t => t.live)
+  ? "● ζωντανά, από τα τρένα σε κίνηση· τα άλλα από το πρόγραμμα της Hellenic Train."
+  : "Από το πρόγραμμα της Hellenic Train.";

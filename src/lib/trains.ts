@@ -97,11 +97,11 @@ export function stopRows(stops: { name: string; at: number; delay?: number | nul
 }
 
 // A board's rows grouped by destination, in the order of each one's first train, at most `max` times each.
-export function byDestination(rows: TrainRow[], max = 3): { to: string; times: { in: number; delay: number | null }[] }[] {
-  const out = new Map<string, { in: number; delay: number | null }[]>();
+export function byDestination(rows: TrainRow[], max = 3): { to: string; times: { in: number; delay: number | null; live: boolean }[] }[] {
+  const out = new Map<string, { in: number; delay: number | null; live: boolean }[]>();
   for (const r of rows) {
     const list = out.get(r.to) ?? [];
-    if (list.length < max) list.push({ in: r.in, delay: r.delay });
+    if (list.length < max) list.push({ in: r.in, delay: r.delay, live: r.live });
     out.set(r.to, list);
   }
   return [...out].map(([to, times]) => ({ to, times }));

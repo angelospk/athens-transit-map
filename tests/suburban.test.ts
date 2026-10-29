@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { suburbanFC, suburbanUrl, trainRows, type SuburbanData, type Train } from "../src/lib/suburban";
+import { boardNote, suburbanFC, suburbanUrl, trainRows, type SuburbanData, type Train } from "../src/lib/suburban";
 
 const data: SuburbanData = {
   corridors: {
@@ -39,9 +39,9 @@ describe("trainRows", () => {
   it("expected time with the delay, platform when known", () => {
     const rows = trainRows([tr("17:34", "Χαλκίδα"), tr("17:41", "Κιάτο", 7, "delayed", "3"), tr("17:44", "Πειραιάς", null)], 17 * 60 + 30);
     expect(rows).toEqual([
-      { t: "17:34", expected: "17:34", delay: 0, to: "Χαλκίδα", platform: null, in: 4 },
-      { t: "17:44", expected: "17:44", delay: null, to: "Πειραιάς", platform: null, in: 14 },
-      { t: "17:41", expected: "17:48", delay: 7, to: "Κιάτο", platform: "3", in: 18 },
+      { t: "17:34", expected: "17:34", delay: 0, to: "Χαλκίδα", platform: null, in: 4, live: false },
+      { t: "17:44", expected: "17:44", delay: null, to: "Πειραιάς", platform: null, in: 14, live: false },
+      { t: "17:41", expected: "17:48", delay: 7, to: "Κιάτο", platform: "3", in: 18, live: true },
     ]);
   });
   it("leaves out completed runs and trains gone more than a minute ago (by their expected time)", () => {
@@ -61,5 +61,17 @@ describe("trainRows", () => {
   it("a train after midnight comes after the late evening ones", () => {
     const rows = trainRows([tr("00:10", "Κιάτο"), tr("23:55", "Χαλκίδα", 20)], 23 * 60 + 50);
     expect(rows.map(r => [r.to, r.expected])).toEqual([["Κιάτο", "00:10"], ["Χαλκίδα", "00:15"]]);
+  });
+  it("live: a train under way with a delay (0 too: on time is an observation), as /v2 says source live", () => {
+    const rows = trainRows([tr("17:34", "Αεροδρόμιο", 0, "in_progress"), tr("17:40", "Χαλκίδα", 0), tr("17:45", "Κιάτο", null, "in_progress")], 17 * 60 + 30);
+    expect(rows.map(r => [r.to, r.live])).toEqual([["Αεροδρόμιο", true], ["Χαλκίδα", false], ["Κιάτο", false]]);
+  });
+});
+
+describe("boardNote", () => {
+  it("says which times are live when some are, and only 'timetable' when none is", () => {
+    expect(boardNote([{ live: true }, { live: false }])).toBe("● ζωντανά, από τα τρένα σε κίνηση· τα άλλα από το πρόγραμμα της Hellenic Train.");
+    expect(boardNote([{ live: false }])).toBe("Από το πρόγραμμα της Hellenic Train.");
+    expect(boardNote([])).toBe("Από το πρόγραμμα της Hellenic Train.");
   });
 });
