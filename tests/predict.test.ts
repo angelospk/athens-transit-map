@@ -54,6 +54,15 @@ describe("geometry", () => {
     expect(s[1]).toBeLessThan(s[2]);
     expect(s[2]).toBeLessThan(s[3]);
   });
+  it("leaves a loop's first stop out when it lies only at the shape's end, not every stop after it (web#16)", () => {
+    // The shape starts 44 m past the terminus and ends at it (022, 057: every stop had one time).
+    const loop: [number, number][] = [[37.97, 23.7005], [37.97, 23.71], [37.98, 23.71], [37.98, 23.70], [37.97, 23.70]];
+    const s = stopOffsets(loop, [[23.70, 37.97], [23.705, 37.97], [23.71, 37.975], [23.705, 37.98]]);
+    expect(s[1]).toBeCloseTo(0.45 * M, -1);
+    expect(s[0]).toBeLessThanOrEqual(s[1]);
+    expect(s[1]).toBeLessThan(s[2]);
+    expect(s[2]).toBeLessThan(s[3]);
+  });
   it("never drifts back step by step within the tolerance", () => {
     // Stops 22 m apart heading west, nearer the outbound side: each alone is within 30 m behind the last.
     const back = [0.9, 0.875, 0.85, 0.825].map(f => [23.70 + f * 0.01, 37.97] as [number, number]);
