@@ -20,6 +20,7 @@ import type { CityLive, CityVehicle, LineInfo, LineLive, LineStatic, Status, Veh
 import { CardNav, cardFromQuery, cardQuery, sameCard, type Card } from "./cards";
 import { busVehicleCard, cardTitle, legacyOf, routeCard, trainCard } from "./legacy";
 import { stopIndex } from "./stops";
+import { busFavIds, loadFavs, setPlace, toggleLine as toggleFavLineIn, toggleStop, type FavLine, type FavStop, type Favs, type Place } from "./favs";
 import { fold } from "./search";
 
 export const STALE_S = 120;
@@ -48,7 +49,6 @@ function store(key: string, v: unknown) {
   try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* private mode */ }
 }
 const isBool = (v: unknown) => typeof v === "boolean";
-const isIds = (v: unknown) => Array.isArray(v) && v.every(x => typeof x === "string");
 
 // A stop alert from the trip planner; label: the boarding stop's name; push: the bot's id for the same
 // alert as web push (src/lib/push.ts).
@@ -85,7 +85,15 @@ export class AppState {
   // City layer (/v1/vehicles/tiles): the live vehicles of the map view; null before data or when the server lacks it.
   city = $state.raw<CityLive | null>(null);
   cityState = $state<PollState | null>(null);
-  cityOn = $state(stored("cityOn", true, isBool));
+  // Favourite stops and lines of every mode (favs.ts, `fav.v2`); the old `favorites` (bus line ids) move into it once.
+  favs = $state.raw<Favs>(loadFavs(stored<unknown>("fav.v2", null, () => true), stored<unknown>("favorites", null, () => true)));
+  // The favourites panel (★ in the top bar); it shows while no card is open.
+  favsOpen = $state(false);
+  // Favourites only (B7): the map shows the favourite bus lines and not the city layer. The user's own cityOn
+  // choice is kept in localStorage and comes back when this is off.
+  favOnly = $state(stored("favOnly", true, isBool));
+  favHintSeen = $state(stored("favHintSeen", false, isBool));
+  cityOn = $state(stored("cityOn", true, isBool) && !(this.favOnly && busFavIds(this.favs).length > 0));
   others = $state<Others>(stored("others", "hide", v => v === "normal" || v === "dim" || v === "hide"));
   showAges = $state(stored("showAges", false, isBool));
   // Off: every vehicle stays at its last GPS fix (no motion in between); its age is always shown.
@@ -123,8 +131,8 @@ export class AppState {
   // tapped one (an index into stopIx.s), whose card shows its lines and live arrivals.
   stopIx = $state.raw<TripIndex | null>(null);
   busStop = $state<number | null>(null);
-  // Starred bus lines: a chip row under the search, to show several at once.
-  favorites = $state.raw<string[]>(stored("favorites", [], isIds));
+  // Starred bus lines (native ids): a chip row under the search, to show several at once.
+  get favorites(): string[] { return busFavIds(this.favs); }
   // Stop alert: the planner's lines that are still picked (a line taken off the map stops alerting; put
   // back, it alerts again until the alert ends); null once over. hits: arrivals shown until dismissed.
   // A push alert keeps all its lines (the bot watches them) and is kept through a reload.
@@ -305,8 +313,13 @@ export class AppState {
   }
 
   setCityOn(on: boolean) {
-    this.cityOn = on;
     store("cityOn", on);
+    this.applyCity(on);
+    if (on && this.favOnlyActive) this.setFavOnly(false);   // the layer asked for: not favourites only any more
+  }
+
+  private applyCity(on: boolean) {
+    this.cityOn = on;
     if (on) this.startCity();
     else {
       this.cityPoller?.stop();
@@ -447,9 +460,61 @@ export class AppState {
     store("theme", t);
   }
 
-  toggleFavorite(id: string) {
-    this.favorites = this.favorites.includes(id) ? this.favorites.filter(l => l !== id) : [...this.favorites, id];
-    store("favorites", this.favorites);
+  private setFavs(f: Favs) {
+    this.favs = f;
+    store("fav.v2", f);
+  }
+  toggleFavorite(id: string) { this.toggleFavLine({ id: `oasa:${id}`, label: id }); }
+  toggleFavStop(s: FavStop) { this.setFavs(toggleStop(this.favs, s)); }
+  toggleFavLine(l: FavLine) { this.setFavs(toggleFavLineIn(this.favs, l)); }
+  setFavPlace(id: string, place: Place | null) { this.setFavs(setPlace(this.favs, id, place)); }
+  isFavStop = (id: string) => this.favs.stops.some(s => s.id === id);
+  isFavLine = (id: string) => this.favs.lines.some(l => l.id === id);
+  // ★ shows the panel: over an open card it closes the cards (the panel shows when none is open), else it toggles.
+  toggleFavs() {
+    if (this.stack.length) { this.closeCards(); this.favsOpen = true; return; }
+    this.favsOpen = !this.favsOpen;
+  }
+
+  setFavOnly(on: boolean) {
+    this.favOnly = on;
+    store("favOnly", on);
+  }
+  dismissFavHint() {
+    this.favHintSeen = true;
+    store("favHintSeen", true);
+  }
+
+  // Favourites only is in force: it is on and there is a favourite bus line to show.
+  get favOnlyActive(): boolean { return this.favOnly && this.favorites.length > 0; }
+
+  // Puts the map in line with favOnly: the city layer off and the favourite bus lines picked, or the layer back as
+  // the user left it. The App calls it at start, once the lines are loaded, and when favOnly or the favourites change.
+  applyFavOnly() {
+    if (!this.favOnlyActive) {
+      const want = stored("cityOn", true, isBool);
+      if (want !== this.cityOn) this.applyCity(want);
+      return;
+    }
+    if (this.cityOn) this.applyCity(false);
+    if (!this.lines.length) return;   // the favourites are known once the lines are loaded
+    // The picks are the favourite bus lines only (the first MAX_LINES); a line shown from a card stays while it is open.
+    const known = this.favorites.filter(id => this.lineInfo.has(id)), want = known.slice(0, MAX_LINES);
+    for (const id of this.selected) {
+      if (want.includes(id)) continue;
+      // The line of an open card stays on the map as the card's own line until the card closes.
+      if (this.stack.length && this.selection?.line === id && !this.tempLine) this.tempLine = id;
+      else { if (this.selection?.line === id) this.selection = null; this.closeLine(id); }
+    }
+    if (this.tempLine && want.includes(this.tempLine)) this.tempLine = null;   // now a pick
+    else if (this.tempLine && !this.stack.length) this.clearSelection();
+    const kept = this.selected.filter(id => want.includes(id)), add = want.filter(id => !kept.includes(id));
+    this.selected = [...kept, ...add];
+    this.writeUrl();
+    for (const id of add) this.startLine(id);
+    if (add.length) void Promise.allSettled(add.map(fetchLineStatic)).then(() => this.fit(add));
+    if (known.length > want.length)
+      this.say(`Έως ${MAX_LINES} γραμμές ταυτόχρονα: έδειξα ${want.length} από τις ${known.length} αγαπημένες.`);
   }
 
   // Add every starred line to the picks, as many as fit, and frame them together.

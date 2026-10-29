@@ -18,7 +18,7 @@
   import type { AppState } from "../state.svelte";
   import Back from "./Back.svelte";
 
-  let { app, key, header, children, starred, onstar, starLabel, closeOnEscape = true }: {
+  let { app, key, header, children, starred, onstar, starLabel, closeOnEscape = true, onclose }: {
     app: AppState;
     key: string;                       // a new key opens the sheet again
     header: Snippet;
@@ -27,7 +27,9 @@
     onstar?: () => void;
     starLabel?: string;
     closeOnEscape?: boolean;
+    onclose?: () => void;              // × and Escape; default: close the cards
   } = $props();
+  const close = () => (onclose ?? (() => app.closeCards()))();
 
   const narrow = new MediaQuery("(max-width: 719px)");
   let sheet = $state<SheetState>("open");
@@ -77,7 +79,7 @@
   }
 </script>
 
-<svelte:window onkeydown={e => { if (e.key === "Escape" && closeOnEscape) app.closeCards(); }} />
+<svelte:window onkeydown={e => { if (e.key === "Escape" && closeOnEscape) close(); }} />
 
 <section class="card" class:dragging class:peek={narrow.current && sheet === "peek"} aria-label="Λεπτομέρειες" bind:this={card} bind:offsetHeight={cardH}
   style:transform={shift ? `translateY(${shift}px)` : undefined}>
@@ -93,7 +95,7 @@
       {#if onstar}
         <button type="button" class="star" class:on={starred} aria-pressed={starred} title={starLabel} aria-label={starLabel} onclick={onstar}>{starred ? "★" : "☆"}</button>
       {/if}
-      <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.closeCards()}>×</button>
+      <button type="button" class="close" aria-label="Κλείσιμο" onclick={close}>×</button>
     </header>
   </div>
 

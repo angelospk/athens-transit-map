@@ -64,7 +64,7 @@
 
   let showTimes = $state(false);
   const color = $derived(isBus ? app.lineColor(nativeLine) : { bg: detail?.line.color ?? "#3b5bdb", fg: detail?.line.text_color ?? "#ffffff" });
-  const starred = $derived(isBus && app.favorites.includes(nativeLine));
+  const starred = $derived(!!card && app.isFavLine(card.id));
 
   function open(v: V2Vehicle) {
     if (isBus) {
@@ -85,7 +85,7 @@
 
 {#if card}
   <CardSheet {app} key={card.id} starred={starred} starLabel={starred ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
-    onstar={isBus ? () => app.toggleFavorite(nativeLine) : undefined}>
+    onstar={() => app.toggleFavLine({ id: card.id, label })}>
     {#snippet header()}
       <span class="pill" style:--c={color.bg} style:--t={color.fg}>{label}</span>
       <h2>{detail?.line.name ?? ""}</h2>

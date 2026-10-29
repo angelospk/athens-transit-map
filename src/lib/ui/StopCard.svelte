@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { fetchStop, peekStop } from "../api";
   import { alertLinesAt, arrivalGroups, arrivalNote, linesAt, mineFirst, timeText, toward, twins, type ArrivalGroup, type ArrivalTime, type StopBoard } from "../stops";
   import Bell from "./Bell.svelte";
@@ -18,6 +19,9 @@
   const i = $derived(app.busStop);
   const stop = $derived(ix && i != null ? ix.s[i] : undefined);
   const lines = $derived(ix && i != null ? linesAt(ix, i) : []);
+  // The star: the stop's /v2 id is oasa:<GTFS id>; an index from before the ids has none.
+  const favId = $derived(stop?.[3] ? `oasa:${stop[3]}` : null);
+  const starred = $derived(!!favId && app.isFavStop(favId));
   const across = $derived(ix && i != null ? twins(ix, i)[0] : undefined);
 
   // «Οι γραμμές μου»: the stop's lines among the favourites and the lines on the map.
@@ -28,7 +32,8 @@
   // The alert sheet (AlertSheet, loaded on the first bell) for one line, in the tapped row's direction.
   // From the header: every line of the stop (one with no bus near too), the user's lines ticked.
   let alertFor = $state.raw<{ line?: string; toward?: string; lines: ReturnType<typeof alertLinesAt>; ticked?: string[] } | null>(null);
-  $effect(() => { void i; alertFor = null; all = false; });
+  // «Όλες οι γραμμές εδώ» of the favourites panel opens the stop with all its lines (ref "all").
+  $effect(() => { void i; alertFor = null; const t = untrack(() => app.stack.at(-1)); all = t?.kind === "stop" && t.ref === "all"; });
   const alertLines = $derived(ix && i != null ? alertLinesAt(ix, i) : []);
   function bell(g: ArrivalGroup) {
     const l = alertLines.find(x => x.line === g.line);
@@ -109,6 +114,11 @@
       {#if alertLines.length}
         <button type="button" class="bell" class:on={!!alertFor && !alertFor.line} title="Ειδοποίηση άφιξης σε αυτή τη στάση"
           aria-label="Ειδοποίηση άφιξης στη στάση {stop[0]}" onclick={() => (alertFor = { lines: alertLines, ticked: mine })}><Bell /></button>
+      {/if}
+      {#if favId && stop}
+        <button type="button" class="starbtn" class:starred aria-pressed={starred} title={starred ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
+          aria-label={starred ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
+          onclick={() => app.toggleFavStop({ id: favId, name: stop[0], lat: stop[1], lon: stop[2] })}>{starred ? "★" : "☆"}</button>
       {/if}
       <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.closeCards()}>×</button>
     </header>
@@ -227,6 +237,10 @@
   .link { padding: 0; border: 0; background: none; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
   .src { margin: 10px 0 0; font-size: 11px; }
   header .bell { margin-top: -2px; }
+  .starbtn { flex: none; width: 36px; height: 36px; margin: -4px -4px 0 0; border: 0; background: none; color: var(--muted); font-size: 20px;
+    cursor: pointer; border-radius: 8px; }
+  .starbtn:hover { background: var(--control); }
+  .starbtn.starred { color: #f59f00; }
   .close { flex: none; width: 36px; height: 36px; margin: -4px -10px 0 0; border: 0; background: none; font-size: 22px;
     color: var(--muted); cursor: pointer; border-radius: 8px; }
   .close:hover { background: var(--control); }

@@ -57,7 +57,9 @@
 </script>
 
 {#if card}
-  <CardSheet {app} key={card.id}>
+  {@const st = board?.stop}
+  <CardSheet {app} key={card.id} starred={!!st && app.isFavStop(st.id)} starLabel={st && app.isFavStop(st.id) ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
+    onstar={st ? () => app.toggleFavStop({ id: st.id, name: st.name, lat: st.lat, lon: st.lon }) : undefined}>
     {#snippet header()}
       <h2 class="stopname">{board?.stop.name ?? card.title ?? ""}</h2>
       {#if modeText}<span class="fresh">{modeText}</span>{/if}

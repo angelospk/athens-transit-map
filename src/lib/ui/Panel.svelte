@@ -158,6 +158,24 @@
     <LinePicker {app} expanded={!collapsed} searchOpen={searching} onsearch={() => (searching = true)} onclose={() => (searching = false)} {tail} />
   </div>
 
+  <!-- Favourites only (B7): says what the map shows, and switches. -->
+  {#if app.favorites.length}
+    <div class="favpill" role="group" aria-label="Αγαπημένα στον χάρτη">
+      {#if app.favOnly}
+        <span>★ Μόνο αγαπημένα · {app.favorites.length} {app.favorites.length === 1 ? "γραμμή" : "γραμμές"}</span>
+        <button type="button" onclick={() => app.setFavOnly(false)}>Όλα</button>
+      {:else}
+        <span>Όλα ·</span>
+        <button type="button" aria-label="Μόνο αγαπημένα" title="Μόνο αγαπημένα" onclick={() => app.setFavOnly(true)}>★</button>
+      {/if}
+    </div>
+  {:else if !app.favHintSeen}
+    <div class="favpill" role="note">
+      <span>Βάλε ☆ για να βλέπεις μόνο τις δικές σου</span>
+      <button type="button" aria-label="Κλείσιμο υπόδειξης" onclick={() => app.dismissFavHint()}>×</button>
+    </div>
+  {/if}
+
   <!-- The dropdown: the tools, then what the picked lines are doing. -->
   <div id="panel-body" hidden={collapsed}>
     <div class="tools">
@@ -245,6 +263,12 @@
         </svg>
       </button>
     {/if}
+    <button type="button" class="tool favbtn" class:on={app.favsOpen} aria-pressed={app.favsOpen} aria-label="Αγαπημένα" title="Αγαπημένα"
+      onclick={() => app.toggleFavs()}>
+      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill={app.favsOpen ? "currentColor" : "none"} stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+        <path d="M10 2.6l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L2.8 7.9l5-.7z" />
+      </svg>
+    </button>
     <button type="button" class="fold" aria-expanded={!collapsed} aria-controls="panel-body" bind:this={foldButton}
       aria-label={collapsed ? "Εμφάνιση λεπτομερειών" : "Απόκρυψη λεπτομερειών"} onclick={fold}>
       <svg viewBox="0 0 12 8" width="14" height="10" aria-hidden="true" class={{ up: !collapsed }}>
@@ -392,6 +416,15 @@
   .tool { display: grid; place-items: center; flex: none; width: 40px; height: 40px; margin: 0; border: 0; border-radius: 8px;
     background: none; color: var(--muted); cursor: pointer; }
   .tool:hover, .tool.on { background: var(--control); color: var(--fg); }
+  .favbtn.on { color: #f59f00; }
+  @media (pointer: coarse) { .favbtn { width: 44px; height: 44px; } }
+  .favpill { display: flex; align-items: center; gap: 2px; width: fit-content; max-width: 100%; min-height: 32px; margin-top: 8px;
+    padding: 0 2px 0 10px; border: 1px solid #f59f00; border-radius: 16px; font-size: 12px; box-sizing: border-box; }
+  .favpill span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .favpill button { flex: none; min-width: 30px; min-height: 28px; padding: 0 8px; border: 0; border-radius: 14px; background: none;
+    color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+  .favpill button:hover { background: var(--control); }
+  @media (pointer: coarse) { .favpill { min-height: 44px; } .favpill button { min-height: 40px; min-width: 44px; } }
   /* A map filter is on: some vehicles are hidden. */
   .tool { position: relative; }
   .tool.filtering::after, .tool.pinned::after { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px;
