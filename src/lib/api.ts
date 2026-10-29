@@ -6,7 +6,7 @@ import { stasyUrl } from "./rail";
 import { SwrCache } from "./swr";
 import { scheduleUrl } from "./timetable";
 import { suburbanUrl } from "./suburban";
-import { stasyTripUrl, stasyVehiclesUrl, suburbanTrainUrl, suburbanVehiclesUrl } from "./trains";
+import { railMotionUrl, stasyTripUrl, stasyVehiclesUrl, suburbanTrainUrl, suburbanVehiclesUrl } from "./trains";
 import { loadTiles, tileKey, tileOf, tileUrlPath, type CityTiles, type Tile } from "./tiles";
 import type { CityLive, LineStatic, LinesIndex, Status } from "./types";
 
@@ -102,6 +102,11 @@ export const peekSuburban = (id: string) => railCache.peek(suburbanUrl(id));
 export async function fetchTrains(kind: "metro" | "suburban", signal?: AbortSignal): Promise<FetchResult> {
   if (import.meta.env.VITE_MOCK === "1") return (await import("./mock")).mockTrains(kind);
   return getJSON(kind === "metro" ? stasyVehiclesUrl : suburbanVehiclesUrl, signal);
+}
+
+// The metro/tram runs of /v2 with their knots (trains.ts railMotions); none in the mock.
+export async function fetchRailMotion(signal?: AbortSignal): Promise<FetchResult | null> {
+  return import.meta.env.VITE_MOCK === "1" ? null : getJSON(railMotionUrl, signal);
 }
 
 // A metro run is the timetable's (it changes once a day); a Proastiakos run carries its live delay.
