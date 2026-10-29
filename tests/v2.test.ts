@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  dirLabels, dirOf, freshness, headsignName, nextStops, stopRows, vehicleDir,
+  dirLabels, dirOf, freshness, headsignName, lineVehicleRows, nextStops, stopRows, vehicleDir,
   type V2Arrival, type V2Pattern, type V2Run, type V2Stop, type V2Vehicle,
 } from "../src/lib/v2";
 
@@ -89,5 +89,30 @@ describe("vehicle card", () => {
     expect(freshness(v("gps", 962), 1000)).toEqual({ text: "38″", warn: false });
     expect(freshness(v("gps", 760), 1000)).toEqual({ text: "4′", warn: true });
     expect(freshness(v("estimate", 100), 1000)).toEqual({ text: "πρόγραμμα", warn: false });
+  });
+});
+
+describe("line card", () => {
+  const veh = (id: string, headsign: string, next: string | null, extra: Partial<V2Vehicle> = {}): V2Vehicle => ({
+    id, line: "stasy:M3", run: null, mode: "metro", headsign, label: null, delay_s: null, next_stop: next, motion: null,
+    source: "stasy", position: { kind: "estimate", lat: 0, lon: 0, bearing: null, at: 0 }, ...extra,
+  });
+  const stops = { s3: stopOf("s3", "Τρίτη"), s7: stopOf("s7", "Έβδομη"), s20: stopOf("s20", "Εικοστή") };
+  it("lists a direction's vehicles from the start of the line to its end, each with its next stop", () => {
+    const rows = lineVehicleRows([
+      veh("a", "ΕΛ. ΒΕΝΙΖΕΛΟΣ", "s20", { label: "#12", delay_s: 120 }),
+      veh("b", "Δ. ΠΛΑΚΕΝΤΙΑΣ", "s3"),
+      veh("c", "ΔΗΜΟΤΙΚΟ ΘΕΑΤΡΟ", "s7"),
+      veh("d", "ΔΗΜΟΤΙΚΟ ΘΕΑΤΡΟ", null),
+    ], m3, stops, 0);
+    expect(rows.map(r => [r.id, r.next, r.label, r.delay_s])).toEqual([
+      ["c", "Έβδομη", null, null], ["a", "Εικοστή", "#12", 120], ["d", null, null, null],
+    ]);
+  });
+  it("shows a vehicle of no known direction under both", () => {
+    const v = veh("x", "Πουθενά", "s3");
+    expect(lineVehicleRows([v], m3, stops, 0).map(r => r.id)).toEqual(["x"]);
+    expect(lineVehicleRows([v], m3, stops, 1).map(r => r.id)).toEqual(["x"]);
+    expect(lineVehicleRows([{ ...v, direction: 1 }], m3, stops, 0)).toEqual([]);
   });
 });

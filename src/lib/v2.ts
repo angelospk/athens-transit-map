@@ -130,3 +130,22 @@ export function freshness(v: V2Vehicle, nowS: number): { text: string; warn: boo
   const age = nowS - v.position.at;
   return { text: ageLabel(age), warn: age > 90 };
 }
+
+export interface VehicleRow { id: string; label: string | null; next: string | null; delay_s: number | null; vehicle: V2Vehicle }
+
+// A line card's vehicles of one direction, from the start of the line to its end (by the place of their next
+// stop on the direction's longest pattern that has it; none last). A vehicle of no known direction shows in both.
+export function lineVehicleRows(vehicles: V2Vehicle[], patterns: V2Pattern[], stops: Record<string, V2Stop>, dir: 0 | 1): VehicleRow[] {
+  const mine = patterns.filter(p => p.direction === dir).sort((a, b) => b.stops.length - a.stops.length);
+  const place = (s: string | null) => {
+    const p = s ? mine.find(x => x.stops.includes(s)) : undefined;
+    return p ? p.stops.indexOf(s!) : Infinity;
+  };
+  return vehicles
+    .filter(v => { const d = vehicleDir(v, patterns); return d === null || d === dir; })
+    .map(v => ({ v, k: place(v.next_stop) }))
+    .sort((a, b) => (a.k === b.k ? 0 : a.k - b.k))
+    .map(({ v }) => ({
+      id: v.id, label: v.label, next: v.next_stop ? stops[v.next_stop]?.name ?? null : null, delay_s: v.delay_s, vehicle: v,
+    }));
+}
