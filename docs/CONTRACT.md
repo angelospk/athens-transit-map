@@ -14,8 +14,9 @@ Source of truth: `athens-transit-rt/docs/CONTRACT.md`. The frontend keeps a copy
   frontend repo by whoever made it (backend thread opens the copy as a commit or
   issue on the frontend repo).
 
-Revision: 11 (2026-10-29): `/v2/stops/{id}` bus Arrivals include OASA's own predictions
-(rev 10: live responses send `Access-Control-Expose-Headers: Date`; rev 9: `at_terminus` on `/v1/lines/{line_id}` vehicles and `/v2` Vehicles; rev 8: `GET /v1/stops/{stop_id}` (a stop board); the unified `/v2` API
+Revision: 12 (2026-10-29): `direction` on `/v2` Vehicles; STASY Pattern directions follow
+branches (M3 airport)
+(rev 11: `/v2/stops/{id}` bus Arrivals include OASA's own predictions; rev 10: live responses send `Access-Control-Expose-Headers: Date`; rev 9: `at_terminus` on `/v1/lines/{line_id}` vehicles and `/v2` Vehicles; rev 8: `GET /v1/stops/{stop_id}` (a stop board); the unified `/v2` API
 ([below](#unified-api-v2-rev-8)); rev 7: `path_speeds` also follow today's traffic (same shape and units); rev 6: `path_speeds` on vehicles (typical speeds ahead); rev 5: `GET /v1/vehicles/tiles/{z}/{x}/{y}`; rev 4: `path_beyond` and `path_stops` on vehicles; rev 3: `GET /v1/vehicles`; `speed` and
 `path` on vehicles)
 
@@ -160,9 +161,9 @@ to ~2.5 min staler than `/v1/lines/{id}` for lines nobody watches.
   `/v1/lines/{line}` when the user selects a vehicle.
 - Vehicles with a GPS fix older than 5 min are left out. A vehicle seen on two lines
   appears once (newest fix). Sorted by `line`, then `id`. `vehicles` may be `[]`.
-- One snapshot for everyone, built at most every 30 s (`updated_at` = build time,
+- One snapshot for everyone, built at most every 10 s (`updated_at` = build time,
   `next_update_at` = earliest next build). Refetch at `next_update_at + 1..3 s`.
-- Headers: `Cache-Control: public, max-age=<seconds until next_update_at, min 5, max 30>`
+- Headers: `Cache-Control: public, max-age=<seconds until next_update_at, min 5, max 10>`
   (the 5 s floor can keep a copy up to 5 s past `next_update_at`). `ETag`;
   `If-None-Match` gives `304`. In a browser, let the HTTP cache revalidate (plain
   `fetch`); do not set `If-None-Match` from JS: it is not a CORS-safelisted header and
@@ -199,7 +200,7 @@ Example: `/v1/vehicles/tiles/13/4636/3160` (around Syntagma).
   `lat`/`lon` is in that tile. A vehicle is in exactly one tile per zoom; its paths may run on
   into other tiles. `z` 13 entries are byte-identical to `/v1/vehicles`; `z` 9 entries have
   `line, id, lat, lon, bearing, position_at, variant, delay_s, speed` only.
-- Same snapshot as `/v1/vehicles`: one build, at most every 30 s, gives `/v1/vehicles` and all
+- Same snapshot as `/v1/vehicles`: one build, at most every 10 s, gives `/v1/vehicles` and all
   tiles the same `updated_at` and `next_update_at`. No OASA request, no line marked watched.
 - Tiles exist only for the box lat 37.5..38.5, lon 22.9..24.5: `z` 9 x 288..290, y 196..198;
   `z` 13 x 4617..4653, y 3145..3174. A tile in the box with no vehicle → `200` with
@@ -213,7 +214,7 @@ tile is too); one farther out is in no tile (none seen so far).
   `{"error":"query_not_allowed"}` (`no-store`) for any query string, even a bare `?`: each
   variant would be another Cloudflare cache entry. Never add cache busters.
 - Headers as `/v1/vehicles`: `Cache-Control: public, max-age=<seconds until next_update_at,
-  min 5, max 30>`, `ETag`, `If-None-Match` → `304`, gzip when asked, `Vary: Accept-Encoding`.
+  min 5, max 10>`, `ETag`, `If-None-Match` → `304`, gzip when asked, `Vary: Accept-Encoding`.
   Let the browser HTTP cache handle them (plain `fetch`); a tile asked again within its max-age
   then costs no request.
 
@@ -504,6 +505,7 @@ and compare them; they never parse them.
   "delay_s": null,
   "next_stop": "stasy:ακροπολη-metro",
   "at_terminus": false,
+  "direction": 0,
   "motion": {
     "path": [[37.9722, 23.7325], [37.96882, 23.72963]],
     "path_beyond": [[37.96882, 23.72963], [37.96421, 23.72651]],
@@ -526,6 +528,12 @@ and compare them; they never parse them.
 - `at_terminus` (rev 9): `true` when a bus or trolley is matched and waiting at the first Stop
   of its Run (the `/v1` meaning); always `false` for metro, tram and suburban. Present in tiles
   at zoom 9 too.
+- `direction` (rev 12): the `direction` (0/1) of the Pattern the Vehicle runs, so a client can
+  put it on one of the Line's two tracks without a `/v2/runs` call. Metro and tram: always set.
+  Bus and trolley: the matched trip's direction, else the direction of the trip the bus was
+  placed on, else `null`. Suburban: the direction of its Run when it has one, else of where it
+  is placed on its corridor, else `null`.
+  Present in tiles at zoom 9 too. Older responses lack the key: treat a missing key as `null`.
 - `motion`: how the client moves the marker between snapshots. `null` when there is nothing to
   move along (standing with no Run, no geometry).
   - `path`, `path_beyond`, `path_stops`, `speed`, `path_speeds`: the rev 3-7 meanings, unchanged
@@ -665,7 +673,14 @@ Rules:
   explicit suburban demand. Clients merge all three into one vehicles layer (one marker
   component). Tile zoom 9 entries drop `motion`
   (key absent), as rev 5 drops the path keys.
-- Metro/tram vehicles are placed at build time (every 30 s); their `knots` keep them moving.
+- Metro/tram vehicles are placed when `/v2/vehicles/rail` is built (per request, cached 15 s);
+  their `knots` keep them moving.
+- Pattern `direction` (rev 12): every Line has two directions, 0 and 1, never more. OASA and
+  suburban: the GTFS / corridor direction. Metro/tram: the most common Pattern is 0; each other
+  Pattern is 0 or 1 by the order of two Stops it shares with a Pattern already decided, so a
+  branch that shares one Stop with the main Pattern (M3 airport) still gets the right one. M3:
+  every Pattern towards ΕΛ. ΒΕΝΙΖΕΛΟΣ or Δ. ΠΛΑΚΕΝΤΙΑΣ is 1, every one towards ΔΗΜΟΤΙΚΟ ΘΕΑΤΡΟ
+  is 0 (before rev 12 the airport Patterns could get 0 in both directions).
 - `/v2/runs/{id}` replaces `/v1/rail/stasy/trips/{id}` and `/v1/rail/suburban/trains/{no}` for
   the line card. It answers for any Run of the service day, started or not (`vehicle: null`
   before it starts). OASA: the matched trip's stops, timetable time plus observed delay.
