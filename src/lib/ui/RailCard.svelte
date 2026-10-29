@@ -12,7 +12,7 @@
   let { app }: { app: AppState } = $props();
 
   const station = $derived(app.railStation ? app.suburban?.stations.find(s => s.id === app.railStation) : undefined);
-  const corridors = $derived([...new Set(station?.corridors ?? [])].flatMap(id => app.suburban?.corridors[id] ?? []));
+  const corridors = $derived([...new Set(station?.corridors ?? [])].flatMap(id => { const c = app.suburban?.corridors[id]; return c ? [{ id, ...c }] : []; }));
 
   const REFRESH_MS = 60_000;
   let trains = $state.raw<Train[] | null>(null);
@@ -66,7 +66,8 @@
       <h2>{station.name}</h2>
       <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.selectRailStation(null)}>×</button>
     </header>
-    <p class="lines">{#each corridors as c (c.name)}<span style:--accent={c.color}>{c.name}</span>{/each}</p>
+    <p class="lines">{#each corridors as c (c.id)}<button type="button" style:--accent={c.color} title="Η γραμμή και τα τρένα της"
+      onclick={() => app.selectRailLine({ kind: "suburban", id: c.id })}>{c.name}</button>{/each}</p>
     {#if trains}
       {#if groups.length}
         <ul class="deps" aria-label="Επόμενα τρένα">
@@ -95,7 +96,8 @@
   h2 { flex: 1; margin: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   p { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
   .lines { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-bottom: 8px; }
-  .lines span { padding: 1px 7px; border-radius: 6px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 600; }
+  .lines button { min-height: 26px; padding: 1px 7px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font: inherit;
+    font-size: 11px; font-weight: 600; cursor: pointer; }
   .deps { list-style: none; margin: 0 0 4px; padding: 0; }
   .deps li { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: 13px; }
   .deps i { flex: none; width: 6px; height: 18px; border-radius: 3px; background: var(--accent); }

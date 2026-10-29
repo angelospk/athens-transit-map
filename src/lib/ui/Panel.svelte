@@ -3,14 +3,12 @@
   import { MediaQuery } from "svelte/reactivity";
   import { directionGroups, focusGroup, otherDirection } from "../directions";
   import { clock, duration, fmtMinutes } from "../format";
-  import { refreshCycle, ringAt } from "../refresh";
-  import { STALE_S, type AppState } from "../state.svelte";
+    import { STALE_S, type AppState } from "../state.svelte";
   import Bell from "./Bell.svelte";
   import HelpPop from "./HelpPop.svelte";
   import IdeaPop from "./IdeaPop.svelte";
   import { PEEK_MS, canSend, countVisit, markPeeked, markSent, peekDelayMs, sendIdea, wasPeeked, type IdeaState, type IdeaStatus } from "../idea";
   import LinePicker from "./LinePicker.svelte";
-  import MetroToggles from "./MetroToggles.svelte";
   import StatusBanner from "./StatusBanner.svelte";
 
   let { app }: { app: AppState } = $props();
@@ -46,7 +44,6 @@
     if (pop === "idea") void tick().then(() => document.getElementById("idea-text")?.focus());
     if (pop !== "layers") return;
     app.loadMetro();   // again, if the first load failed
-    app.selectStation(null);   // its card would cover the menu's metro lines on a phone
   };
   // The idea box: blue until an idea was sent. Its label opens by itself once, after some seconds of visible use,
   // only on the first two visits and once per tab (lib/idea.ts); it waits while a popover is open.
@@ -136,16 +133,6 @@
   });
 
   // With motion off, ages are always shown: they are all that says how old a position is.
-  // The ring round the panel fills over the refresh cycle of the feed the numbers come from. `from` and
-  // `to` are numbers so that another line's update, which leaves the cycle as it was, does not restart it.
-  const cycle = $derived(refreshCycle(app.selected.length || !app.cityOn
-    ? app.selected.flatMap(l => (app.live[l] ? [app.live[l]] : [])) : app.city ? [app.city] : []));
-  const from = $derived(cycle?.from), to = $derived(cycle?.to);
-  // Where in the cycle it is now is read once per cycle, not every second; and again when the ring
-  // comes back from the stale state (it was not drawn, so its animation lost time).
-  const stale = $derived(badge?.cls === "stale");
-  const ring = $derived(from == null || to == null || stale ? null : untrack(() => ringAt({ from, to }, app.serverNow / 1000)));
-  let boxW = $state(0), boxH = $state(0);
 
   $effect(() => { if (focused.length < 2) focusOpen = false; });
 
@@ -163,18 +150,7 @@
 <svelte:window onclick={e => { if (pop && pop !== "trip" && !(e.target as Element).closest?.(".pop, .tool")) pop = null; }}
   onkeydowncapture={onEscape} />
 
-<section class="panel" class:compact inert={!!pop && narrow.current} aria-label="Πίνακας ελέγχου" bind:clientWidth={boxW} bind:clientHeight={boxH}>
-  <!-- Decorative: on the border. Fills clockwise over the refresh cycle; amber and full when nothing has come for a while. -->
-  <svg class="ring" width={boxW + 2} height={boxH + 2} aria-hidden="true">
-    {#if stale}
-      <rect class="late" x="1" y="1" width={boxW} height={boxH} rx="13" />
-    {:else if ring}
-      {#key `${from}-${to}`}
-        <rect class="fill" x="1" y="1" width={boxW} height={boxH} rx="13" pathLength="100"
-          style:--dur="{ring.dur}s" style:--delay="-{ring.elapsed}s" />
-      {/key}
-    {/if}
-  </svg>
+<section class="panel" class:compact inert={!!pop && narrow.current} aria-label="Πίνακας ελέγχου">
   <h1 class="sr">Λεωφορεία ΟΑΣΑ</h1>
 
   <!-- Always shown: the picked lines, the search, and the chevron. The map buttons are on the right (.rail). -->
@@ -302,6 +278,18 @@
       <div class="pop" id="pop-layers" role="dialog" aria-label="Τι δείχνει ο χάρτης">
         <h3>Τι δείχνει ο χάρτης</h3>
         <section>
+          <label class="switch">
+            <input type="checkbox" checked={app.cityOn} disabled={cityMissing} onchange={e => app.setCityOn(e.currentTarget.checked)} />
+            <span><b>Λεωφορεία</b> <small>{#if cityMissing}(όχι ακόμα διαθέσιμο){:else if app.city}· {app.city.vehicles.length} τώρα{/if}</small><br />
+              <small>Όλα τα λεωφορεία και τρόλεϊ της πόλης. Οι γραμμές που διάλεξες μένουν πάντα.</small></span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" checked={app.trainsOn} onchange={e => app.setTrainsOn(e.currentTarget.checked)} />
+            <span><b>Τρένα</b> <small>{#if app.trainsOn && (app.stasyTrains.length || app.suburbanTrains.length)}· {app.stasyTrains.length + app.suburbanTrains.length} τώρα{/if}</small><br />
+              <small>Μετρό, τραμ και Προαστιακός, με τους σταθμούς τους. Μετρό και τραμ κατά προσέγγιση από το πρόγραμμα· Προαστιακός με GPS.</small></span>
+          </label>
+        </section>
+        <section>
           <h4>Θέμα χάρτη</h4>
           <div class="seg" role="radiogroup" aria-label="Θέμα">
             {#each [["system", "Συσκευής"], ["light", "Φωτεινό"], ["dark", "Σκοτεινό"]] as const as [v, label] (v)}
@@ -310,14 +298,8 @@
           </div>
         </section>
         <section>
-          <h4>Λεωφορεία</h4>
-          <label class="switch">
-            <input type="checkbox" checked={app.cityOn} disabled={cityMissing} onchange={e => app.setCityOn(e.currentTarget.checked)} />
-            <span>Και των άλλων γραμμών <small>{#if cityMissing}(όχι ακόμα διαθέσιμο){:else if app.city}· {app.city.vehicles.length} τώρα{/if}</small><br />
-              <small>Όλα τα λεωφορεία της πόλης, όχι μόνο οι γραμμές που διάλεξες. Κλειστό: λιγότερα δεδομένα.</small></span>
-          </label>
           <div class="field" role="radiogroup" aria-label="Τα άλλα λεωφορεία όταν πατάς ένα">
-            <span>Όταν πατάς ένα, τα άλλα:</span>
+            <span>Όταν πατάς ένα λεωφορείο, τα άλλα:</span>
             <div class="seg">
               {#each [["normal", "Κανονικά"], ["dim", "Αχνά"], ["hide", "Κρυφά"]] as const as [v, label] (v)}
                 <button type="button" role="radio" aria-checked={app.others === v} onclick={() => app.setOthers(v)}>{label}</button>
@@ -362,33 +344,6 @@
             <span>Τυπική ταχύτητα ανά δρόμο<br /><small>Από στάση σε στάση, από τις θέσεις GPS. Πάτα ένα κομμάτι για km/h.</small></span>
           </label>
         </section>
-        <section>
-          <h4>Μετρό, ΗΣΑΠ και τραμ</h4>
-          <label class="switch">
-            <input type="checkbox" checked={app.stationsOn} onchange={e => app.setStationsOn(e.currentTarget.checked)} />
-            <span>Σταθμοί στον χάρτη<br /><small>Κλειστό: κρύβονται οι σταθμοί (οι γραμμές που άνοιξες μένουν).</small></span>
-          </label>
-          <p class="hint">Άνοιξε μια γραμμή για να φαίνεται η διαδρομή της.</p>
-          {#if app.metro}
-            <MetroToggles {app} ids={app.metro.lines.map(l => l.id)} />
-          {:else}
-            <p class="hint">Φόρτωση…</p>
-          {/if}
-        </section>
-        <section>
-          <h4>Προαστιακός</h4>
-          <label class="switch">
-            <input type="checkbox" checked={app.suburbanOn} onchange={e => app.setSuburbanOn(e.currentTarget.checked)} />
-            <span>Γραμμές και σταθμοί<br /><small>Πάτα έναν σταθμό για τα επόμενα τρένα, με τις καθυστερήσεις.</small></span>
-          </label>
-        </section>
-        <section>
-          <h4>Τρένα</h4>
-          <label class="switch">
-            <input type="checkbox" checked={app.trainsOn} onchange={e => app.setTrainsOn(e.currentTarget.checked)} />
-            <span>Μετρό, τραμ και Προαστιακός στον χάρτη<br /><small>Μετρό και τραμ κατά προσέγγιση από το πρόγραμμα· Προαστιακός με GPS. Πάτα ένα τρένο για τη γραμμή και τις στάσεις του.</small></span>
-          </label>
-        </section>
       </div>
     {/if}
   </div>
@@ -396,7 +351,7 @@
 
 <div class="rail" role="toolbar" aria-label="Εργαλεία χάρτη">
   <button type="button" class="tool" class:on={pop === "layers"} class:filtering={app.only.fresh || app.only.onTime} aria-expanded={pop === "layers"} aria-controls="pop-layers"
-    bind:this={layersButton} aria-label="Τι δείχνει ο χάρτης" data-tip="Τι δείχνει ο χάρτης: θέμα, λεωφορεία, φίλτρα, ταχύτητα, μετρό" onclick={() => toggle("layers")}>
+    bind:this={layersButton} aria-label="Τι δείχνει ο χάρτης" data-tip="Τι δείχνει ο χάρτης: λεωφορεία, τρένα, θέμα, φίλτρα, ταχύτητα" onclick={() => toggle("layers")}>
     <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
       <path d="M2 10S5 4.8 10 4.8 18 10 18 10 15 15.2 10 15.2 2 10 2 10z" /><circle cx="10" cy="10" r="2.5" />
     </svg>
@@ -427,12 +382,6 @@
     max-width: calc(100% - 64px); padding: 12px 14px; background: var(--panel); border: 1px solid var(--border);
     border-radius: 14px; box-shadow: var(--shadow); backdrop-filter: blur(8px); }
   .panel.compact { width: fit-content; max-width: min(344px, calc(100% - 64px)); }
-  .ring { position: absolute; top: -1px; left: -1px; pointer-events: none; overflow: visible; }
-  .ring rect { fill: none; stroke-width: 2; }
-  .ring .fill { stroke: var(--accent); stroke-dasharray: 100; stroke-dashoffset: 100;
-    animation: ring var(--dur) linear var(--delay) forwards; }
-  .ring .late { stroke: var(--late2); opacity: .8; }
-  @keyframes ring { to { stroke-dashoffset: 0; } }
   .sr { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   #panel-body { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
   .tools { display: flex; align-items: center; gap: 2px; }

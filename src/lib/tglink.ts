@@ -12,6 +12,8 @@
 import type { TripIndex } from "./trip";
 
 export const MAX_PAYLOAD = 64;
+// How many stops ahead an alert may fire (one base-36 digit holds up to 35).
+export const MAX_N = 7;
 const EPOCH = Date.UTC(2020, 0, 1);
 const b36 = (n: number, w: number) => (n >= 0 && n < 36 ** w ? n.toString(36).padStart(w, "0") : null);
 const un36 = (s: string) => (/^[0-9a-z]+$/.test(s) ? parseInt(s, 36) : NaN);
@@ -29,7 +31,7 @@ const validRep = (r: Rep) => Number.isInteger(r.days) && r.days >= 1 && r.days <
 
 export function encodeAlert(ix: TripIndex, n: number, lines: AlertLines[], rep?: Rep): string | null {
   const v = ver(ix.v);
-  if (!v || !Number.isInteger(n) || n < 1 || n > 5) return null;
+  if (!v || !Number.isInteger(n) || n < 1 || n > MAX_N) return null;
   let head = `1${v}${n}`;
   if (rep) {
     if (!validRep(rep)) return null;
@@ -59,7 +61,7 @@ export function decodeAlert(ix: TripIndex, p: string): Decoded {
   if (!head || p.length > MAX_PAYLOAD || p.length < head + 5 || (p.length - head) % 5 || !/^[0-9a-z]+$/.test(p)) return { ok: false, why: "bad" };
   if (p.slice(1, 4) !== ver(ix.v)) return { ok: false, why: "old" };
   const n = un36(p[4]);
-  if (!(n >= 1 && n <= 5)) return { ok: false, why: "bad" };
+  if (!(n >= 1 && n <= MAX_N)) return { ok: false, why: "bad" };
   let rep: Rep | undefined;
   if (head === 10) {
     rep = { days: un36(p.slice(5, 7)), start: un36(p.slice(7, 9)) * 5, len: un36(p[9]) * 15 };

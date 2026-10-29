@@ -27,6 +27,8 @@
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
   import { STOPS_ZOOM, busStopsFC, stopIndex } from "../stops";
+  // Rail stations show from these zooms, small like the bus stops (from STOPS_ZOOM); there are fewer of them.
+  const RAIL_ZOOM = 13, SUBURBAN_ZOOM = 12;
   import type { TripIndex } from "../trip";
 
   setWorkerUrl(workerUrl);
@@ -221,8 +223,8 @@
         "circle-stroke-color": color("accent"), "circle-stroke-width": 3 } });
   }
 
-  // Metro, ISAP and tram: the pinned lines' tracks under everything else; every station (moved over the
-  // city vehicles in addLayers, so they always show).
+  // Metro, ISAP and tram: every station, small and from RAIL_ZOOM like the bus stops (moved over the city
+  // vehicles in addLayers, so they always show). A line's track is drawn when it is picked (train-route).
   function addMetroLayers(m: MlMap) {
     const sel = (a: unknown, b: unknown) => ["case", ["get", "sel"], a, b] as ExpressionSpecification;
     const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#3b5bdb";
@@ -231,38 +233,35 @@
     m.addLayer({ id: "metro-line", type: "line", source: "metro", filter: ["==", ["get", "kind"], "line"],
       layout: { "line-join": "round", "line-cap": "round" },
       paint: { "line-color": ["get", "color"], "line-width": byZoom([10, 2, 14, 4, 17, 6]), "line-opacity": 0.85 } });
-    const stationVis = app.stationsOn ? "visible" : "none";
-    m.addLayer({ id: "metro-station", type: "circle", source: "metro", filter: ["==", ["get", "kind"], "station"],
+    const stationVis = app.trainsOn ? "visible" : "none";
+    m.addLayer({ id: "metro-station", type: "circle", source: "metro", filter: ["==", ["get", "kind"], "station"], minzoom: RAIL_ZOOM,
       layout: { visibility: stationVis },
-      paint: { "circle-radius": byZoom([10, sel(6, ["case", ["get", "hub"], 4.5, 3.5]), 14, sel(9, ["case", ["get", "hub"], 7, 6]), 17, ["case", ["get", "hub"], 10, 8]]),
+      paint: { "circle-radius": byZoom([RAIL_ZOOM, sel(6, ["case", ["get", "hub"], 4, 3.5]), 17, sel(9, ["case", ["get", "hub"], 7, 6])]),
         "circle-color": "#ffffff", "circle-stroke-color": sel(accent, ["case", ["get", "hub"], "#222222", ["get", "color"]]),
-        "circle-stroke-width": byZoom([10, sel(3, 2), 14, sel(3.5, 3)]) } });
-    m.addLayer({ id: "metro-label", type: "symbol", source: "metro", minzoom: 13,
+        "circle-stroke-width": byZoom([RAIL_ZOOM, sel(3, 2), 17, sel(3.5, 2.5)]) } });
+    m.addLayer({ id: "metro-label", type: "symbol", source: "metro", minzoom: RAIL_ZOOM + 1,
       filter: ["==", ["get", "kind"], "station"],
-      layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Bold"], "text-size": 11,
-        "text-offset": [0, 1.1], "text-anchor": "top", "text-optional": true, visibility: stationVis },
+      layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Bold"], "text-size": 10,
+        "text-offset": [0, 0.9], "text-anchor": "top", "text-optional": true, visibility: stationVis },
       paint: { "text-color": "#333333", "text-halo-color": "#ffffff", "text-halo-width": 1.5 } });
   }
 
-  // Suburban rail: its corridors dashed (under the bus lines), its stations as dots filled
-  // with their corridor's colour (moved over the city vehicles in addLayers, like the metro's).
+  // Suburban rail: its stations as small dots filled with their corridor's colour, from SUBURBAN_ZOOM (moved
+  // over the city vehicles in addLayers, like the metro's). A corridor is drawn when it is picked (train-route).
   function addSuburbanLayers(m: MlMap) {
     const sel = (a: unknown, b: unknown) => ["case", ["get", "sel"], a, b] as ExpressionSpecification;
     const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#3b5bdb";
     const byZoom = (stops: unknown[]) => ["interpolate", ["linear"], ["zoom"], ...stops] as ExpressionSpecification;
-    const vis = app.suburbanOn ? "visible" : "none";
+    const vis = app.trainsOn ? "visible" : "none";
     m.addSource("suburban", { type: "geojson", data: EMPTY });
-    m.addLayer({ id: "suburban-line", type: "line", source: "suburban", filter: ["==", ["get", "kind"], "line"],
-      layout: { "line-join": "round", visibility: vis },
-      paint: { "line-color": ["get", "color"], "line-width": byZoom([9, 2, 14, 3.5, 17, 5]), "line-dasharray": [2, 1.5], "line-opacity": 0.85 } });
-    m.addLayer({ id: "suburban-station", type: "circle", source: "suburban", filter: ["==", ["get", "kind"], "station"],
+    m.addLayer({ id: "suburban-station", type: "circle", source: "suburban", filter: ["==", ["get", "kind"], "station"], minzoom: SUBURBAN_ZOOM,
       layout: { visibility: vis },
-      paint: { "circle-radius": byZoom([9, sel(5, 3), 14, sel(8, 5.5), 17, 7.5]), "circle-color": ["get", "color"],
-        "circle-stroke-color": sel(accent, "#ffffff"), "circle-stroke-width": byZoom([9, sel(3, 1.5), 14, sel(3.5, 2)]) } });
-    m.addLayer({ id: "suburban-label", type: "symbol", source: "suburban", minzoom: 12,
+      paint: { "circle-radius": byZoom([SUBURBAN_ZOOM, sel(5, 3), 17, sel(8, 6)]), "circle-color": ["get", "color"],
+        "circle-stroke-color": sel(accent, "#ffffff"), "circle-stroke-width": byZoom([SUBURBAN_ZOOM, sel(3, 1.5), 17, sel(3.5, 2)]) } });
+    m.addLayer({ id: "suburban-label", type: "symbol", source: "suburban", minzoom: RAIL_ZOOM + 1,
       filter: ["==", ["get", "kind"], "station"],
-      layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Bold"], "text-size": 11,
-        "text-offset": [0, 1.1], "text-anchor": "top", "text-optional": true, visibility: vis },
+      layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Bold"], "text-size": 10,
+        "text-offset": [0, 0.9], "text-anchor": "top", "text-optional": true, visibility: vis },
       paint: { "text-color": "#333333", "text-halo-color": "#ffffff", "text-halo-width": 1.5 } });
   }
 
@@ -414,9 +413,7 @@
 
   // The stop index (public/trips.json, shared with the planner), loaded the first time the map comes
   // close enough to show stops; a failed load is tried again at the next rest.
-  function loadStops(): Promise<TripIndex | null> {
-    return import("../trip").then(t => t.loadTripIndex()).then(ix => (app.stopIx = ix), () => null);
-  }
+  const loadStops = (): Promise<TripIndex | null> => app.loadStops();
 
   // The city vehicle under a click, with a finger-sized margin; the nearest if several.
   function nearestCity(m: MlMap, p: { x: number; y: number }) {
@@ -549,7 +546,7 @@
       }
       if (moved) fixing = true;
       // A trail is drawn like its vehicle: not for one filtered out, hidden or dimmed by a selection.
-      const o = dom || !s || app.others === "normal" || e.key === selKey ? 1 : app.others === "dim" ? 0.22 : 0;
+      const o = dom || !s || app.others === "normal" || e.key === selKey || (s.kind === "route" && e.line === s.line) ? 1 : app.others === "dim" ? 0.22 : 0;
       if (trail && shown && o && trail.geom.length > 1)
         trails.push({ type: "Feature", geometry: { type: "LineString", coordinates: trail.geom }, properties: { alpha: trail.alpha * o, dom, ...(back && { back }) } });
       if (dom) {
@@ -809,9 +806,20 @@
 
     map = m;
     app.fit = fitTo;
+    // Into view, closer when far out; not when it is already well inside the view.
+    app.flyTo = at => {
+      const pp = padding(), card = document.querySelector(".card")?.getBoundingClientRect();
+      const pad = typeof pp === "number" ? { top: pp, bottom: pp, left: pp, right: pp } : { ...pp };
+      if (card && innerWidth < 720) pad.bottom = Math.max(pad.bottom, innerHeight - card.top + 16);   // the bottom sheet
+      const p = m.project(at), c = m.getCanvas();
+      const inside = p.x > pad.left && p.x < c.clientWidth - pad.right && p.y > pad.top && p.y < c.clientHeight - pad.bottom;
+      if (inside && m.getZoom() >= 13) return;
+      m.easeTo({ center: at, zoom: Math.max(m.getZoom(), 14), padding: pad, duration: reducedMotion.matches ? 0 : 600 });
+    };
     if (import.meta.env.DEV) Object.assign(window, { __map: m, __fleet: fleet, __doms: doms });
     return () => {
       app.fit = () => {};
+      app.flyTo = () => {};
       disposed = true;
       cancelAnimationFrame(raf);
       reportSoon.cancel();
@@ -842,10 +850,6 @@
     return el;
   }
 
-  $effect(() => {
-    const vis = app.suburbanOn ? "visible" : "none";
-    if (loaded) for (const id of ["suburban-line", "suburban-station", "suburban-label"]) map!.setLayoutProperty(id, "visibility", vis);
-  });
 
   $effect(() => {
     if (!loaded) return;
@@ -855,7 +859,8 @@
 
   $effect(() => {
     const vis = app.trainsOn ? "visible" : "none";
-    if (loaded) for (const id of ["train-dot", "train-icon", "train-heading", "train-route", "train-route-casing"]) map!.setLayoutProperty(id, "visibility", vis);
+    if (loaded) for (const id of ["train-dot", "train-icon", "train-heading", "train-route", "train-route-casing", "metro-station", "metro-label",
+      "suburban-station", "suburban-label"]) map!.setLayoutProperty(id, "visibility", vis);
   });
 
   // The rail cards' data of what is on screen, loaded while the map rests (prefetch.ts), by at most
@@ -918,17 +923,17 @@
     (map!.getSource("trains") as GeoJSONSource).setData(fc);
   });
 
-  // The tapped train's line: the metro line's track, or the suburban corridor.
+  // The picked rail line, or the tapped train's: the metro line's track, or the suburban corridor.
   const trainRoute = $derived.by((): GeoJSON.FeatureCollection => {
-    const t = app.train;
-    if (!t) return EMPTY;
-    if (t.kind === "metro") {
-      const id = app.stasyTrains.find(v => v.trip === t.id)?.line;
-      const line = app.metro?.lines.find(l => l.id === id);
+    const t = app.train, l = app.railLine;
+    if (!t && !l) return EMPTY;
+    if ((l ?? t)!.kind === "metro") {
+      const id = l?.id ?? app.stasyTrains.find(v => v.trip === t!.id)?.line;
+      const line = app.metro?.lines.find(x => x.id === id);
       return line ? { type: "FeatureCollection", features: [{ type: "Feature", properties: { color: line.color },
         geometry: { type: "MultiLineString", coordinates: line.paths } }] } : EMPTY;
     }
-    const c = app.suburban?.corridors[app.suburbanTrains.find(v => v.train === t.id)?.corridor ?? ""];
+    const c = app.suburban?.corridors[l?.id ?? app.suburbanTrains.find(v => v.train === t!.id)?.corridor ?? ""];
     return c ? { type: "FeatureCollection", features: [{ type: "Feature", properties: { color: c.color },
       geometry: { type: "LineString", coordinates: c.path.map(([lat, lon]) => [lon, lat]) } }] } : EMPTY;
   });
@@ -938,10 +943,6 @@
     if (loaded) (map!.getSource("train-route") as GeoJSONSource).setData(fc);
   });
 
-  $effect(() => {
-    const vis = app.stationsOn ? "visible" : "none";
-    if (loaded) for (const id of ["metro-station", "metro-label"]) map!.setLayoutProperty(id, "visibility", vis);
-  });
 
   $effect(() => {
     const on = app.speedOn;
@@ -974,7 +975,7 @@
   $effect(() => {
     if (!loaded) return;
     const data = app.metro;
-    (map!.getSource("metro") as GeoJSONSource).setData(data ? metroFC(data, app.metroLines, app.metroStation) : EMPTY);
+    (map!.getSource("metro") as GeoJSONSource).setData(data ? metroFC(data, [], app.metroStation) : EMPTY);
   });
 
   // The trip planner's start (A) and end (B).
@@ -1019,8 +1020,11 @@
   $effect(() => {
     if (!loaded) return;
     const m = map!, s = app.selection;
+    // A route keeps its own line's vehicles: one still on the city layer (its line's data loading, or
+    // failing) must not vanish when its route is tapped.
     const sel: ExpressionSpecification = s?.kind === "vehicle"
-      ? ["all", ["==", ["get", "line"], s.line], ["==", ["get", "id"], s.id]] : ["boolean", false];
+      ? ["all", ["==", ["get", "line"], s.line], ["==", ["get", "id"], s.id]]
+      : s?.kind === "route" ? ["==", ["get", "line"], s.line] : ["boolean", false];
     const o = !s || app.others === "normal" ? 1 : app.others === "dim" ? 0.22 : 1;
     const opacity: ExpressionSpecification = ["*", ["case", sel, 1, o], ["case", ["get", "stale"], 0.3, 1], ["case", ["to-boolean", ["get", "rewind"]], 0.5, 1]];
     m.setPaintProperty("city-dot", "circle-opacity", opacity);
@@ -1031,7 +1035,7 @@
     m.setFilter("city-dot", filter);
     m.setFilter("city-heading", filter ? ["all", ["has", "h"], filter] : ["has", "h"]);
     m.setFilter("city-label", filter);
-    m.setFilter("city-selected", sel);
+    m.setFilter("city-selected", s?.kind === "vehicle" ? sel : ["boolean", false]);
     const vis = app.cityOn ? "visible" : "none";
     for (const id of ["city-dot", "city-label", "city-heading", "city-selected"]) m.setLayoutProperty(id, "visibility", vis);
   });

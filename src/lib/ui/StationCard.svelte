@@ -3,9 +3,7 @@
   import type { FetchResult } from "../poller";
   import { fetchStasy, peekStasy } from "../api";
   import { boardRows, nextBoards, stationNames, type Boards } from "../rail";
-  import MetroToggles from "./MetroToggles.svelte";
-
-  // The tapped metro/tram station: its lines, each with the switch that draws it on the map.
+  // The tapped metro/tram station: its lines (a tap shows the line, as a bus stop's card does) and the next trains.
   let { app }: { app: AppState } = $props();
 
   const station = $derived(app.metroStation ? app.metro?.stations.find(s => s.name === app.metroStation) : undefined);
@@ -53,6 +51,7 @@
   });
 
   const when = (m: number) => (m === 0 ? "τώρα" : `${m}′`);
+  const lines = $derived((station?.lines ?? []).flatMap(id => app.metro?.lines.find(l => l.id === id) ?? []));
 </script>
 
 <svelte:window onkeydown={e => { if (e.key === "Escape" && app.metroStation) app.selectStation(null); }} />
@@ -63,12 +62,19 @@
       <h2>{station.name}</h2>
       <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.selectStation(null)}>×</button>
     </header>
+    <div class="lines" role="group" aria-label="Γραμμές του σταθμού">
+      {#each lines as l (l.id)}
+        <button type="button" style:--accent={l.color} aria-label="Γραμμή {l.id}: τα τρένα της"
+          onclick={() => app.selectRailLine({ kind: "metro", id: l.id })}>{l.id}</button>
+      {/each}
+    </div>
     {#if boards}
       {#if rows.length}
         <ul class="deps" aria-label="Επόμενα τρένα">
           {#each rows as r (r.line + r.headsign)}
-            <li title={r.times.join(" · ")}><b style:--accent={r.color}>{r.line}</b><span class="to">→ {r.headsign}</span>
-              <span class="when">{r.mins.map(when).join(" · ")}</span></li>
+            <li title={r.times.join(" · ")}><button type="button" onclick={() => app.selectRailLine({ kind: "metro", id: r.line })}>
+              <b style:--accent={r.color}>{r.line}</b><span class="to">→ {r.headsign}</span>
+              <span class="when">{r.mins.map(when).join(" · ")}</span></button></li>
           {/each}
         </ul>
       {:else}
@@ -80,10 +86,6 @@
     {:else}
       <p>Φόρτωση επόμενων τρένων…</p>
     {/if}
-    <p>Άνοιξε μια γραμμή για να φαίνεται η διαδρομή της.</p>
-    <MetroToggles {app} ids={station.lines} />
-    <p class="hide"><button type="button" class="link" onclick={() => app.setStationsOn(false)}>Κρύψε τους σταθμούς</button>
-      Ξανά από το κουμπί με το μάτι → Μετρό.</p>
   </section>
 {/if}
 
@@ -94,15 +96,18 @@
   header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
   h2 { flex: 1; margin: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   p { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
-  .hide { margin: 10px 0 0; }
+  .lines { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; }
+  .lines button { min-width: 34px; min-height: 28px; padding: 2px 7px; border: 0; border-radius: 6px; background: var(--accent); color: #fff;
+    font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
   .deps { list-style: none; margin: 0 0 4px; padding: 0; }
-  .deps li { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: 13px; }
+  .deps button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 0 4px; margin: 0 -4px; border: 0;
+    border-radius: 8px; background: none; color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+  .deps button:hover { background: var(--control); }
   .deps b { flex: none; min-width: 30px; padding: 2px 6px; border-radius: 6px; background: var(--accent); color: #fff;
     font-size: 12px; text-align: center; }
   .to { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .when { flex: none; font-weight: 600; font-variant-numeric: tabular-nums; }
   .src { font-size: 11px; }
-  .link { border: 0; background: none; padding: 0 6px 0 0; color: var(--accent); text-decoration: underline; cursor: pointer; font-size: 12px; }
   .close { width: 36px; height: 36px; margin: -8px -10px -8px 0; border: 0; background: none; font-size: 22px;
     color: var(--muted); cursor: pointer; border-radius: 8px; }
   .close:hover { background: var(--control); }

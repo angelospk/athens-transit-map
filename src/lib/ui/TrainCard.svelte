@@ -27,6 +27,8 @@
   // stops' own delays are the day's board, up to 10 minutes old.
   const rows = $derived(!run ? [] : "headsign" in run ? stopRows(run.stops, nowS)
     : stopRows(run.stops.map(s => ({ name: s.name, at: s.at })), nowS, run.delay_min));
+  // The line to show on its own from the chip: the metro line, or the Proastiakos corridor.
+  const lineSel = $derived(metro ? { kind: "metro" as const, id: metro.line } : sub && corridor ? { kind: "suburban" as const, id: sub.corridor } : null);
   const age = $derived(sub ? Math.max(0, Math.round(nowS - sub.position_at)) : 0);
   const gps = $derived([
     sub && `GPS πριν ${age < 60 ? `${age}″` : `${Math.floor(age / 60)}′`}`,
@@ -84,7 +86,12 @@
 {#if sel}
   <section class="card" aria-live="polite" aria-label="Τρένο προς {to}">
     <header>
-      <b class="chip" style:--accent={color}>{label}</b>
+      {#if lineSel}
+        <button type="button" class="chip" style:--accent={color} title="Η γραμμή και τα τρένα της" aria-label="Γραμμή {label}: τα τρένα της"
+          onclick={() => app.selectRailLine(lineSel)}>{label}</button>
+      {:else}
+        <b class="chip" style:--accent={color}>{label}</b>
+      {/if}
       <h2>→ {to || "…"}</h2>
       <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.selectTrain(null)}>×</button>
     </header>
@@ -115,8 +122,9 @@
     backdrop-filter: blur(8px); }
   header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
   h2 { flex: 1; margin: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .chip { flex: none; min-width: 30px; padding: 2px 6px; border-radius: 6px; background: var(--accent); color: #fff;
-    font-size: 12px; text-align: center; }
+  .chip { flex: none; min-width: 30px; padding: 2px 6px; border: 0; border-radius: 6px; background: var(--accent); color: #fff;
+    font: inherit; font-size: 12px; font-weight: 700; text-align: center; }
+  button.chip { min-height: 28px; cursor: pointer; }
   p { margin: 0 0 8px; color: var(--muted); font-size: 12px; }
   .src { font-size: 11px; }
   .late { color: var(--late2); }

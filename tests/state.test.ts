@@ -141,7 +141,7 @@ describe("AppState line colours", () => {
   });
 });
 
-describe("AppState metro lines and favourites", () => {
+describe("AppState rail and favourites", () => {
   vi.stubGlobal("fetch", () => new Promise(() => {}));
   const mem = new Map<string, string>();
   vi.stubGlobal("localStorage", {
@@ -149,49 +149,20 @@ describe("AppState metro lines and favourites", () => {
     setItem: (k: string, v: string) => void mem.set(k, v),
     removeItem: (k: string) => void mem.delete(k),
   });
-  const metro = { source: "t", stations: [{ name: "ΟΜΟΝΟΙΑ", lon: 0, lat: 0, lines: ["M1", "M2"] }],
-    lines: ["M1", "M2", "M3"].map(id => ({ id, name: id, color: "#000", paths: [] })) };
   const fresh = () => { mem.clear(); return new AppState(); };
 
-  it("pins and unpins metro lines, and remembers them", () => {
+  it("shows one rail line at a time, in place of any other card", () => {
     const app = fresh();
-    expect(app.metroLines).toEqual([]);
-    app.toggleMetroLine("M2");
-    app.toggleMetroLine("M1");
-    expect(app.metroLines).toEqual(["M2", "M1"]);
-    app.toggleMetroLine("M2");
-    expect(app.metroLines).toEqual(["M1"]);
-    expect(new AppState().metroLines).toEqual(["M1"]);
-  });
-
-  it("sets all or none at once", () => {
-    const app = fresh();
-    app.metro = metro;
-    app.setMetroLines(["M1", "M2", "M3"]);
-    expect(app.metroLines).toEqual(["M1", "M2", "M3"]);
-    app.setMetroLines([]);
-    expect(app.metroLines).toEqual([]);
-  });
-
-  it("turns the old single metro switch into all lines once the data loads", () => {
-    mem.clear();
-    mem.set("metroOn", "true");
-    const app = new AppState();
-    app.metro = metro;
-    (app as unknown as { migrateMetro(): void }).migrateMetro();
-    expect(app.metroLines).toEqual(["M1", "M2", "M3"]);
-    expect(mem.get("metroLines")).toBe('["M1","M2","M3"]');
-  });
-
-  it("keeps lines already chosen over the old switch", () => {
-    mem.clear();
-    mem.set("metroOn", "true");
-    mem.set("metroLines", "[]");
-    const app = new AppState();
-    app.metro = metro;
-    (app as unknown as { migrateMetro(): void }).migrateMetro();
-    expect(app.metroLines).toEqual([]);
-    expect(mem.has("metroOn")).toBe(false);
+    app.selectStation("ΟΜΟΝΟΙΑ");
+    app.selectRailLine({ kind: "metro", id: "M2" });
+    expect(app.railLine).toEqual({ kind: "metro", id: "M2" });
+    expect(app.metroStation).toBeNull();
+    app.selectTrain({ kind: "metro", id: "t1" });
+    expect(app.railLine).toBeNull();
+    app.selectRailLine({ kind: "suburban", id: "c1" });
+    expect(app.train).toBeNull();
+    app.selectCityVehicle("040", "1");
+    expect(app.railLine).toBeNull();
   });
 
   it("a tapped station and a selected vehicle exclude each other", () => {
@@ -204,17 +175,17 @@ describe("AppState metro lines and favourites", () => {
     expect(app.selection).toBeNull();
   });
 
-  it("shows stations by default; turning them off is remembered and closes the station card", () => {
+  it("turning the trains off closes every rail card, and is remembered", () => {
     mem.clear();
     const app = fresh();
-    expect(app.stationsOn).toBe(true);
+    expect(app.trainsOn).toBe(true);
+    app.selectRailLine({ kind: "metro", id: "M1" });
+    app.setTrainsOn(false);
+    expect(app.railLine).toBeNull();
     app.selectStation("ΟΜΟΝΟΙΑ");
-    app.setStationsOn(false);
-    expect(app.stationsOn).toBe(false);
+    app.setTrainsOn(false);
     expect(app.metroStation).toBeNull();
-    expect(new AppState().stationsOn).toBe(false);
-    app.setStationsOn(true);
-    expect(new AppState().stationsOn).toBe(true);
+    expect(new AppState().trainsOn).toBe(false);
   });
 
   it("stars and unstars lines, and remembers them", () => {

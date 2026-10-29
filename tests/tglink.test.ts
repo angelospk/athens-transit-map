@@ -30,6 +30,12 @@ describe("encodeAlert / decodeAlert", () => {
     expect(encodeAlert(ix, 3, [pick("999", "1", 0)])).toBeNull();
     expect(encodeAlert(ix, 3, [pick("622", "5433", 9)])).toBeNull();   // no stop 9
     expect(encodeAlert(ix, 9, [pick("622", "5433", 1)])).toBeNull();   // n out of range
+    expect(encodeAlert(ix, 8, [pick("622", "5433", 1)])).toBeNull();
+  });
+
+  it("carries up to 7 stops ahead", () => {
+    const p = encodeAlert(ix, 7, [pick("622", "5433", 2)])!;
+    expect(decodeAlert(ix, p)).toMatchObject({ ok: true, n: 7 });
   });
 
   it("refuses links from other stop data and broken links", () => {

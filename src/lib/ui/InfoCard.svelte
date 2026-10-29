@@ -6,7 +6,12 @@
   import { clampDrag, settle, type SheetState } from "../sheet";
   import type { AppState } from "../state.svelte";
   import type { DirectionGroup } from "../directions";
+  import type { Vehicle } from "../types";
   import Timetable from "./Timetable.svelte";
+  import Bell from "./Bell.svelte";
+  import { upcomingStops } from "../eta";
+  import { clockHM } from "../trains";
+  import { stopIndex } from "../stops";
 
   let { app }: { app: AppState } = $props();
 
@@ -79,6 +84,27 @@
     sheet = g.moved ? settle(g.from, e.type === "pointerup" ? e.clientY - g.y : drag, g.range) : e.type === "pointerup" ? flip(g.from) : g.from;
     drag = 0;
   }
+  // The selected vehicle's stops ahead, with estimated times (eta.ts: its typical speeds ahead, from its fix).
+  const ahead = $derived.by(() => {
+    const sv = app.selectedVehicle, st = sv && app.statics[sv.line];
+    const variant = sv?.v.variant ? st?.variants[sv.v.variant] : undefined;
+    return sv && st && variant ? upcomingStops(variant, st.stops, sv.v) : [];
+  });
+  const eta = (at: number) => {
+    const m = Math.round((at * 1000 - app.serverNow) / 60_000);
+    return m <= 0 ? "τώρα" : m < 60 ? `~${m}′` : `~${clockHM(at)}`;
+  };
+  // The alert form at one of those stops (AlertForm, loaded on the first bell): the stop's id and its place.
+  let alertAt = $state.raw<{ id: string; i: number; from: number | null } | null>(null);
+  $effect(() => { void selKey; alertAt = null; });
+  async function bellAt(id: string, i: number) {
+    if (alertAt?.id === id) { alertAt = null; return; }
+    alertAt = { id, i, from: null };
+    const ix = await app.loadStops();
+    if (alertAt?.id !== id) return;
+    alertAt = { id, i, from: ix ? stopIndex(ix, id) : -1 };
+  }
+
   // Today's runs of the route's direction, opened on demand (they stay open for the next route).
   let showTimes = $state(false);
 
@@ -91,6 +117,13 @@
     const variant = st?.variants[s.variant];
     if (!variant) return null;
     const name = (i: number) => st.stops[variant.stops[i]]?.name ?? "";
+    const groups = directionGroups(st);
+    // The vehicles of this direction now, from the start of the route to its end (by their next stop).
+    const dir = new Set(groupOf(groups, s.variant)?.variants ?? [s.variant]);
+    const at = (v: Vehicle) => (v.variant && v.next_stop_id ? st.variants[v.variant]?.stops.indexOf(v.next_stop_id) ?? -1 : -1);
+    const running = (app.live[s.line]?.vehicles ?? []).filter(v => v.variant && dir.has(v.variant))
+      .map(v => ({ v, k: at(v), next: v.next_stop_id ? st.stops[v.next_stop_id]?.name : undefined }))
+      .sort((a, b) => a.k - b.k);
     return {
       line: s.line,
       id: s.variant,
@@ -98,8 +131,8 @@
       variant,
       from: name(0),
       to: name(variant.stops.length - 1),
-      running: (app.live[s.line]?.vehicles ?? []).filter(v => v.variant === s.variant).length,
-      groups: directionGroups(st),
+      running,
+      groups,
       focus: app.focus[s.line],
     };
   });
@@ -181,6 +214,39 @@
             {#if "loading" in vehicle}<tr><th></th><td class="muted">Φόρτωση δρομολογίου…</td></tr>{/if}
           </tbody>
         </table>
+        {#if ahead.length}
+          <h3 class="sub">Επόμενες στάσεις <small>· ώρες κατά προσέγγιση</small></h3>
+          <ol class="ahead" aria-label="Επόμενες στάσεις">
+            {#each ahead as a, k (a.id + "/" + a.i)}
+              <li class:next={k === 0}>
+                <span class="t">{eta(a.at)}</span><span class="name">{a.name}</span>
+                <button type="button" class="bell" class:on={alertAt?.id === a.id} aria-expanded={alertAt?.id === a.id}
+                  title="Ειδοποίηση άφιξης σε αυτή τη στάση" aria-label="Ειδοποίηση άφιξης του {vehicle.line} στη στάση {a.name}"
+                  onclick={() => bellAt(a.id, a.i)}><Bell /></button>
+              </li>
+              {#if alertAt?.id === a.id}
+                <li class="alert">
+                  {#if alertAt.from == null}
+                    <p class="muted">Φόρτωση…</p>
+                  {:else if alertAt.from < 0 || !v.variant}
+                    <p class="muted">Αυτή η στάση δεν είναι στα δεδομένα στάσεων.</p>
+                  {:else}
+                    {@const from = alertAt.from}
+                    {@const variant = v.variant}
+                    {#await import("./AlertForm.svelte")}
+                      <p class="muted">Φόρτωση…</p>
+                    {:then m}
+                      <m.default {app} label={a.name} onstarted={() => (alertAt = null)}
+                        lines={[{ line: vehicle.line, variants: [{ id: variant, i: a.i, from }] }]} />
+                    {:catch}
+                      <p class="muted">Δεν φόρτωσε η ειδοποίηση. Δοκίμασε ξανά.</p>
+                    {/await}
+                  {/if}
+                </li>
+              {/if}
+            {/each}
+          </ol>
+        {/if}
         {#if vehicle.groups.length > 1}
           {@const mine = groupOf(vehicle.groups, v.variant)}
           {@render dirs(vehicle.line, vehicle.groups, vehicle.focus, mine)}
@@ -190,9 +256,22 @@
           <tbody>
             <tr><th>Κατεύθυνση</th><td>{route.from} → {route.to}</td></tr>
             <tr><th>Στάσεις</th><td>{route.variant.stops.length}</td></tr>
-            <tr><th>Οχήματα τώρα</th><td>{route.running}</td></tr>
           </tbody>
         </table>
+        <h3 class="sub">Οχήματα τώρα · {route.running.length}</h3>
+        {#if route.running.length}
+          <ul class="runs" aria-label="Τα οχήματα της κατεύθυνσης">
+            {#each route.running as r (r.v.id)}
+              <li><button type="button" onclick={() => { const v = r.v; app.selectVehicle(route.line, v.id); app.flyTo([v.lon, v.lat]); }}>
+                <i class="dot {delayClass(r.v.delay_s)}" aria-hidden="true"></i>
+                <span class="next">{r.next ? `επόμενη: ${r.next}` : "χωρίς δρομολόγιο"}</span>
+                <span class="muted">{ago(r.v.position_at, app.serverNow)}</span>
+              </button></li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="muted">{app.live[route.line] ? "Κανένα όχημα σε αυτή την κατεύθυνση τώρα." : "Φόρτωση…"}</p>
+        {/if}
         {#if route.groups.length > 1}
           {@render dirs(route.line, route.groups, route.focus, groupOf(route.groups, route.id))}
         {/if}
@@ -245,6 +324,24 @@
     border: 0; background: none; color: var(--accent); font-size: 13px; cursor: pointer; }
   .times svg { transition: transform .15s; }
   .times svg.up { transform: rotate(180deg); }
+  .sub small { font-weight: 400; }
+  .ahead { list-style: none; margin: 0; padding: 0; }
+  .ahead li { display: flex; align-items: center; gap: 10px; min-height: 30px; font-size: 13px; }
+  .ahead li.next { font-weight: 700; }
+  .ahead .t { flex: none; min-width: 48px; font-variant-numeric: tabular-nums; }
+  .ahead .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ahead li.alert { display: block; margin: 2px 0 6px; padding: 8px 10px; border-radius: 10px; background: var(--control); font-weight: 400; }
+  .ahead li.alert :global(select) { background: var(--panel); }
+  .bell { flex: none; display: grid; place-items: center; width: 32px; height: 30px; border: 0; border-radius: 8px; background: none;
+    color: var(--muted); cursor: pointer; }
+  .bell:hover, .bell.on { background: var(--control); color: var(--accent); }
+  .sub { margin: 10px 0 2px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .runs { list-style: none; margin: 0; padding: 0; }
+  .runs button { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 32px; padding: 0 4px; margin: 0 -4px; border: 0;
+    border-radius: 8px; background: none; color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+  .runs button:hover { background: var(--control); }
+  .runs .next { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .runs .dot { flex: none; }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
   @media (prefers-reduced-motion: reduce) { .card { transition: none !important; } }
   @media (max-width: 719px) {

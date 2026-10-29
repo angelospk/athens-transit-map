@@ -3,16 +3,15 @@
 
   // Kept across close and reopen.
   interface End { text: string; place: Place | null }
-  const memo = { from: { text: "", place: null } as End, to: { text: "", place: null } as End, radius: 500, n: 3, applied: "" };
+  const memo = { from: { text: "", place: null } as End, to: { text: "", place: null } as End, radius: 500, applied: "" };
 </script>
 
 <script lang="ts">
   import { tick, untrack } from "svelte";
   import { fetchLines } from "../api";
   import { MAX_LINES } from "../selection";
-  import { canPush, startPush, stopPush } from "../push";
-  import { encodeAlert, type Rep } from "../tglink";
   import type { AppState } from "../state.svelte";
+  import AlertForm from "./AlertForm.svelte";
   import Bell from "./Bell.svelte";
   import { walkUrl } from "../maps";
   import { alertTargets, anyMetro, boardings, centre, distM, findTransfers, findTrips, geocode, legTrip, loadTripIndex, metroDirect, metroPlaces, nearestStation, places, searchPlaces,
@@ -22,14 +21,12 @@
 
   type Field = "from" | "to";
   const FIELDS = ["from", "to"] as const;
-  const RADII = [300, 500, 800];
+  const RADII = [300, 500, 800, 1000, 1500];
   const ME = "Η θέση μου";
-  const ALERT_S = 2 * 3600;
   const phone = () => matchMedia("(max-width: 719px)").matches;
 
   let ends = $state.raw<Record<Field, End>>({ from: memo.from, to: memo.to });
   let radius = $state(memo.radius);
-  let n = $state(memo.n);
   let data = $state.raw<{ ix: TripIndex; places: Place[]; known: Set<string>; stale: string | null } | null>(null);
   let failed = $state(false);
   let folded = $state(false);
@@ -47,7 +44,7 @@
   const locGen = { from: 0, to: 0 };   // the same for each field's location request
   let closed = false;
 
-  $effect(() => { memo.from = ends.from; memo.to = ends.to; memo.radius = radius; memo.n = n; });
+  $effect(() => { memo.from = ends.from; memo.to = ends.to; memo.radius = radius; });
   $effect(() => () => { ctl?.abort(); clearTimeout(timer); gen++; locGen.from++; locGen.to++; closed = true; });
 
   async function load() {
@@ -247,82 +244,19 @@
   const onMap = $derived((trips ?? []).filter(t => app.selected.includes(t.line)));
   const xferLines = $derived(app.selected.filter(l => !onMap.some(t => t.line === l) && xfers.some(x => x.legs.some(g => g.line === l))));
 
-  // Alert settings, folded until asked for: the stop to wait at (each line's own, or one of the stops
-  // nearest the start), how early, and which of the trip's lines on the map. A new trip resets them.
+  // Alert settings, folded until asked for (AlertForm): the stop to wait at (each line's own, or one of the
+  // stops nearest the start) and the trip's lines on the map. A new trip resets the stop.
   // A picked change: the alert watches its first line, up to the change stop.
   let alertOpen = $state(false);
   let boardName = $state("");
-  let off = $state<string[]>([]);
   const xPicked = $derived(xfers.find(x => xkey(x) === picked) ?? null);
   const aTrips = $derived(xPicked ? [legTrip(xPicked.legs[0])] : trips);
   const aOnMap = $derived((aTrips ?? []).filter(t => app.selected.includes(t.line)));
-  $effect(() => { void trips; void xPicked; boardName = ""; off = []; });
+  $effect(() => { void trips; void xPicked; boardName = ""; });
   // Another stop to wait at: not for a change, whose first line is boarded where the change was planned.
   const near = $derived(data && from && to && !xPicked && aOnMap.length ? boardings(data.ix, from.pts, to.pts, radius, aOnMap.map(t => t.line)) : []);
   const board = $derived(near.find(b => b.name === boardName) ?? null);
-  const tickable = $derived((board ? board.lines.map(l => l.line) : aOnMap.map(t => t.line)).filter(l => app.selected.includes(l)));
-  const targets = $derived(aTrips ? alertTargets(aTrips, app.selected, board, off) : []);
-  const setTicked = (line: string, on: boolean) => { off = on ? off.filter(l => l !== line) : [...off, line]; };
-
-  // The chosen alert as a link payload (src/lib/tglink.ts): for Telegram and for web push. A recurring
-  // one (days, from what time, for how long) is for Telegram only.
-  const payload = $derived(data && !data.stale ? encodeAlert(data.ix, n, targets) : null);
-  // Athens time, as the bot reads it.
-  const nextFive = () => {
-    const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Athens", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
-      .formatToParts(Date.now() + 5 * 60_000).map(x => [x.type, x.value]));
-    return `${p.hour}:${String(Math.floor(+p.minute / 5) * 5).padStart(2, "0")}`;
-  };
-  let repDays = $state(0);
-  // Hours and minutes as two lists: a time input shows AM/PM on phones set to 12 hours.
-  const [h0, m0] = nextFive().split(":").map(Number);
-  let repH = $state(h0), repM = $state(m0);
-  let repLen = $state(60);
-  const rep = $derived.by((): Rep | undefined => (repDays ? { days: repDays, start: repH * 60 + repM, len: repLen } : undefined));
-  const tgPayload = $derived(repDays ? (rep && data && !data.stale ? encodeAlert(data.ix, n, targets, rep) : null) : payload);
-
-  // Stop alert for the chosen lines, at the chosen stop: in the page, and as web push where the browser
-  // has it (then it comes with the page closed). The permission prompt comes first, from the tap itself
-  // (browsers ignore it later).
-  const canNotify = typeof Notification !== "undefined";
-  // iPhones give web push only to a web app opened from the Home Screen.
-  const iosTab = typeof navigator !== "undefined" && (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) &&
-    !matchMedia("(display-mode: standalone)").matches && !(navigator as { standalone?: boolean }).standalone;
-  // One alert at a time: a second tap while the first waits (permission, server) does nothing.
-  let pushing = $state(false);
-  async function alertMe() {
-    if (pushing) return;
-    pushing = true;
-    try { await startAlert(); } finally { pushing = false; }
-  }
-  async function startAlert() {
-    const t = aTrips, d = data, f = from, p = payload;
-    if (!t || !d || !f) return;
-    if (canNotify && Notification.permission === "default") await Notification.requestPermission().catch(() => {});
-    // Registered before the alert starts: phones show notifications only through it.
-    const reg = await navigator.serviceWorker?.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => null);
-    if (closed || t !== aTrips) return;   // the trip changed while the browser asked
-    const ix = d.ix;
-    const lines = targets.map(l => ({ line: l.line, variants: l.variants.map(v => ({ id: v.id, i: v.i, name: ix.s[v.from][0] })) }));
-    if (!lines.length) {
-      err = aOnMap.length ? "Διάλεξε τουλάχιστον μία γραμμή." : "Καμία γραμμή της διαδρομής δεν είναι στον χάρτη: πάτα μία για να τη δείξεις.";
-      return;
-    }
-    err = null;
-    let push: { id: string; until: number } | null = null;
-    if (reg && p && canPush() && Notification.permission === "granted") {
-      const ready = await Promise.race([navigator.serviceWorker.ready, new Promise<null>(r => setTimeout(r, 5000, null))]);
-      push = ready && (await startPush(ready, p));
-      if (closed || t !== aTrips || p !== payload) { if (push) void stopPush(push.id); return; }
-      if (!push) err = "Η ειδοποίηση δουλεύει μόνο με τη σελίδα ανοιχτή: ο server ειδοποιήσεων δεν απάντησε.";
-    }
-    app.setAlert({ n, until: push?.until ?? Math.floor(app.serverMs() / 1000) + ALERT_S, label: board?.name ?? f.label, lines, ...(push ? { push: push.id } : {}) });
-    alertOpen = false;
-  }
-
-  // The same alert in Telegram (src/lib/tglink.ts).
-  const BOT = "oasa_bus_bot";
-  const tgLink = $derived(tgPayload && `https://t.me/${BOT}?start=${tgPayload}`);
+  const targets = $derived(aTrips ? alertTargets(aTrips, app.selected, board, []) : []);
 
   const stop = (k: number) => data?.ix.s[k][0] ?? "";
   const metres = (m: number) => (m < 50 ? "δίπλα" : `≈ ${Math.round(m / 50) * 50} μ.`);
@@ -491,9 +425,6 @@
             {@const a = app.alert}
             <span><Bell /> {a.lines.map(l => l.line).join(", ")}: έως {a.n} {a.n === 1 ? "στάση" : "στάσεις"} πριν από {a.label}{a.push ? ", και με κλειστή σελίδα" : ""}.</span>
             <button type="button" class="link" onclick={() => app.setAlert(null)}>Ακύρωση</button>
-            {#if tgLink}<a class="bell tg" href={tgLink} target="_blank" rel="noopener">Στο Telegram</a>{/if}
-          {:else if data.stale}
-            <small>Ειδοποίηση: όχι με παλιά δεδομένα στάσεων.</small>
           {:else}
             <button type="button" class="lead" aria-expanded={alertOpen} aria-controls="trip-alert" onclick={() => (alertOpen = !alertOpen)}>
               <Bell /> Ειδοποίηση
@@ -501,63 +432,24 @@
             </button>
           {/if}
         </div>
-        {#if alertOpen && !app.alert && !data.stale}
-          <div id="trip-alert" class="form">
-            {#if xPicked}<p class="note">Για την πρώτη γραμμή, {xPicked.legs[0].line}, ως την αλλαγή στη στάση {stop(xPicked.legs[0].to)}.</p>{/if}
-            {#if near.length > 1}
-              <label>Στάση
-                <select bind:value={boardName}>
-                  <option value="">η κοντινότερη κάθε γραμμής</option>
-                  {#each near as b (b.name)}<option value={b.name}>{b.name} · {metres(b.walk)} · {b.lines.map(l => l.line).join(", ")}</option>{/each}
-                </select>
-              </label>
+        {#if alertOpen && !app.alert && from}
+          <div id="trip-alert">
+            {#if !targets.length}
+              <p class="note">{aOnMap.length ? "Διάλεξε τουλάχιστον μία γραμμή." : "Καμία γραμμή της διαδρομής δεν είναι στον χάρτη: πάτα μία για να τη δείξεις."}</p>
             {/if}
-            <label>Πότε
-              <select bind:value={n}>
-                {#each [1, 2, 3, 4, 5] as k (k)}<option value={k}>{k === 1 ? "στην προηγούμενη στάση" : `${k} στάσεις πριν`}</option>{/each}
-              </select>
-            </label>
-            <label>Επανάληψη
-              <select bind:value={repDays}>
-                <option value={0}>όχι, μόνο τώρα</option>
-                <option value={31}>τις καθημερινές</option>
-                <option value={127}>κάθε μέρα</option>
-                <option value={96}>τα Σαββατοκύριακα</option>
-              </select>
-            </label>
-            {#if repDays}
-              <label>Από
-                <select class="hm" bind:value={repH} aria-label="Ώρα">{#each { length: 24 }, h (h)}<option value={h}>{String(h).padStart(2, "0")}</option>{/each}</select>:<select
-                  class="hm" bind:value={repM} aria-label="Λεπτά">{#each { length: 12 }, k (k)}<option value={k * 5}>{String(k * 5).padStart(2, "0")}</option>{/each}</select>
-                για <select bind:value={repLen}>{#each [[30, "½ ώρα"], [60, "1 ώρα"], [90, "1½ ώρα"], [120, "2 ώρες"]] as const as [m, t] (m)}<option value={m}>{t}</option>{/each}</select>
-              </label>
-            {/if}
-            <fieldset>
-              <legend>Γραμμές</legend>
-              {#each tickable as l (l)}
-                {@const info = app.lineInfo.get(l)}
-                <label class="ln" style:--c={app.lineColor(l).bg}>
-                  <input type="checkbox" checked={!off.includes(l)} onchange={e => setTicked(l, e.currentTarget.checked)} /><b>{l}</b>
-                </label>
-              {/each}
-            </fieldset>
-            <div class="go">
-              {#if !repDays}<button type="button" class="bell" disabled={!targets.length || pushing} onclick={alertMe}>{pushing ? "…" : "Εδώ"}</button>{/if}
-              {#if tgLink}<a class="bell tg" href={tgLink} target="_blank" rel="noopener">Στο Telegram</a>
-              {:else if repDays}<small class="warn">Διάλεξε ώρα έναρξης, ώστε να τελειώνει ως τα μεσάνυχτα.</small>{/if}
-            </div>
-            {#if repDays}
-              <p class="note">Η επανάληψη γίνεται στο Telegram (@{BOT}): σου γράφει κάθε φορά που ένα λεωφορείο πλησιάζει, μόνο σε αυτές τις ώρες.
-                Εκεί, /list δείχνει τις ειδοποιήσεις σου και τις σταματάει.</p>
-            {:else}
-            <p class="note">Για 2 ώρες.
-              {#if canPush()}Εδώ: και με κλειστή σελίδα ή κλειδωμένη οθόνη.
-              {:else}Εδώ: όσο η σελίδα είναι ανοιχτή{canNotify ? "" : ", μόνο μέσα στη σελίδα"}.{/if}
-              Telegram: και με κλειδωμένη οθόνη, από το @{BOT}.</p>
-            {/if}
-            {#if iosTab && !repDays}
-              <p class="note">iPhone, για ειδοποίηση εδώ με κλειδωμένη οθόνη: Κοινοποίηση → «Προσθήκη στην οθόνη Αφετηρίας», και άνοιξε τον χάρτη από το εικονίδιο.</p>
-            {/if}
+            <AlertForm {app} lines={targets} label={board?.name ?? from.label} onstarted={() => (alertOpen = false)}>
+              {#snippet extra()}
+                {#if xPicked}<p class="note">Για την πρώτη γραμμή, {xPicked.legs[0].line}, ως την αλλαγή στη στάση {stop(xPicked.legs[0].to)}.</p>{/if}
+                {#if near.length > 1}
+                  <label class="board">Στάση
+                    <select bind:value={boardName}>
+                      <option value="">η κοντινότερη κάθε γραμμής</option>
+                      {#each near as b (b.name)}<option value={b.name}>{b.name} · {metres(b.walk)} · {b.lines.map(l => l.line).join(", ")}</option>{/each}
+                    </select>
+                  </label>
+                {/if}
+              {/snippet}
+            </AlertForm>
           </div>
         {/if}
       {/if}
@@ -633,25 +525,14 @@
   .metro { margin: 8px 0 0; padding: 6px 8px; border-radius: 8px; background: var(--control); font-size: 13px; }
   .sub { margin: 10px 0 0; font-size: 12px; color: var(--muted); font-weight: 600; }
   .all { margin-top: 6px; font-size: 12px; padding: 0; }
-  .form > label select.hm { flex: none; font-variant-numeric: tabular-nums; }
   .alert { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
   .alert span { flex: 1; }
   .alert .lead { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 8px; margin-left: -8px; border: 0;
     border-radius: 8px; background: none; color: var(--fg); font-weight: 600; font-size: 13px; cursor: pointer; }
   .alert .lead:hover { background: var(--control); }
   .alert .lead svg.up { transform: rotate(180deg); }
-  .form { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
-  .form > label { display: flex; align-items: center; gap: 8px; color: var(--muted); }
-  .form > label select { flex: 1; min-width: 0; }
-  .form fieldset { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; padding: 0; border: 0; }
-  .form legend { float: left; margin-right: 2px; color: var(--muted); }
-  .form .ln { min-height: 30px; cursor: pointer; }
-  .form .ln input { margin: 0; accent-color: var(--c); }
-  .go { display: flex; gap: 6px; }
-  .bell:disabled { opacity: .5; cursor: default; }
-  .bell.tg { display: inline-grid; place-items: center; background: #229ed9; text-decoration: none; }
-  .bell { min-height: 34px; padding: 0 12px; border: 0; border-radius: 9px; background: var(--accent); color: #fff; font-weight: 600;
-    font-size: 14px; cursor: pointer; }
+  .board { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+  .board select { flex: 1; min-width: 0; }
   select { min-height: 34px; padding: 0 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--control);
     color: var(--fg); font-size: 16px; }
   .foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 8px; color: var(--muted); font-size: 12px; }

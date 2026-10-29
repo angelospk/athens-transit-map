@@ -95,3 +95,15 @@ export function arrivalGroups(arrivals: StopArrival[], nowMs: number): ArrivalGr
   }
   return [...groups.values()];
 }
+
+// What an alert at stop k watches, per line (AlertForm): each variant through the stop, boarded there.
+// i: the stop's place in the variant (near `hint` when it passes twice: a loop), from: k itself.
+export function alertLinesAt(ix: TripIndex, k: number, lines?: string[], hint?: Record<string, number>): { line: string; variants: { id: string; i: number; from: number }[] }[] {
+  return linesAt(ix, k).filter(l => !lines || lines.includes(l.line)).map(l => ({
+    line: l.line,
+    variants: l.variants.map(id => {
+      const seq = ix.l[l.line][id], h = hint?.[id];
+      return { id, i: h != null && seq[h] === k ? h : seq.indexOf(k), from: k };
+    }),
+  }));
+}

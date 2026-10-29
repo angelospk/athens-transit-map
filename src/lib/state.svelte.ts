@@ -24,6 +24,8 @@ const EMPTY_DROPS = 2;
 const STATUS_EVERY_MS = 60_000;
 const TILE_TIMEOUT_MS = 15_000;
 
+export type RailLine = { kind: "metro" | "suburban"; id: string };
+
 export type Selection =
   | { kind: "vehicle"; line: string; id: string }
   | { kind: "route"; line: string; variant: string };
@@ -86,8 +88,6 @@ export class AppState {
   motion = $state(stored("motion", true, isBool));
   // Typical bus speed per road segment (public/speed/segments.geojson, lab/segspeed).
   speedOn = $state(stored("speedOn", false, isBool));
-  // Metro, ISAP and tram stations on the map (the pinned lines' tracks stay either way).
-  stationsOn = $state(stored("stationsOn", true, isBool));
   // Map filters; the selected vehicle is always shown.
   only = $state.raw<Only>(stored("only", { fresh: false, onTime: false },
     v => !!v && isBool((v as Only).fresh) && isBool((v as Only).onTime)));
@@ -95,19 +95,19 @@ export class AppState {
   tempLine = $state<string | null>(null);
   // Light, dark, or the device's setting.
   theme = $state<Theme>(stored("theme", "system", isTheme));
-  // Metro, ISAP and tram (static): every station, and the pinned lines' tracks. metroStation: the tapped
-  // station, whose card pins its lines.
-  metroLines = $state.raw<string[]>(stored("metroLines", [], isIds));
+  // Metro, ISAP and tram (static): every station, and each line's tracks. metroStation: the tapped station.
   metro = $state.raw<MetroData | null>(null);
   metroStation = $state<string | null>(null);
-  // Suburban rail (Προαστιακός): its corridors and stations, shown while suburbanOn. railStation: the id
-  // of the tapped station, whose card shows its live board.
-  suburbanOn = $state(stored("suburbanOn", false, isBool));
+  // Suburban rail (Προαστιακός): its corridors and stations. railStation: the id of the tapped station,
+  // whose card shows its live board.
   suburban = $state.raw<SuburbanData | null>(null);
   railStation = $state<string | null>(null);
-  // Trains on the map (metro and tram from the timetable, Proastiakos by GPS), while trainsOn. train:
-  // the tapped one, whose card shows its run and whose line is drawn.
+  // Trains on the map (metro and tram from the timetable, Proastiakos by GPS) and the stations of all
+  // three, while trainsOn ("Τρένα" in the map menu). train: the tapped one, whose card shows its run and
+  // whose line is drawn. railLine: a metro/tram line or a suburban corridor shown on its own, as a bus
+  // route is: its track drawn, its card listing its trains.
   trainsOn = $state(stored("trainsOn", true, isBool));
+  railLine = $state.raw<RailLine | null>(null);
   stasyTrains = $state.raw<StasyVehicle[]>([]);
   suburbanTrains = $state.raw<SuburbanTrain[]>([]);
   train = $state.raw<TrainSel | null>(null);
@@ -135,8 +135,9 @@ export class AppState {
   // The stops of the trip picked in the planner: where to get on, change and get off ([lat, lon]).
   tripStops = $state.raw<{ at: [number, number]; name: string }[]>([]);
 
-  // Set by MapView: frame the given lines once their shapes are loaded.
+  // Set by MapView: frame the given lines once their shapes are loaded; bring a point ([lon, lat]) into view.
   fit: (ids: string[]) => void = () => {};
+  flyTo: (at: [number, number]) => void = () => {};
 
   private clock = new ClockOffset();
   private pollers = new Map<string, LinePoller>();
@@ -237,7 +238,6 @@ export class AppState {
     void this.refreshStatus();
     if (this.cityOn) this.startCity();
     this.loadMetro();
-    if (this.suburbanOn) this.loadSuburban();
     this.startTrains();
     setInterval(() => (this.now = Date.now()), 1000);
     setInterval(() => { if (!document.hidden) void this.refreshStatus(); }, STATUS_EVERY_MS);
@@ -297,31 +297,29 @@ export class AppState {
     }
   }
 
-  toggleMetroLine(id: string) {
-    this.setMetroLines(this.metroLines.includes(id) ? this.metroLines.filter(l => l !== id) : [...this.metroLines, id]);
-  }
-
-  setMetroLines(ids: string[]) {
-    this.metroLines = ids;
-    store("metroLines", ids);
-  }
-
   // A station tapped on the map (null: none). Its card replaces a vehicle's or route's.
   selectStation(name: string | null) {
-    if (name) { this.clearSelection(); this.railStation = this.train = this.busStop = null; }
+    if (name) { this.clearSelection(); this.railStation = this.train = this.busStop = this.railLine = null; }
     this.metroStation = name;
   }
 
   // A suburban station tapped on the map (its id; null: none). Its card replaces any other.
   selectRailStation(id: string | null) {
-    if (id) { this.clearSelection(); this.metroStation = this.train = this.busStop = null; }
+    if (id) { this.clearSelection(); this.metroStation = this.train = this.busStop = this.railLine = null; }
     this.railStation = id;
   }
 
   // A bus stop tapped on the map (its index in stopIx; null: none). Its card replaces any other.
   selectBusStop(i: number | null) {
-    if (i != null) { this.clearSelection(); this.metroStation = this.railStation = this.train = null; }
+    if (i != null) { this.clearSelection(); this.metroStation = this.railStation = this.train = this.railLine = null; }
     this.busStop = i;
+  }
+
+  // The stop index (public/trips.json, shared with the planner), loaded once it is needed; null after a
+  // failure (the next call tries again).
+  loadStops(): Promise<TripIndex | null> {
+    if (this.stopIx) return Promise.resolve(this.stopIx);
+    return import("./trip").then(t => t.loadTripIndex()).then(ix => (this.stopIx = ix), () => null);
   }
 
   // A line tapped on a stop's card: shown for a while (as a city vehicle's line is) on its variants
@@ -365,7 +363,7 @@ export class AppState {
     if (!lines.length) return [];
     const keep = lines.slice(0, MAX_LINES), ids = keep.map(l => l.id), left = lines.slice(MAX_LINES).map(l => l.id);
     if (!keepAlert || this.alert?.lines.some(l => !ids.includes(l.line))) this.setAlert(null);   // a new trip: the old alert no longer fits
-    this.metroStation = this.railStation = this.train = this.busStop = null;
+    this.metroStation = this.railStation = this.train = this.busStop = this.railLine = null;
     this.selection = null;
     if (this.tempLine && ids.includes(this.tempLine)) this.tempLine = null;   // now a pick
     this.dropTemp();
@@ -410,24 +408,26 @@ export class AppState {
     this.hits = this.hits.filter(h => h.id !== id);
   }
 
-  setSuburbanOn(on: boolean) {
-    this.suburbanOn = on;
-    store("suburbanOn", on);
-    if (on) this.loadSuburban();
-    else this.selectRailStation(null);
-  }
-
   // A train tapped on the map (null: none). Its card replaces any other.
   selectTrain(t: TrainSel | null) {
-    if (t) { this.clearSelection(); this.metroStation = this.railStation = this.busStop = null; }
+    if (t) { this.clearSelection(); this.metroStation = this.railStation = this.busStop = this.railLine = null; }
     this.train = t;
+  }
+
+  // A rail line shown on its own (null: none). Its card replaces any other.
+  selectRailLine(l: RailLine | null) {
+    if (l) { this.clearSelection(); this.metroStation = this.railStation = this.busStop = this.train = null; }
+    this.railLine = l;
   }
 
   setTrainsOn(on: boolean) {
     this.trainsOn = on;
     store("trainsOn", on);
     this.startTrains();
-    if (!on) { this.selectTrain(null); this.stasyTrains = this.suburbanTrains = []; }
+    if (!on) {
+      this.selectTrain(null); this.selectRailLine(null); this.selectStation(null); this.selectRailStation(null);
+      this.stasyTrains = this.suburbanTrains = [];
+    }
   }
 
   // Polls both networks while trainsOn and the tab is visible: the metro's every 15 s (the client moves
@@ -456,12 +456,12 @@ export class AppState {
     void poll("suburban", 10_000);
   }
 
-  // Loads the suburban data once, when the layer is first on; after a failure the switch goes off.
+  // Loads the suburban data once, with the trains; after a failure, the next start tries again.
   private suburbanLoading = false;
   loadSuburban() {
     if (this.suburban || this.suburbanLoading) return;
     this.suburbanLoading = true;
-    loadSuburban().then(d => (this.suburban = d), () => { this.say("Δεν φόρτωσε ο Προαστιακός."); this.setSuburbanOn(false); })
+    loadSuburban().then(d => (this.suburban = d), () => this.say("Δεν φόρτωσε ο Προαστιακός."))
       .finally(() => (this.suburbanLoading = false));
   }
 
@@ -470,16 +470,8 @@ export class AppState {
   loadMetro() {
     if (this.metro || this.metroLoading) return;
     this.metroLoading = true;
-    loadMetro().then(d => { this.metro = d; this.migrateMetro(); }, () => this.say("Δεν φόρτωσαν οι γραμμές του μετρό."))
+    loadMetro().then(d => (this.metro = d), () => this.say("Δεν φόρτωσαν οι γραμμές του μετρό."))
       .finally(() => (this.metroLoading = false));
-  }
-
-  // The old single switch ("metroOn") becomes every line pinned, once, unless lines were already chosen.
-  private migrateMetro() {
-    if (!stored("metroOn", false, isBool) || !this.metro) return;
-    try { if (localStorage.getItem("metroLines") != null) return localStorage.removeItem("metroOn"); } catch { return; }
-    this.setMetroLines(this.metro.lines.map(l => l.id));
-    try { localStorage.removeItem("metroOn"); } catch { /* blocked */ }
   }
 
   setOthers(o: Others) {
@@ -497,12 +489,6 @@ export class AppState {
     store("speedOn", on);
   }
 
-  setStationsOn(on: boolean) {
-    this.stationsOn = on;
-    store("stationsOn", on);
-    if (!on) this.selectStation(null);
-  }
-
   setMotion(on: boolean) {
     this.motion = on;
     store("motion", on);
@@ -515,7 +501,7 @@ export class AppState {
 
   // A vehicle clicked on the city layer: select it and show its line in detail for a while.
   selectCityVehicle(line: string, id: string) {
-    this.metroStation = this.railStation = this.train = this.busStop = null;
+    this.metroStation = this.railStation = this.train = this.busStop = this.railLine = null;
     if (this.tempLine !== line) {
       this.dropTemp();
       if (!this.selected.includes(line)) {
@@ -537,13 +523,13 @@ export class AppState {
   }
 
   selectVehicle(line: string, id: string) {
-    this.metroStation = this.railStation = this.train = this.busStop = null;
+    this.metroStation = this.railStation = this.train = this.busStop = this.railLine = null;
     if (line !== this.tempLine) this.dropTemp();
     this.selection = { kind: "vehicle", line, id };
   }
 
   selectRoute(line: string, variant: string) {
-    this.metroStation = this.railStation = this.train = this.busStop = null;
+    this.metroStation = this.railStation = this.train = this.busStop = this.railLine = null;
     if (line !== this.tempLine) this.dropTemp();
     this.selection = { kind: "route", line, variant };
   }

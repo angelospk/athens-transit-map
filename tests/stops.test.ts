@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrivalGroups, timeText, toward, linesAt, busStopsFC, stopIndex, twins, type StopArrival } from "../src/lib/stops";
+import { arrivalGroups, timeText, toward, linesAt, busStopsFC, stopIndex, twins, alertLinesAt, type StopArrival } from "../src/lib/stops";
 import type { TripIndex } from "../src/lib/trip";
 
 // 0 and 1: one stop on both sides of a street (~44 m), 2: the same name 1 km away, 3: another name close by.
@@ -113,5 +113,20 @@ describe("toward", () => {
     expect(toward("Α. ΠΑΤΗΣΙΑ - Ν. ΠΑΓΚΡΑΤΙ - Ν. ΕΛΒΕΤΙΑ")).toBe("Ν. ΕΛΒΕΤΙΑ");
     expect(toward("ΠΕΙΡΑΙΑΣ - ΣΥΝΤΑΓΜΑ(ΠΡΟΣΩΡΙΝΗ ΛΟΓΩ ΕΡΓΩΝ)")).toBe("ΣΥΝΤΑΓΜΑ(ΠΡΟΣΩΡΙΝΗ ΛΟΓΩ ΕΡΓΩΝ)");
     expect(toward("ΚΥΚΛΙΚΗ")).toBe("ΚΥΚΛΙΚΗ");
+  });
+});
+
+describe("alertLinesAt", () => {
+  const ix: TripIndex = { v: "2026-10-06", s: [["Α", 0, 0], ["Β", 0, 0.001], ["Γ", 0, 0.002]],
+    l: { "040": { "1": [0, 1, 2], "2": [2, 1, 0] }, "550": { "9": [1, 2, 1] } } };
+  it("boards every variant through the stop at the stop", () => {
+    expect(alertLinesAt(ix, 1)).toEqual([
+      { line: "040", variants: [{ id: "1", i: 1, from: 1 }, { id: "2", i: 1, from: 1 }] },
+      { line: "550", variants: [{ id: "9", i: 0, from: 1 }] },
+    ]);
+  });
+  it("keeps only the given lines, and takes the hinted pass of a loop", () => {
+    expect(alertLinesAt(ix, 1, ["550"], { "9": 2 })).toEqual([{ line: "550", variants: [{ id: "9", i: 2, from: 1 }] }]);
+    expect(alertLinesAt(ix, 1, ["550"], { "9": 1 })).toEqual([{ line: "550", variants: [{ id: "9", i: 0, from: 1 }] }]);
   });
 });

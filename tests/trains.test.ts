@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byDestination, clockHM, destColor, stasyPlace, stopRows, trainsFC, type StasyVehicle, type SuburbanTrain } from "../src/lib/trains";
+import { byDestination, clockHM, destColor, lineTrains, stasyPlace, stopRows, trainsFC, type StasyVehicle, type SuburbanTrain } from "../src/lib/trains";
 import type { Corridor } from "../src/lib/suburban";
 
 const veh = (from: number, to: number, trip = "t1", line = "M2"): StasyVehicle => ({
@@ -111,5 +111,23 @@ describe("destColor", () => {
     expect(destColor(data, "p", "Αεροδρόμιο")).toBe("#7E57C2");
     expect(destColor(data, "p", " αεροδρόμιο ")).toBe("#7E57C2");
     expect(destColor(data, "p", "Λάρισα")).toBe("#D9822B");
+  });
+});
+
+describe("lineTrains", () => {
+  const place = (name: string, at: number) => ({ name, lat: 37.98, lon: 23.7, at });
+  const v = (trip: string, line: string, headsign: string, next: string, at: number) =>
+    ({ trip, line, route_color: "#0a0", headsign, from: place("Α", at - 60), to: place(next, at) });
+  it("lists a metro line's trains by destination, soonest first", () => {
+    const r = lineTrains({ kind: "metro", id: "M2" },
+      [v("a", "M2", "ΕΛΛΗΝΙΚΟ", "ΣΥΝΤΑΓΜΑ", 200), v("b", "M1", "ΚΗΦΙΣΙΑ", "ΟΜΟΝΟΙΑ", 50), v("c", "M2", "ΑΝΘΟΥΠΟΛΗ", "ΟΜΟΝΟΙΑ", 100), v("d", "M2", "ΕΛΛΗΝΙΚΟ", "ΑΚΡΟΠΟΛΗ", 150)], [], 90);
+    expect(r.map(t => t.sel.id)).toEqual(["c", "d", "a"]);
+    expect(r[0]).toMatchObject({ sel: { kind: "metro", id: "c" }, to: "ΑΝΘΟΥΠΟΛΗ", next: "ΟΜΟΝΟΙΑ", at: 100, delay: null });
+  });
+  it("lists a suburban corridor's trains, without ones whose fix is too old", () => {
+    const t = (train: string, corridor: string, position_at: number) => ({ train, corridor, service: "", lat: 38, lon: 23.7, course: null,
+      speed_kmh: 50, delay_min: 3, from: "Π", to: "ΑΕΡΟΔΡΟΜΙΟ", next_station: "ΝΕΡΑΤΖΙΩΤΙΣΣΑ", position_at });
+    const r = lineTrains({ kind: "suburban", id: "c1" }, [], [t("1", "c1", 1000), t("2", "c2", 1000), t("3", "c1", 0)], 1000);
+    expect(r).toEqual([{ sel: { kind: "suburban", id: "1" }, to: "ΑΕΡΟΔΡΟΜΙΟ", next: "ΝΕΡΑΤΖΙΩΤΙΣΣΑ", at: null, delay: 3, pos: [23.7, 38] }]);
   });
 });
