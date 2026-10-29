@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fetchStop, peekStop } from "../api";
-  import { arrivalGroups, linesAt, toward, twins, type StopBoard } from "../stops";
+  import { arrivalGroups, linesAt, timeText, toward, twins, type StopBoard } from "../stops";
   import type { AppState } from "../state.svelte";
   import type { FetchResult } from "../poller";
 
@@ -20,7 +20,6 @@
   let failed = $state(false);
   let now = $state(Date.now());   // set from app.serverMs() when a stop opens
   const groups = $derived(board ? arrivalGroups(board.arrivals, now) : []);
-  const when = (m: number) => (m === 0 ? "τώρα" : `${m}′`);
   const variantsOf = (line: string) => lines.find(l => l.line === line)?.variants ?? [];
 
   const boardOf = (r: FetchResult | undefined) => {
@@ -85,8 +84,8 @@
           {#each groups as g (g.line + g.headsign)}
             {@const c = app.lineColor(g.line)}
             <li><button type="button" onclick={() => app.openLineAt(g.line, g.variant ? [g.variant] : variantsOf(g.line), g.times[0].vehicle)}>
-              <b style:--bg={c.bg} style:--fg={c.fg}>{g.line}</b><span class="to" title={g.headsign}>→ {toward(g.headsign)}</span>
-              <span class="when">{#each g.times as t, k (k)}{#if k}{" · "}{/if}{when(t.min)}{#if t.late >= 2}{" "}<em>+{t.late}′</em>{/if}{/each}</span>
+              <b style:--bg={c.bg} style:--fg={c.fg}>{g.line}</b><span class="to" title={g.headsign}>→ {toward(g.headsign)}{#if g.times[0].away}<small>σε {g.times[0].away} στάσεις</small>{/if}</span>
+              <span class="when">{#each g.times as t, k (k)}{#if k}{" · "}{/if}{timeText(t)}{#if t.late >= 2}{" "}<em>+{t.late}′</em>{/if}{/each}</span>
             </button></li>
           {/each}
         </ul>
@@ -122,6 +121,7 @@
   .arr button:hover { background: var(--control); }
   .arr b { flex: none; }
   .to { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .to small { display: block; margin-top: -1px; font-size: 11px; line-height: 13px; color: var(--muted); }
   .when { flex: none; font-weight: 600; font-variant-numeric: tabular-nums; }
   .when em { font-style: normal; font-size: 11px; color: var(--late2); }
   .src { margin: 6px 0 0; font-size: 11px; }

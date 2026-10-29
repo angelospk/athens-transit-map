@@ -14,6 +14,8 @@ export interface StopArrival {
   line: string; headsign: string; variant: string; vehicle: string;
   eta_s: number; at: number; delay_s: number; position_at: number;
   source?: "live" | "schedule";   // contract rev 8; "schedule": a trip with no bus yet
+  // rev 8; null: unmatched (trip_id, scheduled) or unknown; missing: an older server
+  trip_id?: string | null; scheduled?: number | null; stops_away?: number | null; distance_m?: number | null;
 }
 export interface StopBoard {
   stop: { id: string; name: string; lat: number; lon: number };
@@ -64,7 +66,14 @@ export const toward = (headsign: string) => headsign.split(" - ").pop()!.trim() 
 
 const GONE_MS = 60_000;
 
-export interface ArrivalGroup { line: string; headsign: string; variant: string; times: { min: number; vehicle: string; late: number }[] }
+// here: at the stop (it is the bus's next one, at most HERE_M away); away: stops to go, from 2;
+// est: no trip, a time from speed only. Each is left out when not so or not known.
+export interface ArrivalTime { min: number; vehicle: string; late: number; here?: true; away?: number; est?: true }
+export interface ArrivalGroup { line: string; headsign: string; variant: string; times: ArrivalTime[] }
+export const HERE_M = 50;
+
+export const timeText = (t: ArrivalTime) =>
+  t.here ? "στη στάση" : `${t.est ? "~" : ""}${t.min === 0 ? "τώρα" : `${t.min}′`}`;
 
 // Arrivals by line and headsign, soonest first, each with up to 3 times in minutes from `at` (so an
 // answer cached a while still counts down); late: the delay in whole minutes. A bus more than GONE_MS past its
@@ -77,8 +86,12 @@ export function arrivalGroups(arrivals: StopArrival[], nowMs: number): ArrivalGr
     const key = `${a.line}|${a.headsign}`;
     let g = groups.get(key);
     if (!g) groups.set(key, (g = { line: a.line, headsign: a.headsign, variant: a.variant, times: [] }));
-    if (g.times.length < 3)
-      g.times.push({ min: Math.max(0, Math.round((a.at * 1000 - nowMs) / 60_000)), vehicle: a.vehicle, late: Math.round(a.delay_s / 60) });
+    if (g.times.length >= 3) continue;
+    const t: ArrivalTime = { min: Math.max(0, Math.round((a.at * 1000 - nowMs) / 60_000)), vehicle: a.vehicle, late: Math.round(a.delay_s / 60) };
+    if (a.stops_away === 1 && a.distance_m != null && a.distance_m <= HERE_M) t.here = true;
+    if (a.stops_away != null && a.stops_away >= 2) t.away = a.stops_away;
+    if (a.trip_id === null) { t.est = true; t.late = 0; }
+    g.times.push(t);
   }
   return [...groups.values()];
 }

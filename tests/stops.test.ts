@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrivalGroups, toward, linesAt, busStopsFC, stopIndex, twins, type StopArrival } from "../src/lib/stops";
+import { arrivalGroups, timeText, toward, linesAt, busStopsFC, stopIndex, twins, type StopArrival } from "../src/lib/stops";
 import type { TripIndex } from "../src/lib/trip";
 
 // 0 and 1: one stop on both sides of a street (~44 m), 2: the same name 1 km away, 3: another name close by.
@@ -72,9 +72,39 @@ describe("arrivalGroups", () => {
     expect(arrivalGroups([sch, { ...a("040", "Π", 300, "2"), source: "live" as const }], now)[0].times.map(t => t.vehicle)).toEqual(["2"]);
     expect(arrivalGroups([sch], now)).toEqual([]);
   });
+  it("rev 8: at the stop (next stop, ≤ 50 m), stops away from 2 on, and an estimate without a trip (~, never late)", () => {
+    const live = (inS: number, v: string, extra: Partial<StopArrival>, delay = 0): StopArrival =>
+      ({ ...a("040", "Π", inS, v, delay), source: "live", trip_id: "t" + v, scheduled: now / 1000 + inS, ...extra });
+    const g = arrivalGroups([
+      live(10, "1", { stops_away: 1, distance_m: 40 }),
+      live(200, "2", { stops_away: 1, distance_m: 600 }),
+      live(400, "3", { stops_away: 4, distance_m: 1500 }),
+    ], now);
+    expect(g[0].times).toEqual([
+      { min: 0, vehicle: "1", late: 0, here: true },
+      { min: 3, vehicle: "2", late: 0 },
+      { min: 7, vehicle: "3", late: 0, away: 4 },
+    ]);
+    const est = arrivalGroups([live(420, "9", { trip_id: null, scheduled: null, stops_away: 2, distance_m: 900 }, 300)], now);
+    expect(est[0].times).toEqual([{ min: 7, vehicle: "9", late: 0, away: 2, est: true }]);
+  });
+  it("an old server without the rev 8 fields: no hint, no estimate mark", () => {
+    expect(arrivalGroups([a("040", "Π", 0, "1"), a("040", "Π", 300, "2", 180)], now)[0].times)
+      .toStrictEqual([{ min: 0, vehicle: "1", late: 0 }, { min: 5, vehicle: "2", late: 3 }]);
+  });
   it("at most 3 times a group", () => {
     const many = [1, 2, 3, 4].map(k => a("040", "Π", k * 120, String(k)));
     expect(arrivalGroups(many, now)[0].times.map(t => t.vehicle)).toEqual(["1", "2", "3"]);
+  });
+});
+
+describe("timeText", () => {
+  it("at the stop, now, minutes; an estimate without a trip carries ~, now too", () => {
+    expect(timeText({ min: 0, vehicle: "1", late: 0, here: true })).toBe("στη στάση");
+    expect(timeText({ min: 0, vehicle: "1", late: 0 })).toBe("τώρα");
+    expect(timeText({ min: 0, vehicle: "1", late: 0, est: true })).toBe("~τώρα");
+    expect(timeText({ min: 7, vehicle: "1", late: 0 })).toBe("7′");
+    expect(timeText({ min: 7, vehicle: "1", late: 0, est: true })).toBe("~7′");
   });
 });
 
