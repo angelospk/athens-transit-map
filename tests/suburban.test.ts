@@ -71,7 +71,7 @@ describe("trainRows", () => {
 describe("boardNote", () => {
   it("says which times are live when some are, and only 'timetable' when none is", () => {
     expect(boardNote([{ live: true }, { live: false }])).toBe("● ζωντανά, από τα τρένα σε κίνηση· τα άλλα από το πρόγραμμα της Hellenic Train.");
-    expect(boardNote([{ live: false }])).toBe("Από το πρόγραμμα της Hellenic Train: κανένα τρένο σε κίνηση ακόμη.");
-    expect(boardNote([])).toBe("Από το πρόγραμμα της Hellenic Train: κανένα τρένο σε κίνηση ακόμη.");
+    expect(boardNote([{ live: false }])).toBe("Από το πρόγραμμα της Hellenic Train.");
+    expect(boardNote([])).toBe("Από το πρόγραμμα της Hellenic Train.");
   });
 });

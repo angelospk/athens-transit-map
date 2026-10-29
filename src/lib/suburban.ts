@@ -59,4 +59,4 @@ export function trainRows(deps: Train[], nowMin: number): TrainRow[] {
 // The card's note on where its times come from: live ones are marked ●.
 export const boardNote = (times: { live: boolean }[]) => times.some(t => t.live)
   ? "● ζωντανά, από τα τρένα σε κίνηση· τα άλλα από το πρόγραμμα της Hellenic Train."
-  : "Από το πρόγραμμα της Hellenic Train: κανένα τρένο σε κίνηση ακόμη.";
+  : "Από το πρόγραμμα της Hellenic Train.";
