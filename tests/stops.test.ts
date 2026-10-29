@@ -67,6 +67,11 @@ describe("arrivalGroups", () => {
     expect(g[0].times.map(t => t.vehicle)).toEqual(["2"]);
     expect(arrivalGroups([a("040", "Π", 0, "1")], now + 61_000)).toEqual([]);
   });
+  it("only buses: a timetable trip with no bus yet (source schedule) is left out", () => {
+    const sch = { ...a("040", "Π", 120, ""), source: "schedule" as const };
+    expect(arrivalGroups([sch, { ...a("040", "Π", 300, "2"), source: "live" as const }], now)[0].times.map(t => t.vehicle)).toEqual(["2"]);
+    expect(arrivalGroups([sch], now)).toEqual([]);
+  });
   it("at most 3 times a group", () => {
     const many = [1, 2, 3, 4].map(k => a("040", "Π", k * 120, String(k)));
     expect(arrivalGroups(many, now)[0].times.map(t => t.vehicle)).toEqual(["1", "2", "3"]);

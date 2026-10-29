@@ -13,6 +13,7 @@ export const TWIN_M = 200;   // the same name closer than this is the stop acros
 export interface StopArrival {
   line: string; headsign: string; variant: string; vehicle: string;
   eta_s: number; at: number; delay_s: number; position_at: number;
+  source?: "live" | "schedule";   // contract rev 8; "schedule": a trip with no bus yet
 }
 export interface StopBoard {
   stop: { id: string; name: string; lat: number; lon: number };
@@ -72,6 +73,7 @@ export function arrivalGroups(arrivals: StopArrival[], nowMs: number): ArrivalGr
   const groups = new Map<string, ArrivalGroup>();
   for (const a of [...arrivals].sort((x, y) => x.at - y.at)) {
     if (a.at * 1000 < nowMs - GONE_MS) continue;   // an old answer kept through failed refreshes
+    if (a.source === "schedule") continue;          // the card lists buses only
     const key = `${a.line}|${a.headsign}`;
     let g = groups.get(key);
     if (!g) groups.set(key, (g = { line: a.line, headsign: a.headsign, variant: a.variant, times: [] }));
