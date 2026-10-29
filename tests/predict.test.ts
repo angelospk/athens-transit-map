@@ -54,6 +54,19 @@ describe("geometry", () => {
     expect(s[1]).toBeLessThan(s[2]);
     expect(s[2]).toBeLessThan(s[3]);
   });
+  it("never drifts back step by step within the tolerance", () => {
+    // Stops 22 m apart heading west, nearer the outbound side: each alone is within 30 m behind the last.
+    const back = [0.9, 0.875, 0.85, 0.825].map(f => [23.70 + f * 0.01, 37.97] as [number, number]);
+    const s = stopOffsets(outBack, back);
+    for (let i = 1; i < s.length; i++) expect(s[i]).toBeGreaterThanOrEqual(Math.max(...s.slice(0, i)) - 30);
+    expect(s[3]).toBeGreaterThan(M);
+  });
+  it("keeps the place of the stop before for a stop it can only put behind it", () => {
+    // The middle stop lies only behind the first one on a one-way shape.
+    const s = stopOffsets(east, [at(0.9), at(0.5), at(1.1)]);
+    expect(s[1]).toBe(s[0]);
+    expect(s[2]).toBeGreaterThan(s[0]);
+  });
 });
 
 describe("updateTrack", () => {

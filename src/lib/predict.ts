@@ -96,29 +96,27 @@ export function shapeLength(shape: [number, number][]): number {
 }
 
 // s of each stop, in order. Each stop takes one of its legs (a stop stands on the side of the street its
-// direction uses) so that the stops keep their order along the shape and stand, all together, closest to
-// it; on a tie, the earlier leg. Chosen for the whole run, not stop by stop: on a loop the first stop is
-// near both ends of the shape, and taking the end would push every later stop to the end too (web#16).
-// A stop off the shape takes the place of the stop before it.
-const OUT_OF_ORDER_M = 1e6;   // the cost of a stop placed behind the one before it
+// direction uses) so that no stop stands more than BACK_TOLERANCE_M behind any stop before it, and the
+// stops stand, all together, closest to the shape; on a tie, the earlier leg. Chosen for the whole run,
+// not stop by stop: on a loop the first stop is near both ends of the shape, and taking the end would
+// push every later stop to the end too (web#16). A stop with no such leg takes the place of the stop before.
 export function stopOffsets(shape: [number, number][], stops: LngLat[]): number[] {
-  type Step = { s: number; cost: number; from: number };
+  type Step = { s: number; max: number; cost: number; from: number };
   const steps: Step[][] = [];
   for (const p of stops) {
-    const before = steps[steps.length - 1] ?? [{ s: 0, cost: 0, from: -1 }];
-    const cands = projectCandidates(shape, p);
-    if (!cands.length) {   // keeps the place (and cost) of each option of the stop before
-      steps.push(before.map((b, k) => ({ s: b.s, cost: b.cost, from: k })));
-      continue;
-    }
-    steps.push(cands.map(c => {
+    const before = steps[steps.length - 1] ?? [{ s: 0, max: 0, cost: 0, from: -1 }];
+    const next: Step[] = [];
+    for (const c of projectCandidates(shape, p)) {
       let best: Step | null = null;
       before.forEach((b, k) => {
-        const cost = b.cost + c.offM + (c.s >= b.s - BACK_TOLERANCE_M ? 0 : OUT_OF_ORDER_M);
-        if (!best || cost < best.cost - 0.5) best = { s: c.s, cost, from: k };
+        if (c.s < b.max - BACK_TOLERANCE_M) return;
+        const cost = b.cost + c.offM;
+        if (!best || cost < best.cost - 0.5) best = { s: c.s, max: Math.max(b.max, c.s), cost, from: k };
       });
-      return best!;
-    }));
+      if (best) next.push(best);
+    }
+    // Off the shape, or only behind: each option of the stop before keeps its place.
+    steps.push(next.length ? next : before.map((b, k) => ({ ...b, from: k })));
   }
   const last = steps[steps.length - 1];
   if (!last) return [];
