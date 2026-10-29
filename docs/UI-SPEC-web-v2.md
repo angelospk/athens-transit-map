@@ -278,21 +278,21 @@ Requirement 11.
 
 Opened 2026-10-29 on the board (https://github.com/users/angelospk/projects/3). Order of work:
 
-| # | Repo | Issue | Status | Needs |
+| # | Issue | Title | Status | Needs |
 |---|---|---|---|---|
-| 1 | web | Card stack: vehicle → stop → line, back, history, query deep links (B1, B9 part 1) | Ready | |
-| 2 | web | Unified Vehicle / Stop / Line cards on /v2 (B2, B10 durations + old timetable) | Ready | 1 |
-| 3 | web | One vehicle marker, global position age, two rail tracks (B3-B5) | Ready | backend issue for the tracks |
-| 4 | web | Favourite stops and lines for all modes, ★ panel, favourites-only map (B6, B7) | Ready | 2 |
-| 5 | web | Search modal: lines and stops, kind/mode filters with SVG icons (B8 without places) | Ready | 1 |
-| 6 | web | SVG icons only, phone polish (B0, B10 rest, audit 9, 12) | Ready | |
-| 7 | web | Bug: vehicle card shows the same ETA for every next stop when the GPS fix is old (audit 7) | Ready | |
-| 8 | rt | `direction` on the /v2 Vehicle; one direction for M3 Ελ. Βενιζέλος and Δημ. Θέατρο (B5) | Ready | |
-| 9 | rt | Stats: publish only days from 2026-10-30 | Ready | |
-| 10 | web | Prerendered stop/line pages + sitemap for Google (B9 part 2) | Backlog | 1 |
-| 11 | web | Places in search via Photon (B8 places) | Backlog | 5 |
+| 1 | web#10 | Card stack: vehicle → stop → line, back, history, query deep links (B1, B9 part 1) | Ready | |
+| 2 | web#11 | Unified Vehicle / Stop / Line cards on /v2 (B2, B10 durations + old timetable) | Ready | 1 |
+| 3 | web#12 | One vehicle marker, global position age, two rail tracks (B3-B5) | Ready | backend issue for the tracks |
+| 4 | web#13 | Favourite stops and lines for all modes, ★ panel, favourites-only map (B6, B7) | Ready | 2 |
+| 5 | web#14 | Search modal: lines and stops, kind/mode filters with SVG icons (B8 without places) | Ready | 1 |
+| 6 | web#15 | SVG icons only, phone polish (B0, B10 rest, audit 9, 12) | Ready | |
+| 7 | web#16 | Bug: vehicle card shows the same ETA for every next stop when the GPS fix is old (audit 7) | Ready | |
+| 8 | rt#31 | `direction` on the /v2 Vehicle; one direction for M3 Ελ. Βενιζέλος and Δημ. Θέατρο (B5) | Ready | |
+| 9 | rt#32 | Stats: publish only days from 2026-10-30 | Ready | |
+| 10 | web#17 | Prerendered stop/line pages + sitemap for Google (B9 part 2) | Backlog | 1 |
+| 11 | web#18 | Places in search via Photon (B8 places) | Backlog | 5 |
 
-Issue numbers are on the board; this table is the plan, the board is the state.
+Web #10-#15 are sub-issues of web#4 (Phase 4). This table is the plan; the board is the state.
 
 ## Part D. Decisions (Harold, 2026-10-29)
 
