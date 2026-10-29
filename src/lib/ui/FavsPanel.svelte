@@ -1,11 +1,11 @@
 <script lang="ts">
-  // The favourites panel (★ in the top bar, B6): the favourite stops first (the home stop first in the morning, the
-  // work stop first after), each with the user's lines there and what else passes; then the favourite lines.
+  // The favourites panel (★ in the top bar, B6): the favourite stops first, in the order they were added, each with
+  // the user's lines there and what else passes; then the favourite lines.
   // Shown while no card is open (a card pushed from here covers it). Data from /v2, asked again every 30 s
   // while it is open, at most 8 requests at a time.
   import { untrack } from "svelte";
   import { fetchV2LineVehicles, fetchV2Stop } from "../api";
-  import { lineSummary, orderStops, type FavStop, type Place } from "../favs";
+  import { lineSummary, type FavStop } from "../favs";
   import { busVehicleCard } from "../legacy";
   import { stopRows, type StopRow, type V2Arrival, type V2Line, type V2Stop, type V2Vehicle } from "../v2";
   import type { AppState } from "../state.svelte";
@@ -63,9 +63,6 @@
     return () => { ac.abort(); clearTimeout(timer); };
   });
 
-  const hour = $derived(new Date(app.now).getHours());
-  const ordered = $derived(orderStops(app.favs.stops, hour));
-  const anyPlace = $derived(app.favs.stops.some(s => s.place));
   const favLines = $derived(new Set(app.favs.lines.map(l => l.id)));
   // Every line any board knows, for the badge colours of the other modes.
   const known = $derived(new Map(Object.values(boards).flatMap(b => b.lines.map(l => [l.id, l] as const))));
@@ -87,11 +84,6 @@
     else if (r.vehicle) app.push({ kind: "vehicle", id: r.vehicle, line: r.line });
     else app.push({ kind: "line", id: r.line, dir: r.dir ?? undefined });
   }
-
-  function choose(s: FavStop, v: string) {
-    if (v === "remove") app.toggleFavStop(s);
-    else app.setFavPlace(s.id, v === "none" ? null : (v as Place));
-  }
 </script>
 
 {#if open}
@@ -105,8 +97,7 @@
 
     {#if app.favs.stops.length}
       <h3 class="sub">Στάσεις</h3>
-      {#if anyPlace}<p class="note">{hour < 12 ? "Πρωί: πρώτα η στάση του σπιτιού" : "Απόγευμα: πρώτα η στάση της δουλειάς"}</p>{/if}
-      {#each ordered as s (s.id)}
+      {#each app.favs.stops as s (s.id)}
         {@const rows = rowsOf(s)}
         {@const mine = rows.filter(r => favLines.has(r.line))}
         {@const others = rows.filter(r => !favLines.has(r.line)).slice(0, OTHERS)}
@@ -114,13 +105,8 @@
         <section class="stop" aria-label="Στάση {s.name}">
           <div class="shead">
             <button type="button" class="name" onclick={() => app.push({ kind: "stop", id: s.id, title: s.name })}>{s.name}</button>
-            {#if s.place}<span class="place">{s.place === "home" ? "Σπίτι" : "Δουλειά"}</span>{/if}
-            <select aria-label="Ρυθμίσεις στάσης {s.name}" value={s.place ?? "none"} onchange={e => choose(s, e.currentTarget.value)}>
-              <option value="home">Είναι το σπίτι</option>
-              <option value="work">Είναι η δουλειά</option>
-              <option value="none">Ούτε τα δύο</option>
-              <option value="remove">Αφαίρεση</option>
-            </select>
+            <button type="button" class="unstar" title="Αφαίρεση από τα αγαπημένα" aria-label="Αφαίρεση της στάσης {s.name} από τα αγαπημένα"
+              onclick={() => app.toggleFavStop(s)}>★</button>
           </div>
           {#if !boards[s.id]}
             <p class="muted">{failed["s:" + s.id] ? "Δεν φόρτωσε. Δοκιμάζω ξανά." : "Φόρτωση…"}</p>
@@ -167,16 +153,14 @@
 <style>
   .title { color: var(--fg); font-size: 15px; font-weight: 700; }
   .muted { margin: 4px 0; color: var(--muted); font-size: 12px; }
-  .note { margin: 2px 0 4px; font-size: 11px; color: var(--muted); }
   .sub { margin: 8px 0 2px; font-size: 12px; font-weight: 600; color: var(--muted); }
   .stop { margin: 6px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
   .shead { display: flex; align-items: center; gap: 8px; }
   .name { flex: 1; min-width: 0; min-height: 36px; padding: 0; border: 0; background: none; color: var(--fg); font: inherit; font-size: 14px;
     font-weight: 700; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .name:hover { text-decoration: underline; text-underline-offset: 3px; }
-  .place { flex: none; padding: 1px 8px; border-radius: 10px; background: var(--control); font-size: 11px; }
-  select { flex: none; max-width: 44%; min-height: 36px; padding: 0 4px; border: 1px solid var(--border); border-radius: 8px;
-    background: var(--control); color: var(--fg); font: inherit; font-size: 12px; }
+  .unstar { flex: none; width: 36px; height: 36px; border: 0; border-radius: 8px; background: none; color: #f59f00; font-size: 18px; cursor: pointer; }
+  .unstar:hover { background: var(--control); }
   .row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 0 4px; margin: 0 -4px; border: 0; border-radius: 8px;
     background: none; color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
   .row:hover { background: var(--control); }
@@ -190,6 +174,6 @@
   .chev { flex: none; color: var(--muted); }
   .all { display: block; width: 100%; min-height: 36px; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px;
     font-weight: 600; cursor: pointer; }
-  button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  @media (pointer: coarse) { select, .name { min-height: 44px; } .row { min-height: 44px; } .all { min-height: 44px; } }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (pointer: coarse) { .name, .unstar { min-height: 44px; } .row { min-height: 44px; } .all { min-height: 44px; } }
 </style>

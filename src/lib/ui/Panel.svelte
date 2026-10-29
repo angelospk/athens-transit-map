@@ -158,16 +158,11 @@
     <LinePicker {app} expanded={!collapsed} searchOpen={searching} onsearch={() => (searching = true)} onclose={() => (searching = false)} {tail} />
   </div>
 
-  <!-- Favourites only (B7): says what the map shows, and switches. -->
+  <!-- Favourites only (B7): what the map shows, as a two-way switch. -->
   {#if app.favorites.length}
-    <div class="favpill" role="group" aria-label="Αγαπημένα στον χάρτη">
-      {#if app.favOnly}
-        <span>★ Μόνο αγαπημένα · {app.favorites.length} {app.favorites.length === 1 ? "γραμμή" : "γραμμές"}</span>
-        <button type="button" onclick={() => app.setFavOnly(false)}>Όλα</button>
-      {:else}
-        <span>Όλα ·</span>
-        <button type="button" aria-label="Μόνο αγαπημένα" title="Μόνο αγαπημένα" onclick={() => app.setFavOnly(true)}>★</button>
-      {/if}
+    <div class="favseg" role="group" aria-label="Τι δείχνει ο χάρτης">
+      <button type="button" aria-pressed={app.favOnly} title="Μόνο οι αγαπημένες γραμμές στον χάρτη" onclick={() => app.setFavOnly(true)}>★ Αγαπημένα</button>
+      <button type="button" aria-pressed={!app.favOnly} title="Όλα τα λεωφορεία στον χάρτη" onclick={() => app.setFavOnly(false)}>Όλα</button>
     </div>
   {:else if !app.favHintSeen}
     <div class="favpill" role="note">
@@ -425,6 +420,11 @@
     color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
   .favpill button:hover { background: var(--control); }
   @media (pointer: coarse) { .favpill { min-height: 44px; } .favpill button { min-height: 40px; min-width: 44px; } }
+  .favseg { display: flex; gap: 2px; margin-top: 8px; padding: 2px; border-radius: 10px; background: var(--control); }
+  .favseg button { flex: 1; min-height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: inherit;
+    font: inherit; font-size: 13px; cursor: pointer; }
+  .favseg button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
+  @media (pointer: coarse) { .favseg button { min-height: 40px; } }
   /* A map filter is on: some vehicles are hidden. */
   .tool { position: relative; }
   .tool.filtering::after, .tool.pinned::after { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px;

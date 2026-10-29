@@ -20,7 +20,7 @@ import type { CityLive, CityVehicle, LineInfo, LineLive, LineStatic, Status, Veh
 import { CardNav, cardFromQuery, cardQuery, sameCard, type Card } from "./cards";
 import { busVehicleCard, cardTitle, legacyOf, routeCard, trainCard } from "./legacy";
 import { stopIndex } from "./stops";
-import { busFavIds, loadFavs, setPlace, toggleLine as toggleFavLineIn, toggleStop, type FavLine, type FavStop, type Favs, type Place } from "./favs";
+import { busFavIds, loadFavs, toggleLine as toggleFavLineIn, toggleStop, type FavLine, type FavStop, type Favs } from "./favs";
 import { fold } from "./search";
 
 export const STALE_S = 120;
@@ -467,7 +467,6 @@ export class AppState {
   toggleFavorite(id: string) { this.toggleFavLine({ id: `oasa:${id}`, label: id }); }
   toggleFavStop(s: FavStop) { this.setFavs(toggleStop(this.favs, s)); }
   toggleFavLine(l: FavLine) { this.setFavs(toggleFavLineIn(this.favs, l)); }
-  setFavPlace(id: string, place: Place | null) { this.setFavs(setPlace(this.favs, id, place)); }
   isFavStop = (id: string) => this.favs.stops.some(s => s.id === id);
   isFavLine = (id: string) => this.favs.lines.some(l => l.id === id);
   // ★ shows the panel: over an open card it closes the cards (the panel shows when none is open), else it toggles.
