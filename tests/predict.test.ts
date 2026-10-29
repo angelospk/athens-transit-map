@@ -44,6 +44,43 @@ describe("geometry", () => {
     expect(s[0]).toBeLessThan(500);
     expect(s[1]).toBeGreaterThan(1200);
   });
+  it("puts a loop's first stop at its start, also when the shape's end passes closer to it (web#16)", () => {
+    // A closed loop east, north, west, south; the shape ends 2 m nearer the first stop than it starts.
+    const loop: [number, number][] = [[37.97, 23.70], [37.97, 23.71], [37.98, 23.71], [37.98, 23.70], [37.97002, 23.70]];
+    const first: [number, number] = [23.70, 37.97003];
+    const s = stopOffsets(loop, [first, [23.705, 37.97], [23.71, 37.975], [23.705, 37.98]]);
+    expect(s[0]).toBeLessThan(50);
+    expect(s[1]).toBeCloseTo(0.5 * M, -1);
+    expect(s[1]).toBeLessThan(s[2]);
+    expect(s[2]).toBeLessThan(s[3]);
+  });
+  it("leaves a loop's first stop out when it lies only at the shape's end, not every stop after it (web#16)", () => {
+    // The shape starts 44 m past the terminus and ends at it (022, 057: every stop had one time).
+    const loop: [number, number][] = [[37.97, 23.7005], [37.97, 23.71], [37.98, 23.71], [37.98, 23.70], [37.97, 23.70]];
+    const s = stopOffsets(loop, [[23.70, 37.97], [23.705, 37.97], [23.71, 37.975], [23.705, 37.98]]);
+    expect(s[1]).toBeCloseTo(0.45 * M, -1);
+    expect(s[0]).toBeLessThanOrEqual(s[1]);
+    expect(s[1]).toBeLessThan(s[2]);
+    expect(s[2]).toBeLessThan(s[3]);
+    // Back at the terminus: one stop is left out either way; the midpoint keeps its place.
+    const again = stopOffsets(loop, [[23.70, 37.97], [23.705, 37.97], [23.70, 37.97]]);
+    expect(again[1]).toBeCloseTo(0.45 * M, -1);
+    expect(again[2]).toBeGreaterThan(3 * M);
+  });
+  it("never drifts back step by step within the tolerance", () => {
+    // Stops 22 m apart heading west, nearer the outbound side: each alone is within 30 m behind the last.
+    const back = [0.9, 0.875, 0.85, 0.825].map(f => [23.70 + f * 0.01, 37.97] as [number, number]);
+    const s = stopOffsets(outBack, back);
+    for (let i = 1; i < s.length; i++) expect(s[i]).toBeGreaterThanOrEqual(Math.max(...s.slice(0, i)) - 30);
+    expect(s[3]).toBeGreaterThan(M);
+  });
+  it("leaves one of two stops in the wrong order out, in the place of the stop before it", () => {
+    // The middle stop lies only behind the first one on a one-way shape: on equal cost, the earlier places.
+    const s = stopOffsets(east, [at(0.9), at(0.5), at(1.1)]);
+    expect(s[0]).toBe(0);
+    expect(s[1]).toBeCloseTo(0.5 * M, -1);
+    expect(s[2]).toBeCloseTo(1.1 * M, -1);
+  });
 });
 
 describe("updateTrack", () => {

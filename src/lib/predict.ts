@@ -9,6 +9,7 @@ const NEAR_ROUTE_M = 150;    // farther than this, the shape says nothing about 
 const TIE_M = 20;            // other legs this close to the nearest are candidates too
 const AMBIGUOUS_M = 50;      // candidates farther apart than this along the shape: ambiguous
 const BACK_TOLERANCE_M = 30; // GPS noise backwards along the route
+const LEFT_OUT_COST = NEAR_ROUTE_M + TIE_M + 1;   // a stop left out of stopOffsets costs more than any leg it could take
 const STANDING_M = 20;       // smaller moves count as standing
 const MAX_SPEED = 20;        // m/s (72 km/h)
 // Real feeds: fixes arrive 20-50 s old, and a line may refresh only every 30-120 s.
@@ -95,16 +96,40 @@ export function shapeLength(shape: [number, number][]): number {
   return d;
 }
 
-// s of each stop, in order: among the legs at or after the previous stop, the closest one
-// (a stop stands on the side of the street its direction uses), then the earliest.
+// s of each stop, in order. Each stop takes one of its legs (a stop stands on the side of the street its
+// direction uses) so that no stop stands more than BACK_TOLERANCE_M behind any stop before it, and the
+// stops stand, all together, closest to the shape; on a tie, the earlier leg. Chosen for the whole run,
+// not stop by stop: on a loop the first stop is near both ends of the shape, and taking the end would
+// push every later stop to the end too (web#16). A stop may also be left out: it takes the place of the stop
+// before, at a cost above any leg's. So a terminus found only at the shape's end is left out, not every stop after it.
 export function stopOffsets(shape: [number, number][], stops: LngLat[]): number[] {
-  let prev = 0;
-  return stops.map(p => {
-    const c = projectCandidates(shape, p).filter(x => x.s >= prev - BACK_TOLERANCE_M);
-    const s = c.reduce<{ s: number; offM: number } | null>((b, x) => (!b || x.offM < b.offM - 0.5 ? x : b), null)?.s ?? prev;
-    prev = Math.max(prev, s);
-    return s;
-  });
+  type Step = { s: number; max: number; cost: number; from: number };
+  const steps: Step[][] = [];
+  for (const p of stops) {
+    const before = steps[steps.length - 1] ?? [{ s: 0, max: 0, cost: 0, from: -1 }];
+    const next: Step[] = [];
+    for (const c of projectCandidates(shape, p)) {
+      let best: Step | null = null;
+      before.forEach((b, k) => {
+        if (c.s < b.max - BACK_TOLERANCE_M) return;
+        const cost = b.cost + c.offM;
+        if (!best || cost < best.cost - 0.5) best = { s: c.s, max: Math.max(b.max, c.s), cost, from: k };
+      });
+      if (best) next.push(best);
+    }
+    // After the legs: on equal cost, a stop in place wins over one left out.
+    before.forEach((b, k) => next.push({ ...b, cost: b.cost + LEFT_OUT_COST, from: k }));
+    steps.push(next);
+  }
+  const last = steps[steps.length - 1];
+  if (!last) return [];
+  let k = last.reduce((b, x, i) => (x.cost < last[b].cost - 0.5 ? i : b), 0);
+  const out: number[] = [];
+  for (let i = steps.length - 1; i >= 0; i--) {
+    out.push(steps[i][k].s);
+    k = steps[i][k].from;
+  }
+  return out.reverse();
 }
 
 const plausible = (from: number, to: number, dt: number) =>
