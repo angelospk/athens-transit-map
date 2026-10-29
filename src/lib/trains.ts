@@ -152,12 +152,13 @@ export function destColor(data: SuburbanData, stationId: string, to: string): st
 
 // The trains of one line now, for its card: where each goes, its next stop and (metro/tram) when it is
 // there, grouped by destination in the order of their next time. at: unix s; null for the Proastiakos,
-// whose GPS gives no time. pos: where to look on the map ([lon, lat]; the metro's by its two stops' times).
+// whose GPS gives no time. pos: where to look on the map ([lon, lat]; the metro's by its knots, else its two stops' times).
 export interface LineTrain { sel: TrainSel; to: string; next: string; at: number | null; delay: number | null; pos: LngLat }
-export function lineTrains(line: { kind: "metro" | "suburban"; id: string }, stasy: StasyVehicle[], suburban: SuburbanTrain[], nowS: number): LineTrain[] {
+export function lineTrains(line: { kind: "metro" | "suburban"; id: string }, stasy: StasyVehicle[], suburban: SuburbanTrain[], nowS: number,
+  motions: Record<string, RailMotion> = {}): LineTrain[] {
   const out: LineTrain[] = line.kind === "metro"
     ? stasy.filter(v => v.line === line.id).map(v => ({ sel: { kind: "metro", id: v.trip }, to: v.headsign, next: v.to.name,
-      at: v.to.at, delay: null, pos: stasyPlace(v, nowS).pos }))
+      at: v.to.at, delay: null, pos: stasyPlace(v, nowS, [], motions[v.trip]).pos }))
     : suburban.filter(t => t.corridor === line.id && nowS - t.position_at <= OLD_S).map(t => ({ sel: { kind: "suburban", id: t.train },
       to: t.to, next: t.next_station, at: null, delay: t.delay_min, pos: [t.lon, t.lat] }));
   const first = new Map<string, number>();

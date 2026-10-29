@@ -16,7 +16,7 @@
     return corridor?.name ?? "";
   });
   const nowS = $derived(app.serverNow / 1000);
-  const trains = $derived(sel ? lineTrains(sel, app.stasyTrains, app.suburbanTrains, nowS) : []);
+  const trains = $derived(sel ? lineTrains(sel, app.stasyTrains, app.suburbanTrains, nowS, app.stasyMotion) : []);
   const groups = $derived.by(() => {
     const out: { to: string; list: typeof trains }[] = [];
     for (const t of trains) {

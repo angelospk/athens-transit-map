@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import cases from "./fixtures/motion-cases.json";
-import { knotMetres, railMotions, stasyPlace, trainsFC, type StasyVehicle } from "../src/lib/trains";
+import { knotMetres, lineTrains, railMotions, stasyPlace, trainsFC, type StasyVehicle } from "../src/lib/trains";
 
 // The backend's client rule for /v2 motion.knots (athens-transit-rt docs/fixtures/v2/motion-cases.json).
 describe("knotMetres", () => {
@@ -60,5 +60,14 @@ describe("trainsFC with motions", () => {
     const [x, y] = (fc.features[0].geometry as GeoJSON.Point).coordinates;
     expect(x).toBeCloseTo(23.005, 4);
     expect(y).toBeCloseTo(38, 6);
+  });
+});
+
+describe("lineTrains with motions", () => {
+  it("the line card looks where the map draws the train", () => {
+    const motions = railMotions({ vehicles: [v2("stasy:run:40077:2026-10-29", [[0, 1000], [878, 1100]])] });
+    const [t] = lineTrains({ kind: "metro", id: "M1" }, [veh], [], 1050, motions);
+    expect(t.pos[0]).toBeCloseTo(23.005, 4);
+    expect(lineTrains({ kind: "metro", id: "M1" }, [veh], [], 1050)[0].pos).toEqual([23.001, 38]);
   });
 });
