@@ -79,7 +79,7 @@
   function pick(d: 0 | 1) {
     const c = card!, g = groups[d];
     app.replaceTop({ ...c, dir: d, pattern: undefined });
-    if (g) app.setFocus(nativeLine, g.variants);
+    if (g && groups.length === 2) app.setFocus(nativeLine, g.variants);   // the segments are the two groups
   }
 </script>
 
