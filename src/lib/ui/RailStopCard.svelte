@@ -86,6 +86,14 @@
         {/each}
       </ul>
     {/if}
+    {#if board?.lines.length}
+      <div class="lines" role="group" aria-label="Οι γραμμές του σταθμού">
+        {#each board.lines as l (l.id)}
+          <button type="button" class="pill" style:--c={l.color} style:--t={l.text_color} aria-label="Γραμμή {l.label ?? l.name}"
+            onclick={() => app.push({ kind: "line", id: l.id, title: l.label ?? l.name })}>{l.label ?? l.name}</button>
+        {/each}
+      </div>
+    {/if}
   </CardSheet>
 {/if}
 
@@ -99,6 +107,8 @@
   .rows button:hover { background: var(--control); }
   .pill { flex: none; padding: 2px 8px; border-radius: 10px; background: var(--c); color: var(--t); font-weight: 700; }
   .head { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lines { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .lines .pill { min-height: 36px; min-width: 44px; border: 0; font: inherit; font-weight: 700; cursor: pointer; }
   .plat { flex: none; padding: 1px 8px; border-radius: 10px; background: var(--control); font-size: 11px; }
   .times { flex: none; display: flex; gap: 8px; font-variant-numeric: tabular-nums; color: var(--muted); }
   .times .first { color: var(--fg); font-weight: 700; }

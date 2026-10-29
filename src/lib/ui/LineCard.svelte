@@ -49,7 +49,9 @@
   const labels = $derived<(string | null)[]>(groups.length === 2 ? groups.map(g => g.to) : dirLabels(patterns, detail?.stops));
   const dir = $derived<0 | 1>(card?.dir ?? (card?.pattern ? patterns.find(p => p.id === card.pattern)?.direction : undefined) ?? 0);
   const label = $derived(detail?.line.label ?? detail?.line.name ?? nativeLine);
-  const rows = $derived(detail && vehicles ? lineVehicleRows(vehicles, patterns, detail.stops, dir) : null);
+  // With the /v1 directions, a vehicle's own (OASA: 0) direction is no better than its pattern's: its headsign decides.
+  const own = $derived(patterns === detail?.patterns ? vehicles : vehicles?.map(v => ({ ...v, direction: null })));
+  const rows = $derived(detail && own ? lineVehicleRows(own, patterns, detail.stops, dir) : null);
 
   // The raw headsign of the direction's most common pattern: what the day's timetable is matched on.
   const dirHeadsign = $derived.by(() => {
@@ -70,7 +72,14 @@
       app.flyTo([v.position.lon, v.position.lat]);
     } else {
       app.push({ kind: "vehicle", id: v.id, line: card!.id, title: `${label} → ${headsignName(v.headsign, detail?.stops)}` });
+      app.flyTo([v.position.lon, v.position.lat]);
     }
+  }
+  // A bus line's map shows the chosen direction only (as a line opened from a stop does).
+  function pick(d: 0 | 1) {
+    const c = card!, g = groups[d];
+    app.replaceTop({ ...c, dir: d, pattern: undefined });
+    if (g) app.setFocus(nativeLine, g.variants);
   }
 </script>
 
@@ -89,7 +98,7 @@
       <div class="dirs" role="group" aria-label="Κατεύθυνση">
         {#each labels as l, d (d)}
           {#if l !== null}
-            <button type="button" aria-pressed={dir === d} onclick={() => app.replaceTop({ ...card, dir: d as 0 | 1, pattern: undefined })}>→ {l}</button>
+            <button type="button" aria-pressed={dir === d} onclick={() => pick(d as 0 | 1)}>→ {l}</button>
           {/if}
         {/each}
       </div>

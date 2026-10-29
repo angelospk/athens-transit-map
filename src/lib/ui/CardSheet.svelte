@@ -54,7 +54,7 @@
   const flip = (s: SheetState): SheetState => (s === "open" ? "peek" : "open");
 
   function down(e: PointerEvent) {
-    if (!narrow.current || e.button !== 0 || grab || (e.target as Element).closest(".close, .star")) return;
+    if (!narrow.current || e.button !== 0 || grab || (e.target as Element).closest("button:not(.grab)")) return;
     grab = { id: e.pointerId, y: e.clientY, from: sheet, range: measure(), moved: false };
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
   }
