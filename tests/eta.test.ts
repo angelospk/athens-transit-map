@@ -86,4 +86,18 @@ describe("upcomingStops on a loop", () => {
     expect(r.map(s => s.id)).toEqual(["X"]);
     expect(r[0].at).toBeCloseTo((0.5 * M) / FALLBACK_MPS, -1);
   });
+  it("picks the visit of a stop the variant passes twice by where the vehicle is", () => {
+    const v = { shape: loop, stops: ["S", "X", "E", "X"] };
+    const back = upcomingStops(v, lstops, { lat: 37.97001, lon: 23.715, position_at: 0, next_stop_id: "X" });
+    expect(back.map(s => [s.id, s.i])).toEqual([["X", 3]]);
+    expect(back[0].at).toBeCloseTo((0.5 * M) / FALLBACK_MPS, -1);
+    const out = upcomingStops(v, lstops, { lat: 37.97, lon: 23.705, position_at: 0, next_stop_id: "X" });
+    expect(out.map(s => [s.id, s.i])).toEqual([["X", 1], ["E", 2], ["X", 3]]);
+  });
+  it("tells the two visits apart within a few metres of the stop", () => {
+    const v = { shape: loop, stops: ["S", "X", "E", "X"] };
+    const at = (lat: number, lon: number) => upcomingStops(v, lstops, { lat, lon, position_at: 0, next_stop_id: "X" }).map(s => s.i);
+    expect(at(37.97, 23.7099)).toEqual([1, 2, 3]);     // 9 m before X on the way out
+    expect(at(37.97001, 23.7101)).toEqual([3]);        // 9 m before X on the way back
+  });
 });

@@ -98,10 +98,10 @@
   let alertAt = $state.raw<{ id: string; i: number; from: number | null } | null>(null);
   $effect(() => { void selKey; alertAt = null; });
   async function bellAt(id: string, i: number) {
-    if (alertAt?.id === id) { alertAt = null; return; }
+    if (alertAt?.id === id && alertAt.i === i) { alertAt = null; return; }
     alertAt = { id, i, from: null };
     const ix = await app.loadStops();
-    if (alertAt?.id !== id) return;
+    if (alertAt?.id !== id || alertAt.i !== i) return;
     alertAt = { id, i, from: ix ? stopIndex(ix, id) : -1 };
   }
 
@@ -220,11 +220,11 @@
             {#each ahead as a, k (a.id + "/" + a.i)}
               <li class:next={k === 0}>
                 <span class="t">{eta(a.at)}</span><span class="name">{a.name}</span>
-                <button type="button" class="bell" class:on={alertAt?.id === a.id} aria-expanded={alertAt?.id === a.id}
+                <button type="button" class="bell" class:on={alertAt?.id === a.id && alertAt.i === a.i} aria-expanded={alertAt?.id === a.id && alertAt.i === a.i}
                   title="Ειδοποίηση άφιξης σε αυτή τη στάση" aria-label="Ειδοποίηση άφιξης του {vehicle.line} στη στάση {a.name}"
                   onclick={() => bellAt(a.id, a.i)}><Bell /></button>
               </li>
-              {#if alertAt?.id === a.id}
+              {#if alertAt?.id === a.id && alertAt.i === a.i}
                 <li class="alert">
                   {#if alertAt.from == null}
                     <p class="muted">Φόρτωση…</p>

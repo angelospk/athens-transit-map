@@ -33,17 +33,27 @@ export function upcomingStops(
   stops: Record<string, { name: string; lat: number; lon: number }>,
   v: { lat: number; lon: number; position_at: number; next_stop_id: string | null; path_speeds?: (number | null)[] | null },
 ): { id: string; name: string; i: number; at: number }[] {
-  const k = v.next_stop_id === null ? -1 : variant.stops.indexOf(v.next_stop_id);
-  if (k < 0) return [];
+  if (v.next_stop_id === null) return [];
   // A stop the table does not know has no place on the shape; keep its variant index all the same. Every
   // stop is placed, the passed ones too: on a loop the stops before put the next one on its right pass.
   const known = variant.stops.map((id, i) => ({ id, i })).filter(s => stops[s.id]);
   const all = stopOffsets(variant.shape, known.map(s => [stops[s.id].lon, stops[s.id].lat]));
-  const first = known.findIndex(s => s.i >= k);
-  if (first < 0) return [];
-  const ahead = known.slice(first), stopS = all.slice(first);
   const cands = projectCandidates(variant.shape, [v.lon, v.lat]);
   if (!cands.length) return [];
+  // The next stop's visit (a loop can pass a stop twice): the one the vehicle is closest behind; a
+  // visit it is only a little past (GPS noise) counts after every visit it is behind.
+  let first = -1, gap = Infinity;
+  variant.stops.forEach((id, k) => {
+    if (id !== v.next_stop_id) return;
+    const f = known.findIndex(s => s.i >= k);
+    if (f < 0) return;
+    const gaps = cands.map(c => all[f] - c.s).filter(g => g >= -AHEAD_M);
+    const before = gaps.filter(g => g >= 0);
+    const g = before.length ? Math.min(...before) : gaps.length ? 1e9 - Math.max(...gaps) : Infinity;
+    if (first < 0 || g < gap) { first = f; gap = g; }
+  });
+  if (first < 0) return [];
+  const ahead = known.slice(first), stopS = all.slice(first);
   // The leg that puts the vehicle where a bus heading for its next stop could be; never past that stop.
   const behind = cands.filter(c => c.s <= stopS[0] + AHEAD_M);
   const fit = behind.length
