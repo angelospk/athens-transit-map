@@ -5,6 +5,8 @@
   import { athensClock } from "../timetable";
   import type { AppState } from "../state.svelte";
   import type { FetchResult } from "../poller";
+  import Back from "./Back.svelte";
+  import { railLineCard } from "../legacy";
 
   // The tapped suburban station: its corridors and the next trains by destination, in minutes, from the
   // Hellenic Train board (railway.gov.gr through the backend) with the delay when it is not 0. Asked
@@ -58,16 +60,17 @@
   });
 </script>
 
-<svelte:window onkeydown={e => { if (e.key === "Escape" && app.railStation) app.selectRailStation(null); }} />
+<svelte:window onkeydown={e => { if (e.key === "Escape" && app.railStation) app.closeCards(); }} />
 
 {#if station}
   <section class="card" aria-live="polite" aria-label="Σταθμός Προαστιακού {station.name}">
     <header>
+      <Back {app} />
       <h2>{station.name}</h2>
-      <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.selectRailStation(null)}>×</button>
+      <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.closeCards()}>×</button>
     </header>
     <p class="lines">{#each corridors as c (c.id)}<button type="button" style:--accent={c.color} title="Η γραμμή και τα τρένα της"
-      onclick={() => app.selectRailLine({ kind: "suburban", id: c.id })}>{c.name}</button>{/each}</p>
+      onclick={() => app.push(railLineCard({ kind: "suburban", id: c.id }, c.name))}>{c.name}</button>{/each}</p>
     {#if trains}
       {#if groups.length}
         <ul class="deps" aria-label="Επόμενα τρένα">

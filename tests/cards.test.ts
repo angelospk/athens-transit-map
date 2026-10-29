@@ -178,6 +178,15 @@ describe("CardNav", () => {
     expect(nav.stack).toEqual([]);
     expect(h.i).toBe(0);
   });
+  it("names the top card once its data is in, in the stack and in its entry", () => {
+    nav.start(stop("s"));
+    nav.retitle("Σύνταγμα");
+    expect(nav.stack).toEqual([stop("s", "Σύνταγμα")]);
+    expect(h.state).toMatchObject({ cards: [stop("s", "Σύνταγμα")] });
+    nav.close(); pop();
+    nav.retitle("x");   // no card: nothing to name
+    expect(nav.stack).toEqual([]);
+  });
   it("an entry it did not write (another page state) reads as no card", () => {
     nav.start(null);
     nav.open(stop("a"));

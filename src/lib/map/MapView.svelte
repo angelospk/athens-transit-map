@@ -27,6 +27,7 @@
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
   import { STOPS_ZOOM, busStopsFC, stopIndex } from "../stops";
+  import { busStopCard, busVehicleCard, railStationCard, routeCard, stationCard } from "../legacy";
   // Rail stations show from these zooms, small like the bus stops (from STOPS_ZOOM); there are fewer of them.
   const RAIL_ZOOM = 13, SUBURBAN_ZOOM = 12;
   import type { TripIndex } from "../trip";
@@ -385,7 +386,7 @@
     return hits.sort((a, b) => d(a) - d(b))[0] ?? null;
   }
   const openTrain = (f: MapGeoJSONFeature) =>
-    app.selectTrain({ kind: f.properties.kind === "metro" ? "metro" : "suburban", id: String(f.properties.id) });
+    app.open(app.cardOfTrain({ kind: f.properties.kind === "metro" ? "metro" : "suburban", id: String(f.properties.id) }));
 
   // The metro or suburban station under a click, with a finger-sized margin r; the nearest if several.
   function nearestStation(m: MlMap, p: { x: number; y: number }, r = 10) {
@@ -397,7 +398,8 @@
     return hits.reduce<(typeof hits)[number] | null>((b, f) => (!b || d(f) < d(b) ? f : b), null);
   }
   const openStation = (f: MapGeoJSONFeature) =>
-    f.layer.id === "suburban-station" ? app.selectRailStation(String(f.properties.id)) : app.selectStation(String(f.properties.name));
+    app.open(f.layer.id === "suburban-station" ? railStationCard(String(f.properties.id), String(f.properties.name))
+      : stationCard(String(f.properties.name), String(f.properties.lines ?? "").split(" ")));
 
 
   // The bus stop under a click, with a finger-sized margin; the nearest if several.
@@ -619,7 +621,7 @@
     el.className = "bus";
     el.onclick = ev => {
       ev.stopPropagation();
-      app.selectVehicle(e.line, e.id);
+      app.open(busVehicleCard(e.line, e.id));
     };
     const num = document.createElement("span");
     num.textContent = e.line;
@@ -754,7 +756,7 @@
       const city = nearestCity(m, e.point);
       if (city) {
         popup.remove();
-        app.selectCityVehicle(String(city.properties.line), String(city.properties.id));
+        app.open(busVehicleCard(String(city.properties.line), String(city.properties.id)));
         return;
       }
       const stop = m.queryRenderedFeatures(e.point, { layers: ["stops"] })[0];
@@ -766,7 +768,7 @@
         void (app.stopIx ? Promise.resolve(app.stopIx) : loadStops()).then(ix => {
           if (tap !== taps || disposed) return;
           const at = ix ? stopIndex(ix, id) : -1;
-          if (at >= 0) app.selectBusStop(at);
+          if (at >= 0) app.open(busStopCard(id, ix!.s[at][0]));
           else popup.setLngLat(ll).setText(name).addTo(m);
         });
         return;
@@ -774,7 +776,9 @@
       const bus = nearestBusStop(m, e.point);
       if (bus) {
         popup.remove();
-        return app.selectBusStop(Number(bus.properties.i));
+        const i = Number(bus.properties.i), s = app.stopIx?.s[i];
+        if (s?.[3]) return app.open(busStopCard(s[3], s[0]));
+        return;
       }
       const station = nearestStation(m, e.point);
       if (station) {
@@ -788,7 +792,7 @@
         return openTrain(train);
       }
       const route = m.queryRenderedFeatures(e.point, { layers: ["routes-hit"] })[0];
-      if (route) return app.selectRoute(String(route.properties.line), String(route.properties.variant));
+      if (route) return app.open(routeCard(String(route.properties.line), String(route.properties.variant)));
       const box: [[number, number], [number, number]] = [[e.point.x - 8, e.point.y - 8], [e.point.x + 8, e.point.y + 8]];
       const seg = app.speedOn ? m.queryRenderedFeatures(box, { layers: ["speed"] })[0] : undefined;
       if (seg) {
@@ -797,11 +801,7 @@
         popup.setLngLat(e.lngLat).setDOMContent(segInfo(p, kmh)).addTo(m);
         return;
       }
-      app.selectStation(null);
-      app.selectRailStation(null);
-      app.selectTrain(null);
-      app.selectBusStop(null);
-      app.clearSelection();
+      app.closeCards();
     });
     for (const layer of ["routes-hit", "stops", "city-dot", "metro-station", "suburban-station", "speed", "train-dot"]) {
       m.on("mouseenter", layer, () => (m.getCanvas().style.cursor = "pointer"));

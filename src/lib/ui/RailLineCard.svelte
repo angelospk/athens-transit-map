@@ -2,6 +2,7 @@
   import { termini } from "../metro";
   import { clockHM, lineTrains } from "../trains";
   import type { AppState } from "../state.svelte";
+  import Back from "./Back.svelte";
 
   // A metro/tram line or a suburban corridor on its own, as a bus route is: its track on the map (MapView),
   // and here its trains now by destination, each with its next stop; a tap opens the train and brings it into view.
@@ -28,14 +29,15 @@
   const when = (at: number) => { const m = Math.round((at - nowS) / 60); return m <= 0 ? "τώρα" : m < 60 ? `${m}′` : clockHM(at); };
 </script>
 
-<svelte:window onkeydown={e => { if (e.key === "Escape" && app.railLine) app.selectRailLine(null); }} />
+<svelte:window onkeydown={e => { if (e.key === "Escape" && app.railLine) app.closeCards(); }} />
 
 {#if sel && (metroLine || corridor)}
   <section class="card" aria-live="polite" aria-label="Γραμμή {metroLine?.id ?? corridor?.name}">
     <header>
+      <Back {app} />
       <b class="chip" style:--accent={color}>{metroLine?.id ?? "Π"}</b>
       <h2>{title}</h2>
-      <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.selectRailLine(null)}>×</button>
+      <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.closeCards()}>×</button>
     </header>
     <p class="src">{sel.kind === "metro" ? "Θέσεις κατά προσέγγιση, από το πρόγραμμα της ΣΤΑΣΥ, όχι live." : "Θέσεις από το GPS των τρένων (Hellenic Train)."}</p>
     {#if !app.trainsOn}
@@ -46,7 +48,7 @@
           <h3>→ {g.to}</h3>
           <ul>
             {#each g.list as t (t.sel.id)}
-              <li><button type="button" onclick={() => { const p = t.pos; app.selectTrain(t.sel); app.flyTo(p); }}>
+              <li><button type="button" onclick={() => { const p = t.pos; app.push(app.cardOfTrain(t.sel)); app.flyTo(p); }}>
                 <span class="next">επόμενη: {t.next || "…"}</span>
                 <span class="when">{#if t.at != null}{when(t.at)}{/if}{#if t.delay}{" "}<em>{t.delay > 0 ? "+" : ""}{t.delay}′</em>{/if}</span>
               </button></li>

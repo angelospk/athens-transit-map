@@ -4,6 +4,8 @@
   import Bell from "./Bell.svelte";
   import type { AppState } from "../state.svelte";
   import type { FetchResult } from "../poller";
+  import Back from "./Back.svelte";
+  import { busStopCard } from "../legacy";
 
   // The tapped bus stop, laid out as the phone app's: the user's lines first («Οι γραμμές μου | Όλες»), each
   // line and headsign with its next bus in big minutes, where it is and whether it runs late, the next ones,
@@ -85,7 +87,7 @@
   });
 </script>
 
-<svelte:window onkeydown={e => { if (e.key === "Escape" && app.busStop != null && !alertFor) app.selectBusStop(null); }} />
+<svelte:window onkeydown={e => { if (e.key === "Escape" && app.busStop != null && !alertFor) app.closeCards(); }} />
 
 {#snippet chip(line: string)}
   {@const c = app.lineColor(line)}
@@ -95,16 +97,17 @@
 {#if stop}
   <section class="card" aria-live="polite" aria-label="Στάση {stop[0]}">
     <header>
+      <Back {app} />
       <div class="t">
         <h2>{stop[0]}</h2>
         <p class="sub">{lines.length} {lines.length === 1 ? "γραμμή" : "γραμμές"}{#if across}{" · "}<button type="button" class="across"
-          onclick={() => app.selectBusStop(across.i)}>Απέναντι στάση · {across.m} μ</button>{/if}</p>
+          onclick={() => { const s = ix?.s[across.i]; if (s?.[3]) app.push(busStopCard(s[3], s[0])); }}>Απέναντι στάση · {across.m} μ</button>{/if}</p>
       </div>
       {#if alertLines.length}
         <button type="button" class="bell" class:on={!!alertFor && !alertFor.line} title="Ειδοποίηση άφιξης σε αυτή τη στάση"
           aria-label="Ειδοποίηση άφιξης στη στάση {stop[0]}" onclick={() => (alertFor = { lines: alertLines, ticked: mine })}><Bell /></button>
       {/if}
-      <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.selectBusStop(null)}>×</button>
+      <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.closeCards()}>×</button>
     </header>
     {#if app.alert}
       {@const a = app.alert}

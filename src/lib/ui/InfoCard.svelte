@@ -9,6 +9,8 @@
   import type { Vehicle } from "../types";
   import Timetable from "./Timetable.svelte";
   import Bell from "./Bell.svelte";
+  import Back from "./Back.svelte";
+  import { busStopCard, busVehicleCard, routeCard } from "../legacy";
   import { upcomingStops } from "../eta";
   import { clockHM } from "../trains";
   import { stopIndex, toward } from "../stops";
@@ -153,14 +155,14 @@
           // Read everything first: selectRoute tears this block down. It goes before setFocus,
           // which would drop a vehicle selection the new direction hides.
           const l = line, vs = g.variants, other = app.selection?.kind === "vehicle" && g !== mine;
-          if (other) app.selectRoute(l, vs[0]);
+          if (other) app.push(routeCard(l, vs[0]));
           app.setFocus(l, vs);
         }}>→ {g.to}</button>
     {/each}
   </div>
 {/snippet}
 
-<svelte:window onkeydown={e => { if (e.key === "Escape" && app.selection && !alertAt) app.clearSelection(); }} />
+<svelte:window onkeydown={e => { if (e.key === "Escape" && app.selection && !alertAt) app.closeCards(); }} />
 
 {#if vehicle || route}
   {@const line = vehicle?.line ?? route!.line}
@@ -176,6 +178,7 @@
       <button type="button" class="grab" aria-expanded={sheet === "open"} aria-controls="card-body"
         aria-label={sheet === "open" ? "Σύμπτυξη λεπτομερειών" : "Ανάπτυξη λεπτομερειών"} onclick={e => { if (e.detail === 0) sheet = flip(sheet); }}><span></span></button>
       <header>
+        <Back {app} />
         <span class="pill" style:--c={app.lineColor(line).bg} style:--t={app.lineColor(line).fg}>{line}</span>
         <h2>{info?.name ?? ""}</h2>
         <button type="button" class="star" class:on={starred} aria-pressed={starred} title={starred ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
@@ -188,7 +191,7 @@
             <path d="M7 2.5h6l-.8 5 2.3 2.7v1.3H5.5V10.2l2.3-2.7z" /><path d="M10 11.5v6" />
           </svg>
         </button>
-        <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.clearSelection()}>×</button>
+        <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.closeCards()}>×</button>
       </header>
     </div>
 
@@ -222,7 +225,7 @@
           <ol class="ahead" aria-label="Επόμενες στάσεις">
             {#each ahead as a, k (a.id + "/" + a.i)}
               <li class:next={k === 0}>
-                <span class="t">{eta(a.at)}</span><span class="name">{a.name}</span>
+                <span class="t">{eta(a.at)}</span><button type="button" class="name" title="Η στάση {a.name}" onclick={() => app.push(busStopCard(a.id, a.name))}>{a.name}</button>
                 <button type="button" class="bell" class:on={alertAt?.id === a.id && alertAt.i === a.i} aria-expanded={alertAt?.id === a.id && alertAt.i === a.i}
                   title="Ειδοποίηση άφιξης σε αυτή τη στάση" aria-label="Ειδοποίηση άφιξης του {vehicle.line} στη στάση {a.name}"
                   onclick={() => bellAt(a)}><Bell /></button>
@@ -248,7 +251,7 @@
         {#if route.running.length}
           <ul class="runs" aria-label="Τα οχήματα της κατεύθυνσης">
             {#each route.running as r (r.v.id)}
-              <li><button type="button" onclick={() => { const v = r.v; app.selectVehicle(route.line, v.id); app.flyTo([v.lon, v.lat]); }}>
+              <li><button type="button" onclick={() => { const v = r.v; app.push(busVehicleCard(route.line, v.id)); app.flyTo([v.lon, v.lat]); }}>
                 <i class="dot {delayClass(r.v.delay_s)}" aria-hidden="true"></i>
                 <span class="next">{r.next ? `επόμενη: ${r.next}` : "χωρίς δρομολόγιο"}</span>
                 <span class="muted">{ago(r.v.position_at, app.serverNow)}</span>
@@ -325,6 +328,8 @@
   .ahead li { display: flex; align-items: center; gap: 10px; min-height: 30px; font-size: 13px; }
   .ahead li.next { font-weight: 700; }
   .ahead .t { flex: none; min-width: 48px; font-variant-numeric: tabular-nums; }
+  .ahead .name { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .ahead .name:hover { text-decoration: underline; }
   .ahead .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ahead li.alert { display: block; margin: 2px 0 6px; padding: 8px 10px; border-radius: 10px; background: var(--control); font-weight: 400; }
   .bell { flex: none; display: grid; place-items: center; width: 32px; height: 30px; border: 0; border-radius: 8px; background: none;

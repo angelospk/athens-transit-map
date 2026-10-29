@@ -3,6 +3,8 @@
   import type { FetchResult } from "../poller";
   import { fetchStasy, peekStasy } from "../api";
   import { boardRows, nextBoards, stationNames, type Boards } from "../rail";
+  import Back from "./Back.svelte";
+  import { railLineCard } from "../legacy";
   // The tapped metro/tram station: its lines (a tap shows the line, as a bus stop's card does) and the next trains.
   let { app }: { app: AppState } = $props();
 
@@ -54,25 +56,26 @@
   const lines = $derived((station?.lines ?? []).flatMap(id => app.metro?.lines.find(l => l.id === id) ?? []));
 </script>
 
-<svelte:window onkeydown={e => { if (e.key === "Escape" && app.metroStation) app.selectStation(null); }} />
+<svelte:window onkeydown={e => { if (e.key === "Escape" && app.metroStation) app.closeCards(); }} />
 
 {#if station}
   <section class="card" aria-live="polite" aria-label="Σταθμός {station.name}">
     <header>
+      <Back {app} />
       <h2>{station.name}</h2>
-      <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.selectStation(null)}>×</button>
+      <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.closeCards()}>×</button>
     </header>
     <div class="lines" role="group" aria-label="Γραμμές του σταθμού">
       {#each lines as l (l.id)}
         <button type="button" style:--accent={l.color} aria-label="Γραμμή {l.id}: τα τρένα της"
-          onclick={() => app.selectRailLine({ kind: "metro", id: l.id })}>{l.id}</button>
+          onclick={() => app.push(railLineCard({ kind: "metro", id: l.id }))}>{l.id}</button>
       {/each}
     </div>
     {#if boards}
       {#if rows.length}
         <ul class="deps" aria-label="Επόμενα τρένα">
           {#each rows as r (r.line + r.headsign)}
-            <li title={r.times.join(" · ")}><button type="button" onclick={() => app.selectRailLine({ kind: "metro", id: r.line })}>
+            <li title={r.times.join(" · ")}><button type="button" onclick={() => app.push(railLineCard({ kind: "metro", id: r.line }))}>
               <b style:--accent={r.color}>{r.line}</b><span class="to">→ {r.headsign}</span>
               <span class="when">{r.mins.map(when).join(" · ")}</span></button></li>
           {/each}

@@ -3,6 +3,8 @@
   import { stopRows, type StasyTrip, type SuburbanRun } from "../trains";
   import type { AppState } from "../state.svelte";
   import type { FetchResult } from "../poller";
+  import Back from "./Back.svelte";
+  import { railLineCard } from "../legacy";
 
   // The tapped train: its line and destination, where its position comes from (the STASY timetable,
   // or the GPS of the Proastiakos with its age and speed), and its run's stops with their times. The
@@ -81,19 +83,20 @@
   }
 </script>
 
-<svelte:window onkeydown={e => { if (e.key === "Escape" && app.train) app.selectTrain(null); }} />
+<svelte:window onkeydown={e => { if (e.key === "Escape" && app.train) app.closeCards(); }} />
 
 {#if sel}
   <section class="card" aria-live="polite" aria-label="Τρένο προς {to}">
     <header>
+      <Back {app} />
       {#if lineSel}
         <button type="button" class="chip" style:--accent={color} title="Η γραμμή και τα τρένα της" aria-label="Γραμμή {label}: τα τρένα της"
-          onclick={() => app.selectRailLine(lineSel)}>{label}</button>
+          onclick={() => app.push(railLineCard(lineSel, label))}>{label}</button>
       {:else}
         <b class="chip" style:--accent={color}>{label}</b>
       {/if}
       <h2>→ {to || "…"}</h2>
-      <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.selectTrain(null)}>×</button>
+      <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.closeCards()}>×</button>
     </header>
     {#if sel.kind === "metro"}
       <p class="src">Θέση κατά προσέγγιση, από το πρόγραμμα της ΣΤΑΣΥ, όχι live.</p>
