@@ -9,7 +9,7 @@ const NEAR_ROUTE_M = 150;    // farther than this, the shape says nothing about 
 const TIE_M = 20;            // other legs this close to the nearest are candidates too
 const AMBIGUOUS_M = 50;      // candidates farther apart than this along the shape: ambiguous
 const BACK_TOLERANCE_M = 30; // GPS noise backwards along the route
-const LEFT_OUT_COST = NEAR_ROUTE_M + 1;   // a stop left out of stopOffsets costs more than any leg it could take
+const LEFT_OUT_COST = NEAR_ROUTE_M + TIE_M + 1;   // a stop left out of stopOffsets costs more than any leg it could take
 const STANDING_M = 20;       // smaller moves count as standing
 const MAX_SPEED = 20;        // m/s (72 km/h)
 // Real feeds: fixes arrive 20-50 s old, and a line may refresh only every 30-120 s.
@@ -107,7 +107,7 @@ export function stopOffsets(shape: [number, number][], stops: LngLat[]): number[
   const steps: Step[][] = [];
   for (const p of stops) {
     const before = steps[steps.length - 1] ?? [{ s: 0, max: 0, cost: 0, from: -1 }];
-    const next: Step[] = before.map((b, k) => ({ ...b, cost: b.cost + LEFT_OUT_COST, from: k }));
+    const next: Step[] = [];
     for (const c of projectCandidates(shape, p)) {
       let best: Step | null = null;
       before.forEach((b, k) => {
@@ -117,6 +117,8 @@ export function stopOffsets(shape: [number, number][], stops: LngLat[]): number[
       });
       if (best) next.push(best);
     }
+    // After the legs: on equal cost, a stop in place wins over one left out.
+    before.forEach((b, k) => next.push({ ...b, cost: b.cost + LEFT_OUT_COST, from: k }));
     steps.push(next);
   }
   const last = steps[steps.length - 1];
