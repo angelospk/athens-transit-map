@@ -56,6 +56,17 @@ export function knotMetres(knots: [number, number][], t: number): number {
 
 // The runs' tracks and knots from GET /v2/vehicles/rail, by /v1 trip number (the run id's third part).
 // Runs without a run id, a motion, knots or a two-point track are left out.
+// The /v2 Vehicle id of each metro/tram trip (the Run id, with its service day).
+export function runIds(body: unknown): Record<string, string> {
+  const list = (body as { vehicles?: unknown } | null)?.vehicles;
+  const out: Record<string, string> = {};
+  if (Array.isArray(list)) for (const v of list) {
+    const trip = typeof v?.run === "string" ? v.run.split(":")[2] : undefined;
+    if (trip && typeof v.id === "string") out[trip] = v.id;
+  }
+  return out;
+}
+
 export function railMotions(body: unknown): Record<string, RailMotion> {
   const list = (body as { vehicles?: unknown } | null)?.vehicles;
   const out: Record<string, RailMotion> = {};

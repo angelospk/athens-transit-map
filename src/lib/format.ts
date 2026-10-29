@@ -2,20 +2,22 @@
 
 export type DelayClass = "ontime" | "late1" | "late2" | "late3" | "none";
 
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-
-// 144 -> "2 λεπτά και 24 δευτερόλεπτα"
+// Short times: 144 -> "2′24″", 45 -> "45″".
 export function duration(sec: number): string {
-  sec = Math.round(Math.abs(sec));
-  const m = Math.floor(sec / 60), s = sec % 60, parts: string[] = [];
-  if (m) parts.push(plural(m, "λεπτό", "λεπτά"));
-  if (s || !m) parts.push(plural(s, "δευτερόλεπτο", "δευτερόλεπτα"));
-  return parts.join(" και ");
+  const t = Math.round(Math.abs(sec));
+  if (t < 60) return `${t}″`;
+  return `${Math.floor(t / 60)}′${String(t % 60).padStart(2, "0")}″`;
 }
 
-export const fmtDelay = (s: number) => (s === 0 ? "καμία" : s > 0 ? duration(s) : duration(s) + " νωρίτερα");
+// Delay with sign: "+45″", "−2′"; under 30″ it is on time.
+export function fmtDelay(s: number): string {
+  const a = Math.abs(s);
+  if (a < 30) return "στην ώρα του";
+  const sign = s > 0 ? "+" : "−";
+  return a < 60 ? `${sign}${Math.round(a)}″` : `${sign}${Math.round(a / 60)}′`;
+}
 
-export const delayText = (s: number | null) => (s == null ? "χωρίς αντιστοίχιση σε δρομολόγιο" : fmtDelay(s));
+export const delayText = (s: number | null) => (s == null ? "χωρίς δρομολόγιο" : fmtDelay(s));
 
 // Age of a vehicle position on its marker: "24″", then "2′".
 export const STALE_POS_S = 90;

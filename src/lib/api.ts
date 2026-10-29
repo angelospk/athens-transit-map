@@ -119,3 +119,20 @@ export const fetchStop = (id: string) =>
   railGet(stopUrl(id), 15_000, async () => (await import("./mock")).mockStop(id));
 export const peekStop = (id: string) => railCache.peek(stopUrl(id));
 export const peekTrainRun = (kind: "metro" | "suburban", id: string) => railCache.peek(runUrl(kind, id));
+
+// The unified /v2 API (v2.ts) for the cards: a Line with its patterns, its vehicles now, a Stop board, a Run.
+// A body without its main field (a source still warming up: `line: null`) counts as a 503, so it is not cached.
+// No mock: with VITE_MOCK=1 they answer as offline (status 0).
+const v2Get = (path: string, ttl: number, field: string) => {
+  const url = `${API_BASE}/v2/${path}`;
+  return railCache.get(url, ttl, async () => {
+    if (import.meta.env.VITE_MOCK === "1") return { status: 0, body: null };
+    const r = await getJSON(url, AbortSignal.timeout(10_000));
+    return r.status === 200 && !(r.body as Record<string, unknown> | null)?.[field] ? { ...r, status: 503 } : r;
+  });
+};
+const enc = encodeURIComponent;
+export const fetchV2Line = (id: string) => v2Get(`lines/${enc(id)}`, 3_600_000, "line");
+export const fetchV2LineVehicles = (id: string) => v2Get(`lines/${enc(id)}/vehicles`, 10_000, "vehicles");
+export const fetchV2Stop = (id: string) => v2Get(`stops/${enc(id)}`, 15_000, "stop");
+export const fetchV2Run = (id: string) => v2Get(`runs/${enc(id)}`, 15_000, "run");

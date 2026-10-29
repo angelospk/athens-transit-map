@@ -2,20 +2,28 @@ import { describe, expect, it } from "vitest";
 import { ageLabel, ago, isStalePos, delayClass, delayText, duration, fmtDelay, passes } from "../src/lib/format";
 
 describe("duration", () => {
-  it("speaks Greek minutes and seconds", () => {
-    expect(duration(144)).toBe("2 λεπτά και 24 δευτερόλεπτα");
-    expect(duration(1)).toBe("1 δευτερόλεπτο");
-    expect(duration(60)).toBe("1 λεπτό");
-    expect(duration(0)).toBe("0 δευτερόλεπτα");
-    expect(duration(-61)).toBe("1 λεπτό και 1 δευτερόλεπτο");
+  it("is short: seconds, then minutes and two-digit seconds (B10)", () => {
+    expect(duration(144)).toBe("2′24″");
+    expect(duration(1)).toBe("1″");
+    expect(duration(60)).toBe("1′00″");
+    expect(duration(0)).toBe("0″");
+    expect(duration(-61)).toBe("1′01″");
+    expect(duration(307)).toBe("5′07″");
+    expect(duration(3725)).toBe("62′05″");
   });
 });
 
 describe("fmtDelay", () => {
-  it("handles on time, late and early", () => {
-    expect(fmtDelay(0)).toBe("καμία");
-    expect(fmtDelay(140)).toBe("2 λεπτά και 20 δευτερόλεπτα");
-    expect(fmtDelay(-90)).toBe("1 λεπτό και 30 δευτερόλεπτα νωρίτερα");
+  it("is signed and short: whole minutes from one minute, seconds under it", () => {
+    expect(fmtDelay(0)).toBe("στην ώρα του");
+    expect(fmtDelay(20)).toBe("στην ώρα του");
+    expect(fmtDelay(-29)).toBe("στην ώρα του");
+    expect(fmtDelay(45)).toBe("+45″");
+    expect(fmtDelay(-12 - 30)).toBe("−42″");
+    expect(fmtDelay(140)).toBe("+2′");
+    expect(fmtDelay(170)).toBe("+3′");
+    expect(fmtDelay(-90)).toBe("−2′");
+    expect(delayText(null)).toBe("χωρίς δρομολόγιο");
   });
 });
 
@@ -34,16 +42,16 @@ describe("delayClass", () => {
 
 describe("ago", () => {
   it("counts seconds since a unix time and clamps skew to 0", () => {
-    expect(ago(1000, 1_024_000)).toBe("πριν 24 δευτερόλεπτα");
-    expect(ago(1030, 1_024_000)).toBe("πριν 0 δευτερόλεπτα");
+    expect(ago(1000, 1_024_000)).toBe("πριν 24″");
+    expect(ago(1030, 1_024_000)).toBe("πριν 0″");
   });
 });
 
 describe("delayText", () => {
   it("says the vehicle is unmatched when there is no delay", () => {
-    expect(delayText(null)).toBe("χωρίς αντιστοίχιση σε δρομολόγιο");
-    expect(delayText(0)).toBe("καμία");
-    expect(delayText(144)).toBe("2 λεπτά και 24 δευτερόλεπτα");
+    expect(delayText(null)).toBe("χωρίς δρομολόγιο");
+    expect(delayText(0)).toBe("στην ώρα του");
+    expect(delayText(144)).toBe("+2′");
   });
 });
 

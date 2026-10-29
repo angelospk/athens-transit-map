@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import cases from "./fixtures/motion-cases.json";
-import { knotMetres, lineTrains, railMotions, stasyPlace, trainsFC, type StasyVehicle } from "../src/lib/trains";
+import { knotMetres, lineTrains, railMotions, runIds, stasyPlace, trainsFC, type StasyVehicle } from "../src/lib/trains";
 
 // The backend's client rule for /v2 motion.knots (athens-transit-rt docs/fixtures/v2/motion-cases.json).
 describe("knotMetres", () => {
@@ -69,5 +69,13 @@ describe("lineTrains with motions", () => {
     const [t] = lineTrains({ kind: "metro", id: "M1" }, [veh], [], 1050, motions);
     expect(t.pos[0]).toBeCloseTo(23.005, 4);
     expect(lineTrains({ kind: "metro", id: "M1" }, [veh], [], 1050)[0].pos).toEqual([23.001, 38]);
+  });
+});
+
+describe("runIds", () => {
+  it("maps each trip to its /v2 Vehicle id", () => {
+    expect(runIds({ vehicles: [{ id: "stasy:run:40028:2026-10-29", run: "stasy:run:40028:2026-10-29" }, { id: 1 }, null] }))
+      .toEqual({ "40028": "stasy:run:40028:2026-10-29" });
+    expect(runIds(null)).toEqual({});
   });
 });

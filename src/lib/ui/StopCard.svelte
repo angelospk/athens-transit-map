@@ -4,6 +4,8 @@
   import Bell from "./Bell.svelte";
   import type { AppState } from "../state.svelte";
   import type { FetchResult } from "../poller";
+  import Back from "./Back.svelte";
+  import { busStopCard } from "../legacy";
 
   // The tapped bus stop, laid out as the phone app's: the user's lines first («Οι γραμμές μου | Όλες»), each
   // line and headsign with its next bus in big minutes, where it is and whether it runs late, the next ones,
@@ -85,8 +87,11 @@
   });
 </script>
 
-<svelte:window onkeydown={e => { if (e.key === "Escape" && app.busStop != null && !alertFor) app.selectBusStop(null); }} />
+<svelte:window onkeydown={e => { if (e.key === "Escape" && app.busStop != null && !alertFor) app.closeCards(); }} />
 
+{#snippet check()}
+  <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true" class="tick"><path d="M2 6.5l2.5 2.5L10 3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+{/snippet}
 {#snippet chip(line: string)}
   {@const c = app.lineColor(line)}
   <b class="chip" style:--bg={c.bg} style:--fg={c.fg}>{line}</b>
@@ -95,16 +100,17 @@
 {#if stop}
   <section class="card" aria-live="polite" aria-label="Στάση {stop[0]}">
     <header>
+      <Back {app} />
       <div class="t">
         <h2>{stop[0]}</h2>
         <p class="sub">{lines.length} {lines.length === 1 ? "γραμμή" : "γραμμές"}{#if across}{" · "}<button type="button" class="across"
-          onclick={() => app.selectBusStop(across.i)}>Απέναντι στάση · {across.m} μ</button>{/if}</p>
+          onclick={() => { const s = ix?.s[across.i]; if (s?.[3]) app.push(busStopCard(s[3], s[0])); }}>Απέναντι στάση · {across.m} μ</button>{/if}</p>
       </div>
       {#if alertLines.length}
         <button type="button" class="bell" class:on={!!alertFor && !alertFor.line} title="Ειδοποίηση άφιξης σε αυτή τη στάση"
           aria-label="Ειδοποίηση άφιξης στη στάση {stop[0]}" onclick={() => (alertFor = { lines: alertLines, ticked: mine })}><Bell /></button>
       {/if}
-      <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.selectBusStop(null)}>×</button>
+      <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.closeCards()}>×</button>
     </header>
     {#if app.alert}
       {@const a = app.alert}
@@ -113,8 +119,8 @@
     {/if}
     {#if mine.length && mine.length < lines.length}
       <div class="seg" role="group" aria-label="Ποιες γραμμές">
-        <button type="button" aria-pressed={!all} onclick={() => (all = false)}>{#if !all}{"✓ "}{/if}Οι γραμμές μου · {mine.length}</button>
-        <button type="button" aria-pressed={all} onclick={() => (all = true)}>{#if all}{"✓ "}{/if}Όλες · {lines.length}</button>
+        <button type="button" aria-pressed={!all} onclick={() => (all = false)}>{#if !all}{@render check()}{/if}Οι γραμμές μου · {mine.length}</button>
+        <button type="button" aria-pressed={all} onclick={() => (all = true)}>{#if all}{@render check()}{/if}Όλες · {lines.length}</button>
       </div>
     {/if}
     {#if board}
@@ -134,8 +140,8 @@
       {:else}
         <p class="empty">{showAll ? "Κανένα λεωφορείο καθ’ οδόν τώρα." : "Κανένα λεωφορείο των γραμμών σου καθ’ οδόν τώρα."}</p>
       {/if}
-      {#if also.length}
-        <h3>Περνούν επίσης</h3>
+      {#if !showAll}
+        <h3>Περνούν επίσης · {lines.length - mine.length} {lines.length - mine.length === 1 ? "γραμμή" : "γραμμές"}</h3>
         <ul class="also">
           {#each also as g (g.line + g.headsign)}
             {@const t = g.times[0]}
@@ -145,6 +151,7 @@
               <b class="w">{big(t)}</b>
             </button></li>
           {/each}
+          <li><button type="button" class="row all" onclick={() => (all = true)}>Όλες οι γραμμές της στάσης ({lines.length}) ›</button></li>
         </ul>
       {/if}
       {#if quiet.length}
@@ -211,6 +218,8 @@
   .also .row { width: 100%; min-height: 40px; padding: 3px 0; }
   .also .to { flex: 1; color: var(--muted); font-weight: 400; }
   .also .w { flex: none; font-size: 16px; font-variant-numeric: tabular-nums; }
+  .also .all { justify-content: center; border-top: 1px solid var(--border); color: var(--accent); font-weight: 600; }
+  .tick { margin-right: 4px; vertical-align: -1px; }
   .quiet { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 0 0; color: var(--muted); font-size: 12px; }
   .quiet .chip { min-width: 34px; min-height: 28px; padding: 2px 7px; font-size: 12px; cursor: pointer; }
   .empty { margin: 12px 0; font-size: 13px; }
