@@ -127,17 +127,67 @@ describe("CardNav", () => {
     nav.open(line("x")); pop();
     expect(nav.stack).toEqual([line("x")]);
     expect(h.i).toBe(1);
+    expect(h.entries).toHaveLength(2);
     expect(h.url).toBe("/?top=x");
     nav.back(); pop();
     expect(nav.stack).toEqual([]);
     expect(h.i).toBe(0);
   });
-  it("a map tap on a single card replaces it in place", () => {
+  it("a map tap on a single card replaces it, one Back from closed", () => {
     nav.start(null);
     nav.open(stop("a"));
-    nav.open(stop("b"));
+    nav.open(stop("b")); pop();
     expect(nav.stack).toEqual([stop("b")]);
     expect(h.entries).toHaveLength(2);
+  });
+  it("a fresh stack drops the old cards' Forward entries", () => {
+    nav.start(null);
+    nav.open(stop("a"));
+    nav.push(stop("b"));
+    nav.back(); pop();
+    nav.open(stop("x")); pop();
+    expect(nav.stack).toEqual([stop("x")]);
+    expect(h.entries).toHaveLength(2);
+    h.go(1);
+    expect(h.queued).toBe(false);
+  });
+  it("a tap during a history move waits for the move to land", () => {
+    nav.start(null);
+    nav.open(stop("a"));
+    nav.push(stop("b"));
+    nav.open(stop("x"));
+    nav.push(stop("y"));   // before the popstate of the open
+    pop();
+    expect(nav.stack).toEqual([stop("x"), stop("y")]);
+    expect(h.entries.map(e => e.url)).toEqual(["/", "/?top=x", "/?top=y"]);
+    nav.close(); nav.back();   // the back waits, then finds nothing to pop
+    pop();
+    expect(nav.stack).toEqual([]);
+    expect(h.i).toBe(0);
+  });
+  it("a reload on a card's entry keeps that stack and adds no entry", () => {
+    nav.start(null);
+    nav.open(stop("a"));
+    nav.push(stop("b"));
+    const again = new CardNav(h, () => {}, s => (s.length ? `/?top=${s[s.length - 1].id}` : "/"));
+    again.start(stop("b"));
+    expect(again.stack).toEqual([stop("a"), stop("b")]);
+    expect(h.entries).toHaveLength(3);
+    nav = again;
+    nav.close(); pop();
+    expect(nav.stack).toEqual([]);
+    expect(h.i).toBe(0);
+  });
+  it("replaces the top card in place (a gone vehicle becomes its line)", () => {
+    nav.start(null);
+    nav.open(stop("s"));
+    nav.push(vehicle("v", "l"));
+    nav.replaceTop(line("l"));
+    expect(nav.stack).toEqual([stop("s"), line("l")]);
+    expect(h.entries).toHaveLength(3);
+    expect(h.url).toBe("/?top=l");
+    nav.back(); pop();
+    expect(nav.stack).toEqual([stop("s")]);
   });
   it("pushing a card already in the stack goes back to it", () => {
     nav.start(null);

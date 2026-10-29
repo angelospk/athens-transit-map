@@ -67,11 +67,16 @@ function parseState(state: unknown): NavState {
 
 // History entries mirror the stack: each entry the class writes holds { cards, depth }, where depth
 // counts the entries above the page's base entry. Depth can exceed cards.length once MAX_DEPTH drops old cards.
+// A move that goes back (a fresh stack, a card already in the stack, Back, ×) lands on its popstate; a call
+// made meanwhile waits for it, so the moves never cross.
 export class CardNav {
   stack: Card[] = [];
   private depth = 0;
-  // A stack to settle on once the history move in flight reaches its popstate.
-  private pending: Card[] | null = null;
+  private moving = false;
+  // What to do once the move in flight lands: write this stack over the entry ("replace"), or push it
+  // as a new entry, which drops the Forward entries of the old stack ("fresh").
+  private landing: { mode: "replace" | "fresh"; cards: Card[] } | null = null;
+  private waiting: (() => void)[] = [];
 
   constructor(
     private h: Hist,
@@ -79,81 +84,89 @@ export class CardNav {
     private url: (stack: Card[]) => string,
   ) {}
 
+  // A reload on a card's entry keeps its stack; else the page's entry is the base, and a deep link's card
+  // goes above it, so Back closes it.
   start(initial: Card | null): void {
-    this.stack = [];
-    this.depth = 0;
-    this.h.replaceState({ cards: [], depth: 0 }, "", this.url([]));
-    if (initial) {
-      this.depth = 1;
-      this.stack = [initial];
-      this.h.pushState({ cards: [initial], depth: 1 }, "", this.url([initial]));
-    }
-    this.onChange(this.stack);
+    const was = parseState(this.h.state);
+    this.stack = was.cards;
+    this.depth = was.depth;
+    this.h.replaceState({ cards: this.stack, depth: this.depth }, "", this.url(this.stack));
+    if (!this.depth && initial) this.pushEntry([initial]);
+    else this.onChange(this.stack);
   }
 
   push(card: Card): void {
+    if (this.wait(() => this.push(card))) return;
     const next = pushCard(this.stack, card);
     const i = this.stack.findIndex(c => sameCard(c, card));
-    if (i >= 0) {
-      if (i === this.stack.length - 1) {
-        this.h.replaceState({ cards: next, depth: this.depth }, "", this.url(next));
-        this.stack = next;
-        this.onChange(this.stack);
-      } else {
-        this.pending = next;
-        this.h.go(-(this.stack.length - 1 - i));
-      }
-      return;
-    }
-    this.pushEntry(next);
+    if (i < 0) return this.pushEntry(next);
+    if (i < this.stack.length - 1) return this.go(-(this.stack.length - 1 - i), { mode: "replace", cards: next });
+    this.h.replaceState({ cards: next, depth: this.depth }, "", this.url(next));
+    this.stack = next;
+    this.onChange(this.stack);
   }
 
   // A fresh start from a map tap: the stack becomes just this card, one Back from closed.
   open(card: Card): void {
+    if (this.wait(() => this.open(card))) return;
     if (this.depth === 0) this.pushEntry([card]);
-    else if (this.depth === 1) {
-      this.h.replaceState({ cards: [card], depth: 1 }, "", this.url([card]));
-      this.stack = [card];
-      this.onChange(this.stack);
-    } else {
-      this.pending = [card];
-      this.h.go(-(this.depth - 1));
-    }
+    else this.go(-this.depth, { mode: "fresh", cards: [card] });
   }
 
   // The top card's title, once its data names it (a deep link brings no title). No onChange: nothing
   // else changes.
   retitle(title: string): void {
     const top = this.stack[this.stack.length - 1];
-    if (!top || top.title === title) return;
+    if (this.moving || !top || top.title === title) return;
     this.stack = [...this.stack.slice(0, -1), { ...top, title }];
     this.h.replaceState({ cards: this.stack, depth: this.depth }, "", this.url(this.stack));
   }
 
+  // Swaps the top card for another in the same history entry (no new entry, no Back step).
+  replaceTop(card: Card): void {
+    if (this.wait(() => this.replaceTop(card)) || !this.stack.length) return;
+    this.stack = [...this.stack.slice(0, -1), card];
+    this.h.replaceState({ cards: this.stack, depth: this.depth }, "", this.url(this.stack));
+    this.onChange(this.stack);
+  }
+
   back(): void {
-    if (this.depth > 0) this.h.go(-1);
+    if (this.wait(() => this.back())) return;
+    if (this.depth > 0) this.go(-1, null);
   }
 
   close(): void {
-    if (this.depth > 0) {
-      this.pending = null;
-      this.h.go(-this.depth);
-    }
+    if (this.wait(() => this.close())) return;
+    if (this.depth > 0) this.go(-this.depth, null);
   }
 
   // Call on every popstate with the history state of the entry now showing.
   popped(state: unknown): void {
-    const parsed = parseState(state);
-    if (this.pending) {
-      const next = this.pending;
-      this.h.replaceState({ cards: next, depth: parsed.depth }, "", this.url(next));
-      this.stack = next;
-      this.pending = null;
+    const at = parseState(state), land = this.landing;
+    this.moving = false;
+    this.landing = null;
+    this.depth = at.depth;
+    if (land?.mode === "fresh") {
+      this.stack = [];
+      this.pushEntry(land.cards);
     } else {
-      this.stack = parsed.cards;
+      this.stack = land ? land.cards : at.cards;
+      if (land) this.h.replaceState({ cards: this.stack, depth: this.depth }, "", this.url(this.stack));
+      this.onChange(this.stack);
     }
-    this.depth = parsed.depth;
-    this.onChange(this.stack);
+    while (!this.moving && this.waiting.length) this.waiting.shift()!();
+  }
+
+  // While a move is in flight, the call runs once it lands.
+  private wait(call: () => void): boolean {
+    if (this.moving) this.waiting.push(call);
+    return this.moving;
+  }
+
+  private go(n: number, landing: CardNav["landing"]): void {
+    this.moving = true;
+    this.landing = landing;
+    this.h.go(n);
   }
 
   private pushEntry(next: Card[]): void {

@@ -29,7 +29,7 @@ export const railLineCard = (l: RailLine, title = l.id): Card =>
 
 export type Legacy =
   | { kind: "bus-vehicle"; line: string; id: string }
-  | { kind: "route"; line: string; variant?: string }
+  | { kind: "route"; line: string; variant?: string; dir?: 0 | 1 }
   | { kind: "bus-stop"; code: string }
   | { kind: "station"; name?: string; folded: string }
   | { kind: "rail-station"; id: string }
@@ -48,7 +48,8 @@ export function legacyOf(c: Card): Legacy | null {
     if (ns === "stasy") return { kind: "station", name: c.ref, folded: native(c.id).replace(/-(metro|tram)$/, "") };
     if (ns === "proastiakos") return { kind: "rail-station", id: native(c.id) };
   } else {
-    if (ns === "oasa") return { kind: "route", line: native(c.id), ...(c.pattern ? { variant: native(c.pattern) } : {}) };
+    if (ns === "oasa") return { kind: "route", line: native(c.id), ...(c.pattern ? { variant: native(c.pattern) } : {}),
+      ...(c.dir !== undefined ? { dir: c.dir } : {}) };
     if (ns === "stasy") return { kind: "rail-line", line: { kind: "metro", id: native(c.id) } };
     if (ns === "proastiakos") return { kind: "rail-line", line: { kind: "suburban", id: native(c.id) } };
   }

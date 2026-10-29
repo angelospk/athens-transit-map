@@ -19,6 +19,7 @@ describe("legacyOf", () => {
     expect(legacyOf(busVehicleCard("021", "12216"))).toEqual({ kind: "bus-vehicle", line: "021", id: "12216" });
     expect(legacyOf(routeCard("040", "5512"))).toEqual({ kind: "route", line: "040", variant: "5512" });
     expect(legacyOf({ kind: "line", id: "oasa:040" })).toEqual({ kind: "route", line: "040" });
+    expect(legacyOf({ kind: "line", id: "oasa:040", dir: 1 })).toEqual({ kind: "route", line: "040", dir: 1 });
     expect(legacyOf(busStopCard("400012", "x"))).toEqual({ kind: "bus-stop", code: "400012" });
     expect(legacyOf(stationCard("ΣΥΝΤΑΓΜΑ", ["M2"]))).toEqual({ kind: "station", name: "ΣΥΝΤΑΓΜΑ", folded: "συνταγμα" });
     expect(legacyOf({ kind: "stop", id: "stasy:συνταγμα-metro" })).toEqual({ kind: "station", folded: "συνταγμα" });

@@ -1,12 +1,12 @@
 // The one store: chosen lines, live/static data, selection. Components read it; pollers write it.
 
-import { isHidden } from "./directions";
+import { directionGroups, isHidden } from "./directions";
 import type { Only } from "./format";
 import { fetchCity, fetchLine, fetchLines, fetchLineStatic, fetchRailMotion, fetchStatus, fetchTile, fetchTrains } from "./api";
 import { cityKey, isCityLive } from "./city";
 import { loadMetro, type MetroData } from "./metro";
 import { loadSuburban, type SuburbanData } from "./suburban";
-import { railMotions, type RailMotion, type StasyVehicle, type SuburbanTrain, type TrainSel } from "./trains";
+import { railMotions, runIds, type RailMotion, type StasyVehicle, type SuburbanTrain, type TrainSel } from "./trains";
 import type { TripIndex } from "./trip";
 import { LinePoller, type PollState } from "./poller";
 import { BACKOFF_MS, ClockOffset } from "./schedule";
@@ -116,6 +116,8 @@ export class AppState {
   // Each metro/tram trip's /v2 track and knots, by trip number: it runs on past its /v1 pair's stop.
   stasyMotion = $state.raw<Record<string, RailMotion>>({});
   suburbanTrains = $state.raw<SuburbanTrain[]>([]);
+  // Each metro/tram trip's /v2 Vehicle id (its Run id, with the service day), for its card.
+  private stasyRunIds: Record<string, string> = {};
   train = $state.raw<TrainSel | null>(null);
   // Bus and trolley stops (stops.ts), drawn from zoom 15 once the map has loaded their index. busStop: the
   // tapped one (an index into stopIx.s), whose card shows its lines and live arrivals.
@@ -324,7 +326,7 @@ export class AppState {
   cardOfTrain(sel: TrainSel): Card {
     if (sel.kind === "metro") {
       const v = this.stasyTrains.find(t => t.trip === sel.id);
-      return trainCard(sel, v?.line ?? "", v ? `${v.line} → ${v.headsign}` : "Συρμός");
+      return trainCard(sel, v?.line ?? "", v ? `${v.line} → ${v.headsign}` : "Συρμός", this.stasyRunIds[sel.id]);
     }
     return trainCard(sel, this.suburbanTrains.find(t => t.train === sel.id)?.corridor ?? "", `Προαστιακός ${sel.id}`);
   }
@@ -348,10 +350,14 @@ export class AppState {
     if (l?.kind !== "bus-vehicle" && l?.kind !== "route") this.clearSelection();
     if (!c || !l) return;
     switch (l.kind) {
-      case "bus-vehicle":
+      case "bus-vehicle": {
         if (!c.title) this.retitle(`${l.line} · ${l.id}`);
+        // A direction shown from another card must not hide the vehicle (Back from its other direction).
+        const f = this.focus[l.line], v = this.live[l.line]?.vehicles.find(x => x.id === l.id) ?? this.cityByKey.get(cityKey(l));
+        if (f && v?.variant && !f.includes(v.variant)) this.setFocus(l.line, null);
         return this.selectCityVehicle(l.line, l.id);
-      case "route": return this.showRoute(c, l.line, l.variant);
+      }
+      case "route": return this.showRoute(c, l.line, l.variant, l.dir);
       case "bus-stop":
         void this.loadStops().then(ix => {
           const i = ix ? stopIndex(ix, l.code) : -1;
@@ -389,14 +395,14 @@ export class AppState {
 
   // A bus line's card: one direction drawn, the line shown for a while if it is not a pick. Without a
   // variant (a link), the line's first one.
-  private showRoute(c: Card, line: string, variant?: string) {
+  private showRoute(c: Card, line: string, variant?: string, dir?: 0 | 1) {
     if (this.tempLine !== line) {
       this.dropTemp();
       if (!this.selected.includes(line)) { this.tempLine = line; this.startLine(line); }
     }
     if (variant) { this.selection = { kind: "route", line, variant }; return; }
     void fetchLineStatic(line).then(st => {
-      const v = Object.keys(st.variants)[0];
+      const v = directionGroups(st)[dir ?? 0]?.variants[0] ?? Object.keys(st.variants)[0];
       if (v && this.isTop(c)) { this.selection = { kind: "route", line, variant: v }; this.fit([line]); }
     }, () => { if (this.isTop(c)) this.say(`Άγνωστη γραμμή: ${line}.`); });
   }
@@ -467,6 +473,7 @@ export class AppState {
     if (!lines.length) return [];
     const keep = lines.slice(0, MAX_LINES), ids = keep.map(l => l.id), left = lines.slice(MAX_LINES).map(l => l.id);
     if (!keepAlert || this.alert?.lines.some(l => !ids.includes(l.line))) this.setAlert(null);   // a new trip: the old alert no longer fits
+    this.closeCards();   // the trip replaces any card (its fields clear once the move lands)
     this.metroStation = this.railStation = this.train = this.busStop = this.railLine = null;
     this.selection = null;
     if (this.tempLine && ids.includes(this.tempLine)) this.tempLine = null;   // now a pick
@@ -550,7 +557,9 @@ export class AppState {
       if (gen !== this.trainGen) return;
       if (!document.hidden) {
         if (kind === "metro") void fetchRailMotion(AbortSignal.timeout(10_000)).then(m => {   // not waited for
-          if (gen === this.trainGen) this.stasyMotion = m?.status === 200 ? railMotions(m.body) : {};
+          if (gen !== this.trainGen) return;
+          this.stasyMotion = m?.status === 200 ? railMotions(m.body) : {};
+          this.stasyRunIds = m?.status === 200 ? runIds(m.body) : {};
         });
         const r = await fetchTrains(kind, AbortSignal.timeout(10_000));
         if (gen !== this.trainGen) return;
@@ -763,7 +772,14 @@ export class AppState {
   private onData(id: string, d: LineLive) {
     this.live = { ...this.live, [id]: d };
     const s = this.selection;
-    if (s?.kind === "vehicle" && s.line === id && !d.vehicles.some(v => v.id === s.id)) this.clearSelection();
+    if (s?.kind === "vehicle" && s.line === id && !d.vehicles.some(v => v.id === s.id)) {
+      // Its card becomes its line's (spec B9): a link to a run that ended still shows the line.
+      const top = this.stack[this.stack.length - 1];
+      if (top?.kind === "vehicle" && top.id === `oasa:${s.id}`) {
+        this.say("Το όχημα δεν είναι πια σε δρομολόγιο.");
+        this.nav?.replaceTop({ kind: "line", id: `oasa:${id}`, title: id });
+      } else this.clearSelection();
+    }
     this.countEmpty(id, d);
   }
 
