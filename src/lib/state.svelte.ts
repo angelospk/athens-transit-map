@@ -445,10 +445,11 @@ export class AppState {
     const poll = async (kind: "metro" | "suburban", every: number) => {
       if (gen !== this.trainGen) return;
       if (!document.hidden) {
-        const [r, motion] = await Promise.all([fetchTrains(kind, AbortSignal.timeout(10_000)),
-          kind === "metro" ? fetchRailMotion(AbortSignal.timeout(10_000)) : null]);
+        if (kind === "metro") void fetchRailMotion(AbortSignal.timeout(10_000)).then(m => {   // not waited for
+          if (gen === this.trainGen) this.stasyMotion = m?.status === 200 ? railMotions(m.body) : {};
+        });
+        const r = await fetchTrains(kind, AbortSignal.timeout(10_000));
         if (gen !== this.trainGen) return;
-        if (kind === "metro") this.stasyMotion = motion?.status === 200 ? railMotions(motion.body) : {};
         const b = r.body as { vehicles?: unknown; trains?: unknown } | null;
         const list = kind === "metro" ? b?.vehicles : b?.trains;
         if (r.status === 200 && Array.isArray(list)) {
