@@ -19,6 +19,10 @@ describe("feedbackBody", () => {
     const b = JSON.parse(feedbackBody(fb));
     expect(b).toEqual({ text: "Το 040 δεν φαίνεται", version: fb.version, page: fb.page, ua: fb.ua });
   });
+  it("carries the diagnostics when given", () => {
+    const diag = { requests: [{ at: 1, url: "transit.haroldpoi.dev/v2/stops/oasa%3A1", status: 200, ms: 80 }], errors: [] };
+    expect(JSON.parse(feedbackBody({ ...fb, diag })).diag).toEqual(diag);
+  });
   it("carries the image as type + base64", () => {
     const b = JSON.parse(feedbackBody({ ...fb, image: { type: "image/jpeg", data: "AAEC" } }));
     expect(b.image).toEqual({ type: "image/jpeg", data: "AAEC" });
@@ -50,6 +54,10 @@ describe("sendFeedback", () => {
     expect(text).toContain("Το 040 δεν φαίνεται");
     expect(text).toContain(fb.version);
     expect(text).toContain(fb.page);
+    const withDiag = vi.fn(async () => new Response(null));
+    await sendFeedback({ ...fb, diag: { requests: [], errors: [{ at: 1, message: "boom" }] } }, "", withDiag);
+    const [, init2] = withDiag.mock.calls[0] as unknown as [string, RequestInit];
+    expect(new URLSearchParams(init2.body as URLSearchParams).get(FORM_FIELD)).toContain("boom");
   });
   it("false when offline or the text cannot be sent", async () => {
     expect(await sendFeedback(fb, "https://x", async () => { throw new TypeError("Failed to fetch"); })).toBe(false);

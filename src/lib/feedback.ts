@@ -1,8 +1,10 @@
-// Feedback from the ⓘ sheet: text, an optional screenshot, the version and the page. It goes to a
+// Feedback from the ⓘ sheet: text, an optional screenshot, the version, the page and the page's
+// recent requests and errors (diag.ts), so a report can be matched to the backend. It goes to a
 // Google Apps Script web app (docs/feedback/Code.gs), which writes a row to a Sheet and the image to
 // Drive (it answers {ok}). Google Forms takes no files from anonymous users, hence the script. Without its URL
 // (VITE_FEEDBACK_URL unset) the text alone goes to the old idea form.
 import { FORM_FIELD, FORM_URL } from "./idea";
+import type { DiagSnapshot } from "./diag";
 
 export const FEEDBACK_URL: string = import.meta.env.VITE_FEEDBACK_URL || "";
 export const MIN_TEXT = 3;
@@ -15,6 +17,7 @@ export interface Feedback {
   page: string;
   ua: string;
   image?: { type: string; data: string }; // base64, no data: prefix
+  diag?: DiagSnapshot;
 }
 
 export function canSendFeedback(text: string): boolean {
@@ -38,7 +41,7 @@ export async function sendFeedback(f: Feedback, url = FEEDBACK_URL, fetchFn: typ
     }
     // The Google Form answers no CORS: no-cors, so only a network failure shows.
     await fetchFn(FORM_URL, { method: "POST", mode: "no-cors",
-      body: new URLSearchParams({ [FORM_FIELD]: `${f.text.trim()}\n\n[${f.version} · ${f.page}]` }) });
+      body: new URLSearchParams({ [FORM_FIELD]: `${f.text.trim()}\n\n[${f.version} · ${f.page}]${f.diag ? "\n" + JSON.stringify(f.diag).slice(0, 3000) : ""}` }) });
     return true;
   } catch { return false; }
 }

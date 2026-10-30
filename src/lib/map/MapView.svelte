@@ -1164,9 +1164,11 @@
   });
 
   let infoOpen = $state(false);
+  let infoTab = $state<"sources" | "stats" | "feedback">("sources");
   let Info = $state.raw<typeof import("../ui/InfoDialog.svelte").default | null>(null);
   let infoLoad: Promise<typeof import("../ui/InfoDialog.svelte").default> | null = null;
-  async function openInfo() {
+  async function openInfo(tab?: "feedback") {
+    if (tab) infoTab = tab;
     infoLoad ??= import("../ui/InfoDialog.svelte").then(m => m.default);
     try {
       Info = await infoLoad;
@@ -1177,11 +1179,17 @@
     }
   }
   const ended = $derived(gtfsEnded(app.status?.gtfs_expires));
+  // «Δώσε feedback» in the ? pop (Panel) opens the ⓘ sheet on its feedback tab.
+  $effect(() => {
+    const on = () => void openInfo("feedback");
+    addEventListener("openfeedback", on);
+    return () => removeEventListener("openfeedback", on);
+  });
 </script>
 
 <div class="map ages-{app.ageMode}" {@attach setup}></div>
 {#if app.speedOn}<SpeedLegend meta={speedData?.meta ?? null} onclose={() => app.setSpeedOn(false)} />{/if}
-{#if Info}<Info bind:open={infoOpen} motion={app.motion} {ended} />{/if}
+{#if Info}<Info bind:open={infoOpen} bind:tab={infoTab} motion={app.motion} {ended} />{/if}
 {#if failed}
   <div class="nogl" role="alert">
     Ο χάρτης δεν μπορεί να εμφανιστεί: ο browser δεν υποστηρίζει WebGL2. Δοκίμασε άλλον browser ή ενεργοποίησε την

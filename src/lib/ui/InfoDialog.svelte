@@ -8,12 +8,14 @@
   import AboutView from "./AboutView.svelte";
 
   // ended: the day the OASA timetable ended, when it is past (explained at the top).
-  let { open = $bindable(false), motion, ended = null }: { open: boolean; motion: boolean; ended?: string | null } = $props();
+  // tab: bindable so «Δώσε feedback» (the ? pop) can open the sheet on the feedback tab.
+  let { open = $bindable(false), tab = $bindable("sources"), motion, ended = null }:
+    { open: boolean; tab?: Tab; motion: boolean; ended?: string | null } = $props();
 
   const TABS = [
     { id: "sources", label: "Πηγές δεδομένων" },
     { id: "stats", label: "Στατιστικά δικτύου" },
-    { id: "app", label: "Εφαρμογή" },
+    { id: "feedback", label: "Feedback" },
   ] as const;
   type Tab = (typeof TABS)[number]["id"];
   // Inside the stats tab: the newest day first, then the stored days together.
@@ -25,7 +27,6 @@
   let sub = $state<Sub>("day");
 
   let dlg: HTMLDialogElement;
-  let tab = $state<Tab>("sources");
   // The stats tab loads its data once, the first time it is shown; it then keeps it while hidden.
   let statsSeen = $state(false);
   $effect(() => { if (tab === "stats") statsSeen = true; });
@@ -33,7 +34,7 @@
   // The app tab: feedback (B10: moved here from the map's buttons), then version and «Τι νέο». This sheet stays
   // mounted once loaded, so closing it while feedback is sent loses nothing. Releases load on the first visit.
   let appSeen = $state(false);
-  $effect(() => { if (open && tab === "app") appSeen = true; });
+  $effect(() => { if (open && tab === "feedback") appSeen = true; });
 
   $effect(() => {
     if (open && dlg.isConnected && !dlg.open) dlg.showModal();
@@ -99,8 +100,8 @@
         {#if open && tab === "stats" && sub === "long"}<LongTermView />{/if}
       </div>
     </div>
-    <div role="tabpanel" id="info-panel-app" aria-labelledby="info-tab-app" hidden={tab !== "app"}>
-      <FeedbackForm visible={open && tab === "app"} />
+    <div role="tabpanel" id="info-panel-feedback" aria-labelledby="info-tab-feedback" hidden={tab !== "feedback"}>
+      <FeedbackForm visible={open && tab === "feedback"} />
       {#if appSeen}<AboutView />{/if}
     </div>
   </div>

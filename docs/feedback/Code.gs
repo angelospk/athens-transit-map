@@ -33,8 +33,11 @@ function doPost(e) {
 
     const book = SpreadsheetApp.openById(props.getProperty("SHEET_ID"));
     const tab = book.getSheetByName("Feedback") || book.insertSheet("Feedback");
-    if (tab.getLastRow() === 0) tab.appendRow(["Ώρα", "Κείμενο", "Έκδοση", "Σελίδα", "Συσκευή", "Εικόνα"]);
-    tab.appendRow([new Date(), cell(text), cell(f.version), cell(f.page), cell(f.ua), imageUrl]);
+    if (tab.getLastRow() === 0) tab.appendRow(["Ώρα", "Κείμενο", "Έκδοση", "Σελίδα", "Συσκευή", "Εικόνα", "Logs"]);
+    else if (tab.getRange("G1").isBlank()) tab.getRange("G1").setValue("Logs");  // a Sheet made before the Logs column
+    // Logs: the page's last requests and errors (JSON), for matching the report to the backend.
+    const logs = f.diag ? JSON.stringify(f.diag).slice(0, 40000) : "";
+    tab.appendRow([new Date(), cell(text), cell(f.version), cell(f.page), cell(f.ua), imageUrl, logs]);  // JSON: starts with "{", never a formula
     return reply({ ok: true });
   } catch (err) {
     console.error(err);

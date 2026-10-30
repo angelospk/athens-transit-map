@@ -5,6 +5,7 @@
   import { FOLLOW_URL, type IdeaStatus } from "../idea";
   import { FEEDBACK_URL, MAX_TEXT, canSendFeedback, sendFeedback, shrinkImage } from "../feedback";
   import { VERSION } from "../version";
+  import { diag } from "../diag";
 
   // visible: the tab is shown; leaving it after the thanks brings the form back.
   let { visible }: { visible: boolean } = $props();
@@ -32,16 +33,18 @@
     } catch { image = null; preview = ""; imageErr = true; }
     converting = false;
   }
+  // Everything but the text and the image, as sent; «Τι στέλνεται» shows it.
+  const context = () => ({ version: VERSION, page: location.pathname + location.search,
+    ua: `${navigator.userAgent} · ${innerWidth}×${innerHeight}`, diag: diag.snapshot() });
+  let shown = $state("");
+
   function dropImage() { image = null; preview = ""; imageErr = false; }
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
     if (!ok) return;
     status = "sending";
-    const sent = await sendFeedback({
-      text: draft, version: VERSION, page: location.pathname + location.search,
-      ua: `${navigator.userAgent} · ${innerWidth}×${innerHeight}`, ...(image ? { image } : {}),
-    });
+    const sent = await sendFeedback({ ...context(), text: draft, ...(image ? { image } : {}) });
     if (!sent) { status = "failed"; return; }
     draft = "";
     dropImage();
@@ -90,7 +93,12 @@
       <span>{draft.length}/{MAX_TEXT}</span>
     </div>
     <button class="btn send" type="submit" disabled={!ok}>{status === "sending" ? "Αποστολή…" : "Αποστολή"}</button>
-    <p class="fine">Δεν στέλνεται όνομα ή email. Μαζί πάνε η σελίδα που βλέπεις, η έκδοση, ο τύπος της συσκευής και η εικόνα, αν βάλεις.</p>
+    <p class="fine">Δεν στέλνεται όνομα ή email. Μαζί πάνε αυτόματα η σελίδα που βλέπεις, η έκδοση, η συσκευή και τα
+      τελευταία αιτήματα και σφάλματα της σελίδας, για να βρούμε το πρόβλημα. Και η εικόνα, αν βάλεις.</p>
+    <details ontoggle={e => { if ((e.currentTarget as HTMLDetailsElement).open) shown = JSON.stringify(context(), null, 1); }}>
+      <summary>Τι στέλνεται</summary>
+      <pre>{shown}</pre>
+    </details>
   </form>
 {/if}
 
@@ -115,6 +123,10 @@
   .send:disabled { opacity: .45; cursor: default; }
   .follow { align-self: stretch; background: var(--fg); color: var(--bg); }   /* black in light, white in dark */
   .fine { font-size: 11px; text-align: center; }
+  details { font-size: 12px; color: var(--muted); text-align: center; }
+  summary { cursor: pointer; min-height: 32px; line-height: 32px; }
+  pre { max-height: 200px; overflow: auto; margin: 4px 0 0; padding: 8px; border-radius: 8px; background: var(--control);
+    text-align: left; font-size: 11px; white-space: pre-wrap; word-break: break-all; }
   .done { align-items: center; text-align: center; }
   .tick { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; color: var(--ontime);
     background: color-mix(in srgb, var(--ontime) 14%, transparent); }

@@ -1,7 +1,7 @@
 # Feedback endpoint (Google Apps Script)
 
-The ⓘ sheet's feedback form posts JSON (`text`, `version`, `page`, `ua`, optional `image` as
-base64 JPEG) to a Google Apps Script web app. The script ([Code.gs](Code.gs)) adds a row to the
+The ⓘ sheet's feedback form posts JSON (`text`, `version`, `page`, `ua`, `diag` with the page's
+last 20 requests and 10 errors, optional `image` as base64 JPEG) to a Google Apps Script web app. The script ([Code.gs](Code.gs)) adds a row to the
 "Feedback" tab of a Sheet and saves the screenshot to a Drive folder. Google Forms itself takes no
 files from users who are not signed in, hence the script.
 

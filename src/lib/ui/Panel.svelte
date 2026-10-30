@@ -252,6 +252,10 @@
       {/await}
     {:else if pop === "help"}
       <div class="pop" id="pop-help" role="dialog" tabindex="-1" aria-label="Τι σημαίνει κάθε σύμβολο">
+        <button type="button" class="feedback" onclick={() => { toggle("help"); dispatchEvent(new Event("openfeedback")); }}>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" /></svg>
+          Δώσε feedback ή πες μας ένα πρόβλημα
+        </button>
         <HelpPop />
       </div>
     {:else if pop === "layers"}
@@ -415,6 +419,9 @@
   .pop { min-height: 0; padding: 12px 14px; font-size: 13px; background: var(--bg); border: 1px solid var(--border);
     border-radius: 14px; box-shadow: var(--shadow); box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; }
   .pop p { margin: 0 0 8px; }
+  .pop .feedback { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px;
+    margin: 0 0 12px; border: 0; border-radius: 10px; background: var(--accent); color: #fff; font: inherit; font-size: 14px;
+    font-weight: 600; cursor: pointer; }
   .pop h3 { margin: 0 0 10px; font-size: 15px; }
   .pop h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
   .pop section + section { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--border); }
