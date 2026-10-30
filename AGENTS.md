@@ -45,3 +45,12 @@ why.
    assignee: `angelospk` (Harold), `abinop` (Alexandros, backend and hosting),
    `imertz` (Yiannis, contributor).
 7. Scheduled jobs and new threads put the issue number in their brief.
+
+## Releases («Τι νέο»)
+
+The ⓘ sheet shows the web's GitHub Releases as «Τι νέο». After a push that users will notice (a
+new feature, a visible fix), bump `version` in `package.json` and publish a release whose tag is
+that version: title and 2-5 bullets in plain Greek for users, not commit text
+(`gh release create v<version> --target <full sha> --title "…" --notes-file …`). UI tweaks and
+internal changes need no release; they go into the next one.
+
