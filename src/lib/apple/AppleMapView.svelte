@@ -35,7 +35,7 @@
     }),
   );
 
-  // A fit asked for before MapKit is ready (lines from the URL) is done once the map exists.
+  // A fit asked for before MapKit is ready is done once the map exists.
   let pendingFit: string[] | null = null;
 
   $effect(() => {
@@ -67,7 +67,8 @@
         if (b && map) { const r = regionFor(b); map.setRegionAnimated(region(r.center, r.span)); }
       };
       app.flyTo = ([lon, lat]) => map?.setRegionAnimated(region({ lat, lon }, { lat: 0.02, lon: 0.02 }));
-      if (pendingFit) app.fit(pendingFit);
+      // app.init() runs before this lazy view exists, so a fit may already have gone to the no-op: frame the detail lines.
+      app.fit(pendingFit ?? app.detailLines);
       pendingFit = null;
       if (import.meta.env.DEV) Object.assign(window, { __amap: m });
     }, (e: Error) => (problem = e.message));
@@ -232,11 +233,11 @@
 
   // From the user (when they allow it) or else the map's centre, to the picked place.
   function here(): Promise<mapkit.Coordinate> {
-    const centre = () => map!.center;
+    const centre = map!.center;   // read now: the map may be gone when geolocation answers
     return new Promise(ok => {
-      if (!navigator.geolocation) return ok(centre());
+      if (!navigator.geolocation) return ok(centre);
       navigator.geolocation.getCurrentPosition(p => ok(new mapkit.Coordinate(p.coords.latitude, p.coords.longitude)),
-        () => ok(centre()), { timeout: 5000, maximumAge: 60_000 });
+        () => ok(centre), { timeout: 5000, maximumAge: 60_000 });
     });
   }
 
