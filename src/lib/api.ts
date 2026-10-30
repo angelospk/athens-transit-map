@@ -136,3 +136,6 @@ export const fetchV2Line = (id: string) => v2Get(`lines/${enc(id)}`, 3_600_000, 
 export const fetchV2LineVehicles = (id: string) => v2Get(`lines/${enc(id)}/vehicles`, 10_000, "vehicles");
 export const fetchV2Stop = (id: string) => v2Get(`stops/${enc(id)}`, 15_000, "stop");
 export const fetchV2Run = (id: string) => v2Get(`runs/${enc(id)}`, 15_000, "run");
+// The search indexes (B8): every Line and every Stop of every mode.
+export const fetchV2Lines = () => v2Get("lines", 3_600_000, "lines");
+export const fetchV2Stops = () => v2Get("stops", 3_600_000, "stops");

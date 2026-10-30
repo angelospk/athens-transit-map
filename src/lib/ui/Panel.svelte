@@ -26,10 +26,8 @@
   let ideaButton: HTMLButtonElement | undefined = $state();
   let foldButton: HTMLButtonElement | undefined = $state();
   let focusOpen = $state(false);   // the direction rows of several lines, under their one summary row
-  // Folded, the search field is hidden; the magnifier shows it (and the list under it) until a line is picked.
-  let searching = $state(false);
   // The bar shrinks to its chips and buttons when nothing is open under it.
-  const compact = $derived(collapsed && !searching);
+  const compact = $derived(collapsed);
 
   // Focus returns to the button that opened a popover.
   async function refocus(p: "layers" | "help" | "trip" | "idea") {
@@ -87,13 +85,11 @@
 
   // The chevron: opens and closes the dropdown.
   function fold() {
-    searching = false;
     collapsed = !collapsed;
   }
   // A press anywhere outside the panel folds it: the map matters more. The trip planner stays open while the map is used.
   function dismiss(e: PointerEvent) {
     if (pop === "trip" || (e.target as Element | null)?.closest?.(".panel, .rail, .popwrap")) return;
-    searching = false;
     collapsed = true;
     pop = null;
   }
@@ -155,7 +151,7 @@
 
   <!-- Always shown: the picked lines, the search, and the chevron. The map buttons are on the right (.rail). -->
   <div class="bar">
-    <LinePicker {app} expanded={!collapsed} searchOpen={searching} onsearch={() => (searching = true)} onclose={() => (searching = false)} {tail} />
+    <LinePicker {app} expanded={!collapsed} onsearch={() => (app.finder = "all")} {tail} />
   </div>
 
   <!-- Favourites only (B7): what the map shows, as a two-way switch. -->
@@ -251,8 +247,8 @@
 
   {#snippet tail()}
     {#if collapsed && app.selected.length}
-      <button type="button" class="tool" class:on={searching} aria-expanded={searching}
-        aria-label="Αναζήτηση γραμμής" title="Αναζήτηση γραμμής" onclick={() => (searching = !searching)}>
+      <button type="button" class="tool" aria-haspopup="dialog"
+        aria-label="Αναζήτηση γραμμής ή στάσης" title="Αναζήτηση" onclick={() => (app.finder = "all")}>
         <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
           <circle cx="8.5" cy="8.5" r="5.5" /><path d="M12.6 12.6L17 17" />
         </svg>

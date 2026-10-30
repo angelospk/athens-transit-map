@@ -89,6 +89,8 @@ export class AppState {
   favs = $state.raw<Favs>(loadFavs(stored<unknown>("fav.v2", null, () => true), stored<unknown>("favorites", null, () => true)));
   // The favourites panel (★ in the top bar); it shows while no card is open.
   favsOpen = $state(false);
+  // The search modal (B8): closed, or open on a kind filter.
+  finder = $state<"all" | "lines" | "stops" | null>(null);
   // Favourites only (B7): the map shows the favourite bus lines and not the city layer. The user's own cityOn
   // choice is kept in localStorage and comes back when this is off.
   favOnly = $state(stored("favOnly", true, isBool));

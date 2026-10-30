@@ -8,6 +8,7 @@
   import LineCard from "./lib/ui/LineCard.svelte";
   import RailStopCard from "./lib/ui/RailStopCard.svelte";
   import FavsPanel from "./lib/ui/FavsPanel.svelte";
+  import SearchModal from "./lib/ui/SearchModal.svelte";
   import { applyTheme } from "./lib/theme";
 
   const app = new AppState();
@@ -28,3 +29,4 @@
 <LineCard {app} />
 <RailStopCard {app} />
 <FavsPanel {app} />
+<SearchModal {app} />

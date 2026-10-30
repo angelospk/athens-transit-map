@@ -1,78 +1,18 @@
 <script lang="ts">
-  import { tick, type Snippet } from "svelte";
-  import { searchLines } from "../search";
-  import { MAX_LINES } from "../selection";
+  import type { Snippet } from "svelte";
   import type { AppState } from "../state.svelte";
 
-  // expanded: the panel's dropdown is open, which is where the quick picks (favourites, popular) show.
-  // Folded, the search field is hidden until searchOpen (the panel's magnifier, or the field below, was pressed);
-  // onsearch asks the panel to open it, onclose says the search is over (a line was picked, or Escape).
+  // The picked lines (chips), and under them, while the panel's dropdown is open (expanded), the button that opens
+  // the search modal (onsearch) and the quick picks (favourites, popular).
   // tail: buttons of the panel, at the right of the first row (the chips, or the search with no chips).
-  let { app, expanded = true, searchOpen = false, onsearch, onclose, tail }:
-    { app: AppState; expanded?: boolean; searchOpen?: boolean; onsearch?: () => void; onclose?: () => void; tail?: Snippet } = $props();
+  let { app, expanded = true, onsearch, tail }:
+    { app: AppState; expanded?: boolean; onsearch?: () => void; tail?: Snippet } = $props();
 
   const QUICK = ["040", "550", "Α1", "Χ95", "2"];
 
-  let query = $state("");
-  let open = $state(false);
-  let active = $state(0);
-  let input: HTMLInputElement | undefined = $state();
-  let list: HTMLUListElement | undefined = $state();
-
-  const results = $derived(searchLines(app.lines, query));
-  const showInput = $derived(expanded || searchOpen);
-
-  // The field is gone (the panel folded, the search ended): so is its list.
-  $effect(() => { if (!showInput) open = false; });
-
-  // Opened by the magnifier: the field takes focus, which drops the list.
-  $effect(() => {
-    if (searchOpen && !expanded) void tick().then(() => input?.focus());
-  });
-
-  const full = $derived(app.selected.length >= MAX_LINES);
   const quick = $derived(QUICK.filter(id => app.lineInfo.has(id) && !app.selected.includes(id)));
   const favs = $derived(app.favorites.filter(id => app.lineInfo.has(id)));
   const favsOff = $derived(favs.filter(id => !app.selected.includes(id)).length);
-
-  function pick(id: string) {
-    if (!app.selected.includes(id) && full) {
-      app.toggleLine(id);   // shows the 5-line notice
-      return;
-    }
-    app.toggleLine(id);
-    query = "";
-    open = false;
-    input?.blur();   // show the map on phones
-    onclose?.();
-  }
-
-  function move(to: number) {
-    active = Math.max(0, Math.min(results.length - 1, to));
-    list?.children[active]?.scrollIntoView({ block: "nearest" });
-  }
-
-  function onkeydown(e: KeyboardEvent) {
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      e.preventDefault();
-      if (!open) { open = true; return; }
-      move(active + (e.key === "ArrowDown" ? 1 : -1));
-    } else if (e.key === "PageDown" || e.key === "PageUp") {
-      e.preventDefault();
-      move(active + (e.key === "PageDown" ? 8 : -8));
-    } else if (e.key === "Enter" && open && results[active]) {
-      e.preventDefault();
-      pick(results[active].id);
-    } else if (e.key === "*" && open && results[active]) {
-      e.preventDefault();   // star the active line
-      app.toggleFavorite(results[active].id);
-    } else if (e.key === "Escape") {
-      open = false;
-      onclose?.();
-    } else if (e.key === "Tab") {
-      open = false;
-    }
-  }
 
   function chipState(id: string) {
     const s = app.pollState[id];
@@ -84,9 +24,7 @@
   }
 </script>
 
-<svelte:document onpointerdown={e => { if (open && !(e.target as Element).closest?.(".picker")) open = false; }} />
-
-<div class="picker" class:chipped={app.selected.length > 0} class:folded={!showInput}>
+<div class="picker" class:chipped={app.selected.length > 0} class:folded={!expanded}>
   {#if app.selected.length}
     <ul class="chips" aria-label="Επιλεγμένες γραμμές">
       {#each app.selected as id (id)}
@@ -110,35 +48,15 @@
   {/if}
   {#if tail}<div class="tail">{@render tail()}</div>{/if}
 
-  {#if !showInput && !app.selected.length}
+  {#if expanded || !app.selected.length}
     <button type="button" class="find" onclick={onsearch}>
       <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
         <circle cx="8.5" cy="8.5" r="5.5" /><path d="M12.6 12.6L17 17" />
-      </svg>Γραμμή ή περιοχή
+      </svg>Αναζήτηση γραμμής ή στάσης
     </button>
   {/if}
-  {#if showInput}
-  <input
-    bind:this={input}
-    bind:value={query}
-    type="search"
-    enterkeyhint="search"
-    autocomplete="off"
-    spellcheck="false"
-    placeholder={full ? "Έως 5 γραμμές ταυτόχρονα" : "Γραμμή ή περιοχή, π.χ. 040, Πειραιάς"}
-    role="combobox"
-    aria-label="Αναζήτηση γραμμής"
-    aria-expanded={open}
-    aria-controls="line-list"
-    aria-autocomplete="list"
-    aria-activedescendant={open && results[active] ? `line-opt-${active}` : undefined}
-    onfocus={() => { open = true; active = 0; }}
-    oninput={() => { open = true; active = 0; }}
-    {onkeydown}
-  />
-  {/if}
 
-  {#if expanded && favs.length && !open}
+  {#if expanded && favs.length}
     <!-- Starred lines: each chip shows or hides its line, so several are a tap each. -->
     <div class="quick" role="group" aria-label="Αγαπημένες γραμμές">
       <span aria-hidden="true">★</span>
@@ -151,49 +69,16 @@
         <button type="button" class="all" onclick={() => app.showFavorites()}>Όλες</button>
       {/if}
     </div>
-  {:else if expanded && !app.selected.length && quick.length && !open}
+  {:else if expanded && !app.selected.length && quick.length}
     <div class="quick">
       <span>Δημοφιλείς:</span>
       {#each quick as id (id)}
-        <button type="button" class="q" style:--c={app.lineInfo.get(id)?.color} onclick={() => pick(id)}>{id}</button>
+        <button type="button" class="q" style:--c={app.lineInfo.get(id)?.color} onclick={() => app.toggleLine(id)}>{id}</button>
       {/each}
     </div>
-    <div class="tip">Πάτα ☆ σε μια γραμμή της λίστας για να μπει στις αγαπημένες.</div>
+    <div class="tip">Πάτα ☆ σε μια γραμμή ή στάση για να μπει στα αγαπημένα.</div>
   {/if}
 
-  {#if open && showInput}
-    <ul id="line-list" class="list" role="listbox" aria-label="Γραμμές" aria-multiselectable="true" bind:this={list}>
-      {#if app.linesFailed}
-        <li class="empty">Δεν φορτώθηκε η λίστα γραμμών. Δοκίμασε ξανά σε λίγο.</li>
-      {:else if !app.lines.length}
-        <li class="empty">Φόρτωση γραμμών…</li>
-      {:else if !results.length}
-        <li class="empty">Καμία γραμμή για «{query}»</li>
-      {/if}
-      {#each results as l, i (l.id)}
-        {@const sel = app.selected.includes(l.id)}
-        {@const star = app.favorites.includes(l.id)}
-        <!-- svelte-ignore a11y_click_events_have_key_events (keyboard goes through the combobox input) -->
-        <li
-          id="line-opt-{i}"
-          role="option"
-          aria-selected={sel}
-          aria-disabled={!sel && full}
-          class={{ active: i === active, disabled: !sel && full }}
-          onpointerenter={() => (active = i)}
-          onpointerdown={e => e.preventDefault()}
-          onclick={() => pick(l.id)}
-        >
-          <span class="id" style:--c={app.lineColor(l.id).bg} style:--t={app.lineColor(l.id).fg}>{l.id}</span>
-          <span class="name">{l.name}</span>
-          {#if sel}<span class="check" aria-hidden="true">✓</span>{/if}
-          <button type="button" class="star" class:on={star} tabindex="-1" aria-pressed={star}
-            aria-label="{star ? 'Αφαίρεση από' : 'Προσθήκη στις'} αγαπημένες: {l.id}" title="Αγαπημένη (πλήκτρο *)"
-            onclick={e => { e.stopPropagation(); app.toggleFavorite(l.id); }}>{star ? "★" : "☆"}</button>
-        </li>
-      {/each}
-    </ul>
-  {/if}
 </div>
 
 <style>
@@ -202,7 +87,8 @@
   .folded .chips { margin-bottom: 0; }   /* nothing under them */
   /* The panel's buttons: beside the chips, or, with no chips, beside the search. */
   .tail { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 2px; margin: -4px -6px 0 0; }
-  .picker:not(.chipped) input, .find { grid-column: 1; grid-row: 1; }
+  .picker:not(.chipped) .find { grid-column: 1; grid-row: 1; }
+  .chipped .find { grid-column: 1 / -1; grid-row: 2; }
   .find { display: inline-flex; align-items: center; justify-self: start; gap: 6px; min-height: 36px; padding: 0 12px;
     border: 0; border-radius: 18px; background: var(--control); color: var(--muted); font-size: 13px; cursor: pointer; }
   .find:hover { background: var(--control-hover); }
@@ -212,27 +98,9 @@
   .chip .x { opacity: .8; font-weight: 400; margin-left: 2px; }
   .chip .st { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%;
     background: rgba(0, 0, 0, .3); font-size: 11px; }
-  input { grid-column: 1 / -1; grid-row: 2; width: 100%; min-height: 40px; padding: 8px 12px; border-radius: 10px; border: 1px solid transparent;
-    background: var(--control); font-size: 16px; /* 16px stops iOS zooming on focus */ }
-  input:focus { outline: 2px solid var(--accent); outline-offset: 0; }
   .quick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; color: var(--muted); font-size: 12px; }
   .q { min-height: 32px; padding: 0 10px; border: 0; border-radius: 16px; background: var(--c, #3b5bdb); color: #fff;
     font-weight: 700; cursor: pointer; }
-  .list { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 10; margin: 0; padding: 4px;
-    list-style: none; max-height: min(360px, 55vh); overflow-y: auto; overscroll-behavior: contain;
-    background: var(--bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, .25); }
-  .list li { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 8px; border-radius: 8px; cursor: pointer; }
-  .list li.active { background: var(--control-hover); }
-  .list li.disabled { opacity: .45; cursor: not-allowed; }
-  .list li.empty { color: var(--muted); cursor: default; }
-  .id { flex: none; min-width: 44px; padding: 2px 6px; border-radius: 6px; background: var(--c); color: var(--t);
-    font-weight: 700; text-align: center; font-size: 13px; }
-  .name { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .check { color: var(--accent); font-weight: 700; }
-  .star { flex: none; width: 36px; height: 36px; margin: -4px -4px -4px 0; border: 0; border-radius: 8px; background: none;
-    color: var(--muted); font-size: 18px; cursor: pointer; }
-  .star:hover { background: var(--control); }
-  .star.on { color: #f59f00; }
   .fav { min-height: 32px; padding: 0 10px; border: 2px solid var(--c, #3b5bdb); border-radius: 16px; background: none;
     color: var(--fg); font-weight: 700; cursor: pointer; }
   .fav[aria-pressed="true"] { background: var(--c, #3b5bdb); color: var(--t, #fff); }
