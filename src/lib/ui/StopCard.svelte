@@ -105,7 +105,7 @@
   });
 </script>
 
-<svelte:window onkeydown={e => { if (e.key === "Escape" && app.busStop != null && !alertFor) app.closeCards(); }} />
+<svelte:window onkeydown={e => { if (e.key === "Escape" && (stop || early) && !alertFor) app.closeCards(); }} />
 
 {#snippet check()}
   <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true" class="tick"><path d="M2 6.5l2.5 2.5L10 3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
