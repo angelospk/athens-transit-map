@@ -134,6 +134,9 @@ const v2Get = (path: string, ttl: number, field: string) => {
 const enc = encodeURIComponent;
 export const fetchV2Line = (id: string) => v2Get(`lines/${enc(id)}`, 3_600_000, "line");
 export const fetchV2LineVehicles = (id: string) => v2Get(`lines/${enc(id)}/vehicles`, 10_000, "vehicles");
+// The last good answers, of any age: a line card opened again shows them at once, then asks again.
+export const peekV2Line = (id: string) => railCache.peek(`${API_BASE}/v2/lines/${enc(id)}`);
+export const peekV2LineVehicles = (id: string) => railCache.peek(`${API_BASE}/v2/lines/${enc(id)}/vehicles`);
 export const fetchV2Stop = (id: string) => v2Get(`stops/${enc(id)}`, 15_000, "stop");
 export const fetchV2Run = (id: string) => v2Get(`runs/${enc(id)}`, 15_000, "run");
 // The search indexes (B8): every Line and every Stop of every mode.

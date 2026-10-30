@@ -92,7 +92,7 @@
       aria-label={sheet === "open" ? "Σύμπτυξη λεπτομερειών" : "Ανάπτυξη λεπτομερειών"} onclick={e => { if (e.detail === 0) sheet = flip(sheet); }}><span></span></button>
     <header>
       <Back {app} />
-      {@render header()}
+      <div class="hd">{@render header()}</div>
       {#if onstar}
         <button type="button" class="star" class:on={starred} aria-pressed={starred} title={starLabel} aria-label={starLabel} onclick={onstar}><Icon name={starred ? "star-filled" : "star"} size={20} /></button>
       {/if}
@@ -115,7 +115,11 @@
   .grab:focus-visible { outline: 2px solid var(--accent); border-radius: 6px; }
   .body { max-height: min(55dvh, 420px); overflow-y: auto; overscroll-behavior: contain; transition: opacity .15s; }
   .card.peek .body { opacity: 0; }   /* no sliver of it under the header */
-  header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .hd { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+  /* Under Back, the badge and title get a row of their own: Back and the buttons above. */
+  header:has(> :global(.back)) > :global(.back) { margin-right: auto; }
+  header:has(> :global(.back)) .hd { order: 1; flex-basis: 100%; }
   header :global(.pill) { flex: none; padding: 2px 8px; border-radius: 10px; background: var(--c); color: var(--t); font-weight: 700; }
   header :global(h2) { flex: 1; min-width: 0; margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; }

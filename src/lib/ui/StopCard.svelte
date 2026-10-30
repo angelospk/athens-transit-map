@@ -197,9 +197,12 @@
   .card { position: absolute; z-index: 6; left: 12px; bottom: 28px; width: 360px; padding: 12px 16px;
     background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
     backdrop-filter: blur(8px); max-height: calc(100dvh - 140px); overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; }
-  header { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 10px; }
+  header { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin-bottom: 10px; }
   .t { flex: 1; min-width: 0; }
-  h2 { margin: 0; font-size: 22px; font-weight: 600; line-height: 1.2; overflow: hidden; overflow-wrap: anywhere;
+  /* Under Back, the name gets a row of its own: Back and the buttons above, the full width for the name. */
+  header:has(> :global(.back)) > :global(.back) { margin-right: auto; }
+  header:has(> :global(.back)) .t { order: 1; flex-basis: 100%; }
+  h2 { margin: 0; font-size: 22px; font-weight: 600; line-height: 1.2; overflow: hidden; overflow-wrap: break-word;
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
   p { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
   .sub { margin: 2px 0 0; font-size: 13px; }

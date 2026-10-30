@@ -2,7 +2,7 @@
   // The card of a line, any mode, from /v2: its two directions, the vehicles now of the chosen one and,
   // for a bus line, today's runs. The vehicles are asked again every 20 s while it is open.
   import { untrack } from "svelte";
-  import { fetchV2Line, fetchV2LineVehicles } from "../api";
+  import { fetchV2Line, fetchV2LineVehicles, peekV2Line, peekV2LineVehicles } from "../api";
   import { fmtDelay } from "../format";
   import { busVehicleCard } from "../legacy";
   import { directionGroups } from "../directions";
@@ -20,20 +20,37 @@
   let detail = $state.raw<LineDetail | null>(null);
   let vehicles = $state.raw<V2Vehicle[] | null>(null);
   let failed = $state(false);
+  let vFailed = $state(false);
+  const cardId = $derived(card?.id);
 
+  // Back on a line seen a moment ago: its last data shows at once (vehicles up to 2 min old), then a new load.
+  // The two loads are apart, so the patterns never wait for the vehicles; a failed load keeps what is shown.
   $effect(() => {
-    if (!card) return;
-    const id = card.id;
+    const id = cardId;
+    if (!id) return;
     const ac = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    untrack(() => { detail = null; vehicles = null; failed = false; });
+    untrack(() => {
+      const d = peekV2Line(id), v = peekV2LineVehicles(id);
+      detail = (d?.body as LineDetail | undefined) ?? null;
+      vehicles = v?.at && Date.now() - v.at < 120_000 ? (v.body as { vehicles?: V2Vehicle[] }).vehicles ?? [] : null;
+      failed = false; vFailed = false;
+    });
     const load = async () => {
       if (document.visibilityState !== "hidden") {
-        const [lr, vr] = await Promise.all([fetchV2Line(id), fetchV2LineVehicles(id)]);
+        await Promise.all([
+          fetchV2Line(id).then(r => {
+            if (ac.signal.aborted) return;
+            if (r.status === 200 && r.body) detail = r.body as LineDetail;
+            failed = !detail;
+          }),
+          fetchV2LineVehicles(id).then(r => {
+            if (ac.signal.aborted) return;
+            if (r.status === 200 && r.body) vehicles = (r.body as { vehicles?: V2Vehicle[] }).vehicles ?? [];
+            vFailed = vehicles === null;
+          }),
+        ]);
         if (ac.signal.aborted) return;
-        if (lr.status === 200 && lr.body) detail = lr.body as LineDetail;
-        if (vr.status === 200 && vr.body) vehicles = (vr.body as { vehicles?: V2Vehicle[] }).vehicles ?? [];
-        failed = !detail;
       }
       timer = setTimeout(load, 20_000);
     };
@@ -116,7 +133,7 @@
           {/each}
         </ul>
       {:else}
-        <p class="muted">{rows ? "Κανένα όχημα σε αυτή την κατεύθυνση τώρα." : "Φόρτωση…"}</p>
+        <p class="muted">{rows ? "Κανένα όχημα σε αυτή την κατεύθυνση τώρα." : vFailed ? "Δεν φόρτωσαν τα οχήματα. Νέα προσπάθεια σε λίγο." : "Φόρτωση…"}</p>
       {/if}
 
       <!-- frequency summary slot (option B, frequent.html): phase 3/4 -->

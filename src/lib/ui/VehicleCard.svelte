@@ -33,6 +33,8 @@
   const ahead = $derived(bus?.st && bus.variant ? upcomingStops(bus.variant, bus.st.stops, bus.v) : []);
   const busHead = $derived(bus?.variant?.headsign ? toward(bus.variant.headsign) : "");
   const busAge = $derived(bus ? app.serverNow / 1000 - bus.v.position_at : 0);
+  // An old position (the server got nothing new for 2 min): a time it puts in the past is not «τώρα» but unknown.
+  const busStale = $derived(busAge > 120);
 
   // The alert form at one of those stops (AlertForm, loaded on the first bell): the stop's id and its place.
   let alertAt = $state.raw<{ id: string; i: number; from: number | null; name: string; line: string; variant: string } | null>(null);
@@ -113,11 +115,11 @@
     {#if bus}
       <p class="meta">{delayText(bus.v.delay_s)} · #{bus.v.id}</p>
       {#if ahead.length}
-        <p class="note">ώρες κατά προσέγγιση</p>
+        <p class="note" class:warn={busStale}>{busStale ? `Καμία νέα θέση εδώ και ${Math.round(busAge / 60)}′· οι ώρες μπορεί να μην ισχύουν` : "ώρες κατά προσέγγιση"}</p>
         <ol class="ahead" aria-live="polite" aria-label="Επόμενες στάσεις">
           {#each ahead.slice(0, 8) as a, k (a.id + "/" + a.i)}
             <li class:next={k === 0}>
-              <span class="t">{whenText(a.at, app.serverNow)}</span><button type="button" class="name" title="Η στάση {a.name}" onclick={() => app.push(busStopCard(a.id, a.name))}>{a.name}</button>
+              <span class="t">{busStale && a.at * 1000 <= app.serverNow ? "—" : whenText(a.at, app.serverNow)}</span><button type="button" class="name" title="Η στάση {a.name}" onclick={() => app.push(busStopCard(a.id, a.name))}>{a.name}</button>
               <button type="button" class="bell" class:on={alertAt?.id === a.id && alertAt.i === a.i} aria-expanded={alertAt?.id === a.id && alertAt.i === a.i}
                 title="Ειδοποίηση άφιξης σε αυτή τη στάση" aria-label="Ειδοποίηση άφιξης του {line} στη στάση {a.name}"
                 onclick={() => bellAt(a)}><Bell /></button>
@@ -186,6 +188,7 @@
   .muted { margin: 4px 0; color: var(--muted); font-size: 12px; }
   .meta { margin: 0 0 4px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .note { margin: 8px 0 2px; font-size: 11px; color: var(--muted); }
+  .note.warn { color: #e03131; }
   .ahead { list-style: none; margin: 0; padding: 0; }
   .ahead li { display: flex; align-items: center; gap: 10px; min-height: 36px; font-size: 13px; }
   .ahead li.next { font-weight: 700; }

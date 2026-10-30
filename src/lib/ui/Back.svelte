@@ -14,15 +14,12 @@
 
 <style>
   .back {
-    flex: none; display: inline-flex; align-items: center; gap: 2px; max-width: 40%; min-height: 32px; padding: 0 8px 0 4px;
+    flex: none; display: inline-flex; align-items: center; gap: 2px; max-width: 60%; min-height: 32px; padding: 0 8px 0 4px;
     border: 0; border-radius: 8px; background: var(--control); color: var(--fg); font: inherit; font-size: 13px; cursor: pointer;
   }
   .back span[aria-hidden] { font-size: 20px; line-height: 1; }
   .back .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .back:hover { background: var(--control-hover); }
-  /* On a phone the label would squeeze the card's title: the arrow alone, the label stays in aria-label. */
-  @media (max-width: 480px) {
-    .back { min-width: 44px; min-height: 44px; justify-content: center; padding: 0; }
-    .back .t { display: none; }
-  }
+  /* Back has a row of its own with the card's buttons (CardSheet, StopCard), so the label fits on a phone too. */
+  @media (max-width: 480px) { .back { min-height: 44px; } }
 </style>
