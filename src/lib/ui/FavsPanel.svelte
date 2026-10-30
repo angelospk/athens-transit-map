@@ -10,6 +10,7 @@
   import { stopRows, type StopRow, type V2Arrival, type V2Line, type V2Stop, type V2Vehicle } from "../v2";
   import type { AppState } from "../state.svelte";
   import CardSheet, { whenText } from "./CardSheet.svelte";
+  import Icon from "./Icon.svelte";
 
   let { app }: { app: AppState } = $props();
 
@@ -92,7 +93,7 @@
       <h2 class="title">Αγαπημένα</h2>
     {/snippet}
     {#if !app.favs.stops.length && !app.favs.lines.length}
-      <p class="muted">Πάτα ☆ σε μια στάση ή γραμμή για να μπει εδώ.</p>
+      <p class="muted">Πάτα <Icon name="star" size={13} label="το αστέρι" /> σε μια στάση ή γραμμή για να μπει εδώ.</p>
     {/if}
 
     {#if app.favs.stops.length}
@@ -106,7 +107,7 @@
           <div class="shead">
             <button type="button" class="name" onclick={() => app.push({ kind: "stop", id: s.id, title: s.name })}>{s.name}</button>
             <button type="button" class="unstar" title="Αφαίρεση από τα αγαπημένα" aria-label="Αφαίρεση της στάσης {s.name} από τα αγαπημένα"
-              onclick={() => app.toggleFavStop(s)}>★</button>
+              onclick={() => app.toggleFavStop(s)}><Icon name="star-filled" size={20} /></button>
           </div>
           {#if !boards[s.id]}
             <p class="muted">{failed["s:" + s.id] ? "Δεν φόρτωσε. Δοκιμάζω ξανά." : "Φόρτωση…"}</p>

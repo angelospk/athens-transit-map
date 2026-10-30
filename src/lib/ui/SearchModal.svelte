@@ -7,6 +7,7 @@
   import { chipOf, findLines, findStops, pushRecent, type Chip, type Recent, type StopEntry } from "../finder";
   import type { V2Line } from "../v2";
   import type { AppState } from "../state.svelte";
+  import Icon from "./Icon.svelte";
 
   let { app }: { app: AppState } = $props();
 
@@ -115,19 +116,6 @@
   }
 </script>
 
-{#snippet icon(c: Chip)}
-  <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-    {#if c === "bus"}
-      <rect x="4" y="3" width="12" height="12" rx="2" /><path d="M4 10h12M7 15v2M13 15v2" /><circle cx="7.5" cy="12.5" r=".6" /><circle cx="12.5" cy="12.5" r=".6" />
-    {:else if c === "metro"}
-      <circle cx="10" cy="10" r="7" /><path d="M6.5 13.5V7l3.5 4 3.5-4v6.5" />
-    {:else if c === "tram"}
-      <rect x="5" y="5" width="10" height="10" rx="2" /><path d="M8 2.5h4M10 2.5V5M7 15l-2 2.5M13 15l2 2.5M5 10h10" />
-    {:else}
-      <rect x="5" y="3" width="10" height="11" rx="3" /><path d="M5 9h10M7.5 14 5.5 17.5M12.5 14l2 3.5" />
-    {/if}
-  </svg>
-{/snippet}
 
 {#snippet lineRow(id: string, label: string, name: string | undefined)}
   {@const bd = badge(id, label)}
@@ -138,7 +126,7 @@
       <span class="name">{name ?? ""}</span>
     </button>
     <button type="button" class="star" class:on aria-pressed={on} aria-label="{on ? 'Αφαίρεση από' : 'Προσθήκη στα'} αγαπημένα: {bd.text}"
-      onclick={() => app.toggleFavLine({ id, label: bd.text })}>{on ? "★" : "☆"}</button>
+      onclick={() => app.toggleFavLine({ id, label: bd.text })}><Icon name={on ? "star-filled" : "star"} size={20} /></button>
   </li>
 {/snippet}
 
@@ -153,7 +141,7 @@
 {#snippet stopRow(s: StopEntry)}
   <li class="row">
     <button type="button" class="pick" onclick={() => openStop(s[0], s[1])}>
-      <span class="modes">{#each stopModes(s) as c (c)}{@render icon(c)}{/each}</span>
+      <span class="modes">{#each stopModes(s) as c (c)}<Icon name={c} />{/each}</span>
       <span class="name">{s[1]}<small>{s[5].slice(0, 6).map(id => byId.get(id)?.label ?? native(id)).join(" · ")}{s[5].length > 6 ? " …" : ""}</small></span>
     </button>
   </li>
@@ -177,7 +165,7 @@
       </div>
       <div class="chips" role="group" aria-label="Μέσο">
         {#each CHIPS as [c, t] (c)}
-          <button type="button" class="chip" aria-pressed={chips.includes(c)} onclick={() => toggleChip(c)}>{@render icon(c)}{t}</button>
+          <button type="button" class="chip" aria-pressed={chips.includes(c)} onclick={() => toggleChip(c)}><Icon name={c} />{t}</button>
         {/each}
       </div>
 

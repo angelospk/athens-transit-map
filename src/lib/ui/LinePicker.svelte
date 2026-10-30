@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import type { AppState } from "../state.svelte";
+  import Icon from "./Icon.svelte";
 
   // The picked lines (chips), and under them, while the panel's dropdown is open (expanded), the button that opens
   // the search modal (onsearch) and the quick picks (favourites, popular).
@@ -59,7 +60,7 @@
   {#if expanded && favs.length}
     <!-- Starred lines: each chip shows or hides its line, so several are a tap each. -->
     <div class="quick" role="group" aria-label="Αγαπημένες γραμμές">
-      <span aria-hidden="true">★</span>
+      <Icon name="star-filled" size={14} />
       {#each favs as id (id)}
         {@const on = app.selected.includes(id)}
         <button type="button" class="fav" style:--c={app.lineColor(id).bg} style:--t={app.lineColor(id).fg} aria-pressed={on}
@@ -76,7 +77,7 @@
         <button type="button" class="q" style:--c={app.lineInfo.get(id)?.color} onclick={() => app.toggleLine(id)}>{id}</button>
       {/each}
     </div>
-    <div class="tip">Πάτα ☆ σε μια γραμμή ή στάση για να μπει στα αγαπημένα.</div>
+    <div class="tip">Πάτα <Icon name="star" size={12} label="το αστέρι" /> σε μια γραμμή ή στάση για να μπει στα αγαπημένα.</div>
   {/if}
 
 </div>

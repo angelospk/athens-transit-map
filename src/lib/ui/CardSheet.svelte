@@ -17,6 +17,7 @@
   import { clampDrag, settle, type SheetState } from "../sheet";
   import type { AppState } from "../state.svelte";
   import Back from "./Back.svelte";
+  import Icon from "./Icon.svelte";
 
   let { app, key, header, children, starred, onstar, starLabel, closeOnEscape = true, onclose }: {
     app: AppState;
@@ -93,7 +94,7 @@
       <Back {app} />
       {@render header()}
       {#if onstar}
-        <button type="button" class="star" class:on={starred} aria-pressed={starred} title={starLabel} aria-label={starLabel} onclick={onstar}>{starred ? "★" : "☆"}</button>
+        <button type="button" class="star" class:on={starred} aria-pressed={starred} title={starLabel} aria-label={starLabel} onclick={onstar}><Icon name={starred ? "star-filled" : "star"} size={20} /></button>
       {/if}
       <button type="button" class="close" aria-label="Κλείσιμο" onclick={close}>×</button>
     </header>

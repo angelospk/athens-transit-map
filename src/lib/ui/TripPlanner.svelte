@@ -13,6 +13,7 @@
   import type { AppState } from "../state.svelte";
   import AlertForm from "./AlertForm.svelte";
   import Bell from "./Bell.svelte";
+  import Icon, { type IconName } from "./Icon.svelte";
   import { walkUrl } from "../maps";
   import { alertTargets, anyMetro, boardings, centre, distM, findTransfers, findTrips, geocode, legTrip, loadTripIndex, metroDirect, metroPlaces, nearestStation, places, searchPlaces,
     suggest, termini, toggleTripLine, type Pt, type TripIndex, type TripLine, type TripTransfer } from "../trip";
@@ -260,10 +261,10 @@
 
   const stop = (k: number) => data?.ix.s[k][0] ?? "";
   const metres = (m: number) => (m < 50 ? "δίπλα" : `≈ ${Math.round(m / 50) * 50} μ.`);
-  const icon = (p: Place) => ({ area: "◎", stop: "🚏", me: "📍", street: "⌖", poi: "•", metro: "🚇", "metro-any": "🚇" })[p.kind ?? "street"];
+  const icon = (p: Place): IconName => ({ area: "area", stop: "stop", me: "pin", street: "street", poi: "dot", metro: "metro", "metro-any": "metro" } as const)[p.kind ?? "street"];
   const mins = (m: number) => `≈ ${Math.max(1, Math.round(m))}′`;
   // Where a trip gets off: the stop, and for "any metro station" the station there.
-  const offAt = (k: number) => { const st = anyEnd && data ? stationAt(ptOf(k)) : null; return st ? `${stop(k)} (🚇 ${st.name})` : stop(k); };
+  const offAt = (k: number) => { const st = anyEnd && data ? stationAt(ptOf(k)) : null; return st ? `${stop(k)} (σταθμός ${st.name})` : stop(k); };
   const shown = $derived(aTrips ? Math.min(aTrips.length, MAX_LINES) : 0);
   // Where a result goes: the variants that make the trip. The summary follows the direction shown on the map.
   const going = (t: TripLine) => (data ? termini(data.ix, t.line, t.variants.map(v => v.id)).join(" · ") : "");
@@ -350,9 +351,9 @@
                 <!-- svelte-ignore a11y_click_events_have_key_events (keyboard goes through the combobox input) -->
                 <li id="trip-{f}-{k}" role="option" aria-selected={k === active} class:active={k === active}
                   onpointerdown={ev => ev.preventDefault()} onclick={() => choose(f, o)}>
-                  {#if o.me}<span><i aria-hidden="true">📍</i> {ME}</span>
+                  {#if o.me}<span><Icon name="pin" /> {ME}</span>
                   {:else if o.place}
-                    <span><i aria-hidden="true">{icon(o.place)}</i> {o.place.label}</span>
+                    <span><Icon name={icon(o.place)} /> {o.place.label}</span>
                     <small>{o.place.kind === "metro-any" ? "η γραμμή που σε πάει πιο γρήγορα σε σταθμό" : o.place.lines.length ? o.place.lines.slice(0, 6).join(" · ") + (o.place.lines.length > 6 ? " …" : "") : o.place.hint ?? ""}</small>
                   {/if}
                 </li>
@@ -368,7 +369,7 @@
     {#if locating}<p class="note">Εντοπισμός…</p>{/if}
 
     {#if err}<p class="warn" role="status">{err}</p>{/if}
-    {#if byMetro}<p class="metro">🚇 Με {byMetro.line}: {byMetro.from} → {byMetro.to}{#if byMetro.walk >= 50} · περπάτημα {metres(byMetro.walk)}{/if}. Συνήθως πιο γρήγορα από το λεωφορείο.</p>{/if}
+    {#if byMetro}<p class="metro"><Icon name="metro" /> Με {byMetro.line}: {byMetro.from} → {byMetro.to}{#if byMetro.walk >= 50} · περπάτημα {metres(byMetro.walk)}{/if}. Συνήθως πιο γρήγορα από το λεωφορείο.</p>{/if}
     {#if failed}
       <p class="warn">Δεν φόρτωσαν οι στάσεις. <button type="button" class="link" onclick={load}>Ξανά</button></p>
     {:else if !data}
@@ -502,7 +503,6 @@
   .list { margin: 0 -38px 0 26px; max-height: min(320px, 45dvh); overflow-y: auto; padding: 4px; list-style: none;
     background: var(--control); border-radius: 10px; }
   .list li { display: flex; flex-direction: column; padding: 8px; border-radius: 7px; cursor: pointer; }
-  .list li i { font-style: normal; display: inline-block; width: 1.3em; text-align: center; }
   .list li small { padding-left: 1.6em; color: var(--muted); font-size: 11px; }
   .list li.active, .list li:hover { background: var(--panel); }
   .list li.empty { cursor: default; color: var(--muted); font-size: 12px; background: none; }

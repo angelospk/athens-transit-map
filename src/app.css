@@ -54,7 +54,14 @@ button, input { font: inherit; color: inherit; }
 .maplibregl-ctrl-top-right { top: env(safe-area-inset-top); }
 /* The zoom buttons are for the mouse: a phone pinches. */
 @media (max-width: 719px) { .maplibregl-ctrl-group:has(.maplibregl-ctrl-zoom-in) { display: none; } }
-/* A stale marker always shows its age: it says why it is pale. */
+/* A finger needs 44 px (B10); the panel's rail of buttons (Panel.svelte) grows with them. */
+@media (pointer: coarse) {
+  .maplibregl-ctrl-group button { width: 44px; height: 44px; }
+  /* The ⓘ (the compact attribution's button, which opens the info sheet). */
+  .maplibregl-ctrl-attrib.maplibregl-compact { min-width: 44px; min-height: 44px; }
+  .maplibregl-ctrl-attrib-button { width: 44px; height: 44px; background-position: center; background-repeat: no-repeat; }
+}
+/* «Ηλικία θέσης» (B4): "old" shows only a stale marker's age (it says why the marker is pale), "never" none. */
 .ages-old .vm:not(.stale) .age, .ages-never .vm .age { display: none; }
 .filtered { display: none; }
 

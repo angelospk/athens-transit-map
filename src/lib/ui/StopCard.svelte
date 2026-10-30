@@ -6,6 +6,7 @@
   import type { AppState } from "../state.svelte";
   import type { FetchResult } from "../poller";
   import Back from "./Back.svelte";
+  import Icon from "./Icon.svelte";
   import { busStopCard } from "../legacy";
 
   // The tapped bus stop, laid out as the phone app's: the user's lines first («Οι γραμμές μου | Όλες»), each
@@ -103,7 +104,7 @@
 {/snippet}
 
 {#if stop}
-  <section class="card" aria-live="polite" aria-label="Στάση {stop[0]}">
+  <section class="card" aria-label="Στάση {stop[0]}">
     <header>
       <Back {app} />
       <div class="t">
@@ -118,7 +119,7 @@
       {#if favId && stop}
         <button type="button" class="starbtn" class:starred aria-pressed={starred} title={starred ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
           aria-label={starred ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
-          onclick={() => app.toggleFavStop({ id: favId, name: stop[0], lat: stop[1], lon: stop[2] })}>{starred ? "★" : "☆"}</button>
+          onclick={() => app.toggleFavStop({ id: favId, name: stop[0], lat: stop[1], lon: stop[2] })}><Icon name={starred ? "star-filled" : "star"} size={20} /></button>
       {/if}
       <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.closeCards()}>×</button>
     </header>
@@ -134,6 +135,8 @@
       </div>
     {/if}
     {#if board}
+      <!-- The live region stays mounted: the list and its empty state both speak when they change. -->
+      <div aria-live="polite">
       {#if shown.length}
         <ul class="arr" aria-label="Επόμενα λεωφορεία">
           {#each shown as g (g.line + g.headsign)}
@@ -150,6 +153,7 @@
       {:else}
         <p class="empty">{showAll ? "Κανένα λεωφορείο καθ’ οδόν τώρα." : "Κανένα λεωφορείο των γραμμών σου καθ’ οδόν τώρα."}</p>
       {/if}
+      </div>
       {#if !showAll}
         <h3>Περνούν επίσης · {lines.length - mine.length} {lines.length - mine.length === 1 ? "γραμμή" : "γραμμές"}</h3>
         <ul class="also">

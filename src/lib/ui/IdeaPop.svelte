@@ -1,7 +1,7 @@
 <script lang="ts">
-  // The idea box behind the phone button: one free-text question, sent to a Google Form from the page itself.
+  // The idea box, a tab of the ⓘ sheet: one free-text question, sent to a Google Form from the page itself.
   // After sending: thanks and a follow link on X, the only way to hear when the app is out.
-  // The request and its state live in the Panel, so closing this popover mid-send loses nothing.
+  // The request and its state live in the sheet (InfoDialog), so leaving the tab mid-send loses nothing.
   import { FOLLOW_URL, MAX_IDEA, canSend, type IdeaStatus } from "../idea";
 
   let { draft = $bindable(""), status, onsubmit }: { draft?: string; status: IdeaStatus; onsubmit: () => void } = $props();

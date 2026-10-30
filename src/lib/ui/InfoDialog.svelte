@@ -4,6 +4,8 @@
   import SourcesView from "./SourcesView.svelte";
   import LongTermView from "./LongTermView.svelte";
   import StatsView from "./StatsView.svelte";
+  import IdeaPop from "./IdeaPop.svelte";
+  import { canSend, sendIdea, type IdeaStatus } from "../idea";
 
   // ended: the day the OASA timetable ended, when it is past (explained at the top).
   let { open = $bindable(false), motion, ended = null }: { open: boolean; motion: boolean; ended?: string | null } = $props();
@@ -11,6 +13,7 @@
   const TABS = [
     { id: "sources", label: "Πηγές δεδομένων" },
     { id: "stats", label: "Στατιστικά δικτύου" },
+    { id: "app", label: "Εφαρμογή" },
   ] as const;
   type Tab = (typeof TABS)[number]["id"];
   // Inside the stats tab: the newest day first, then the stored days together.
@@ -26,6 +29,20 @@
   // The stats tab loads its data once, the first time it is shown; it then keeps it while hidden.
   let statsSeen = $state(false);
   $effect(() => { if (tab === "stats") statsSeen = true; });
+
+  // The idea box (B10: moved here from the map's buttons). Kept in this sheet, which stays mounted once loaded,
+  // so closing it while the request runs loses nothing.
+  let ideaDraft = $state("");
+  let ideaStatus = $state<IdeaStatus>("edit");
+  async function submitIdea() {
+    if (ideaStatus === "sending" || !canSend(ideaDraft)) return;
+    ideaStatus = "sending";
+    if (!(await sendIdea(ideaDraft))) { ideaStatus = "failed"; return; }
+    ideaDraft = "";
+    ideaStatus = "done";
+  }
+  // Back to the form when the thanks are left: another idea can follow.
+  $effect(() => { if ((!open || tab !== "app") && ideaStatus === "done") ideaStatus = "edit"; });
 
   $effect(() => {
     if (open && dlg.isConnected && !dlg.open) dlg.showModal();
@@ -90,6 +107,9 @@
       <div role="tabpanel" id="stats-panel-long" aria-labelledby="stats-tab-long" hidden={sub !== "long"}>
         {#if open && tab === "stats" && sub === "long"}<LongTermView />{/if}
       </div>
+    </div>
+    <div role="tabpanel" id="info-panel-app" aria-labelledby="info-tab-app" hidden={tab !== "app"}>
+      <IdeaPop bind:draft={ideaDraft} status={ideaStatus} onsubmit={submitIdea} />
     </div>
   </div>
 </dialog>
