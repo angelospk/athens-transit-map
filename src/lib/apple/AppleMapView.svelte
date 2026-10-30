@@ -35,9 +35,13 @@
     }),
   );
 
+  // A fit asked for before MapKit is ready (lines from the URL) is done once the map exists.
+  let pendingFit: string[] | null = null;
+
   $effect(() => {
     if (!TOKEN_URL) return;
     let gone = false, m: mapkit.Map | undefined;
+    app.fit = ids => void (pendingFit = ids);
     loadMapKit(TOKEN_URL, s => (problem = s)).then(mk => {
       if (gone) return;
       m = new mk.Map(host, {
@@ -63,12 +67,17 @@
         if (b && map) { const r = regionFor(b); map.setRegionAnimated(region(r.center, r.span)); }
       };
       app.flyTo = ([lon, lat]) => map?.setRegionAnimated(region({ lat, lon }, { lat: 0.02, lon: 0.02 }));
+      if (pendingFit) app.fit(pendingFit);
+      pendingFit = null;
       if (import.meta.env.DEV) Object.assign(window, { __amap: m });
     }, (e: Error) => (problem = e.message));
     return () => {
       gone = true;
       app.fit = () => {};
       app.flyTo = () => {};
+      suggest.cancel();
+      routeGen++;
+      map = undefined;
       m?.destroy();
     };
   });
@@ -104,9 +113,15 @@
 
   $effect(() => {
     if (!map) return;
-    const rows = new Map<string, { line: string; id: string; lat: number; lon: number }>();
-    if (app.cityOn) for (const v of app.city?.vehicles ?? []) rows.set(cityKey(v), v);
-    for (const { line, v } of app.vehicles) rows.set(cityKey({ line, id: v.id }), { line, id: v.id, lat: v.lat, lon: v.lon });
+    // Keyed with the colour: a line that turns into a detail line gets its own colour, so its annotations are made again.
+    const rows = new Map<string, { line: string; id: string; lat: number; lon: number; bg: string; fg: string }>();
+    const put = (line: string, id: string, lat: number, lon: number) => {
+      const { bg, fg } = app.lineColor(line);
+      rows.set(`${cityKey({ line, id })}|${bg}|${fg}`, { line, id, lat, lon, bg, fg });
+    };
+    const own = app.cityExclude;   // detail lines: their vehicles come from app.vehicles, with the direction focus applied
+    if (app.cityOn) for (const v of app.city?.vehicles ?? []) if (!own.has(v.line)) put(v.line, v.id, v.lat, v.lon);
+    for (const { line, v } of app.vehicles) put(line, v.id, v.lat, v.lon);
     untrack(() => {
       const t0 = performance.now();
       const { added, kept, removed } = diffKeys(new Set(anns.keys()), [...rows.keys()]);
@@ -117,8 +132,8 @@
         if (a.coordinate.latitude !== r.lat || a.coordinate.longitude !== r.lon) a.coordinate = new mapkit.Coordinate(r.lat, r.lon);
       }
       const fresh = added.map(k => {
-        const r = rows.get(k)!, c = app.lineColor(r.line);
-        const a = new mapkit.Annotation(new mapkit.Coordinate(r.lat, r.lon), () => vehicleEl(r.line, c.bg, c.fg),
+        const r = rows.get(k)!;
+        const a = new mapkit.Annotation(new mapkit.Coordinate(r.lat, r.lon), () => vehicleEl(r.line, r.bg, r.fg),
           { calloutEnabled: false, animates: false, anchorOffset: new DOMPoint(0, 0), displayPriority: 1000 });
         a.addEventListener("select", () => { a.selected = false; app.open(busVehicleCard(r.line, r.id)); });
         anns.set(k, a);
@@ -177,12 +192,13 @@
   let placeAnn: mapkit.MarkerAnnotation | null = null;
   let routeOverlay: mapkit.Overlay | null = null;
   let search: mapkit.Search | null = null;
+  let routeGen = 0;   // only the newest route request may draw
 
   const suggest = debounce((q: string) => {
     if (!map || q.trim().length < 3) return void (hits = []);
     search ??= new mapkit.Search({ language: "el", region: map.region });
     search.autocomplete(q, (err, data) => {
-      if (err || q !== query) return;
+      if (err || q !== query || !map) return;
       hits = data.results.slice(0, 5).map(r => ({ text: r.displayLines[0] ?? "", sub: r.displayLines.slice(1).join(", "), result: r }));
     }, { region: map.region, language: "el" });
   }, 300);
@@ -208,6 +224,7 @@
   }
 
   function clearRoute() {
+    routeGen++;
     if (routeOverlay) map?.removeOverlay(routeOverlay);
     routeOverlay = null;
     routeInfo = null;
@@ -226,14 +243,17 @@
   async function route(walk: boolean) {
     if (!map || !place) return;
     clearRoute();
+    const gen = routeGen;
     routeInfo = "…";
     const origin = await here();
+    if (gen !== routeGen || !map) return;
     new mapkit.Directions({ language: "el" }).route({
       origin, destination: place.at,
       transportType: walk ? mapkit.Directions.Transport.Walking : mapkit.Directions.Transport.Automobile,
     }, (err, data) => {
+      if (gen !== routeGen || !map) return;
       const r = err ? undefined : data.routes[0];
-      if (!r || !map) return void (routeInfo = "Δεν βρέθηκε διαδρομή.");
+      if (!r) return void (routeInfo = "Δεν βρέθηκε διαδρομή.");
       r.polyline.style = new mapkit.Style({ strokeColor: walk ? "#1c7ed6" : "#7048e8", lineWidth: 6, lineDash: walk ? [2, 8] : [],
         lineCap: "round", strokeOpacity: 0.85 });
       routeOverlay = r.polyline;
