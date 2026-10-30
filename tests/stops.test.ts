@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrivalGroups, timeText, toward, linesAt, busStopsFC, stopIndex, twins, alertLinesAt, arrivalNote, stopBack, mineFirst, type StopArrival } from "../src/lib/stops";
+import { arrivalGroups, timeText, toward, linesAt, busStopsFC, stopIndex, twins, alertLinesAt, arrivalNote, stopBack, mineFirst, boardLines, linesToWarm, type StopArrival } from "../src/lib/stops";
 import type { TripIndex } from "../src/lib/trip";
 
 // 0 and 1: one stop on both sides of a street (~44 m), 2: the same name 1 km away, 3: another name close by.
@@ -163,4 +163,28 @@ describe("mineFirst", () => {
   it("splits the groups into the user's lines and the others, keeping their order", () => {
     expect(mineFirst([g("10"), g("040"), g("Α1"), g("040")], ["040"])).toEqual({ mine: [g("040"), g("040")], also: [g("10"), g("Α1")] });
   });
+});
+
+describe("boardLines (the card before the stop index loads)", () => {
+  const a = (line: string, variant: string, eta_s: number, source: "live" | "schedule" = "live"): StopArrival =>
+    ({ line, headsign: "h", variant, vehicle: "v", eta_s, at: 0, delay_s: 0, position_at: 0, source });
+  it("lists every line of the board, in line order, with the variants its arrivals name", () => {
+    const b = { stop: { id: "1", name: "Σ", lat: 0, lon: 0 }, lines: ["Χ95", "040", "10"], updated_at: 0,
+      arrivals: [a("040", "b", 60), a("040", "a", 30), a("040", "a", 90), a("Χ95", "x", 10)] };
+    expect(boardLines(b)).toEqual([
+      { line: "10", variants: [] },
+      { line: "040", variants: ["a", "b"] },
+      { line: "Χ95", variants: ["x"] },
+    ]);
+  });
+});
+
+describe("linesToWarm (line files loaded ahead from a stop's board)", () => {
+  const a = (line: string, eta_s: number, source: "live" | "schedule" = "live"): StopArrival =>
+    ({ line, headsign: "h", variant: "v", vehicle: "v", eta_s, at: 0, delay_s: 0, position_at: 0, source });
+  it("takes the lines with a live bus on its way, soonest first, each once, at most max", () => {
+    const arr = [a("040", 300), a("10", 60), a("Α1", 30, "schedule"), a("040", 20), a("Χ95", 900), a("B", 100)];
+    expect(linesToWarm(arr, 3)).toEqual(["040", "10", "B"]);
+  });
+  it("is empty for an empty board", () => expect(linesToWarm([])).toEqual([]));
 });

@@ -1,13 +1,13 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { fetchStop, peekStop } from "../api";
-  import { alertLinesAt, arrivalGroups, arrivalNote, linesAt, mineFirst, timeText, toward, twins, type ArrivalGroup, type ArrivalTime, type StopBoard } from "../stops";
+  import { fetchLineStatic, fetchStop, peekStop } from "../api";
+  import { alertLinesAt, arrivalGroups, arrivalNote, boardLines, linesAt, linesToWarm, mineFirst, timeText, toward, twins, type ArrivalGroup, type ArrivalTime, type StopBoard } from "../stops";
   import Bell from "./Bell.svelte";
   import type { AppState } from "../state.svelte";
   import type { FetchResult } from "../poller";
   import Back from "./Back.svelte";
   import Icon from "./Icon.svelte";
-  import { busStopCard } from "../legacy";
+  import { busStopCard, legacyOf } from "../legacy";
 
   // The tapped bus stop, laid out as the phone app's: the user's lines first («Οι γραμμές μου | Όλες»), each
   // line and headsign with its next bus in big minutes, where it is and whether it runs late, the next ones,
@@ -15,13 +15,22 @@
   // and the ones with no bus near. Arrivals: backend, from GPS; asked again every 20 s while open and the tab
   // visible (cached 15 s). The stop of the same name across the street is a tap away.
   let { app }: { app: AppState } = $props();
+  let board = $state.raw<StopBoard | null>(null);
 
   const ix = $derived(app.stopIx);
   const i = $derived(app.busStop);
   const stop = $derived(ix && i != null ? ix.s[i] : undefined);
-  const lines = $derived(ix && i != null ? linesAt(ix, i) : []);
+  // Until the stop index (trips.json, slow on a phone) loads, the card shows from the board alone.
+  const top = $derived(app.stack.at(-1));
+  const early = $derived.by(() => {
+    const l = !ix && top ? legacyOf(top) : null;
+    return l?.kind === "bus-stop" ? l.code : null;
+  });
+  const id = $derived(stop ? stop[3] : early);
+  const name = $derived(stop?.[0] ?? board?.stop.name ?? top?.title ?? "Στάση");
+  const lines = $derived(ix && i != null ? linesAt(ix, i) : board ? boardLines(board) : []);
   // The star: the stop's /v2 id is oasa:<GTFS id>; an index from before the ids has none.
-  const favId = $derived(stop?.[3] ? `oasa:${stop[3]}` : null);
+  const favId = $derived(id ? `oasa:${id}` : null);
   const starred = $derived(!!favId && app.isFavStop(favId));
   const across = $derived(ix && i != null ? twins(ix, i)[0] : undefined);
 
@@ -43,7 +52,6 @@
     alertFor = { line: g.line, toward: toward(g.headsign), lines: [{ line: g.line, variants: same.length ? same : l.variants }] };
   }
   const REFRESH_MS = 20_000;
-  let board = $state.raw<StopBoard | null>(null);
   let failed = $state(false);
   let now = $state(Date.now());   // set from app.serverMs() when a stop opens
   const groups = $derived(board ? arrivalGroups(board.arrivals, now) : []);
@@ -61,26 +69,30 @@
   };
 
   $effect(() => {
-    const id = stop?.[3];
+    const sid = id;
     board = null;
-    failed = !id;   // an index from before the ids: no live arrivals
-    if (!id) return;
+    failed = !sid;   // an index from before the ids: no live arrivals
+    if (!sid) return;
     const ac = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let busy = false;
     now = app.serverMs();
-    board = boardOf(peekStop(id));
+    board = boardOf(peekStop(sid));
     const load = async () => {
       if (busy) return;
       clearTimeout(timer);
       if (document.visibilityState !== "hidden") {
         busy = true;
-        const r = await fetchStop(id);
+        const r = await fetchStop(sid);
         busy = false;
         if (ac.signal.aborted) return;
         now = app.serverMs();
         const b = boardOf(r);
-        if (b) board = b;
+        if (b) {
+          board = b;
+          // Loaded once per page (api.ts): a tapped bus then shows its stops ahead with no wait.
+          for (const l of linesToWarm(b.arrivals)) void fetchLineStatic(l).catch(() => {});
+        }
         failed = !b;
       }
       timer = setTimeout(load, REFRESH_MS);
@@ -103,23 +115,23 @@
   <b class="chip" style:--bg={c.bg} style:--fg={c.fg}>{line}</b>
 {/snippet}
 
-{#if stop}
-  <section class="card" aria-label="Στάση {stop[0]}">
+{#if stop || early}
+  <section class="card" aria-label="Στάση {name}">
     <header>
       <Back {app} />
       <div class="t">
-        <h2>{stop[0]}</h2>
+        <h2>{name}</h2>
         <p class="sub">{lines.length} {lines.length === 1 ? "γραμμή" : "γραμμές"}{#if across}{" · "}<button type="button" class="across"
           onclick={() => { const s = ix?.s[across.i]; if (s?.[3]) app.push(busStopCard(s[3], s[0])); }}>Απέναντι στάση · {across.m} μ</button>{/if}</p>
       </div>
       {#if alertLines.length}
         <button type="button" class="bell" class:on={!!alertFor && !alertFor.line} title="Ειδοποίηση άφιξης σε αυτή τη στάση"
-          aria-label="Ειδοποίηση άφιξης στη στάση {stop[0]}" onclick={() => (alertFor = { lines: alertLines, ticked: mine })}><Bell /></button>
+          aria-label="Ειδοποίηση άφιξης στη στάση {name}" onclick={() => (alertFor = { lines: alertLines, ticked: mine })}><Bell /></button>
       {/if}
-      {#if favId && stop}
+      {#if favId && (stop || board)}
         <button type="button" class="starbtn" class:starred aria-pressed={starred} title={starred ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
           aria-label={starred ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
-          onclick={() => app.toggleFavStop({ id: favId, name: stop[0], lat: stop[1], lon: stop[2] })}><Icon name={starred ? "star-filled" : "star"} size={20} /></button>
+          onclick={() => app.toggleFavStop({ id: favId, name, lat: stop?.[1] ?? board!.stop.lat, lon: stop?.[2] ?? board!.stop.lon })}><Icon name={starred ? "star-filled" : "star"} size={20} /></button>
       {/if}
       <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.closeCards()}>×</button>
     </header>
@@ -147,7 +159,7 @@
               <span class="mid"><span class="to" title={g.headsign}>→ {toward(g.headsign)}</span><small class={note.tone}>{note.text}</small></span>
               <span class="when"><b>{big(t)}</b>{#if g.times.length > 1}<small>μετά {g.times.slice(1).map(timeText).join(", ")}</small>{/if}</span>
             </button>{#if alertLines.some(l => l.line === g.line)}<button type="button" class="bell" class:on={alertFor?.line === g.line}
-              title="Ειδοποίηση για το {g.line}" aria-label="Ειδοποίηση άφιξης για το {g.line} στη στάση {stop[0]}" onclick={() => bell(g)}><Bell /></button>{/if}</li>
+              title="Ειδοποίηση για το {g.line}" aria-label="Ειδοποίηση άφιξης για το {g.line} στη στάση {name}" onclick={() => bell(g)}><Bell /></button>{/if}</li>
           {/each}
         </ul>
       {:else}
@@ -180,7 +192,7 @@
       {/if}
       <p class="src">Ζωντανά, από το GPS των λεωφορείων.{#if failed}{" "}Η τελευταία ενημέρωση απέτυχε.{/if}</p>
     {:else if failed}
-      <p>{stop[3] ? "Δεν φόρτωσαν οι αφίξεις. Ξαναδοκιμάζω σε 20″." : "Οι αφίξεις δεν είναι διαθέσιμες. Ανανέωσε τη σελίδα."}</p>
+      <p>{id ? "Δεν φόρτωσαν οι αφίξεις. Ξαναδοκιμάζω σε 20″." : "Οι αφίξεις δεν είναι διαθέσιμες. Ανανέωσε τη σελίδα."}</p>
     {:else}
       <p>Φόρτωση αφίξεων…</p>
     {/if}
@@ -188,7 +200,7 @@
   {#if alertFor}
     {@const a = alertFor}
     {#await import("./AlertSheet.svelte") then m}
-      <m.default {app} lines={a.lines} label={stop[0]} line={a.line} toward={a.toward} ticked={a.ticked} onclose={() => (alertFor = null)} />
+      <m.default {app} lines={a.lines} label={name} line={a.line} toward={a.toward} ticked={a.ticked} onclose={() => (alertFor = null)} />
     {/await}
   {/if}
 {/if}

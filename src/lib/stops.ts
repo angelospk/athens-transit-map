@@ -49,6 +49,21 @@ export function linesAt(ix: TripIndex, i: number): { line: string; variants: str
   return out.sort((a, b) => byLine(a.line, b.line));
 }
 
+// The same from the board alone, until the stop index loads: its lines, with the variants of their arrivals.
+export function boardLines(b: StopBoard): { line: string; variants: string[] }[] {
+  return b.lines.map(line => ({ line, variants: [...new Set(b.arrivals.filter(a => a.line === line).map(a => a.variant))].sort() }))
+    .sort((a, b) => byLine(a.line, b.line));
+}
+
+// The lines with a bus on its way, soonest first: their files are loaded ahead, so a tapped bus shows its stops at once.
+export function linesToWarm(arrivals: StopArrival[], max = 4): string[] {
+  const out: string[] = [];
+  for (const a of [...arrivals].sort((x, y) => x.eta_s - y.eta_s)) {
+    if (a.source !== "schedule" && !out.includes(a.line)) out.push(a.line);
+  }
+  return out.slice(0, max);
+}
+
 // Stops of the same name within TWIN_M of stop i (the other direction), nearest first; m in metres.
 export function twins(ix: TripIndex, i: number): { i: number; m: number }[] {
   const [name, lat, lon] = ix.s[i], key = fold(name);
