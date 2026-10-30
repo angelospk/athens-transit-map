@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chipOf, findLines, findStops, pushRecent, type Recent, type StopEntry } from "../src/lib/finder";
+import { chipOf, findLines, findStops, lineStopPoints, pushRecent, toggleChip, type Recent, type StopEntry } from "../src/lib/finder";
 import type { V2Line } from "../src/lib/v2";
 
 const line = (id: string, mode: string, label: string | null, name: string, name_en: string | null = null): V2Line =>
@@ -77,5 +77,22 @@ describe("pushRecent", () => {
     for (const id of ["a", "b", "c", "d", "e", "f"]) list = pushRecent(list, r(id));
     expect(list.map(x => x.id)).toEqual(["f", "e", "d", "c", "b"]);
     expect(pushRecent(list, r("c")).map(x => x.id)).toEqual(["c", "f", "e", "d", "b"]);
+  });
+});
+
+describe("toggleChip", () => {
+  it("adds and removes a mode; all four modes are the same as none (Όλα)", () => {
+    expect(toggleChip([], "bus")).toEqual(["bus"]);
+    expect(toggleChip(["bus", "tram"], "bus")).toEqual(["tram"]);
+    expect(toggleChip(["bus", "metro", "tram"], "suburban")).toEqual([]);
+  });
+});
+
+describe("lineStopPoints", () => {
+  it("gives [lon, lat] of every stop the line serves", () => {
+    const s = [stop("a", "A", ["bus"], ["oasa:040"]), stop("b", "B", ["bus"], ["oasa:2"])];
+    s[0][2] = 37.95; s[0][3] = 23.6;
+    expect(lineStopPoints(s, "oasa:040")).toEqual([[23.6, 37.95]]);
+    expect(lineStopPoints(s, "stasy:M3")).toEqual([]);
   });
 });

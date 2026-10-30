@@ -157,6 +157,7 @@ export class AppState {
   // Set by MapView: frame the given lines once their shapes are loaded; bring a point ([lon, lat]) into view.
   fit: (ids: string[]) => void = () => {};
   flyTo: (at: [number, number]) => void = () => {};
+  fitPoints: (pts: [number, number][]) => void = () => {};
 
   private clock = new ClockOffset();
   private pollers = new Map<string, LinePoller>();

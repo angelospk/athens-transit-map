@@ -4,7 +4,7 @@
   // picks. A pick closes the modal and replaces the card stack with that card.
   import { tick, untrack } from "svelte";
   import { fetchV2Lines, fetchV2Stops } from "../api";
-  import { chipOf, findLines, findStops, pushRecent, type Chip, type Recent, type StopEntry } from "../finder";
+  import { chipOf, findLines, findStops, lineStopPoints, pushRecent, toggleChip, type Chip, type Recent, type StopEntry } from "../finder";
   import type { V2Line } from "../v2";
   import type { AppState } from "../state.svelte";
   import Icon from "./Icon.svelte";
@@ -81,11 +81,15 @@
     remember({ kind: "line", id, label });
     close();
     app.open({ kind: "line", id, title: label });
+    // A bus line frames its route once the route loads (showRoute); the other modes frame their stops.
+    if (!id.startsWith("oasa:")) app.fitPoints(lineStopPoints(stops, id));
   }
   function openStop(id: string, name: string) {
     remember({ kind: "stop", id, label: name });
     close();
     app.open({ kind: "stop", id, title: name });
+    const s = stops.find(x => x[0] === id);
+    if (s) app.flyTo([s[3], s[2]]);
   }
 
   const native = (id: string) => id.slice(id.indexOf(":") + 1);
@@ -98,7 +102,6 @@
   const lineLabel = (l: V2Line) => l.label ?? l.name;
   const stopModes = (s: StopEntry) => [...new Set(s[4].map(chipOf).filter((c): c is Chip => !!c))];
 
-  function toggleChip(c: Chip) { chips = chips.includes(c) ? chips.filter(x => x !== c) : [...chips, c]; }
 
   // Swipe down on the head of the modal (not the list) closes it, as Escape does.
   let swipeY: number | null = null;
@@ -164,8 +167,9 @@
         {/each}
       </div>
       <div class="chips" role="group" aria-label="Μέσο">
+        <button type="button" class="chip" aria-pressed={!chips.length} onclick={() => (chips = [])}>Όλα</button>
         {#each CHIPS as [c, t] (c)}
-          <button type="button" class="chip" aria-pressed={chips.includes(c)} onclick={() => toggleChip(c)}><Icon name={c} />{t}</button>
+          <button type="button" class="chip" aria-pressed={chips.includes(c)} onclick={() => (chips = toggleChip(chips, c))}><Icon name={c} />{t}</button>
         {/each}
       </div>
 

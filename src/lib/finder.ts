@@ -67,3 +67,14 @@ export function findStops(stops: StopEntry[], query: string, chips: Chip[]): Sto
 export function pushRecent(list: Recent[], item: Recent, max = 5): Recent[] {
   return [item, ...list.filter(r => r.kind !== item.kind || r.id !== item.id)].slice(0, max);
 }
+
+// A mode chip pressed or released. All four modes pressed is the same as none: back to «Όλα».
+export function toggleChip(chips: Chip[], c: Chip): Chip[] {
+  const next = chips.includes(c) ? chips.filter(x => x !== c) : [...chips, c];
+  return next.length === 4 ? [] : next;
+}
+
+// [lon, lat] of every stop a line serves: what the map frames when the line is picked.
+export function lineStopPoints(stops: StopEntry[], line: string): [number, number][] {
+  return stops.filter(s => s[5].includes(line)).map(s => [s[3], s[2]]);
+}

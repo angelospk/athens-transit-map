@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Map as MlMap, Marker, NavigationControl, Popup, setWorkerUrl, type ExpressionSpecification, type FilterSpecification, type GeoJSONSource,
+  import { LngLatBounds, Map as MlMap, Marker, NavigationControl, Popup, setWorkerUrl, type ExpressionSpecification, type FilterSpecification, type GeoJSONSource,
     type MapGeoJSONFeature } from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
   import workerUrl from "virtual:maplibre-worker";
@@ -829,20 +829,33 @@
 
     map = m;
     app.fit = fitTo;
-    // Into view, closer when far out; not when it is already well inside the view.
-    app.flyTo = at => {
+    // The view's padding with the bottom sheet on a phone. A card that is still loading (opened from the
+    // search) is not in the page yet: assume the sheet's usual half screen.
+    const sheetPad = () => {
       const pp = padding(), card = document.querySelector(".card")?.getBoundingClientRect();
       const pad = typeof pp === "number" ? { top: pp, bottom: pp, left: pp, right: pp } : { ...pp };
-      if (card && innerWidth < 720) pad.bottom = Math.max(pad.bottom, innerHeight - card.top + 16);   // the bottom sheet
+      if (innerWidth < 720) pad.bottom = Math.max(pad.bottom, card ? innerHeight - card.top + 16 : innerHeight * 0.45);
+      return pad;
+    };
+    // Into view, closer when far out; not when it is already well inside the view.
+    app.flyTo = at => {
+      const pad = sheetPad();
       const p = m.project(at), c = m.getCanvas();
       const inside = p.x > pad.left && p.x < c.clientWidth - pad.right && p.y > pad.top && p.y < c.clientHeight - pad.bottom;
       if (inside && m.getZoom() >= 13) return;
       m.easeTo({ center: at, zoom: Math.max(m.getZoom(), 14), padding: pad, duration: reducedMotion.matches ? 0 : 600 });
     };
+    // Frames a set of points (a line's stops), at most as close as a street.
+    app.fitPoints = pts => {
+      if (pts.length < 2) { if (pts.length) app.flyTo(pts[0]); return; }
+      const b = pts.reduce((b, p) => b.extend(p), new LngLatBounds(pts[0], pts[0]));
+      m.fitBounds(b, { padding: sheetPad(), maxZoom: 15, duration: reducedMotion.matches ? 0 : 600 });
+    };
     if (import.meta.env.DEV) Object.assign(window, { __map: m, __fleet: fleet, __doms: doms });
     return () => {
       app.fit = () => {};
       app.flyTo = () => {};
+      app.fitPoints = () => {};
       disposed = true;
       cancelAnimationFrame(raf);
       reportSoon.cancel();
