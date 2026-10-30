@@ -13,7 +13,8 @@
 
   const quick = $derived(QUICK.filter(id => app.lineInfo.has(id) && !app.selected.includes(id)));
   const favs = $derived(app.favorites.filter(id => app.lineInfo.has(id)));
-  const favsOff = $derived(favs.filter(id => !app.selected.includes(id)).length);
+  // Only the starred lines not on the map: the chips above already show the others.
+  const favsOff = $derived(favs.filter(id => !app.selected.includes(id)));
 
   function chipState(id: string) {
     const s = app.pollState[id];
@@ -57,16 +58,15 @@
     </button>
   {/if}
 
-  {#if expanded && favs.length}
-    <!-- Starred lines: each chip shows or hides its line, so several are a tap each. -->
-    <div class="quick" role="group" aria-label="Αγαπημένες γραμμές">
+  {#if expanded && favsOff.length}
+    <!-- Starred lines off the map: a tap each puts one on it. -->
+    <div class="quick" role="group" aria-label="Αγαπημένες γραμμές εκτός χάρτη">
       <Icon name="star-filled" size={14} />
-      {#each favs as id (id)}
-        {@const on = app.selected.includes(id)}
-        <button type="button" class="fav" style:--c={app.lineColor(id).bg} style:--t={app.lineColor(id).fg} aria-pressed={on}
-          aria-label="{on ? 'Απόκρυψη' : 'Εμφάνιση'} γραμμής {id}" onclick={() => app.toggleLine(id)}>{id}</button>
+      {#each favsOff as id (id)}
+        <button type="button" class="fav" style:--c={app.lineColor(id).bg} style:--t={app.lineColor(id).fg}
+          aria-label="Εμφάνιση γραμμής {id}" onclick={() => app.toggleLine(id)}>{id}</button>
       {/each}
-      {#if favs.length > 1 && favsOff}
+      {#if favsOff.length > 1}
         <button type="button" class="all" onclick={() => app.showFavorites()}>Όλες</button>
       {/if}
     </div>
@@ -104,7 +104,6 @@
     font-weight: 700; cursor: pointer; }
   .fav { min-height: 32px; padding: 0 10px; border: 2px solid var(--c, #3b5bdb); border-radius: 16px; background: none;
     color: var(--fg); font-weight: 700; cursor: pointer; }
-  .fav[aria-pressed="true"] { background: var(--c, #3b5bdb); color: var(--t, #fff); }
   .all { min-height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: 16px; background: var(--control);
     font-size: 12px; cursor: pointer; }
   .tip { margin-top: 6px; color: var(--muted); font-size: 11px; }
