@@ -111,5 +111,16 @@ setInterval(() => {
   });
 }, 1000);
 
+// Rail stops on their own gate: a slow /v2 board does not pause the bus lines.
+let railTicking = false;
+setInterval(() => {
+  if (railTicking) return;
+  railTicking = true;
+  bot.tickRails().catch(e => console.error("rail tick:", (e as Error).message)).finally(() => {
+    railTicking = false;
+    void bot.flush();
+  });
+}, 1000);
+
 console.log(`oasa-bus-bot started, state in ${file}`);
 void updates();

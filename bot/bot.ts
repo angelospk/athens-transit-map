@@ -5,6 +5,8 @@
 // the window and sleeps otherwise; it never expires. A new OASA data version carries it over when its stops
 // are still there (same line, variant and stop name), else ends it.
 // Web push: the page sends the same link with its push subscription (POST /alerts, see web()).
+// Rail alerts (metro, tram, suburban, src/lib/railAlerts.ts): the same endpoint with {rail, sub}; they watch a
+// stop's /v2 board instead of the lines, and are kept apart from the bus alerts.
 // Design: docs/superpowers/specs/2026-10-07-stop-alerts-design.md (options B and C). IO comes in through
 // BotDeps, so the logic runs in tests; bot/main.ts wires it to Telegram and the network.
 //
@@ -15,9 +17,11 @@
 import { AlertWatch, hitText, type AlertSpec } from "../src/lib/alerts";
 import { clock } from "../src/lib/format";
 import { walkUrl } from "../src/lib/maps";
+import { railCheck, railHitText, railNoneText, type RailSpec } from "../src/lib/railAlerts";
 import { decodeAlert, type Rep } from "../src/lib/tglink";
 import type { TripIndex } from "../src/lib/trip";
 import type { LineLive, LineStatic } from "../src/lib/types";
+import type { V2Arrival } from "../src/lib/v2";
 
 export interface Fetched { status: number; body: unknown; date?: number }   // date: server time (ms)
 export interface TgResult { ok: boolean; result?: unknown; error_code?: number; parameters?: { retry_after?: number } }
@@ -38,7 +42,13 @@ export interface SavedAlert {
   rep?: Rep;   // recurring: spec.until is the end of the current window (or of the last one)
   watch: ReturnType<AlertWatch["snapshot"]>;
 }
-export interface BotState { offset: number; alerts: SavedAlert[] }
+// A rail alert: web push only, one stop and one line and direction (railAlerts.ts).
+export interface SavedRail {
+  id: string; push: PushSub; spec: RailSpec;
+  fired: [string, number][];   // arrival key → when it was sent (s)
+  said?: boolean;              // "nothing is coming" was sent: say it once
+}
+export interface BotState { offset: number; alerts: SavedAlert[]; rails?: SavedRail[] }
 
 interface Msg { chat: { id: number; type: string }; text?: string }
 interface Callback { id: string; from: { id: number }; data?: string; message?: { chat: { id: number }; message_id: number } }
@@ -46,9 +56,12 @@ interface Update { update_id: number; message?: Msg; callback_query?: Callback }
 
 const ALERT_MS = 2 * 3600_000;
 const PER_CHAT = 5;
+const RAIL_PER_SUB = 5;        // rail alerts per push subscription
 const REP_PER_CHAT = 5;        // recurring alerts per chat
 const MAX_ALERTS = 200;
 const MAX_LINES = 20;          // lines polled at once, for all chats
+const MAX_RAIL_STOPS = 20;     // rail stops polled at once, for all subscriptions
+const STOP_GAP_MS = 20_000;    // one /v2 stop board this often
 const REFRESH_MS = 6 * 3600_000;
 const MISMATCH_MS = 10 * 60_000;   // sooner while the stop index and the backend's data differ
 const FORCE_GAP_MS = 60_000;   // a link newer than the bot's data reloads it, at most this often
@@ -75,14 +88,17 @@ export class Bot {
   private loading: Promise<void> | null = null;
   private statics = new Map<string, LineStatic>();
   private lines = new Map<string, { next: number; busy: boolean; errors: number }>();
+  private stops = new Map<string, { next: number; busy: boolean; errors: number }>();
   private lastStart = new Map<number | string, number>();
   private queue: { method: string; body: Record<string, unknown> }[] = [];
   private draining: Promise<void> | null = null;
 
   constructor(private d: BotDeps, saved?: BotState) {
-    this.state = { offset: saved?.offset ?? 0, alerts: saved?.alerts ?? [] };
+    this.state = { offset: saved?.offset ?? 0, alerts: saved?.alerts ?? [], rails: saved?.rails ?? [] };
     for (const a of this.state.alerts) this.watches.set(a.id, new AlertWatch(a.watch));
   }
+
+  private get rails(): SavedRail[] { return (this.state.rails ??= []); }
 
   get offset() { return this.state.offset; }
 
@@ -120,6 +136,18 @@ export class Bot {
     await this.loadData();
     const needed = new Set(this.state.alerts.filter(a => this.live(a, now)).flatMap(a => a.spec.lines.map(l => l.line)));
     await Promise.all([...needed].map(l => this.poll(l)));
+  }
+
+  // Once a second too, on its own timer (bot/main.ts): a slow stop board must not hold up the buses.
+  // End old rail alerts (quietly: the page shows the end), ask the due stops.
+  async tickRails() {
+    const now = this.d.now();
+    const over = this.rails.filter(a => now > a.spec.until * 1000);
+    if (over.length) {
+      this.state.rails = this.rails.filter(a => !over.includes(a));
+      this.save();
+    }
+    await Promise.all([...new Set(this.rails.map(a => a.spec.stop))].map(s => this.pollStop(s)));
   }
 
   // Sends what is queued, one at a time.
@@ -202,29 +230,54 @@ export class Bot {
 
   // The page's push API, behind bot/main.ts (which adds CORS, size and rate limits):
   //   POST /alerts {p: link payload, sub: PushSubscription} → 201 {id, until}; DELETE /alerts/{id} → 204.
+  //   POST /alerts {rail: rail spec, sub: PushSubscription} → the same, for a rail alert.
   // The id is random and is the only way to stop an alert from outside.
   async web(req: { method: string; path: string; body: unknown }): Promise<{ status: number; body?: unknown }> {
     if (req.method === "POST" && req.path === "/alerts") {
-      const b = req.body as { p?: unknown; sub?: unknown } | null;
+      const b = req.body as { p?: unknown; rail?: unknown; sub?: unknown } | null;
       const sub = pushSub(b?.sub);
-      if (!sub || typeof b?.p !== "string") return { status: 400, body: { error: "bad" } };
+      if (!sub) return { status: 400, body: { error: "bad" } };
+      if (b?.rail !== undefined) return this.startRail(b.rail, sub);
+      if (typeof b?.p !== "string") return { status: 400, body: { error: "bad" } };
       const m = await this.create(b.p, sub.endpoint, { push: sub });
       if (!m.ok) return { status: { data: 503, updating: 503, bad: 400, old: 409, soon: 429, busy: 503, full: 409 }[m.why], body: { error: m.why } };
       return { status: 201, body: { id: m.a.id, until: m.a.spec.until } };
     }
     const id = req.method === "DELETE" && /^\/alerts\/([^/]{1,64})$/.exec(req.path)?.[1];
     if (id) {
-      const before = this.state.alerts;
-      if (before.some(a => a.id === id && a.push)) {
-        this.state.alerts = before.filter(a => a.id !== id);
+      const buses = this.state.alerts, rails = this.state.rails;
+      const bus = buses.some(a => a.id === id && a.push), rail = !!rails?.some(a => a.id === id);
+      if (bus || rail) {
+        if (bus) this.state.alerts = buses.filter(a => a.id !== id);
+        if (rail) this.state.rails = rails!.filter(a => a.id !== id);
         // Not saved: a restart would bring it back, so it stays, and the page tries again.
-        if (!this.save()) { this.state.alerts = before; return { status: 503, body: { error: "save" } }; }
+        if (!this.save()) { this.state.alerts = buses; this.state.rails = rails; return { status: 503, body: { error: "save" } }; }
         this.watches.delete(id);
         this.queue = this.queue.filter(q => q.body.alert !== id);   // its pushes not sent yet
       }
       return { status: 204 };
     }
     return { status: 404, body: { error: "not found" } };
+  }
+
+  // A rail alert: the page's own stop, line and direction, valid only as it stands (a new one is a new alert).
+  private startRail(raw: unknown, sub: PushSub): { status: number; body?: unknown } {
+    const spec = railSpec(raw);
+    if (!spec) return { status: 400, body: { error: "bad" } };
+    const now = this.d.now();
+    if (now - (this.lastStart.get(sub.endpoint) ?? -Infinity) < START_GAP_MS) return { status: 429, body: { error: "soon" } };
+    // The oldest rail alerts of this subscription make room; then the limits for everyone.
+    const mine = this.rails.filter(a => a.push.endpoint === sub.endpoint);
+    const drop = new Set(mine.slice(0, Math.max(0, mine.length - RAIL_PER_SUB + 1)));
+    const rest = this.rails.filter(a => !drop.has(a));
+    const stops = new Set([...rest.map(a => a.spec.stop), spec.stop]);
+    if (rest.length >= MAX_ALERTS || stops.size > MAX_RAIL_STOPS) return { status: 503, body: { error: "busy" } };
+    this.lastStart.set(sub.endpoint, now);
+    const before = this.state.rails;
+    const a: SavedRail = { id: crypto.randomUUID().replaceAll("-", ""), push: sub, spec: { ...spec, until: Math.floor((now + ALERT_MS) / 1000) }, fired: [] };
+    this.state.rails = [...rest, a];   // a new array: a failed save puts the old one back as it was
+    if (!this.save()) { this.state.rails = before; return { status: 503, body: { error: "busy" } }; }
+    return { status: 201, body: { id: a.id, until: a.spec.until } };
   }
 
   // A new alert from a link payload, for one chat or push subscription (owner: what the limits count).
@@ -361,6 +414,54 @@ export class Bot {
     if (out.length && this.save()) for (const m of out) this.tell(m.a, m.text, m.url);
   }
 
+  // One rail stop's board: one request at a time, never within 20 s. On an error, back off as poll() does.
+  private async pollStop(stop: string) {
+    const now = this.d.now();
+    let st = this.stops.get(stop);
+    if (!st) this.stops.set(stop, (st = { next: 0, busy: false, errors: 0 }));
+    if (st.busy || now < st.next) return;
+    st.busy = true;
+    try {
+      const r = await this.d.get(`${this.d.urls.api}/v2/stops/${encodeURIComponent(stop)}`);
+      const after = this.d.now(), skew = r.date != null ? r.date - after : 0;
+      if (r.status === 404) {   // the server does not know the stop: its alerts are of nothing
+        this.state.rails = this.rails.filter(a => a.spec.stop !== stop);
+        this.save();
+        st.next = after + STOP_GAP_MS;
+        return;
+      }
+      const body = r.body as { arrivals?: unknown } | null;
+      if (r.status !== 200 || !body || !Array.isArray(body.arrivals)) throw new Error(`stop ${r.status}`);
+      st.errors = 0;
+      st.next = after + STOP_GAP_MS;
+      this.checkStop(stop, body.arrivals as V2Arrival[], (after + skew) / 1000);
+    } catch (e) {
+      st.errors++;
+      st.next = this.d.now() + Math.min(60_000, 10_000 * 2 ** (st.errors - 1));
+      console.error(`stop ${stop}:`, (e as Error).message);
+    } finally {
+      st.busy = false;
+    }
+  }
+
+  private checkStop(stop: string, arrivals: V2Arrival[], nowS: number) {
+    const out: { a: SavedRail; data: string }[] = [];
+    for (const a of this.rails) {   // read now: alerts stopped during the request are gone
+      if (a.spec.stop !== stop) continue;
+      const fired = new Map(a.fired);
+      const r = railCheck(a.spec, arrivals, nowS, fired);
+      a.fired = [...fired];
+      for (const h of r.hits)
+        out.push({ a, data: JSON.stringify({ title: a.spec.label, body: `🚇 ${railHitText(a.spec, h, nowS)}`, tag: a.id }) });
+      if (r.none && !a.said && !a.spec.run) {
+        a.said = true;
+        out.push({ a, data: JSON.stringify({ title: a.spec.label, body: `⚠️ ${railNoneText(a.spec)}`, tag: a.id }) });
+      }
+    }
+    if (out.length && this.save())   // as check(): nothing goes out when the save fails
+      for (const m of out) this.queue.push({ method: "push", body: { alert: m.a.id, sub: m.a.push, data: m.data } });
+  }
+
   // To the alert's chat (with its stop buttons) or push subscription.
   private tell(a: SavedAlert, text: string, url?: string) {
     if (a.push) this.queue.push({ method: "push", body: { alert: a.id, sub: a.push, data: JSON.stringify({ title: "Λεωφορείο", body: text, tag: a.id }) } });
@@ -372,6 +473,7 @@ export class Bot {
     const status = await this.d.push(sub, data);
     if (status === 404 || status === 410) {
       this.remove(a => a.push?.endpoint === sub.endpoint);
+      this.state.rails = this.rails.filter(a => a.push.endpoint !== sub.endpoint);
       this.queue = this.queue.filter(q => (q.body.sub as PushSub | undefined)?.endpoint !== sub.endpoint);
       this.save();
     } else if (status < 200 || status >= 300) console.error(`push: ${status || "network"}`);
@@ -416,6 +518,24 @@ function pushSub(x: unknown): PushSub | null {
   try { u = new URL(s.endpoint); } catch { return null; }
   if (u.protocol !== "https:" || u.port || u.username || !PUSH_HOSTS.some(h => h.test(u.hostname))) return null;
   return { endpoint: s.endpoint, keys: { p256dh, auth } };
+}
+
+// A rail alert's spec from the page, or null: its own stop and line (the /v2 ids), a head sign or two, 1..20 min.
+function railSpec(x: unknown): Omit<RailSpec, "until"> | null {
+  const r = x as Record<string, unknown> | null;
+  if (!r || typeof r !== "object") return null;
+  const text = (v: unknown, max: number) => typeof v === "string" && v.length >= 1 && v.length <= max;
+  const ref = /^(stasy|proastiakos):/;
+  if (!text(r.stop, 120) || !ref.test(r.stop as string) || !text(r.line, 120) || !ref.test(r.line as string)) return null;
+  if (!text(r.name, 80) || !text(r.label, 80) || !text(r.toward, 80)) return null;
+  const heads = r.heads;
+  if (!Array.isArray(heads) || heads.length < 1 || heads.length > 12 || !heads.every(h => text(h, 80))) return null;
+  if (typeof r.min !== "number" || !Number.isInteger(r.min) || r.min < 1 || r.min > 20) return null;
+  if (r.run !== undefined && !text(r.run, 120)) return null;
+  return {
+    stop: r.stop as string, name: r.name as string, line: r.line as string, label: r.label as string,
+    toward: r.toward as string, heads: heads as string[], min: r.min, ...(r.run !== undefined && { run: r.run as string }),
+  };
 }
 
 const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;

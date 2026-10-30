@@ -1,17 +1,19 @@
 <script lang="ts">
   import AlertForm from "./AlertForm.svelte";
+  import RailAlertForm from "./RailAlertForm.svelte";
+  import type { RailSpec } from "../railAlerts";
   import type { BoardAt } from "../trip";
   import type { AppState } from "../state.svelte";
 
   // The alert form in a sheet over the map, as the phone app has it: "Ειδοποίησέ με στο <stop>", the line
-  // and where it goes (when there is one line), the form. A modal <dialog>: focus stays in it, Escape or a
+  // and where it goes (when there is one line), the form (a bus's, or with rail a metro, tram or suburban one; color: its line's). A modal <dialog>: focus stays in it, Escape or a
   // tap outside closes it, and the browser gives focus back to the bell that opened it.
-  let { app, lines, label, line, toward, ticked, onclose }: {
-    app: AppState; lines: { line: string; variants: BoardAt[] }[]; label: string; line?: string; toward?: string; ticked?: string[];
-    onclose: () => void;
+  let { app, lines = [], rail, color, label, line, toward, ticked, onclose }: {
+    app: AppState; lines?: { line: string; variants: BoardAt[] }[]; rail?: Omit<RailSpec, "min" | "until">; color?: { bg: string; fg: string };
+    label: string; line?: string; toward?: string; ticked?: string[]; onclose: () => void;
   } = $props();
 
-  const c = $derived(line ? app.lineColor(line) : null);
+  const c = $derived(color ?? (line ? app.lineColor(line) : null));
   let dlg = $state<HTMLDialogElement>();
   $effect(() => {
     const d = dlg;
@@ -32,7 +34,11 @@
     </div>
     <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => dlg?.close()}>×</button>
   </header>
-  <AlertForm {app} {lines} {label} {ticked} onstarted={() => dlg?.close()} />
+  {#if rail}
+    <RailAlertForm {app} {rail} onstarted={() => dlg?.close()} />
+  {:else}
+    <AlertForm {app} {lines} {label} {ticked} onstarted={() => dlg?.close()} />
+  {/if}
 </dialog>
 
 <style>

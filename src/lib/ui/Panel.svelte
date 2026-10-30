@@ -197,6 +197,13 @@
         <button type="button" title="Τέλος ειδοποίησης" aria-label="Σταμάτα την ειδοποίηση" onclick={() => app.setAlert(null)}>×</button>
       </div>
     {/if}
+    {#if app.railAlert}
+      {@const a = app.railAlert}
+      <div class="focus">
+        <span><Bell /> {a.label} · {a.name} · {a.min}′ πριν · έως {clock(a.until).slice(0, 5)}</span>
+        <button type="button" title="Τέλος ειδοποίησης" aria-label="Σταμάτα την ειδοποίηση για {a.label}" onclick={() => app.setRailAlert(null)}>×</button>
+      </div>
+    {/if}
   </div>
 
   {#each app.hits as h (h.id)}

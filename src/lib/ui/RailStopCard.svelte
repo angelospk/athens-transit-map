@@ -1,10 +1,14 @@
 <script lang="ts">
   // The card of a metro, tram or suburban stop, from /v2: the next arrivals per line and direction,
-  // asked again every 20 s while it is open (cached 15 s). A tap on a row opens its train, else its line.
+  // asked again every 20 s while it is open (cached 15 s). A tap on a row opens its train, else its line;
+  // its bell opens the alert sheet for that line and direction (web push, bot/bot.ts).
   import { untrack } from "svelte";
   import { fetchV2Line, fetchV2Stop } from "../api";
-  import { stopRows, type LineDetail, type V2Arrival, type V2Line, type V2Pattern, type V2Stop } from "../v2";
+  import { clock } from "../format";
+  import { railHeads, type RailSpec } from "../railAlerts";
+  import { dirOf, headsignName, stopRows, type LineDetail, type StopRow, type V2Arrival, type V2Line, type V2Pattern, type V2Stop } from "../v2";
   import type { AppState } from "../state.svelte";
+  import Bell from "./Bell.svelte";
   import CardSheet, { whenText } from "./CardSheet.svelte";
 
   let { app }: { app: AppState } = $props();
@@ -54,16 +58,37 @@
   const lineOf = (id: string) => board?.lines.find(l => l.id === id) ?? details[id]?.line;
 
   $effect(() => { if (board) untrack(() => app.retitle(board!.stop.name)); });
+
+  // The alert sheet for one row: its line, and every headsign of its direction (the bot matches those).
+  let alertFor = $state.raw<{ rail: Omit<RailSpec, "min" | "until">; color: { bg: string; fg: string } } | null>(null);
+  $effect(() => { void card?.id; alertFor = null; });
+  const labelOf = (id: string) => { const ln = lineOf(id); return ln?.label ?? ln?.name ?? id.slice(id.indexOf(":") + 1); };
+  function bell(r: StopRow) {
+    if (!board) return;
+    const pats = patterns[r.line] ?? [];
+    const raw = board.arrivals.find(a => a.line === r.line &&
+      (r.dir != null ? dirOf(pats, a.headsign) === r.dir : headsignName(a.headsign, stops) === r.headsign))?.headsign ?? r.headsign;
+    const ln = lineOf(r.line);
+    alertFor = {
+      rail: { stop: board.stop.id, name: board.stop.name, line: r.line, label: labelOf(r.line), toward: r.headsign, heads: railHeads(pats, r.dir, raw) },
+      color: { bg: ln?.color ?? "#3b5bdb", fg: ln?.text_color ?? "#ffffff" },
+    };
+  }
 </script>
 
 {#if card}
   {@const st = board?.stop}
-  <CardSheet {app} key={card.id} starred={!!st && app.isFavStop(st.id)} starLabel={st && app.isFavStop(st.id) ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
+  <CardSheet {app} key={card.id} closeOnEscape={!alertFor} starred={!!st && app.isFavStop(st.id)} starLabel={st && app.isFavStop(st.id) ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
     onstar={st ? () => app.toggleFavStop({ id: st.id, name: st.name, lat: st.lat, lon: st.lon }) : undefined}>
     {#snippet header()}
       <h2 class="stopname">{board?.stop.name ?? card.title ?? ""}</h2>
       {#if modeText}<span class="fresh">{modeText}</span>{/if}
     {/snippet}
+    {#if app.railAlert && app.railAlert.stop === card.id}
+      {@const a = app.railAlert}
+      <p class="armed"><Bell /> Ειδοποίηση: {a.label} προς {a.toward}, {a.min}′ πριν, έως {clock(a.until).slice(0, 5)}.
+        <button type="button" class="link" onclick={() => app.setRailAlert(null)}>Ακύρωση</button></p>
+    {/if}
     {#if failed}
       <p class="muted">Δεν φόρτωσε η στάση. Δοκίμασε ξανά.</p>
     {:else if !board}
@@ -76,7 +101,7 @@
         {#each rows as r (r.line + "|" + (r.dir ?? r.headsign))}
           {@const ln = lineOf(r.line)}
           {@const plat = r.times.find(t => t.platform)?.platform}
-          <li><button type="button"
+          <li><button type="button" class="go"
             onclick={() => app.push(r.vehicle ? { kind: "vehicle", id: r.vehicle, line: r.line } : { kind: "line", id: r.line, dir: r.dir ?? undefined })}>
             <span class="pill" style:--c={ln?.color ?? "#3b5bdb"} style:--t={ln?.text_color ?? "#ffffff"}>{ln?.label ?? ln?.name ?? r.line.slice(r.line.indexOf(":") + 1)}</span>
             <span class="head">→ {r.headsign}</span>
@@ -84,7 +109,8 @@
             <span class="times">
               {#each r.times as t, k (k)}<span class:first={k === 0} class:sched={!t.live}>{whenText(t.at, app.serverNow)}</span>{/each}
             </span>
-          </button></li>
+          </button><button type="button" class="bell" class:on={alertFor?.rail.line === r.line && alertFor.rail.toward === r.headsign}
+            title="Ειδοποίηση άφιξης" aria-label="Ειδοποίηση άφιξης του {labelOf(r.line)} προς {r.headsign}" onclick={() => bell(r)}><Bell /></button></li>
         {/each}
       </ul>
     {/if}
@@ -97,6 +123,12 @@
       </div>
     {/if}
   </CardSheet>
+  {#if alertFor}
+    {@const a = alertFor}
+    {#await import("./AlertSheet.svelte") then m}
+      <m.default {app} rail={a.rail} color={a.color} label={a.rail.name} line={a.rail.label} toward={a.rail.toward} onclose={() => (alertFor = null)} />
+    {/await}
+  {/if}
 {/if}
 
 <style>
@@ -104,9 +136,15 @@
   .note { margin: 4px 0 2px; font-size: 11px; color: var(--muted); }
   .stopname { color: var(--fg); font-size: 15px; font-weight: 700; }
   .rows { list-style: none; margin: 0; padding: 0; }
-  .rows button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 0 4px; margin: 0 -4px; border: 0;
+  .rows li { display: flex; align-items: center; gap: 2px; }
+  .rows .go { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 0 4px; margin: 0 0 0 -4px; border: 0;
     border-radius: 8px; background: none; color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
-  .rows button:hover { background: var(--control); }
+  .rows .go:hover { background: var(--control); }
+  .bell { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 8px; background: none;
+    color: var(--muted); cursor: pointer; }
+  .bell:hover, .bell.on { background: var(--control); color: var(--accent); }
+  .armed { margin: 0 0 6px; font-size: 12px; }
+  .link { border: 0; padding: 0; background: none; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; }
   .pill { flex: none; padding: 2px 8px; border-radius: 10px; background: var(--c); color: var(--t); font-weight: 700; }
   .head { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .lines { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }

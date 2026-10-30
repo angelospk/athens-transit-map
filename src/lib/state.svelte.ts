@@ -57,6 +57,12 @@ const isPushAlert = (v: unknown) => {
   const a = v as StopAlert | null;
   return !!a && typeof a.push === "string" && typeof a.until === "number" && a.until > Date.now() / 1000 && Array.isArray(a.lines) && typeof a.n === "number";
 };
+// A metro, tram or suburban alert (bot/bot.ts, rail): web push only, so the page keeps what it shows and the id to stop it.
+export interface RailAlert { id: string; until: number; stop: string; line: string; label: string; toward: string; name: string; min: number }
+const isRailAlert = (v: unknown) => {
+  const a = v as RailAlert | null;
+  return !!a && typeof a.id === "string" && typeof a.until === "number" && a.until > Date.now() / 1000 && typeof a.label === "string" && typeof a.min === "number";
+};
 export interface ShownHit { id: number; text: string }
 
 export interface PlacedVehicle { line: string; v: Vehicle; faded: boolean }   // faded: direction unknown under focus
@@ -147,6 +153,8 @@ export class AppState {
     return lines.length === a.lines.length ? a : { ...a, lines };
   });
   hits = $state.raw<ShownHit[]>([]);
+  private railSpec = $state.raw<RailAlert | null>(stored("railAlert", null, isRailAlert));
+  get railAlert(): RailAlert | null { return this.railSpec && this.serverNow / 1000 <= this.railSpec.until ? this.railSpec : null; }
   private hitId = 0;
   private alertsStarted = false;
   // The trip planner's start and end ([lat, lon]), marked on the map while the planner is open.
@@ -577,6 +585,14 @@ export class AppState {
       this.alertsStarted = false;
       this.say("Η ειδοποίηση δεν φόρτωσε. Δοκίμασε ξανά.");
     });
+  }
+
+  // One rail alert at a time: a new one, or none, stops the old one at the server.
+  setRailAlert(a: RailAlert | null) {
+    const old = this.railSpec;
+    if (old && old.id !== a?.id) void stopPush(old.id);
+    this.railSpec = a;
+    store("railAlert", a);
   }
 
   alertHit(h: AlertHit, stop: string) {

@@ -1,5 +1,8 @@
 // Web push for stop alerts: the bot on the VPS (bot/main.ts) watches the alert and pushes each hit, so it
 // comes with the page closed. The link payload is the Telegram one (tglink.ts). Loaded with the planner.
+// Rail alerts (railAlerts.ts) go the same way, with their own spec instead of a link.
+
+import type { RailSpec } from "./railAlerts";
 
 export const PUSH_URL = (import.meta.env.VITE_PUSH_URL || "https://push.haroldpoi.dev").replace(/\/+$/, "");
 
@@ -12,7 +15,8 @@ const bytes = (b64url: string) => Uint8Array.from(atob(b64url.replace(/-/g, "+")
 const same = (a: ArrayBuffer | null | undefined, b: Uint8Array) => !!a && a.byteLength === b.length && new Uint8Array(a).every((x, k) => x === b[k]);
 
 // The alert's id and end (Unix s), or null: no permission, no push service, or the server refused.
-export async function startPush(reg: ServiceWorkerRegistration, payload: string): Promise<{ id: string; until: number } | null> {
+// A stop alert sends the link payload (p), a rail alert its spec (rail); the subscription goes with both.
+async function startAlert(reg: ServiceWorkerRegistration, body: Record<string, unknown>): Promise<{ id: string; until: number } | null> {
   try {
     const signal = AbortSignal.timeout(15_000);
     const k = await fetch(`${PUSH_URL}/key`, { signal });
@@ -23,7 +27,7 @@ export async function startPush(reg: ServiceWorkerRegistration, payload: string)
     if (sub && !same(sub.options.applicationServerKey, want)) { await sub.unsubscribe(); sub = null; }   // the server's key changed
     sub ??= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: want });
     const r = await fetch(`${PUSH_URL}/alerts`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ p: payload, sub: sub.toJSON() }), signal,
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...body, sub: sub.toJSON() }), signal,
     });
     if (r.status !== 201) return null;
     const b = (await r.json()) as { id?: unknown; until?: unknown };
@@ -32,6 +36,11 @@ export async function startPush(reg: ServiceWorkerRegistration, payload: string)
     return null;
   }
 }
+
+export const startPush = (reg: ServiceWorkerRegistration, payload: string) => startAlert(reg, { p: payload });
+
+// A metro, tram or suburban arrival alert (railAlerts.ts); until is the server's.
+export const startRailPush = (reg: ServiceWorkerRegistration, rail: Omit<RailSpec, "until">) => startAlert(reg, { rail });
 
 // keepalive: the request goes out even when the page is closing. Each stop is written down first and
 // crossed out when the server confirms it; one left over is sent again on the next load (retryStops),

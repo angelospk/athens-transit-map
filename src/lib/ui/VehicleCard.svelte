@@ -1,13 +1,15 @@
 <script lang="ts">
   // The card of a tapped vehicle. A bus: from the line's live data (the stops ahead with their estimated
-  // times, and a bell on each). A train, metro or tram: from /v2 (its run's stops ahead), asked again every 20 s.
+  // times, and a bell on each). A train, metro or tram: from /v2 (its run's stops ahead, a bell on each: web
+  // push when this train nears that stop), asked again every 20 s.
   import { untrack } from "svelte";
   import { fetchV2Line, fetchV2LineVehicles, fetchV2Run } from "../api";
   import { upcomingStops } from "../eta";
   import { ageLabel, delayText, fmtDelay } from "../format";
   import { busStopCard, routeCard } from "../legacy";
   import { stopIndex, toward } from "../stops";
-  import { freshness, headsignName, nextStops, type LineDetail, type V2Run, type V2Vehicle } from "../v2";
+  import { railHeads, type RailSpec } from "../railAlerts";
+  import { freshness, headsignName, nextStops, vehicleDir, type LineDetail, type V2Run, type V2Vehicle } from "../v2";
   import type { AppState } from "../state.svelte";
   import Bell from "./Bell.svelte";
   import CardSheet, { whenText } from "./CardSheet.svelte";
@@ -90,6 +92,16 @@
   const railFresh = $derived(rail.vehicle ? freshness(rail.vehicle, app.serverNow / 1000) : null);
   const anyTimetable = $derived(rail.ahead.some(a => !a.live));
 
+  // The rail alert sheet at one of the stops ahead: this train when it has a run, else its line and direction.
+  let railAt = $state.raw<Omit<RailSpec, "min" | "until"> | null>(null);
+  $effect(() => { void card?.id; railAt = null; });
+  function railBell(stop: string, name: string) {
+    const v = rail.vehicle;
+    if (!v || !card || railAt?.stop === stop) { railAt = null; return; }
+    const pats = rail.detail?.patterns ?? [];
+    railAt = { stop, name, line: card.line, label: railLabel, toward: railHead, heads: railHeads(pats, vehicleDir(v, pats), v.headsign), ...(v.run ? { run: v.run } : {}) };
+  }
+
   // The title of the card (the back button and the page title) once the data names it.
   $effect(() => {
     const label = isBus ? card && native(card.line) : isRail ? railLabel : "";
@@ -140,7 +152,7 @@
     </button>
   </CardSheet>
 {:else if card && isRail}
-  <CardSheet {app} {key}>
+  <CardSheet {app} {key} closeOnEscape={!railAt}>
     {#snippet header()}
       {@render label(railLabel, rail.detail?.line.color ?? "#3b5bdb", rail.detail?.line.text_color ?? "#ffffff")}
       <h2>{railHead ? `→ ${railHead}` : ""}</h2>
@@ -164,6 +176,9 @@
             <li class:next={k === 0} class:sched={!a.live}>
               <span class="t">{whenText(a.at, app.serverNow)}</span><button type="button" class="name" title="Η στάση {nm}" onclick={() => app.push({ kind: "stop", id: a.stop, title: nm })}>{nm}</button>
               {#if a.platform}<span class="plat">Αποβ. {a.platform}</span>{/if}
+              <button type="button" class="bell" class:on={railAt?.stop === a.stop} aria-expanded={railAt?.stop === a.stop}
+                title="Ειδοποίηση άφιξης σε αυτή τη στάση" aria-label="Ειδοποίηση άφιξης του {railLabel} στη στάση {nm}"
+                onclick={() => railBell(a.stop, nm)}><Bell /></button>
             </li>
           {/each}
         </ol>
@@ -181,6 +196,14 @@
   {#await import("./AlertSheet.svelte") then m}
     <m.default {app} label={a.name} line={a.line} toward={sheetHs ? toward(sheetHs) : undefined} onclose={() => (alertAt = null)}
       lines={[{ line: a.line, variants: [{ id: a.variant, i: a.i, from }] }]} />
+  {/await}
+{/if}
+
+{#if railAt}
+  {@const a = railAt}
+  {#await import("./AlertSheet.svelte") then m}
+    <m.default {app} rail={a} color={{ bg: rail.detail?.line.color ?? "#3b5bdb", fg: rail.detail?.line.text_color ?? "#ffffff" }}
+      label={a.name} line={a.label} toward={a.toward} onclose={() => (railAt = null)} />
   {/await}
 {/if}
 

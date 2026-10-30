@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PUSH_URL, retryStops, startPush, stopPush } from "../src/lib/push";
+import { PUSH_URL, retryStops, startPush, startRailPush, stopPush } from "../src/lib/push";
 
 const KEY = "BOc7e28ESavPwoaIB0AHwtBHAZHIe3hNm1yWUm-FagBKGhmKSBnrkSZ0Hs1OWr7iqGWO0a8nkSsUhh7WJ1SgdQ8";
 const bytes = (b64url: string) => Uint8Array.from(atob(b64url.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
@@ -59,6 +59,15 @@ describe("startPush", () => {
     expect(await startPush(fakeReg().reg, "1xyz")).toBeNull();
     vi.stubGlobal("fetch", async () => { throw new TypeError("offline"); });
     expect(await startPush(fakeReg().reg, "1xyz")).toBeNull();
+  });
+});
+
+describe("startRailPush", () => {
+  it("sends the rail alert with the subscription", async () => {
+    const reqs = fakeFetch({ status: 201, body: { id: "r1", until: 99 } });
+    const rail = { stop: "stasy:x", name: "X", line: "stasy:M1", label: "Μ1", toward: "Κηφισιά", heads: ["ΚΗΦΙΣΙΑ"], min: 3 };
+    expect(await startRailPush(fakeReg().reg, rail)).toEqual({ id: "r1", until: 99 });
+    expect(reqs.at(-1)).toMatchObject({ url: `${PUSH_URL}/alerts`, method: "POST", body: { rail, sub: subJson } });
   });
 });
 
