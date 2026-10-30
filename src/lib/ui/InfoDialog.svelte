@@ -4,8 +4,8 @@
   import SourcesView from "./SourcesView.svelte";
   import LongTermView from "./LongTermView.svelte";
   import StatsView from "./StatsView.svelte";
-  import IdeaPop from "./IdeaPop.svelte";
-  import { canSend, sendIdea, type IdeaStatus } from "../idea";
+  import FeedbackForm from "./FeedbackForm.svelte";
+  import AboutView from "./AboutView.svelte";
 
   // ended: the day the OASA timetable ended, when it is past (explained at the top).
   let { open = $bindable(false), motion, ended = null }: { open: boolean; motion: boolean; ended?: string | null } = $props();
@@ -30,19 +30,10 @@
   let statsSeen = $state(false);
   $effect(() => { if (tab === "stats") statsSeen = true; });
 
-  // The idea box (B10: moved here from the map's buttons). Kept in this sheet, which stays mounted once loaded,
-  // so closing it while the request runs loses nothing.
-  let ideaDraft = $state("");
-  let ideaStatus = $state<IdeaStatus>("edit");
-  async function submitIdea() {
-    if (ideaStatus === "sending" || !canSend(ideaDraft)) return;
-    ideaStatus = "sending";
-    if (!(await sendIdea(ideaDraft))) { ideaStatus = "failed"; return; }
-    ideaDraft = "";
-    ideaStatus = "done";
-  }
-  // Back to the form when the thanks are left: another idea can follow.
-  $effect(() => { if ((!open || tab !== "app") && ideaStatus === "done") ideaStatus = "edit"; });
+  // The app tab: feedback (B10: moved here from the map's buttons), then version and «Τι νέο». This sheet stays
+  // mounted once loaded, so closing it while feedback is sent loses nothing. Releases load on the first visit.
+  let appSeen = $state(false);
+  $effect(() => { if (open && tab === "app") appSeen = true; });
 
   $effect(() => {
     if (open && dlg.isConnected && !dlg.open) dlg.showModal();
@@ -109,7 +100,8 @@
       </div>
     </div>
     <div role="tabpanel" id="info-panel-app" aria-labelledby="info-tab-app" hidden={tab !== "app"}>
-      <IdeaPop bind:draft={ideaDraft} status={ideaStatus} onsubmit={submitIdea} />
+      <FeedbackForm visible={open && tab === "app"} />
+      {#if appSeen}<AboutView />{/if}
     </div>
   </div>
 </dialog>

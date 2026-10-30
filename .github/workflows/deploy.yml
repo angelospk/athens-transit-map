@@ -25,6 +25,8 @@ jobs:
       - run: bun run test
       - run: bun run check
       - run: bun run build
+        env:
+          VITE_FEEDBACK_URL: ${{ vars.VITE_FEEDBACK_URL }} # the Apps Script of docs/feedback; unset = text-only form
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist

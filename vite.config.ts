@@ -1,6 +1,15 @@
 /// <reference types="vitest/config" />
 import { defineConfig, type Plugin } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { execSync } from "node:child_process";
+import pkg from "./package.json" with { type: "json" };
+
+// The version shown in the ⓘ sheet: package version, build day (Athens) and commit.
+const commit = () => {
+  if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA;
+  try { return execSync("git rev-parse HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return ""; }
+};
+const built = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(new Date());
 
 // `import workerUrl from "virtual:maplibre-worker"`. In the build, MapLibre's worker is an
 // extra chunk of the main bundle, so it shares the maplibre-gl-shared chunk (a `?worker`
@@ -23,6 +32,11 @@ function maplibreWorker(): Plugin {
 
 export default defineConfig({
   plugins: [svelte(), maplibreWorker()],
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+    __APP_BUILT__: JSON.stringify(built),
+    __APP_COMMIT__: JSON.stringify(commit()),
+  },
   build: { chunkSizeWarningLimit: 700 },
   test: { include: ["tests/**/*.test.ts"], environment: "node" },
 });
