@@ -20,4 +20,9 @@
   .back span[aria-hidden] { font-size: 20px; line-height: 1; }
   .back .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .back:hover { background: var(--control-hover); }
+  /* On a phone the label would squeeze the card's title: the arrow alone, the label stays in aria-label. */
+  @media (max-width: 480px) {
+    .back { min-width: 44px; min-height: 44px; justify-content: center; padding: 0; }
+    .back .t { display: none; }
+  }
 </style>

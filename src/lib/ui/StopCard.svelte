@@ -199,10 +199,11 @@
     backdrop-filter: blur(8px); max-height: calc(100dvh - 140px); overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; }
   header { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 10px; }
   .t { flex: 1; min-width: 0; }
-  h2 { margin: 0; font-size: 22px; font-weight: 600; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  h2 { margin: 0; font-size: 22px; font-weight: 600; line-height: 1.2; overflow: hidden; overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
   p { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
   .sub { margin: 2px 0 0; font-size: 13px; }
-  .across { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; text-underline-offset: 3px; }
+  .across { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; text-underline-offset: 3px; }
   .across:hover { text-decoration: underline; }
   .seg { display: flex; margin: 0 0 4px; border: 1px solid var(--border); border-radius: 20px; overflow: hidden; }
   .seg button { flex: 1; min-height: 38px; padding: 0 8px; border: 0; background: none; color: var(--fg); font: inherit; font-size: 13px;
