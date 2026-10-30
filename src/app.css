@@ -55,7 +55,7 @@ button, input { font: inherit; color: inherit; }
 /* The zoom buttons are for the mouse: a phone pinches. */
 @media (max-width: 719px) { .maplibregl-ctrl-group:has(.maplibregl-ctrl-zoom-in) { display: none; } }
 /* A stale marker always shows its age: it says why it is pale. */
-.no-ages .vm:not(.stale) .age { display: none; }
+.ages-old .vm:not(.stale) .age, .ages-never .vm .age { display: none; }
 .filtered { display: none; }
 
 

@@ -22,10 +22,18 @@ export const delayText = (s: number | null) => (s == null ? "χωρίς δρομ
 // Age of a vehicle position on its marker: "24″", then "2′".
 export const STALE_POS_S = 90;
 export const isStalePos = (sec: number) => sec > STALE_POS_S;
+export const GONE_POS_S = 600;   // an older position is not drawn (B4), unless it is the tapped vehicle
+export const isGonePos = (sec: number) => sec > GONE_POS_S;
 export const ageLabel = (sec: number) => {
   const s = Math.max(0, Math.floor(sec));
   return s < 60 ? `${s}″` : `${Math.floor(s / 60)}′`;
 };
+
+// «Ηλικία θέσης» (B4), one setting for every GPS vehicle: never, only past STALE_POS_S, or always.
+export type AgeMode = "never" | "old" | "always";
+// The stored mode; else the old bus-only checkbox (`showAges`, on = always); else "old".
+export const ageModeOf = (raw: unknown, legacy: unknown): AgeMode =>
+  raw === "never" || raw === "old" || raw === "always" ? raw : legacy === true ? "always" : "old";
 
 // Map filters (layers popover): only positions not drawn as stale; only vehicles at most 5′ late.
 export interface Only { fresh: boolean; onTime: boolean }

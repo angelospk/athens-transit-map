@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ageLabel, ago, isStalePos, delayClass, delayText, duration, fmtDelay, passes } from "../src/lib/format";
+import { ageLabel, ageModeOf, ago, isGonePos, isStalePos, delayClass, delayText, duration, fmtDelay, passes } from "../src/lib/format";
 
 describe("duration", () => {
   it("is short: seconds, then minutes and two-digit seconds (B10)", () => {
@@ -97,5 +97,17 @@ describe("gtfsEnded", () => {
     expect(gtfsEnded("2026-10-07", at)).toBeNull();
     expect(gtfsEnded(undefined, at)).toBeNull();
     expect(dayMonth("2026-10-06")).toBe("6/10");
+  });
+});
+
+describe("position age setting", () => {
+  it("hides a position over 10 minutes old", () => {
+    expect([isGonePos(600), isGonePos(601)]).toEqual([false, true]);
+  });
+  it("reads the stored mode, else moves the old checkbox (on = always), else only the old ones", () => {
+    expect(ageModeOf("never", true)).toBe("never");
+    expect(ageModeOf(null, true)).toBe("always");
+    expect(ageModeOf(null, false)).toBe("old");
+    expect(ageModeOf("bogus", null)).toBe("old");
   });
 });

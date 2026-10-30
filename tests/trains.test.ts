@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byDestination, clockHM, destColor, lineTrains, stasyPlace, stopRows, trainsFC, type StasyVehicle, type SuburbanTrain } from "../src/lib/trains";
+import { byDestination, clockHM, destColor, lineTrains, sideOf, stasyPlace, stopRows, trainsFC, type StasyVehicle, type SuburbanTrain } from "../src/lib/trains";
 import type { Corridor } from "../src/lib/suburban";
 
 const veh = (from: number, to: number, trip = "t1", line = "M2"): StasyVehicle => ({
@@ -64,6 +64,37 @@ describe("trainsFC", () => {
   it("gives a heading only when it is known, and marks the tapped train", () => {
     expect(props.map(p => p.h ?? null)).toEqual([expect.any(Number), 90, null]);
     expect(props.map(p => p.sel)).toEqual([false, true, false]);
+  });
+  it("marks the timetable trains (hollow, no age) and labels a GPS train with its fix's age", () => {
+    expect(props.map(p => p.est)).toEqual([true, false, false]);
+    expect(props.map(p => p.age ?? null)).toEqual([null, "20″", "3′"]);
+  });
+  it("puts a moving train on the right-hand track of its heading (screen x right, y down); a still one between", () => {
+    const side = props.map(p => p.side as number[]);
+    expect(side[1][0]).toBeCloseTo(0); expect(side[1][1]).toBeCloseTo(1);   // heading east: the track to its south
+    expect(side[2]).toEqual([0, 0]);
+  });
+});
+
+describe("trainsFC, a train standing still", () => {
+  it("has no heading and no side: a GPS train at 0 km/h, and one the glide says is still, despite their course", () => {
+    const nowS = 10_000, t = { ...sub("1226", "PIRAIR", nowS - 20), speed_kmh: 0 };
+    const p = (glide?: () => { pos: [number, number]; h: number | null }) =>
+      trainsFC({ stasy: [], suburban: [t], corridors, nowS, sel: null, glide }).features[0].properties!;
+    expect([p().h ?? null, p().side]).toEqual([null, [0, 0]]);
+    const moving = { ...t, speed_kmh: 60 };
+    const q = trainsFC({ stasy: [], suburban: [moving], corridors, nowS, sel: null, glide: () => ({ pos: [23.7, 38], h: null }) }).features[0].properties!;
+    expect([q.h ?? null, q.side]).toEqual([null, [0, 0]]);
+  });
+});
+
+describe("sideOf", () => {
+  it("is the unit vector to the right of a heading", () => {
+    const r = (h: number | null) => sideOf(h).map(x => Math.round(x * 1000) / 1000 + 0);
+    expect(r(0)).toEqual([1, 0]);
+    expect(r(180)).toEqual([-1, 0]);
+    expect(r(270)).toEqual([0, -1]);
+    expect(r(null)).toEqual([0, 0]);
   });
 });
 

@@ -4,6 +4,7 @@
 // (GET /v1/rail/suburban/vehicles, railway.gov.gr's train tracker).
 
 import { API_BASE } from "./config";
+import { ageLabel } from "./format";
 import { bearingDeg } from "./heading";
 import type { LngLat } from "./glide";
 import { headingAt, pointAt } from "./predict";
@@ -97,6 +98,14 @@ export function stasyPlace(v: StasyVehicle, nowS: number, tracks: Track[] = [], 
   return { pos: k === 0 ? a : k === 1 ? b : [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k], h };
 }
 
+// The unit vector to the right of a heading (degrees from north, clockwise), in screen axes (x right, y down):
+// a moving train is drawn off its line by it, on the right-hand one of the line's two tracks (B5). None when still.
+export function sideOf(h: number | null): [number, number] {
+  if (h == null) return [0, 0];
+  const r = ((h + 90) * Math.PI) / 180;
+  return [Math.sin(r), -Math.cos(r)];
+}
+
 // The trains to draw: the metro ones in their line's colour, the suburban ones of a known corridor
 // in its colour (other trains of Greece are left out). `sel` marks the tapped one.
 // tracks: each metro/tram line's tracks; glide: a GPS train's place on its corridor (rails.ts), if known.
@@ -111,14 +120,15 @@ export function trainsFC(o: { stasy: StasyVehicle[]; suburban: SuburbanTrain[]; 
       ...o.stasy.map(v => {
         const p = stasyPlace(v, o.nowS, o.tracks?.[v.line], o.motions?.[v.trip]);
         return point(p.pos, { kind: "metro", id: v.trip, color: v.route_color, ...(p.h == null ? {} : { h: p.h }), stale: false,
-          sel: isSel("metro", v.trip) });
+          sel: isSel("metro", v.trip), est: true, side: sideOf(p.h) });
       }),
       ...o.suburban.flatMap(t => {
         const c = o.corridors[t.corridor], age = o.nowS - t.position_at;
         if (!c || age > OLD_S) return [];
-        const g = o.glide?.(t), h = g?.h ?? t.course;
+        // Still: the glide's place has no heading; without a glide, a train at 0 km/h keeps its last course, not used.
+        const g = o.glide?.(t), h = g ? g.h : t.speed_kmh > 0 ? t.course : null;
         return [point(g?.pos ?? [t.lon, t.lat], { kind: "suburban", id: t.train, color: c.color, ...(h == null ? {} : { h }),
-          stale: age > STALE_S, sel: isSel("suburban", t.train) })];
+          stale: age > STALE_S, sel: isSel("suburban", t.train), est: false, age: ageLabel(age), side: sideOf(h) })];
       }),
     ],
   };

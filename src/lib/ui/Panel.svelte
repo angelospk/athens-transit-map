@@ -128,11 +128,8 @@
     return null;
   });
 
-  // With motion off, ages are always shown: they are all that says how old a position is.
-
   $effect(() => { if (focused.length < 2) focusOpen = false; });
 
-  const ages = $derived(app.showAges || !app.motion);
 
   const oldest = $derived.by(() => {
     const ts = app.selected.flatMap(l => (app.live[l] ? [app.live[l].updated_at] : []));
@@ -197,8 +194,16 @@
       <span><i class="ontime"></i>έως 2′ ή νωρίτερα</span><span><i class="late1"></i>2–5′</span>
       <span><i class="late2"></i>5–10′</span><span><i class="late3"></i>πάνω από 10′</span>
       <span><i class="none"></i>χωρίς δρομολόγιο</span>
-      {#if ages}<span><b class="age">24″</b>πριν από τόσο ήρθε η θέση</span>{/if}
+      {#if app.ageMode !== "never"}<span><b class="age">24″</b>πριν από τόσο ήρθε η θέση</span>{/if}
     </div>
+    {#if app.trainsOn}
+      <!-- The marker shapes (B3): the colour of a bus is its delay; a train's is its line's. -->
+      <div class="legend shapes">
+        <span><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="var(--ontime)" /></svg>λεωφορείο</span>
+        <span><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><rect x="1" y="1" width="10" height="10" rx="2.5" fill="#7E57C2" /></svg>προαστιακός (GPS)</span>
+        <span><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="2.5" fill="#fff" stroke="#e30613" stroke-width="3" /></svg>μετρό, τραμ (από πρόγραμμα)</span>
+      </div>
+    {/if}
 
     {#if focused.length}
       {#if focused.length > 1}
@@ -339,10 +344,14 @@
             <input type="checkbox" checked={app.motion} onchange={e => app.setMotion(e.currentTarget.checked)} />
             <span>Κίνηση ανάμεσα στις θέσεις<br /><small>Κλειστό: το όχημα μένει εκεί που έστειλε θέση.</small></span>
           </label>
-          <label class="switch">
-            <input type="checkbox" checked={ages} disabled={!app.motion} onchange={e => app.setShowAges(e.currentTarget.checked)} />
-            <span>Ηλικία θέσης <b class="age">24″</b><br /><small>{#if app.motion}Πριν πόσο έστειλε θέση.{:else}Πάντα ανοιχτό όταν η κίνηση είναι κλειστή.{/if}</small></span>
-          </label>
+          <div class="agemode">
+            <span>Ηλικία θέσης <b class="age">24″</b><br /><small>Πριν πόσο έστειλε θέση (λεωφορεία, προαστιακός). Μετρό και τραμ: θέση από το πρόγραμμα, όχι GPS.</small></span>
+            <div class="seg" role="radiogroup" aria-label="Ηλικία θέσης">
+              {#each [["never", "Ποτέ"], ["old", "Μόνο παλιές"], ["always", "Πάντα"]] as const as [m, t] (m)}
+                <button type="button" role="radio" aria-checked={app.ageMode === m} onclick={() => app.setAgeMode(m)}>{t}</button>
+              {/each}
+            </div>
+          </div>
           <details class="hint">
             <summary>Πώς κινούνται</summary>
             Ο ΟΑΣΑ στέλνει θέσεις κάθε 20–60″. Όταν η νέα θέση είναι πολύ μπροστά, το όχημα πηγαίνει γρήγορα ως εκεί, πάνω
@@ -416,6 +425,10 @@
     color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
   .favpill button:hover { background: var(--control); }
   @media (pointer: coarse) { .favpill { min-height: 44px; } .favpill button { min-height: 40px; min-width: 44px; } }
+  .shapes svg { flex: none; margin-right: 4px; vertical-align: -1px; }
+  .agemode { margin: 6px 0; font-size: 13px; }
+  .agemode small { color: var(--muted); font-size: 11px; }
+  .agemode .seg { margin-top: 6px; }
   .favseg { display: flex; gap: 2px; margin-top: 8px; padding: 2px; border-radius: 10px; background: var(--control); }
   .favseg button { flex: 1; min-height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: inherit;
     font: inherit; font-size: 13px; cursor: pointer; }

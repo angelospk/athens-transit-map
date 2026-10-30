@@ -1,7 +1,7 @@
 // The one store: chosen lines, live/static data, selection. Components read it; pollers write it.
 
 import { directionGroups, isHidden } from "./directions";
-import type { Only } from "./format";
+import { ageModeOf, type AgeMode, type Only } from "./format";
 import { fetchCity, fetchLine, fetchLines, fetchLineStatic, fetchRailMotion, fetchStatus, fetchTile, fetchTrains } from "./api";
 import { cityKey, isCityLive } from "./city";
 import { loadMetro, type MetroData } from "./metro";
@@ -97,7 +97,8 @@ export class AppState {
   favHintSeen = $state(stored("favHintSeen", false, isBool));
   cityOn = $state(stored("cityOn", true, isBool) && !(this.favOnly && busFavIds(this.favs).length > 0));
   others = $state<Others>(stored("others", "hide", v => v === "normal" || v === "dim" || v === "hide"));
-  showAges = $state(stored("showAges", false, isBool));
+  // «Ηλικία θέσης» for every GPS vehicle (B4); the old bus-only `showAges` checkbox moves over once.
+  ageMode = $state<AgeMode>(ageModeOf(stored("ageMode", null, () => true), stored("showAges", null, () => true)));
   // Off: every vehicle stays at its last GPS fix (no motion in between); its age is always shown.
   motion = $state(stored("motion", true, isBool));
   // Typical bus speed per road segment (public/speed/segments.geojson, lab/segspeed).
@@ -667,9 +668,9 @@ export class AppState {
     store("others", o);
   }
 
-  setShowAges(on: boolean) {
-    this.showAges = on;
-    store("showAges", on);
+  setAgeMode(m: AgeMode) {
+    this.ageMode = m;
+    store("ageMode", m);
   }
 
   setSpeedOn(on: boolean) {

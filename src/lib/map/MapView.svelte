@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { Map as MlMap, Marker, NavigationControl, Popup, setWorkerUrl, type ExpressionSpecification, type GeoJSONSource, type MapGeoJSONFeature } from "maplibre-gl";
+  import { Map as MlMap, Marker, NavigationControl, Popup, setWorkerUrl, type ExpressionSpecification, type FilterSpecification, type GeoJSONSource,
+    type MapGeoJSONFeature } from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
   import workerUrl from "virtual:maplibre-worker";
   import { debounce, throttle } from "../debounce";
-  import { ageLabel, dayMonth, gtfsEnded, isStalePos, passes } from "../format";
+  import { ageLabel, dayMonth, gtfsEnded, isGonePos, isStalePos, passes, type AgeMode } from "../format";
   import { untrack } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
   import type { LngLat } from "../glide";
@@ -29,6 +30,8 @@
   import { busStopCard, busVehicleCard, railStationCard, routeCard, stationCard } from "../legacy";
   // Rail stations show from these zooms, small like the bus stops (from STOPS_ZOOM); there are fewer of them.
   const RAIL_ZOOM = 13, SUBURBAN_ZOOM = 12;
+  const TRACK_SHIFT = 3;   // a moving train off its line's centre, in its image's pixels (B5)
+  const POINTER_K = 0.68;  // a train's heading pointer, against its square
   import type { TripIndex } from "../trip";
 
   setWorkerUrl(workerUrl);
@@ -147,49 +150,66 @@
     return g.getImageData(0, 0, c.width, c.height);
   }
 
-  // A white train front for the train discs (their colour is the line's).
-  function trainImage(): ImageData {
-    const r = 2, c = document.createElement("canvas");
-    c.width = c.height = 24 * r;
+  // A rounded square of side k × 28 px, white on a 48 px transparent canvas, tinted by each layer (sdf): the marker
+  // of every train (B3). One canvas size for every part, so one icon-size and one icon-offset move them together.
+  function railImage(k: number): ImageData {
+    const c = document.createElement("canvas"), side = 28 * k, o = (48 - side) / 2;
+    c.width = c.height = 48;
     const g = c.getContext("2d")!;
-    g.scale(r, r);
     g.fillStyle = "#fff";
-    g.beginPath(); g.roundRect(6.5, 3.5, 11, 13, 3); g.fill();
-    g.lineWidth = 1.6; g.strokeStyle = "#fff"; g.lineCap = "round";
-    g.beginPath(); g.moveTo(9, 17.5); g.lineTo(7.5, 20.5); g.moveTo(15, 17.5); g.lineTo(16.5, 20.5); g.stroke();
-    g.globalCompositeOperation = "destination-out";   // the window and the lamps, cut through
-    g.beginPath(); g.roundRect(8.5, 5.5, 7, 4.5, 1); g.fill();
-    g.beginPath(); g.arc(9.5, 13.5, 1.1, 0, 2 * Math.PI); g.arc(14.5, 13.5, 1.1, 0, 2 * Math.PI); g.fill();
+    g.beginPath(); g.roundRect(o, o, side, side, 7 * Math.min(1, k)); g.fill();
     return g.getImageData(0, 0, c.width, c.height);
   }
 
-  // Trains (metro and tram from the timetable, Proastiakos by GPS): discs in the line's colour with a
-  // train on them, over everything else; a fix too old is faded. Under them, the tapped train's line.
+  // Trains (metro and tram from the timetable, Proastiakos by GPS), over everything else, the size of a bus dot
+  // (B3): a rounded square in the line's colour, hollow (a white centre) when its place comes from the timetable.
+  // A moving train sits on the right-hand track of its line (`side`, B5). A GPS fix too old is faded, and its age
+  // shows per «Ηλικία θέσης». Under them, the tapped train's line.
   function addTrainLayers(m: MlMap) {
     const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#3b5bdb";
     const byZoom = (stops: unknown[]) => ["interpolate", ["linear"], ["zoom"], ...stops] as ExpressionSpecification;
     const vis = app.trainsOn ? "visible" : "none";
     const fade = ["case", ["get", "stale"], 0.45, 1] as ExpressionSpecification;
+    // The bus dot's diameter (5, 9, 20, 26 px at z10, 13, 14, 17) over the 16 px square (k = 1), times k.
+    const size = (k: number) => byZoom([10, 0.31 * k, 13, 0.56 * k, 14, 1.25 * k, 17, 1.63 * k]);
+    const square = (id: string, k: number, color: unknown, filter?: unknown) => {
+      if (!m.hasImage(`rail-${k}`)) m.addImage(`rail-${k}`, railImage(k), { pixelRatio: 2, sdf: true });
+      m.addLayer({
+      id, type: "symbol", source: "trains", ...(filter ? { filter: filter as ExpressionSpecification } : {}),
+      layout: { "icon-image": `rail-${k}`, "icon-size": size(1), "icon-offset": ["get", "off"] as ExpressionSpecification,
+        "icon-allow-overlap": true, "icon-ignore-placement": true, visibility: vis },
+      paint: { "icon-color": color as ExpressionSpecification, "icon-opacity": fade } });
+    };
     m.addSource("train-route", { type: "geojson", data: EMPTY });
     m.addSource("trains", { type: "geojson", data: EMPTY });
     m.addLayer({ id: "train-route-casing", type: "line", source: "train-route", layout: { "line-join": "round", "line-cap": "round" },
       paint: { "line-color": "#ffffff", "line-width": byZoom([9, 5, 14, 8, 17, 11]), "line-opacity": 0.9 } }, "metro-station");
-    m.addLayer({ id: "train-route", type: "line", source: "train-route", layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": ["get", "color"], "line-width": byZoom([9, 3, 14, 5, 17, 7]) } }, "metro-station");
-    m.addLayer({ id: "train-dot", type: "circle", source: "trains", layout: { visibility: vis },
-      paint: { "circle-radius": byZoom([9, 4, 12, 6.5, 14, 10, 17, 13]), "circle-color": ["get", "color"], "circle-opacity": fade,
-        "circle-stroke-color": ["case", ["get", "sel"], accent, "#ffffff"], "circle-stroke-opacity": fade,
-        "circle-stroke-width": byZoom([9, ["case", ["get", "sel"], 3, 1], 14, ["case", ["get", "sel"], 3.5, 2]]) } });
-    m.addImage("train-icon", trainImage(), { pixelRatio: 2 });
-    m.addLayer({ id: "train-icon", type: "symbol", source: "trains", minzoom: 12,
-      layout: { "icon-image": "train-icon", "icon-size": byZoom([12, 0.55, 14, 0.8, 17, 1.05]), "icon-allow-overlap": true,
-        "icon-ignore-placement": true, visibility: vis },
-      paint: { "icon-opacity": fade } });
+    // Two parallel tracks (B5), one each side of the line's shape: a moving train sits on its right-hand one.
+    for (const [id, k] of [["train-route", 1], ["train-route-2", -1]] as const)
+      m.addLayer({ id, type: "line", source: "train-route", layout: { "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": ["get", "color"], "line-width": byZoom([9, 1.5, 14, 2.5, 17, 3.5]),
+          // The trains' own shift (TRACK_SHIFT × their icon-size), so each one sits on its track at every zoom.
+          "line-offset": byZoom([10, 0.31 * TRACK_SHIFT * k, 13, 0.56 * TRACK_SHIFT * k, 14, 1.25 * TRACK_SHIFT * k, 17, 1.63 * TRACK_SHIFT * k]) } },
+        "metro-station");
+    square("train-sel", 1.45, accent, ["get", "sel"]);
+    square("train-edge", 1.15, "#ffffff");
+    square("train-dot", 1, ["get", "color"]);
+    square("train-hole", 0.45, "#ffffff", ["get", "est"]);
+    // The pointer turns with the heading, and its offset with it: in its own frame the right-hand track is +x.
+    // Sized with the square (POINTER_K of it), so TRACK_SHIFT / POINTER_K of its pixels is the square's shift.
     m.addLayer({ id: "train-heading", type: "symbol", source: "trains", minzoom: 13, filter: ["has", "h"],
       layout: { "icon-image": "city-pointer", "icon-rotate": ["get", "h"], "icon-rotation-alignment": "map",
-        "icon-size": byZoom([13, 0.5, 14, 0.85, 17, 1.05]), "icon-allow-overlap": true, "icon-ignore-placement": true, visibility: vis },
+        "icon-size": size(POINTER_K), "icon-offset": ["literal", [TRACK_SHIFT / POINTER_K, 0]],
+        "icon-allow-overlap": true, "icon-ignore-placement": true, visibility: vis },
       paint: { "icon-opacity": fade } });
+    m.addLayer({ id: "train-age", type: "symbol", source: "trains", minzoom: 12, filter: ageFilter(app.ageMode),
+      layout: { "text-field": ["get", "age"], "text-font": ["Noto Sans Bold"], "text-size": 10, "text-anchor": "top",
+        "text-offset": [0, 1], "text-allow-overlap": true, "text-ignore-placement": true, visibility: vis },
+      paint: { "text-color": ["case", ["get", "stale"], "#d9480f", "#333333"], "text-halo-color": "#ffffff", "text-halo-width": 1.5 } });
   }
+  // The GPS trains whose age shows, per «Ηλικία θέσης» (B4); a timetable train has none.
+  const ageFilter = (mode: AgeMode): FilterSpecification =>
+    mode === "always" ? ["has", "age"] : mode === "old" ? ["all", ["has", "age"], ["get", "stale"]] : ["boolean", false];
 
   // City layer: every live vehicle, drawn by the GPU (DOM markers would not cope with ~1500).
   // Dots at city zoom, discs with the line number from zoom 14. Colours from app.css.
@@ -526,7 +546,7 @@
     if (!still) fleet.spacing(now);
     for (const e of fleet.entries.values()) {
       const dom = owned.has(e.line);
-      const shown = e.key === selKey || passes(only, e.cls, now - e.at);
+      const shown = e.key === selKey || (!isGonePos(now - e.at) && passes(only, e.cls, now - e.at));
       if (!shown && !dom) continue;
       const moved = still && !reduced && e.moved && now - e.moved.at < STILL_TRAIL_S ? e.moved : null;
       if (!dom && (!app.cityOn || (cull && (still
@@ -862,9 +882,11 @@
 
   $effect(() => {
     const vis = app.trainsOn ? "visible" : "none";
-    if (loaded) for (const id of ["train-dot", "train-icon", "train-heading", "train-route", "train-route-casing", "metro-station", "metro-label",
+    if (loaded) for (const id of ["train-sel", "train-edge", "train-dot", "train-hole", "train-heading", "train-age", "train-route", "train-route-2", "train-route-casing", "metro-station", "metro-label",
       "suburban-station", "suburban-label"]) map!.setLayoutProperty(id, "visibility", vis);
   });
+
+  $effect(() => { const f = ageFilter(app.ageMode); if (loaded) map!.setFilter("train-age", f); });
 
   // The rail cards' data of what is on screen, loaded while the map rests (prefetch.ts), by at most
   // four requests at a time from one queue that each view replaces; what the cache holds fresh is
@@ -923,6 +945,8 @@
     const now = app.serverMs();
     const fc = trainsFC({ stasy: app.stasyTrains, suburban: app.suburbanTrains, corridors: app.suburban?.corridors ?? {},
       nowS: now / 1000, sel: app.train, tracks, motions: app.stasyMotion, glide: t => glide.at(t.train, now) });
+    // icon-offset is in the image's pixels, times icon-size: TRACK_SHIFT of them land on the track's line-offset.
+    for (const f of fc.features) { const [x, y] = f.properties!.side as number[]; f.properties!.off = [x * TRACK_SHIFT, y * TRACK_SHIFT]; }
     (map!.getSource("trains") as GeoJSONSource).setData(fc);
   }
   let trainsWereEmpty = true;
@@ -1142,7 +1166,7 @@
   const ended = $derived(gtfsEnded(app.status?.gtfs_expires));
 </script>
 
-<div class="map" class:no-ages={!app.showAges && app.motion} {@attach setup}></div>
+<div class="map ages-{app.ageMode}" {@attach setup}></div>
 {#if app.speedOn}<SpeedLegend meta={speedData?.meta ?? null} onclose={() => app.setSpeedOn(false)} />{/if}
 {#if Info}<Info bind:open={infoOpen} motion={app.motion} {ended} />{/if}
 {#if failed}
