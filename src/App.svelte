@@ -10,7 +10,9 @@
   import FavsPanel from "./lib/ui/FavsPanel.svelte";
   import SearchModal from "./lib/ui/SearchModal.svelte";
   import { applyTheme } from "./lib/theme";
+  import { mapProvider } from "./lib/apple/logic";
 
+  const provider = mapProvider(location.search);   // before init: the card URLs it writes drop `map`
   const app = new AppState();
   app.init();
   $effect(() => applyTheme(app.theme));
@@ -22,7 +24,12 @@
   if (import.meta.env.DEV) Object.assign(window, { __app: app });
 </script>
 
-<MapView {app} />
+{#if provider === "apple"}
+  <!-- Experiment: Apple MapKit JS; loaded only on ?map=apple, so the OSM bundle stays as it was. -->
+  {#await import("./lib/apple/AppleMapView.svelte") then m}<m.default {app} />{/await}
+{:else}
+  <MapView {app} />
+{/if}
 <Panel {app} />
 <StopCard {app} />
 <VehicleCard {app} />

@@ -10,6 +10,7 @@
       "devDependencies": {
         "@sveltejs/vite-plugin-svelte": "^7.3.1",
         "@tsconfig/svelte": "^5.0.8",
+        "@types/apple-mapkit-js-browser": "5.78.1",
         "@types/geojson": "^7946.0.16",
         "@types/web-push": "^3.6.4",
         "svelte": "^5.57.1",
@@ -91,6 +92,8 @@
     "@sveltejs/vite-plugin-svelte": ["@sveltejs/vite-plugin-svelte@7.3.1", "", { "dependencies": { "deepmerge": "^4.3.1", "magic-string": "^1.0.0", "obug": "^2.1.0", "vitefu": "^1.1.2" }, "peerDependencies": { "svelte": "^5.46.4", "vite": "^8.0.0-beta.7 || ^8.0.0" } }, "sha512-ZPsLN8B1e/En+Ak5s4V7srFDT532oS0qieLsQwu63NGKsS+iAjoO2Js1BochlHlglcU+Pt7WAO3C5Ee+4f6gVA=="],
 
     "@tsconfig/svelte": ["@tsconfig/svelte@5.0.8", "", {}, "sha512-UkNnw1/oFEfecR8ypyHIQuWYdkPvHiwcQ78sh+ymIiYoF+uc5H1UBetbjyqT+vgGJ3qQN6nhucJviX6HesWtKQ=="],
+
+    "@types/apple-mapkit-js-browser": ["@types/apple-mapkit-js-browser@5.78.1", "", {}, "sha512-NCtahU17PcJ+xc2Q/0eoltfNo1h2QmH20yxbyY0VBZz3aNcTFE23U5RQ7X9MstCcP9+8nvJEQ01nWSTZivpEbA=="],
 
     "@types/chai": ["@types/chai@5.2.3", "", { "dependencies": { "@types/deep-eql": "*", "assertion-error": "^2.0.1" } }, "sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA=="],
 

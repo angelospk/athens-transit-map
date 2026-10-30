@@ -1,0 +1,14 @@
+# Experiment only (branch exp/apple-maps). The name keeps it apart from anything in production.
+name = "atm-mapkit-token-exp"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[vars]
+# Exact origins, comma-separated. The preview is tailnet-only.
+ALLOWED_ORIGINS = "https://bus.haroldpoi.dev, https://minipc.tail11f3d4.ts.net:10443"
+
+# Secrets, never in this file:
+#   bunx wrangler secret put TEAM_ID
+#   bunx wrangler secret put KEY_ID
+#   bunx wrangler secret put MAPKIT_PRIVATE_KEY < AuthKey_XXXXXXXXXX.p8
