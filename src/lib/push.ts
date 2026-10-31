@@ -42,6 +42,20 @@ export const startPush = (reg: ServiceWorkerRegistration, payload: string) => st
 // A metro, tram or suburban arrival alert (railAlerts.ts); until is the server's.
 export const startRailPush = (reg: ServiceWorkerRegistration, rail: Omit<RailSpec, "until">) => startAlert(reg, { rail });
 
+// A metro, tram or suburban alert in Telegram: the bot keeps the spec for 15 minutes and gives the start
+// payload for its link (t.me/<bot>?start=<payload>); null when the server refused or did not answer.
+export async function railTelegram(rail: Omit<RailSpec, "until">): Promise<string | null> {
+  try {
+    const r = await fetch(`${PUSH_URL}/alerts`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rail, tg: true }), signal: AbortSignal.timeout(15_000),
+    });
+    const p = r.status === 201 ? ((await r.json()) as { p?: unknown }).p : null;
+    return typeof p === "string" && /^r[0-9a-f]{20}$/.test(p) ? p : null;
+  } catch {
+    return null;
+  }
+}
+
 // keepalive: the request goes out even when the page is closing. Each stop is written down first and
 // crossed out when the server confirms it; one left over is sent again on the next load (retryStops),
 // until its alert would have ended anyway.

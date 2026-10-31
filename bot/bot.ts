@@ -6,7 +6,9 @@
 // are still there (same line, variant and stop name), else ends it.
 // Web push: the page sends the same link with its push subscription (POST /alerts, see web()).
 // Rail alerts (metro, tram, suburban, src/lib/railAlerts.ts): the same endpoint with {rail, sub}; they watch a
-// stop's /v2 board instead of the lines, and are kept apart from the bus alerts.
+// stop's /v2 board instead of the lines, and are kept apart from the bus alerts. In Telegram: the page posts
+// {rail, tg: true} and gets a start payload ("r" + a random code, 15 minutes, in memory only); /start with it
+// makes the alert of that chat.
 // Design: docs/superpowers/specs/2026-10-07-stop-alerts-design.md (options B and C). IO comes in through
 // BotDeps, so the logic runs in tests; bot/main.ts wires it to Telegram and the network.
 //
@@ -21,7 +23,8 @@ import { railCheck, railHitText, railNoneText, type RailSpec } from "../src/lib/
 import { decodeAlert, type Rep } from "../src/lib/tglink";
 import type { TripIndex } from "../src/lib/trip";
 import type { LineLive, LineStatic } from "../src/lib/types";
-import type { V2Arrival } from "../src/lib/v2";
+import { fold } from "../src/lib/search";
+import { headsignName, type V2Arrival, type V2Stop } from "../src/lib/v2";
 
 export interface Fetched { status: number; body: unknown; date?: number }   // date: server time (ms)
 export interface TgResult { ok: boolean; result?: unknown; error_code?: number; parameters?: { retry_after?: number } }
@@ -42,9 +45,9 @@ export interface SavedAlert {
   rep?: Rep;   // recurring: spec.until is the end of the current window (or of the last one)
   watch: ReturnType<AlertWatch["snapshot"]>;
 }
-// A rail alert: web push only, one stop and one line and direction (railAlerts.ts).
+// A rail alert: one stop and one line and direction (railAlerts.ts), to one push subscription or one chat.
 export interface SavedRail {
-  id: string; push: PushSub; spec: RailSpec;
+  id: string; push?: PushSub; chat?: number; spec: RailSpec;
   fired: [string, number][];   // arrival key → when it was sent (s)
   said?: boolean;              // "nothing is coming" was sent: say it once
 }
@@ -56,7 +59,9 @@ interface Update { update_id: number; message?: Msg; callback_query?: Callback }
 
 const ALERT_MS = 2 * 3600_000;
 const PER_CHAT = 5;
-const RAIL_PER_SUB = 5;        // rail alerts per push subscription
+const RAIL_PER_SUB = 5;        // rail alerts per push subscription or chat
+const RAIL_LINK_MS = 15 * 60_000;   // a rail start payload is good this long
+const MAX_RAIL_LINKS = 500;
 const REP_PER_CHAT = 5;        // recurring alerts per chat
 const MAX_ALERTS = 200;
 const MAX_LINES = 20;          // lines polled at once, for all chats
@@ -92,6 +97,7 @@ export class Bot {
   private lastStart = new Map<number | string, number>();
   private queue: { method: string; body: Record<string, unknown> }[] = [];
   private draining: Promise<void> | null = null;
+  private railLinks = new Map<string, { spec: Omit<RailSpec, "until">; at: number }>();
 
   constructor(private d: BotDeps, saved?: BotState) {
     this.state = { offset: saved?.offset ?? 0, alerts: saved?.alerts ?? [], rails: saved?.rails ?? [] };
@@ -145,7 +151,8 @@ export class Bot {
     const over = this.rails.filter(a => now > a.spec.until * 1000);
     if (over.length) {
       this.state.rails = this.rails.filter(a => !over.includes(a));
-      this.save();
+      if (this.save()) for (const a of over) if (a.chat != null)   // a push alert ends quietly: the page shows its end
+        this.send(a.chat, `⌛ Τέλος ειδοποίησης για ${a.spec.label} στο ${a.spec.name} (2 ώρες). Για νέα, πάτα πάλι 🔔 στον χάρτη.`);
     }
     await Promise.all([...new Set(this.rails.map(a => a.spec.stop))].map(s => this.pollStop(s)));
   }
@@ -168,6 +175,7 @@ export class Bot {
       if (!r.ok && r.error_code === 403 && typeof m.body.chat_id === "number") {   // blocked by the user
         const chat = m.body.chat_id;
         this.remove(a => a.chat === chat);
+        this.state.rails = this.rails.filter(a => a.chat !== chat);
         this.queue = this.queue.filter(q => q.body.chat_id !== chat);
         this.save();
       } else if (!r.ok) console.error(`telegram ${m.method}: ${r.error_code ?? "network"}`);
@@ -180,11 +188,13 @@ export class Bot {
     const [cmd, arg] = (m.text ?? "").trim().split(/\s+/);
     if (m.chat.type !== "private") return this.send(chat, "Δουλεύω μόνο σε προσωπική συζήτηση.");
     if (cmd === "/stop") {
-      const had = this.state.alerts.some(a => a.chat === chat);
+      const had = this.state.alerts.some(a => a.chat === chat) || this.rails.some(a => a.chat === chat);
       this.remove(a => a.chat === chat);
+      this.state.rails = this.rails.filter(a => a.chat !== chat);
       return this.send(chat, had ? "Σταμάτησαν όλες οι ειδοποιήσεις." : "Δεν είχες ειδοποιήσεις.");
     }
     if (cmd === "/list") return this.list(chat);
+    if (cmd === "/start" && arg?.startsWith("r")) return this.startRailChat(chat, arg);
     if (cmd === "/start" && arg) return this.start(chat, arg);
     this.send(chat, HELP);
   }
@@ -196,12 +206,16 @@ export class Bot {
   }
 
   private list(chat: number) {
-    const mine = this.state.alerts.filter(a => a.chat === chat);
-    if (!mine.length) return this.send(chat, "Δεν έχεις ειδοποιήσεις.");
-    const text = mine.map(a => (a.rep ? `🔁 ${repDays(a.rep.days)} ${hhmm(a.rep.start)}–${hhmm(a.rep.start + a.rep.len)}` : `🔔 έως ${clock(a.spec.until).slice(0, 5)}`) +
-      ` · ${lineList(a)} · ${a.label}`).join("\n");
+    const mine = this.state.alerts.filter(a => a.chat === chat), rails = this.rails.filter(a => a.chat === chat);
+    if (!mine.length && !rails.length) return this.send(chat, "Δεν έχεις ειδοποιήσεις.");
+    const text = [
+      ...mine.map(a => (a.rep ? `🔁 ${repDays(a.rep.days)} ${hhmm(a.rep.start)}–${hhmm(a.rep.start + a.rep.len)}` : `🔔 έως ${clock(a.spec.until).slice(0, 5)}`) +
+        ` · ${lineList(a)} · ${a.label}`),
+      ...rails.map(a => `🚇 έως ${clock(a.spec.until).slice(0, 5)} · ${a.spec.label} προς ${a.spec.toward} · ${a.spec.name}`),
+    ].join("\n");
     const inline_keyboard = [
       ...mine.map(a => [{ text: `Σταμάτα ${lineList(a)} ${a.rep ? hhmm(a.rep.start) : clock(a.spec.until).slice(0, 5)}`, callback_data: `stop:${a.id}` }]),
+      ...rails.map(a => [{ text: `Σταμάτα ${a.spec.label} ${clock(a.spec.until).slice(0, 5)}`, callback_data: `stop:${a.id}` }]),
       [{ text: "Απεγγραφή από όλα", callback_data: "all" }],
     ];
     this.queue.push({ method: "sendMessage", body: { chat_id: chat, text, disable_web_page_preview: true, reply_markup: { inline_keyboard } } });
@@ -234,7 +248,8 @@ export class Bot {
   // The id is random and is the only way to stop an alert from outside.
   async web(req: { method: string; path: string; body: unknown }): Promise<{ status: number; body?: unknown }> {
     if (req.method === "POST" && req.path === "/alerts") {
-      const b = req.body as { p?: unknown; rail?: unknown; sub?: unknown } | null;
+      const b = req.body as { p?: unknown; rail?: unknown; sub?: unknown; tg?: unknown } | null;
+      if (b?.tg === true && b.rail !== undefined && b.sub === undefined) return await this.railLink(b.rail);
       const sub = pushSub(b?.sub);
       if (!sub) return { status: 400, body: { error: "bad" } };
       if (b?.rail !== undefined) return this.startRail(b.rail, sub);
@@ -246,7 +261,7 @@ export class Bot {
     const id = req.method === "DELETE" && /^\/alerts\/([^/]{1,64})$/.exec(req.path)?.[1];
     if (id) {
       const buses = this.state.alerts, rails = this.state.rails;
-      const bus = buses.some(a => a.id === id && a.push), rail = !!rails?.some(a => a.id === id);
+      const bus = buses.some(a => a.id === id && a.push), rail = !!rails?.some(a => a.id === id && a.push);
       if (bus || rail) {
         if (bus) this.state.alerts = buses.filter(a => a.id !== id);
         if (rail) this.state.rails = rails!.filter(a => a.id !== id);
@@ -267,7 +282,7 @@ export class Bot {
     const now = this.d.now();
     if (now - (this.lastStart.get(sub.endpoint) ?? -Infinity) < START_GAP_MS) return { status: 429, body: { error: "soon" } };
     // The oldest rail alerts of this subscription make room; then the limits for everyone.
-    const mine = this.rails.filter(a => a.push.endpoint === sub.endpoint);
+    const mine = this.rails.filter(a => a.push?.endpoint === sub.endpoint);
     const drop = new Set(mine.slice(0, Math.max(0, mine.length - RAIL_PER_SUB + 1)));
     const rest = this.rails.filter(a => !drop.has(a));
     const stops = new Set([...rest.map(a => a.spec.stop), spec.stop]);
@@ -278,6 +293,63 @@ export class Bot {
     this.state.rails = [...rest, a];   // a new array: a failed save puts the old one back as it was
     if (!this.save()) { this.state.rails = before; return { status: 503, body: { error: "busy" } }; }
     return { status: 201, body: { id: a.id, until: a.spec.until } };
+  }
+
+  // A rail start payload for Telegram: the spec waits here until a chat sends /start with it. Anyone may share
+  // the link, so what the bot will write must not be the page's own text: the stop's and the line's names come
+  // from the server, and the direction from the line's head signs.
+  private async railLink(raw: unknown): Promise<{ status: number; body?: unknown }> {
+    const page = railSpec(raw);
+    if (!page) return { status: 400, body: { error: "bad" } };
+    const r = await this.d.get(`${this.d.urls.api}/v2/stops/${encodeURIComponent(page.stop)}`);
+    if (r.status === 404) return { status: 400, body: { error: "bad" } };
+    const b = r.body as { stop?: { name?: unknown }; lines?: { id?: unknown; label?: unknown; name?: unknown }[] } | null;
+    if (r.status !== 200 || typeof b?.stop?.name !== "string" || !Array.isArray(b.lines)) return { status: 503, body: { error: "busy" } };
+    const line = b.lines.find(l => l.id === page.line);
+    const label = line && (typeof line.label === "string" ? line.label : line.name);
+    if (typeof label !== "string") return { status: 400, body: { error: "bad" } };
+    // The direction: the page's, when it is the name of one of its head signs on this line, else the first such name.
+    const d = await this.d.get(`${this.d.urls.api}/v2/lines/${encodeURIComponent(page.line)}`);
+    const det = d.body as { patterns?: { headsign?: unknown }[]; stops?: Record<string, V2Stop> } | null;
+    if (d.status !== 200 || !Array.isArray(det?.patterns)) return { status: 503, body: { error: "busy" } };
+    const signs = new Set(det.patterns.map(p => p.headsign).filter((h): h is string => typeof h === "string").map(h => fold(h.trim())));
+    const names = page.heads.filter(h => signs.has(fold(h.trim()))).map(h => headsignName(h, det.stops));
+    if (!names.length) return { status: 400, body: { error: "bad" } };
+    const spec = { ...page, name: b.stop.name, label, toward: names.includes(page.toward) ? page.toward : names[0] };
+    const now = this.d.now();
+    for (const [k, v] of this.railLinks) if (now - v.at > RAIL_LINK_MS) this.railLinks.delete(k);
+    if (this.railLinks.size >= MAX_RAIL_LINKS) return { status: 503, body: { error: "busy" } };
+    const p = "r" + crypto.randomUUID().replaceAll("-", "").slice(0, 20);
+    this.railLinks.set(p, { spec, at: now });
+    return { status: 201, body: { p } };
+  }
+
+  // /start r…: the rail alert the page left under that payload, for this chat. Its id is the payload, so the
+  // same link again is the same alert.
+  private startRailChat(chat: number, p: string) {
+    const now = this.d.now();
+    const link = this.railLinks.get(p);
+    if (this.rails.some(a => a.id === p && a.chat === chat)) return;
+    if (!link || now - link.at > RAIL_LINK_MS || this.rails.some(a => a.id === p))
+      return this.send(chat, "Ο σύνδεσμος έληξε. Πάτα πάλι 🔔 στη στάση στον χάρτη.");
+    if (now - (this.lastStart.get(chat) ?? -Infinity) < START_GAP_MS) return;
+    const mine = this.rails.filter(a => a.chat === chat);
+    const drop = new Set(mine.slice(0, Math.max(0, mine.length - RAIL_PER_SUB + 1)));
+    const rest = this.rails.filter(a => !drop.has(a));
+    const stops = new Set([...rest.map(a => a.spec.stop), link.spec.stop]);
+    if (rest.length >= MAX_ALERTS || stops.size > MAX_RAIL_STOPS) return this.send(chat, "Πολλές ειδοποιήσεις αυτή τη στιγμή. Δοκίμασε σε λίγο.");
+    this.lastStart.set(chat, now);
+    const a: SavedRail = { id: p, chat, spec: { ...link.spec, until: Math.floor((now + ALERT_MS) / 1000) }, fired: [] };
+    const before = this.state.rails;
+    this.state.rails = [...rest, a];
+    // Saved now, before the confirmation: a confirmed alert must survive a restart.
+    if (!this.save()) {
+      this.state.rails = before;
+      this.lastStart.delete(chat);
+      return this.send(chat, "Δεν αποθηκεύτηκε. Δοκίμασε ξανά σε λίγο.");
+    }
+    const s = a.spec;
+    this.send(chat, `🚇 Θα σου γράψω όταν το ${s.label} προς ${s.toward} είναι ${s.min}′ πριν από το ${s.name}.\nΈως ${clock(s.until).slice(0, 5)}.`, a.id);
   }
 
   // A new alert from a link payload, for one chat or push subscription (owner: what the limits count).
@@ -327,9 +399,10 @@ export class Bot {
     let text = "Τίποτα για σταμάτημα.";
     if (data === "all" || data.startsWith("stop:")) {
       const id = data.slice(5);
-      const mine = (a: SavedAlert) => a.chat === user && (data === "all" || a.id === id);
-      if (this.state.alerts.some(mine)) {
+      const mine = (a: { chat?: number; id: string }) => a.chat === user && (data === "all" || a.id === id);
+      if (this.state.alerts.some(mine) || this.rails.some(mine)) {
         this.remove(mine);
+        this.state.rails = this.rails.filter(a => !mine(a));
         text = data === "all" ? "Σταμάτησαν όλες." : "Σταμάτησε.";
         if (q.message && q.message.chat.id === user)
           this.queue.push({ method: "editMessageReplyMarkup", body: { chat_id: user, message_id: q.message.message_id, reply_markup: { inline_keyboard: [] } } });
@@ -445,21 +518,23 @@ export class Bot {
   }
 
   private checkStop(stop: string, arrivals: V2Arrival[], nowS: number) {
-    const out: { a: SavedRail; data: string }[] = [];
+    const out: { a: SavedRail; text: string }[] = [];
     for (const a of this.rails) {   // read now: alerts stopped during the request are gone
       if (a.spec.stop !== stop) continue;
       const fired = new Map(a.fired);
       const r = railCheck(a.spec, arrivals, nowS, fired);
       a.fired = [...fired];
-      for (const h of r.hits)
-        out.push({ a, data: JSON.stringify({ title: a.spec.label, body: `🚇 ${railHitText(a.spec, h, nowS)}`, tag: a.id }) });
+      for (const h of r.hits) out.push({ a, text: `🚇 ${railHitText(a.spec, h, nowS)}` });
       if (r.none && !a.said && !a.spec.run) {
         a.said = true;
-        out.push({ a, data: JSON.stringify({ title: a.spec.label, body: `⚠️ ${railNoneText(a.spec)}`, tag: a.id }) });
+        out.push({ a, text: `⚠️ ${railNoneText(a.spec)}` });
       }
     }
     if (out.length && this.save())   // as check(): nothing goes out when the save fails
-      for (const m of out) this.queue.push({ method: "push", body: { alert: m.a.id, sub: m.a.push, data: m.data } });
+      for (const { a, text } of out) {
+        if (a.push) this.queue.push({ method: "push", body: { alert: a.id, sub: a.push, data: JSON.stringify({ title: a.spec.label, body: text, tag: a.id }) } });
+        else if (a.chat != null) this.send(a.chat, text, a.id);
+      }
   }
 
   // To the alert's chat (with its stop buttons) or push subscription.
@@ -473,7 +548,7 @@ export class Bot {
     const status = await this.d.push(sub, data);
     if (status === 404 || status === 410) {
       this.remove(a => a.push?.endpoint === sub.endpoint);
-      this.state.rails = this.rails.filter(a => a.push.endpoint !== sub.endpoint);
+      this.state.rails = this.rails.filter(a => a.push?.endpoint !== sub.endpoint);
       this.queue = this.queue.filter(q => (q.body.sub as PushSub | undefined)?.endpoint !== sub.endpoint);
       this.save();
     } else if (status < 200 || status >= 300) console.error(`push: ${status || "network"}`);

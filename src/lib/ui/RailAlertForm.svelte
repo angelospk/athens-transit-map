@@ -4,13 +4,13 @@
 </script>
 
 <script lang="ts">
-  import { canPush, startRailPush, stopPush } from "../push";
+  import { canPush, railTelegram, startRailPush, stopPush } from "../push";
   import type { RailSpec } from "../railAlerts";
   import type { AppState } from "../state.svelte";
 
   // A metro, tram or suburban alert: how many minutes before the train reaches the stop, then
-  // "Ειδοποίησέ με". Web push only (the bot polls the stop's /v2 board), so it needs a browser that has it:
-  // on an iPhone, the map opened from the Home Screen.
+  // "Ειδοποίησέ με" (web push: the bot polls the stop's /v2 board, so it needs a browser that has it; on an
+  // iPhone, the map opened from the Home Screen), or "Στο Telegram" (any browser: the bot gives a link).
   let { app, rail, onstarted }: { app: AppState; rail: Omit<RailSpec, "min" | "until">; onstarted?: () => void } = $props();
 
   const MAX_MIN = 20;
@@ -23,6 +23,25 @@
   const able = canPush();
 
   let err = $state<string | null>(null);
+
+  // The Telegram link for this many minutes: a new number needs a new link.
+  const BOT = "oasa_bus_bot";
+  let tg = $state<{ min: number; url: string } | null>(null);
+  let tgBusy = $state(false);
+  const tgUrl = $derived(tg?.min === min ? tg.url : null);
+  async function toTelegram() {
+    if (tgBusy) return;
+    tgBusy = true;
+    err = null;
+    const m = min, p = await railTelegram({ ...rail, min: m });
+    tgBusy = false;
+    if (p) {
+      const url = `https://t.me/${BOT}?start=${p}`;
+      tg = { min: m, url };
+      setTimeout(() => { if (tg?.url === url) tg = null; }, 14 * 60_000);   // the bot keeps it 15 minutes
+    }
+    else err = "Ο server ειδοποιήσεων δεν απάντησε. Δοκίμασε ξανά σε λίγο.";
+  }
   let closed = false;
   $effect(() => () => { closed = true; });
   let pushing = $state(false);
@@ -58,10 +77,17 @@
     {#if err}<p class="warn" role="status">{err}</p>{/if}
     <p class="note">Για 2 ώρες, και με κλειστή σελίδα. Αν δεν έρχεται κανένα δρομολόγιο (απεργία, τέλος δρομολογίων), σου το λέει.</p>
   {:else if iosTab}
-    <p class="warn">Στο iPhone η ειδοποίηση έρχεται μόνο στον χάρτη από την οθόνη Αφετηρίας: Κοινοποίηση → «Προσθήκη στην οθόνη Αφετηρίας», και άνοιξέ τον από το εικονίδιο.</p>
+    <p class="warn">Στο iPhone η ειδοποίηση έρχεται μόνο στον χάρτη από την οθόνη Αφετηρίας: Κοινοποίηση → «Προσθήκη στην οθόνη Αφετηρίας», και άνοιξέ τον από το εικονίδιο. Ή στο Telegram:</p>
   {:else}
-    <p class="warn">Αυτός ο browser δεν δίνει ειδοποιήσεις (ή τις έχεις κλείσει για τη σελίδα).</p>
+    <p class="warn">Αυτός ο browser δεν δίνει ειδοποιήσεις (ή τις έχεις κλείσει για τη σελίδα). Γίνεται στο Telegram:</p>
   {/if}
+  {#if tgUrl}
+    <a class={able ? "tg" : "main"} href={tgUrl} target="_blank" rel="noopener">Άνοιξε το Telegram και πάτα Start</a>
+    <p class="note">Ο σύνδεσμος ισχύει 15 λεπτά. Η ειδοποίηση έρχεται στο Telegram (@{BOT}) για 2 ώρες.</p>
+  {:else}
+    <button type="button" class={able ? "tg" : "main"} disabled={tgBusy} onclick={toTelegram}>{tgBusy ? "…" : able ? "ή στο Telegram" : `Στο Telegram, ${minText(min)}`}</button>
+  {/if}
+  {#if err && !able}<p class="warn" role="status">{err}</p>{/if}
 </div>
 
 <style>
@@ -77,6 +103,8 @@
     color: var(--bg); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
   .main:disabled { opacity: .5; cursor: default; }
   .note { margin: 0; color: var(--muted); font-size: 12px; }
+  .tg { align-self: center; min-height: 36px; padding: 0 8px; border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+  a.main, a.tg { text-decoration: none; }
   .warn { margin: 0; color: var(--late2); }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 </style>
