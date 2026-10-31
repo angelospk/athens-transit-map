@@ -6,7 +6,7 @@
   import { fetchV2Line, fetchV2Stop } from "../api";
   import { clock } from "../format";
   import { railHeads, type RailSpec } from "../railAlerts";
-  import { dirOf, headsignName, stopRows, type LineDetail, type StopRow, type V2Arrival, type V2Line, type V2Pattern, type V2Stop } from "../v2";
+  import { dirOf, headsignName, stopRows, timesNote, type LineDetail, type StopRow, type V2Arrival, type V2Line, type V2Pattern, type V2Stop } from "../v2";
   import type { AppState } from "../state.svelte";
   import Bell from "./Bell.svelte";
   import CardSheet, { whenText } from "./CardSheet.svelte";
@@ -54,7 +54,7 @@
   const patterns = $derived(Object.fromEntries(Object.entries(details).map(([l, d]) => [l, d.patterns])) as Record<string, V2Pattern[]>);
   const stops = $derived(Object.assign({}, ...Object.values(details).map(d => d.stops)) as Record<string, V2Stop>);
   const rows = $derived(board ? stopRows(board.arrivals, app.serverNow / 1000, patterns, stops) : []);
-  const anyTimetable = $derived(rows.some(r => r.times.some(t => !t.live)));
+  const note = $derived(timesNote(rows.flatMap(r => r.times)));
   const lineOf = (id: string) => board?.lines.find(l => l.id === id) ?? details[id]?.line;
 
   $effect(() => { if (board) untrack(() => app.retitle(board!.stop.name)); });
@@ -96,7 +96,7 @@
     {:else if !rows.length}
       <p class="muted">Καμία άφιξη τώρα.</p>
     {:else}
-      {#if anyTimetable}<p class="note">πρόγραμμα</p>{/if}
+      {#if note}<p class="note">{note}</p>{/if}
       <ul class="rows" aria-live="polite" aria-label="Αφίξεις">
         {#each rows as r (r.line + "|" + (r.dir ?? r.headsign))}
           {@const ln = lineOf(r.line)}
@@ -107,7 +107,7 @@
             <span class="head">→ {r.headsign}</span>
             {#if plat}<span class="plat">Αποβ. {plat}</span>{/if}
             <span class="times">
-              {#each r.times as t, k (k)}<span class:first={k === 0} class:sched={!t.live}>{whenText(t.at, app.serverNow)}</span>{/each}
+              {#each r.times as t, k (k)}<span class:first={k === 0} class:live={t.live} class:sched={!t.live}>{whenText(t.at, app.serverNow)}</span>{/each}
             </span>
           </button><button type="button" class="bell" class:on={alertFor?.rail.line === r.line && alertFor.rail.toward === r.headsign}
             title="Ειδοποίηση άφιξης" aria-label="Ειδοποίηση άφιξης του {labelOf(r.line)} προς {r.headsign}" onclick={() => bell(r)}><Bell /></button></li>
@@ -151,6 +151,7 @@
   .lines .pill { min-height: 36px; min-width: 44px; border: 0; font: inherit; font-weight: 700; cursor: pointer; }
   .plat { flex: none; padding: 1px 8px; border-radius: 10px; background: var(--control); font-size: 11px; }
   .times { flex: none; display: flex; gap: 8px; font-variant-numeric: tabular-nums; color: var(--muted); }
-  .times .first { color: var(--fg); font-weight: 700; }
+  .times .first { color: var(--fg); }
+  .times .live { color: var(--fg); font-weight: 700; }
   .times .sched { font-style: italic; }
 </style>

@@ -9,7 +9,7 @@
   import { busStopCard, routeCard } from "../legacy";
   import { stopIndex, toward } from "../stops";
   import { railHeads, type RailSpec } from "../railAlerts";
-  import { freshness, headsignName, nextStops, vehicleDir, type LineDetail, type V2Run, type V2Vehicle } from "../v2";
+  import { freshness, headsignName, timesNote, nextStops, vehicleDir, type LineDetail, type V2Run, type V2Vehicle } from "../v2";
   import type { AppState } from "../state.svelte";
   import Bell from "./Bell.svelte";
   import CardSheet, { whenText } from "./CardSheet.svelte";
@@ -90,7 +90,7 @@
   const railLabel = $derived(rail.detail?.line.label ?? rail.detail?.line.name ?? (card ? native(card.line) : ""));
   const railHead = $derived(rail.vehicle ? headsignName(rail.vehicle.headsign, rail.detail?.stops) : "");
   const railFresh = $derived(rail.vehicle ? freshness(rail.vehicle, app.serverNow / 1000) : null);
-  const anyTimetable = $derived(rail.ahead.some(a => !a.live));
+  const note = $derived(timesNote(rail.ahead));
 
   // The rail alert sheet at one of the stops ahead: this train when it has a run, else its line and direction.
   let railAt = $state.raw<Omit<RailSpec, "min" | "until"> | null>(null);
@@ -169,7 +169,7 @@
         <p class="meta">{[rail.vehicle.delay_s !== null ? fmtDelay(rail.vehicle.delay_s) : "", rail.vehicle.label ? `#${rail.vehicle.label}` : ""].filter(Boolean).join(" · ")}</p>
       {/if}
       {#if rail.ahead.length}
-        {#if anyTimetable}<p class="note">πρόγραμμα</p>{/if}
+        {#if note}<p class="note">{note}</p>{/if}
         <ol class="ahead" aria-live="polite" aria-label="Επόμενες στάσεις">
           {#each rail.ahead as a, k (a.stop + "/" + k)}
             {@const nm = rail.detail?.stops[a.stop]?.name ?? a.stop}
@@ -214,7 +214,8 @@
   .note.warn { color: #e03131; }
   .ahead { list-style: none; margin: 0; padding: 0; }
   .ahead li { display: flex; align-items: center; gap: 10px; min-height: 36px; font-size: 13px; }
-  .ahead li.next { font-weight: 700; }
+  .ahead li.next .name { font-weight: 700; }
+  .ahead li:not(.sched) .t { font-weight: 700; }
   .ahead li.sched { font-style: italic; }
   .ahead .t { flex: none; min-width: 48px; font-variant-numeric: tabular-nums; }
   .ahead .name { flex: 1; min-width: 0; min-height: 36px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;

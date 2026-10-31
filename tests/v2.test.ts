@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  dirLabels, dirOf, freshness, headsignName, lineVehicleRows, withDirections, nextStops, stopRows, vehicleDir,
+  dirLabels, dirOf, freshness, timesNote, headsignName, lineVehicleRows, withDirections, nextStops, stopRows, vehicleDir,
   type V2Arrival, type V2Pattern, type V2Run, type V2Stop, type V2Vehicle,
 } from "../src/lib/v2";
 
@@ -132,5 +132,16 @@ describe("bus directions", () => {
   it("keeps the patterns' own directions when they differ, or without two groups", () => {
     expect(withDirections(m3, groups)).toBe(m3);
     expect(withDirections(bus, groups.slice(0, 1))).toBe(bus);
+  });
+});
+
+describe("timesNote", () => {
+  it("says which times are live when a card mixes live and timetable times", () => {
+    expect(timesNote([{ live: true }, { live: false }])).toBe("έντονα: ζωντανά · πλάγια: πρόγραμμα");
+  });
+  it("one word when all times are of one kind, nothing with no times", () => {
+    expect(timesNote([{ live: false }, { live: false }])).toBe("πρόγραμμα");
+    expect(timesNote([{ live: true }])).toBe("ζωντανά");
+    expect(timesNote([])).toBeNull();
   });
 });

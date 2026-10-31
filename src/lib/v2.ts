@@ -170,3 +170,10 @@ export function withDirections(patterns: V2Pattern[], groups: { variants: string
     return d < 0 ? p : { ...p, direction: d as 0 | 1 };
   });
 }
+
+// The note over a card's times: live times are bold, timetable times italic (RailStopCard, VehicleCard).
+export function timesNote(times: { live: boolean }[]): string | null {
+  if (!times.length) return null;
+  const live = times.some(t => t.live), sched = times.some(t => !t.live);
+  return live && sched ? "έντονα: ζωντανά · πλάγια: πρόγραμμα" : live ? "ζωντανά" : "πρόγραμμα";
+}
