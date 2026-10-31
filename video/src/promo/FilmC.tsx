@@ -29,7 +29,7 @@ export const SEGS_C: Partial<Record<SceneC, { shot: string; segs: ReturnType<typ
   hook: { shot: "wstop", segs: [fit(50, st.across - 4, HOOK_STOP)] },
   across: { shot: "wstop", segs: [fit(st.across - 4, st.row - 4, len("across"))] },
   // The line card's vehicle list stays «Φόρτωση…» on the paused clock: show it briefly, then the Back taps.
-  stack: { shot: "wstop", segs: [fit(st.row - 4, st.vehicle + 20, 55), fit(st.lineTap - 30, st.lineTap + 34, 64), fit(st.back1 - 6, st.home + 50, len("stack") - 119)] },
+  stack: { shot: "wstop", segs: [fit(st.row - 4, st.vehicle + 20, 55), fit(st.lineTap - 30, st.back1 - 10, 100), fit(st.back1 - 6, st.home + 50, len("stack") - 155)] },
   trains: { shot: "wtrains", segs: [fit(tr.zoom - 50, tr.wide + 50, 120), fit(tr.subCard, tr.subCard + 160, len("trains") - 120)] },
   search: { shot: "wsearch", segs: [fit(se.type - 6, se.close + 10, 180), fit(se.fav - 20, se.favMap + 130, len("search") - 180)] },
   bell: { shot: "wbell", segs: [fit(be.bell - 24, be.sheet + 100, len("bell"))] },
@@ -113,13 +113,13 @@ const HookStop: React.FC = () => {
       <PCap shot="wstop" segs={segs} keys={keys} w={W} h={H} />
       <AbsoluteFill style={{ background: `rgba(17,17,19,${0.35 * (1 - ease(f, L - 20, L + 6))})` }} />
       <div style={{ position: "absolute", left: 0, right: 0, top: 380 }}>
-        <Pin x={W / 2} y={150} size={110} at={-12} />
+        <div style={{ opacity: 1 - ease(f, L - 24, L - 4) }}><Pin x={W / 2} y={150} size={110} at={-12} /></div>
       </div>
       <Head y={600} at={-30} until={L - 12} origin="50% 0%" lines={[
         { t: "Μια εβδομάδα μετά.", size: 112, at: -30 },
         { t: "Τι νέο στον χάρτη.", size: 64, color: "#7fb6ff", weight: 700, at: 6 + BEAT },
       ]} />
-      <Head y={1150} at={L - 4} until={card + 14} lines={[{ t: "Πάτα μια στάση.", size: 104 }]} />
+      <Head y={1150} at={L - 4} until={tap + 4} lines={[{ t: "Πάτα μια στάση.", size: 104 }]} />
       <Head y={slot(st.geoCard as never, "bottom", L_STOP)} at={card + 16} until={HOOK_STOP - 12} lines={L_STOP.map((l, i) => ({ ...l, at: card + 16 + i * BEAT * 1.5 }))} />
     </>
   );
@@ -130,7 +130,7 @@ const Across: React.FC = () => {
   return (
     <>
       <PCap shot="wstop" segs={segs} keys={[{ t: 0, x: PW / 2, y: CY, z: Z0 }, { t: L, x: PW / 2, y: CY, z: Z0 * PUSH }]} w={W} h={H} />
-      <Head y={slot(st.geoAcross as never, "bottom", L_ACROSS)} at={2} until={L - 12} lines={L_ACROSS.map((l, i) => ({ ...l, at: 2 + i * BEAT }))} />
+      <Head y={slot(st.geoAcross as never, "bottom", L_ACROSS)} at={30} until={L - 12} lines={L_ACROSS.map((l, i) => ({ ...l, at: 30 + i * BEAT * 0.6 }))} />
     </>
   );
 };
@@ -141,7 +141,9 @@ const Stack: React.FC = () => {
   const words = ["Στάση", "→ λεωφορείο", "→ γραμμή."];
   return (
     <>
-      <PCap shot="wstop" segs={segs} keys={[{ t: 0, x: PW / 2, y: CY, z: Z0 }, { t: L, x: PW / 2, y: CY, z: Z0 * PUSH }]} w={W} h={H} />
+      {/* On the line card the camera rises to the map and the card's head: its vehicle list read «Φόρτωση…» in the take. */}
+      <PCap shot="wstop" segs={segs} keys={[{ t: 0, x: PW / 2, y: CY, z: Z0 }, { t: 84, x: PW / 2, y: CY, z: Z0 }, { t: 96, x: PW / 2, y: 800, z: 1.15 },
+        { t: b1 + 14, x: PW / 2, y: 800, z: 1.18 }, { t: b1 + 26, x: PW / 2, y: CY, z: Z0 }, { t: L, x: PW / 2, y: CY, z: Z0 * PUSH }]} w={W} h={H} />
       <Plate at={4} until={b1 - 8} origin="0% 0%" style={{ left: 60, top: 250, maxWidth: W - 120, boxSizing: "border-box", padding: "26px 34px" }}>
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
           {words.map((t, i) => <Words key={t} text={t} at={[4, at(segs, st.vehicle), at(segs, st.lineTap) + 20][i]} until={b1 - 8} size={58} color={i === 2 ? "#7fb6ff" : undefined} />)}
@@ -173,7 +175,7 @@ const Search: React.FC = () => {
   const a = 180;
   return (
     <>
-      <PCap shot="wsearch" segs={segs} keys={[{ t: 0, x: PW / 2, y: 900, z: 1.0 }, { t: a - 4, x: PW / 2, y: 900, z: 1.05 }, { t: a, x: PW / 2, y: 1300, z: 0.95 }, { t: L, x: PW / 2, y: 1300, z: 1.0 }]} w={W} h={H} />
+      <PCap shot="wsearch" segs={segs} keys={[{ t: 0, x: PW / 2, y: 900, z: 1.0 }, { t: a - 4, x: PW / 2, y: 900, z: 1.05 }, { t: a, x: PW / 2, y: 0, z: Z0 }, { t: L, x: PW / 2, y: 0, z: Z0 * PUSH }]} w={W} h={H} />
       <Head y={1300} at={4} until={a - 10} lines={[
         { t: "Ψάξε γραμμή ή στάση.", size: 74 },
         { t: "Λεωφορείο, μετρό, τραμ, Προαστιακός.", size: 46, color: C.muted, weight: 600, at: 4 + BEAT },
