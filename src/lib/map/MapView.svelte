@@ -27,7 +27,7 @@
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
   import { STOPS_ZOOM, busStopsFC, stopIndex } from "../stops";
-  import { STOP_ZOOM, VEHICLE_ZOOM, focusZoom, stopPin } from "../focus";
+  import { STOP_ZOOM, VEHICLE_ZOOM, focusZoom, sheetReserve, stopPin } from "../focus";
   import { busStopCard, busVehicleCard, railStationCard, routeCard, stationCard } from "../legacy";
   // Rail stations show from these zooms, small like the bus stops (from STOPS_ZOOM); there are fewer of them.
   const RAIL_ZOOM = 13, SUBURBAN_ZOOM = 12;
@@ -851,6 +851,7 @@
     focusOn = (at, min) => {
       follow = false;   // the tapped thing, not the user, is what to look at
       const pad = sheetPad();
+      if (innerWidth < 720) pad.bottom = Math.max(pad.bottom, sheetReserve(innerHeight));   // a loading card grows
       const p = m.project(at), c = m.getCanvas();
       const inside = p.x > pad.left && p.x < c.clientWidth - pad.right && p.y > pad.top && p.y < c.clientHeight - pad.bottom;
       const zoom = focusZoom(m.getZoom(), inside, min);

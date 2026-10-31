@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { STOP_ZOOM, VEHICLE_ZOOM, focusZoom, stopPin } from "../src/lib/focus";
+import { STOP_ZOOM, VEHICLE_ZOOM, focusZoom, sheetReserve, stopPin } from "../src/lib/focus";
 import type { MetroData } from "../src/lib/metro";
 import type { SuburbanData } from "../src/lib/suburban";
 import type { TripIndex } from "../src/lib/trip";
@@ -37,5 +37,12 @@ describe("focusZoom", () => {
     expect(focusZoom(17, false, STOP_ZOOM)).toBe(17);
     expect(focusZoom(17, true, STOP_ZOOM)).toBeNull();
     expect(focusZoom(STOP_ZOOM, true, STOP_ZOOM)).toBeNull();
+  });
+});
+
+describe("sheetReserve", () => {
+  it("the height a phone card can grow to: its body's cap (55% of the screen, at most 420 px) and its header", () => {
+    expect(sheetReserve(844)).toBe(420 + 110);
+    expect(sheetReserve(600)).toBe(330 + 110);
   });
 });

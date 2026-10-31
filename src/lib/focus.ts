@@ -37,3 +37,9 @@ export function focusZoom(zoom: number, inView: boolean, min: number): number | 
   if (inView && zoom >= min) return null;
   return Math.max(zoom, min);
 }
+
+// On a phone, the bottom card a stop or vehicle opens grows once its data is in: keep this much of the
+// screen free for it (CardSheet: the body is capped at min(55dvh, 420px), plus the header).
+export function sheetReserve(screenH: number): number {
+  return Math.min(screenH * 0.55, 420) + 110;
+}
