@@ -5,6 +5,7 @@ import { Film, DURATION } from "./Film";
 import { FPS } from "./tokens";
 import { FilmA, DURATION_A } from "./promo/FilmA";
 import { FilmB, DURATION_B } from "./promo/FilmB";
+import { FilmC, DURATION_C } from "./promo/FilmC";
 
 export const Root: React.FC = () => (
   <>
@@ -15,6 +16,8 @@ export const Root: React.FC = () => (
     <Composition id="promo-a" component={FilmA} durationInFrames={DURATION_A} fps={FPS} width={1080} height={1920} defaultProps={{ audio: "promo-a.wav" }} />
     <Composition id="promo-a-silent" component={FilmA} durationInFrames={DURATION_A} fps={FPS} width={1080} height={1920} defaultProps={{}} />
     <Composition id="promo-b" component={FilmB} durationInFrames={DURATION_B} fps={FPS} width={1920} height={1080} defaultProps={{ audio: "promo-b.wav" }} />
+    <Composition id="promo-c" component={FilmC} durationInFrames={DURATION_C} fps={FPS} width={1080} height={1920} defaultProps={{ audio: "promo-c.wav" }} />
+    <Composition id="promo-c-silent" component={FilmC} durationInFrames={DURATION_C} fps={FPS} width={1080} height={1920} defaultProps={{}} />
     <Composition id="promo-b-silent" component={FilmB} durationInFrames={DURATION_B} fps={FPS} width={1920} height={1080} defaultProps={{}} />
   </>
 );

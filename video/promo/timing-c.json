@@ -1,0 +1,165 @@
+{
+ "name": "c",
+ "fps": 60,
+ "bpm": 103,
+ "beatFrames": 34.95145631067961,
+ "durationInFrames": 1817,
+ "scenes": {
+  "hook": [
+   0,
+   140
+  ],
+  "stop": [
+   140,
+   419
+  ],
+  "across": [
+   419,
+   559
+  ],
+  "stack": [
+   559,
+   839
+  ],
+  "trains": [
+   839,
+   1118
+  ],
+  "search": [
+   1118,
+   1468
+  ],
+  "bell": [
+   1468,
+   1608
+  ],
+  "end": [
+   1608,
+   1817
+  ]
+ },
+ "music": {
+  "file": "audio/track/soulprodmusic-corporate-upbeat-tech-208855.mp3",
+  "license": "Pixabay Content License",
+  "title": "Corporate Upbeat Tech",
+  "by": "SoulProdMusic",
+  "url": "https://pixabay.com/music/corporate-corporate-upbeat-tech-208855/",
+  "headFrom": 2.5450970873786405,
+  "splice": 1608,
+  "tailFrom": 113.22470873786408
+ },
+ "sfx": [
+  [
+   2,
+   "pop"
+  ],
+  [
+   140,
+   "whoosh"
+  ],
+  [
+   201,
+   "pop"
+  ],
+  [
+   419,
+   "whoosh"
+  ],
+  [
+   455,
+   "tap"
+  ],
+  [
+   559,
+   "whoosh"
+  ],
+  [
+   593,
+   "tap"
+  ],
+  [
+   674,
+   "tap"
+  ],
+  [
+   719,
+   "tap"
+  ],
+  [
+   781,
+   "tap"
+  ],
+  [
+   839,
+   "whoosh"
+  ],
+  [
+   1118,
+   "whoosh"
+  ],
+  [
+   1123,
+   "tick"
+  ],
+  [
+   1127,
+   "tick"
+  ],
+  [
+   1131,
+   "tick"
+  ],
+  [
+   1135,
+   "tick"
+  ],
+  [
+   1139,
+   "tick"
+  ],
+  [
+   1143,
+   "tick"
+  ],
+  [
+   1147,
+   "tick"
+  ],
+  [
+   1152,
+   "tick"
+  ],
+  [
+   1211,
+   "tap"
+  ],
+  [
+   1250,
+   "tap"
+  ],
+  [
+   1345,
+   "tap"
+  ],
+  [
+   1468,
+   "whoosh"
+  ],
+  [
+   1519,
+   "tap"
+  ],
+  [
+   1608,
+   "whoosh"
+  ],
+  [
+   1612,
+   "pop"
+  ],
+  [
+   1618,
+   "end"
+  ]
+ ]
+}

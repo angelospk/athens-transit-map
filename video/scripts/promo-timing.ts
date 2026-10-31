@@ -4,6 +4,7 @@ import { writeFileSync } from "node:fs";
 import { PCAPS, sceneOf } from "../src/promo/kit";
 import { API_A, DURATION_A, GA, SA, SEGS_A } from "../src/promo/FilmA";
 import { API_B, DURATION_B, GB, PIPE_B, SB, SEGS_B, STATS_B } from "../src/promo/FilmB";
+import { DURATION_C, GC, SC, SEGS_C } from "../src/promo/FilmC";
 
 type G = typeof GA;
 // sfx names: A uses the numpy sounds of promo/audio.py (tap, tick, pop, whoosh, chime, end); B uses ids of the earshot
@@ -65,3 +66,15 @@ build("b", GB, 115, SB as never, SEGS_B as never, DURATION_B, (push, at) => {
   url: "https://pixabay.com/music/corporate-tech-corporate-593075/", headFrom: 0.075, splice: GB.bar(SB.open[0]), tailFrom: 0.075 + 86 * 4 * 60 / 115 },
   // no stop-downs: Harold heard the 0.35 s drop before the pitch as an abrupt cut; the music stops only at the end
   { tap: "tap/finger", cut: "swish/flick" });
+
+// C «Τι νέο»: the launch film's track (A's), numpy sounds; keystrokes of the search, a pop on each pin drop, the end chime.
+const se = PCAPS.wsearch.marks;
+build("c", GC, 103, SC as never, SEGS_C as never, DURATION_C, (push, at) => {
+  keys(push, SEGS_C.search as never, at("search"), se.type, 8, 5);
+  push(at("hook") + 2, "pop");                                           // the hook's pin
+  const tap = sceneOf(SEGS_C.hook!.segs as never, PCAPS.wstop.marks.tap + 2);
+  if (tap != null) push(tap, "pop");                                     // the app's pin on the map (lands ~2 capture frames after the tap)
+  push(at("end") + 4, "pop");
+  push(at("end") + 10, "end");
+}, { file: "audio/track/soulprodmusic-corporate-upbeat-tech-208855.mp3", license: "Pixabay Content License", title: "Corporate Upbeat Tech", by: "SoulProdMusic",
+  url: "https://pixabay.com/music/corporate-corporate-upbeat-tech-208855/", headFrom: 0.215 + 4 * 60 / 103, splice: GC.bar(SC.end[0]), tailFrom: 0.215 + 48.5 * 4 * 60 / 103 });

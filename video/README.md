@@ -39,3 +39,16 @@ python3 promo/audio.py a && python3 promo/audio.py b             # public/promo-
 for c in a b; do bunx remotion render src/index.ts promo-$c out/$c-r1.mp4 --concurrency=14 --crf=18 --audio-bitrate=256k --log=error; done
 scripts/promo-deliver.sh r1 [a|b]                                # out/promo/: masters, -web, music-only, contact sheets
 ```
+
+## Promo C «Τι νέο» (30 s, 9:16)
+
+What changed in the week after the launch (releases v0.2.0–v0.2.3), from live captures (no replay: stop boards and
+trains are not in the fix history). `src/promo/FilmC.tsx` (103 BPM, promo A's track), process notes in `promo/whatsnew/`.
+
+```bash
+node --dns-result-order=ipv4first capture/promo.mjs wstop wtrains wsearch wbell   # the takes (wstop retries if a bus takes the tap)
+node --dns-result-order=ipv4first capture/promo.mjs wstills                       # 4 PNG stills → ~/athens-transit-video-local/out/whatsnew/stills
+bun scripts/promo-timing.ts && python3 promo/audio.py c                           # promo/timing-c.json, public/promo-c.wav
+bunx remotion render src/index.ts promo-c out/c-r1.mp4 --concurrency=14 --crf=18 --audio-bitrate=256k --log=error
+scripts/whatsnew-deliver.sh r1                                                    # master, web (<10 MB), music-only, contact sheet
+```

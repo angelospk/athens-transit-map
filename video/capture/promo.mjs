@@ -22,13 +22,18 @@ mkdirSync(OUT, { recursive: true });
 
 const ease = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
-async function shoot(name, url, script, { replay = false, stations = true } = {}) {
+async function shoot(name, url, script, { replay = false, stations = true, quiet = false, push = false } = {}) {
   const rp = replay ? loadReplay(join(ROOT, "capture/replay")) : null;
-  const browser = await chromium.launch({ args: ["--lang=el-GR", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
+  // push: the full Chromium build (channel "chromium"); the headless shell answers Notification.permission "denied".
+  const browser = await chromium.launch({ ...(push ? { channel: "chromium" } : {}), args: ["--lang=el-GR", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
   const ctx = await browser.newContext({ viewport: { width: VW, height: VH }, deviceScaleFactor: DSF, locale: "el-GR", timezoneId: "Europe/Athens",
-    colorScheme: "light", isMobile: true, hasTouch: true, geolocation: HOME, permissions: ["geolocation"], serviceWorkers: "block" });
+    colorScheme: "light", isMobile: true, hasTouch: true, geolocation: HOME,
+    // push (promo C, the bell): a browser that can take web push, so the alert sheet shows its form, not «δεν δίνει ειδοποιήσεις».
+    permissions: push ? ["geolocation", "notifications"] : ["geolocation"], serviceWorkers: push ? "allow" : "block" });
   // Promo B: no metro stations (its black hub rings read as stuck vehicles in a film).
   if (!stations) await ctx.addInitScript(() => localStorage.setItem("stationsOn", "false"));
+  // «Τι νέο» (promo C): no «Βάλε ☆…» hint pill over the map.
+  if (quiet) await ctx.addInitScript(() => localStorage.setItem("favHintSeen", "true"));
   const p = await ctx.newPage();
   p.setDefaultTimeout(120_000);
   // Page time (ms): runs in real time until the clock is paused, then only by the frame steps.
@@ -48,7 +53,8 @@ async function shoot(name, url, script, { replay = false, stations = true } = {}
   await p.clock.install({ time: t0 });
   await p.goto(SITE + url, { waitUntil: "networkidle" });
   await p.waitForTimeout(6000);
-  paused = Math.round(pageNow()) + 500;
+  // The page clock can run ahead of the real one (full Chromium): never pause in its past.
+  paused = Math.max(Math.round(pageNow()), await p.evaluate(() => Date.now())) + 500;
   await p.clock.pauseAt(paused);
 
   const dir = join(ROOT, "capture/frames", "p-" + name);
@@ -391,6 +397,199 @@ const SHOTS = {
     } finally { await browser.close(); }
   },
 };
+
+// ---------- Promo C «Τι νέο» (v0.2.0–v0.2.3, 2026-10-31): live data, no replay (stop boards are not in the history) ----------
+const back = p => p.locator("section.card button[aria-label^='Πίσω']").first();
+// Where the pin's tip and the card's (or sheet's) top edge are, in CSS px: the film places its type between them.
+const geo = async p => {
+  const pin = await p.locator(".stop-pin").first().boundingBox().catch(() => null);
+  const sheet = await p.locator("dialog[open]").first().boundingBox({ timeout: 500 }).catch(() => null);
+  const card = await p.locator("section.card").first().boundingBox({ timeout: 500 }).catch(() => null);
+  return { pin: pin ? [Math.round(pin.x + pin.width / 2), Math.round(pin.y + pin.height)] : null, top: Math.round((sheet ?? card)?.y ?? 844) };
+};
+// Stop tap (pin + zoom), «Απέναντι στάση», then the stack: a bus row → vehicle card → «Γραμμή X ›» → line card, Back, Back.
+// The deep-linked stop's pin gives its pixel; the card is closed, the map zoomed out under the mouse at that pixel (the
+// point stays put), then the finger taps the stop: the map eases in to zoom 16 above the card and the pin drops.
+SHOTS.wstop = () => shoot("wstop", "/?stop=" + (process.env.STOP || "oasa:60718"), async s => {
+  const p = s.page, m = {};
+  const b = await p.locator(".stop-pin").boundingBox();
+  const P = [b.x + b.width / 2, b.y + b.height - 2];
+  m.pin = P;
+  await s.hold(10);
+  await s.key("Escape");
+  await s.hold(40);
+  await p.mouse.move(...P);
+  for (let i = 0; i < 3; i++) { await p.mouse.wheel(0, 400); await s.hold(12); }
+  await s.hold(110);
+  m.move = s.frame;
+  await s.move(P[0], P[1], 30);
+  m.tap = s.frame;
+  await s.tap();
+  s.lift();
+  await s.until(() => p.locator("section.card ul.arr, section.card p.empty").first().isVisible(), 240);
+  // A bus standing at the stop takes the tap (vehicles are hit first): fail, and the caller tries again.
+  if (!decodeURIComponent(p.url()).includes("stop=" + (process.env.STOP || "oasa:60718"))) throw new Error("wstop: the tap opened " + p.url());
+  m.card = s.frame;
+  await s.hold(60);
+  m.geoCard = await geo(p);
+  await s.hold(140);
+  const across = p.locator("section.card button.across").first();
+  if (await across.count()) {
+    m.across = s.frame;
+    await s.press(across, 26);
+    s.lift();
+    await s.until(() => back(p).isVisible(), 120);
+    m.acrossCard = s.frame;
+    await s.hold(50);
+    m.geoAcross = await geo(p);
+    await s.hold(50);
+  }
+  const row = p.locator("section.card ul.arr button.row").first();
+  m.row = s.frame;
+  await s.press(row, 26);
+  s.lift();
+  const lineBtn = p.locator("section.card button", { hasText: /^Γραμμή .* ›$/ }).first();
+  await s.until(() => lineBtn.isVisible(), 180);
+  m.vehicle = s.frame;
+  await s.hold(60);
+  m.lineTap = s.frame;
+  await s.press(lineBtn, 26);
+  s.lift();
+  await s.hold(70);
+  m.back1 = s.frame;
+  await s.press(back(p), 26);
+  await s.hold(30);
+  m.back2 = s.frame;
+  await s.press(back(p), 20);
+  s.lift();
+  m.home = s.frame;
+  await s.hold(40);
+  m.geoHome = await geo(p);
+  await s.hold(40);
+  m.text = await p.locator("section.card").first().innerText().catch(() => "");
+  return m;
+}, { quiet: true });
+// Trains: the metro station card (STASY timetable), the network zoomed out, then a suburban station (live).
+SHOTS.wtrains = () => shoot("wtrains", "/?stop=stasy:συνταγμα-metro", async s => {
+  const p = s.page, m = {};
+  await s.hold(80);
+  m.metroText = await p.locator("section.card").first().innerText().catch(() => "");
+  await s.key("Escape");
+  await s.hold(20);
+  m.zoom = s.frame;
+  await s.move(195, 420, 20);
+  s.lift();
+  // Zoom out by the map's keyboard: wheel events coalesce on the paused clock and moved only ~1 level.
+  await p.locator(".maplibregl-canvas").focus();
+  for (let i = 0; i < 3; i++) { await s.key("-"); await s.hold(14); }
+  m.wide = s.frame;
+  await s.hold(200);
+  await p.goto(SITE + "/?stop=proastiakos:" + (process.env.SUB || "6928c3c150ab5bc72b39d076"), { waitUntil: "load" });
+  m.sub = s.frame;
+  await s.until(() => p.locator("section.card[aria-label*='Αθήνα'] li, section.card li").first().isVisible(), 600);
+  await s.hold(20);
+  m.subCard = s.frame;
+  await s.hold(40);
+  m.geoSub = await geo(p);
+  await s.hold(140);
+  m.subText = await p.locator("section.card").first().innerText().catch(() => "");
+  // Live (upright) vs timetable (italic, .sched) times on the suburban card.
+  m.subLive = await p.locator("section.card .rows span:not(.sched)").count();
+  m.subSched = await p.locator("section.card .rows span.sched").count();
+  return m;
+}, { quiet: true });
+// Search of every mode, ★ on two lines, the favourites-only map.
+SHOTS.wsearch = () => shoot("wsearch", "/", async s => {
+  const p = s.page, m = {};
+  await s.hold(20);
+  await s.press(p.getByText("Αναζήτηση γραμμής ή στάσης").first());
+  await s.until(() => p.locator("dialog[open] input").isVisible(), 60);
+  await s.hold(10);
+  m.type = s.frame;
+  await s.type("Σύνταγμα", 5);
+  await s.hold(40);
+  m.results = s.frame;
+  const stars = p.locator("dialog[open] button.star");
+  for (const i of [0, 1]) {
+    m["star" + i] = s.frame;
+    await s.press(stars.nth(i), 24);
+    await s.hold(18);
+  }
+  s.lift();
+  await s.hold(30);
+  m.close = s.frame;
+  await s.press(p.locator("dialog[open] button.x"), 24);
+  await s.hold(40);
+  const favOnly = p.locator("[aria-label='Τι δείχνει ο χάρτης'] button", { hasText: "Αγαπημένα" }).first();
+  m.fav = s.frame;
+  await s.press(favOnly, 26);
+  s.lift();
+  m.favMap = s.frame;
+  await s.hold(170);
+  return m;
+}, { quiet: true });
+// The bell on a metro station: the rail alert sheet.
+SHOTS.wbell = () => shoot("wbell", "/?stop=stasy:συνταγμα-metro", async s => {
+  const p = s.page, m = {};
+  await s.hold(40);
+  const bell = p.locator("section.card li button[aria-label^='Ειδοποίηση']").first();
+  m.bell = s.frame;
+  await s.press(bell, 30);
+  s.lift();
+  await s.until(() => p.locator("dialog[open]").isVisible(), 60);
+  m.sheet = s.frame;
+  await s.hold(50);
+  m.geoSheet = await geo(p);
+  await s.hold(150);
+  m.text = await p.locator("dialog[open]").innerText().catch(() => "");
+  return m;
+}, { quiet: true, push: true });
+
+// Promo C stills for the thread: real-time PNGs at 390x844 CSS, 3x → STILLS (default ../../athens-transit-video-local/out/whatsnew/stills).
+SHOTS.wstills = async () => {
+  const dir = process.env.STILLS || join(ROOT, "../../../../../athens-transit-video-local/out/whatsnew/stills");
+  mkdirSync(dir, { recursive: true });
+  const browser = await chromium.launch({ channel: "chromium", args: ["--lang=el-GR", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
+  try {
+    const ctx = await browser.newContext({ viewport: { width: VW, height: VH }, deviceScaleFactor: DSF, locale: "el-GR", timezoneId: "Europe/Athens",
+      colorScheme: "light", isMobile: true, hasTouch: true, permissions: ["notifications"], serviceWorkers: "allow" });
+    await ctx.addInitScript(() => localStorage.setItem("favHintSeen", "true"));
+    const p = await ctx.newPage();
+    p.setDefaultTimeout(120_000);
+    const snap = async n => { await p.waitForTimeout(2500); await p.screenshot({ path: join(dir, n), timeout: 600_000 }); console.log("still", n); };
+    // 1: the stop card with minutes, the pin on the map. A deep link, not a map tap: after a tap the map eases while the
+    // card still slides in, and the stop often ends at the card's top edge with the pin half hidden (HUMAN-CHECK.md).
+    await p.goto(SITE + "/?stop=" + (process.env.STOP || "oasa:60718"), { waitUntil: "networkidle" });
+    await p.locator("section.card ul.arr, section.card p.empty").first().waitFor();
+    await p.waitForTimeout(5000);
+    await snap("1-stop.png");
+    // 4: the bell sheet of that stop (lines, −/+ stops, weekly repeat, Telegram).
+    await p.locator("section.card header button.bell").first().click();
+    await p.locator("dialog[open]").waitFor();
+    // One line ticked and the weekly repeat open: the Telegram route shows.
+    await p.locator("dialog[open] input[type=checkbox]").first().check({ force: true }).catch(() => {});
+    await p.locator("dialog[open] button", { hasText: "Κάθε εβδομάδα" }).first().click().catch(() => {});
+    await snap("4-alert.png");
+    // 2: the suburban station card (live times marked).
+    await p.goto(SITE + "/?stop=proastiakos:" + (process.env.SUB || "6928c3c150ab5bc72b39d076"), { waitUntil: "networkidle" });
+    await p.locator("section.card li").first().waitFor();
+    await p.waitForTimeout(4000);
+    await snap("2-trains.png");
+    // 3: the search of every mode with a starred line.
+    await p.goto(SITE + "/", { waitUntil: "networkidle" });
+    await p.waitForTimeout(3000);
+    await p.getByText("Αναζήτηση γραμμής ή στάσης").first().click();
+    await p.locator("dialog[open] input").waitFor();
+    await p.keyboard.type("Σύνταγμα", { delay: 80 });
+    await p.waitForTimeout(1500);
+    await p.locator("dialog[open] button.star").first().click();
+    await snap("3-search-favs.png");
+  } finally { await browser.close(); }
+};
+
+// wstop: up to 6 takes (a bus at the stop can take the tap).
+const once = SHOTS.wstop;
+SHOTS.wstop = async () => { for (let i = 1; ; i++) { try { return await once(); } catch (e) { console.log("take", i, e.message.slice(0, 120)); if (i >= 6) throw e; } } };
 
 const want = process.argv.slice(2);
 for (const [k, run] of Object.entries(SHOTS)) if (!want.length || want.includes(k)) await run();

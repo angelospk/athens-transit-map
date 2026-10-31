@@ -12,6 +12,10 @@ import bspeed from "../../public/cap/p-bspeed.json";
 import bfav from "../../public/cap/p-bfav.json";
 import bplan from "../../public/cap/p-bplan.json";
 import bfocus from "../../public/cap/p-bfocus.json";
+import wstop from "../../public/cap/p-wstop.json";
+import wtrains from "../../public/cap/p-wtrains.json";
+import wsearch from "../../public/cap/p-wsearch.json";
+import wbell from "../../public/cap/p-wbell.json";
 
 export { C, FONT, MONO, inOut, inn, out };
 export const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
@@ -33,7 +37,7 @@ export const grid = (bpm: number) => {
 
 type Track = { x: number; y: number; c: number; d?: number; s?: number }[];
 export const PCAPS: Record<string, { w: number; h: number; frames: number; track: Track; marks: Record<string, number> }> =
-  { city, speed, fav, plan, bcity, bspeed, bfav, bplan, bfocus } as never;
+  { city, speed, fav, plan, bcity, bspeed, bfav, bplan, bfocus, wstop, wtrains, wsearch, wbell } as never;
 export const PW = 1170, PH = 2532;   // phone capture px (390x844 CSS at 3x)
 
 export type Key = { t: number; x: number; y: number; z: number };
