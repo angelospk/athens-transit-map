@@ -303,16 +303,19 @@ export class Bot {
     if (!page) return { status: 400, body: { error: "bad" } };
     const r = await this.d.get(`${this.d.urls.api}/v2/stops/${encodeURIComponent(page.stop)}`);
     if (r.status === 404) return { status: 400, body: { error: "bad" } };
-    const b = r.body as { stop?: { name?: unknown }; lines?: { id?: unknown; label?: unknown; name?: unknown }[] } | null;
+    const b = r.body as { stop?: { name?: unknown }; lines?: { id?: unknown; label?: unknown; name?: unknown }[]; arrivals?: { line?: unknown; headsign?: unknown }[] } | null;
     if (r.status !== 200 || typeof b?.stop?.name !== "string" || !Array.isArray(b.lines)) return { status: 503, body: { error: "busy" } };
     const line = b.lines.find(l => l.id === page.line);
     const label = line && (typeof line.label === "string" ? line.label : line.name);
     if (typeof label !== "string") return { status: 400, body: { error: "bad" } };
-    // The direction: the page's, when it is the name of one of its head signs on this line, else the first such name.
+    // The direction: the page's, when it is the name of one of its head signs, else the first such name.
     const d = await this.d.get(`${this.d.urls.api}/v2/lines/${encodeURIComponent(page.line)}`);
     const det = d.body as { patterns?: { headsign?: unknown }[]; stops?: Record<string, V2Stop> } | null;
     if (d.status !== 200 || !Array.isArray(det?.patterns)) return { status: 503, body: { error: "busy" } };
-    const signs = new Set(det.patterns.map(p => p.headsign).filter((h): h is string => typeof h === "string").map(h => fold(h.trim())));
+    // Head signs the server shows: the line's directions, its runs at this stop now (a short run), its stops.
+    const shown = [...det.patterns.map(p => p.headsign), ...(Array.isArray(b.arrivals) ? b.arrivals.filter(x => x.line === page.line).map(x => x.headsign) : []),
+      ...Object.values(det.stops ?? {}).map(x => x?.name)];
+    const signs = new Set(shown.filter((h): h is string => typeof h === "string").map(h => fold(h.trim())));
     const names = page.heads.filter(h => signs.has(fold(h.trim()))).map(h => headsignName(h, det.stops));
     if (!names.length) return { status: 400, body: { error: "bad" } };
     const spec = { ...page, name: b.stop.name, label, toward: names.includes(page.toward) ? page.toward : names[0] };

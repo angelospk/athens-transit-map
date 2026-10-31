@@ -268,6 +268,15 @@ describe("Bot rail alerts in Telegram", () => {
     expect(texts(t)[0]).toBe("🚇 Θα σου γράψω όταν το Μ3 προς Δ. Πλακεντίας είναι 3′ πριν από το Σύνταγμα.\nΈως 12:00.");
   });
 
+  it("takes a head sign the server shows: a short run on the stop's board, or a stop of the line", async () => {
+    const t = setup();
+    t.board.arrivals = [arr({ headsign: "ΣΥΝΤΑΓΜΑ" })];
+    for (const heads of [["ΣΥΝΤΑΓΜΑ"], ["Δημοτικό Θέατρο"]]) {
+      const r = await t.post({ rail: { ...rail, toward: heads[0], heads }, tg: true });
+      expect(r.status).toBe(201);
+    }
+  });
+
   it("refuses head signs the line does not have, a line the stop does not have, and a stop the server does not know", async () => {
     const t = setup();
     for (const bad of [{ heads: ["ΚΕΡΔΙΣΕΣ ΔΩΡΟ"] }, { line: "stasy:M1" }])
