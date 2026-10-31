@@ -85,8 +85,7 @@
 
   function open(v: V2Vehicle) {
     if (isBus) {
-      app.push(busVehicleCard(nativeLine, native(v.id)));
-      app.flyTo([v.position.lon, v.position.lat]);
+      app.push(busVehicleCard(nativeLine, native(v.id)));   // the map moves to the bus (MapView)
     } else {
       app.push({ kind: "vehicle", id: v.id, line: card!.id, title: `${label} → ${headsignName(v.headsign, detail?.stops)}` });
       app.flyTo([v.position.lon, v.position.lat]);

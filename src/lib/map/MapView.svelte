@@ -27,6 +27,7 @@
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
   import { STOPS_ZOOM, busStopsFC, stopIndex } from "../stops";
+  import { STOP_ZOOM, VEHICLE_ZOOM, focusZoom, stopPin } from "../focus";
   import { busStopCard, busVehicleCard, railStationCard, routeCard, stationCard } from "../legacy";
   // Rail stations show from these zooms, small like the bus stops (from STOPS_ZOOM); there are fewer of them.
   const RAIL_ZOOM = 13, SUBURBAN_ZOOM = 12;
@@ -49,6 +50,8 @@
   let map = $state.raw<MlMap>();
   // The map has its style and our layers; false while a new style (the other theme) loads.
   let loaded = $state(false);
+  // Moves the map to a tapped stop or vehicle (set once the map is up).
+  let focusOn: (at: LngLat, min: number) => void = () => {};
   let failed = $state(false);
 
   // The base map follows the theme. A new style drops our sources, layers and images: they are added again
@@ -845,6 +848,14 @@
       if (inside && m.getZoom() >= 13) return;
       m.easeTo({ center: at, zoom: Math.max(m.getZoom(), 14), padding: pad, duration: reducedMotion.matches ? 0 : 600 });
     };
+    focusOn = (at, min) => {
+      follow = false;   // the tapped thing, not the user, is what to look at
+      const pad = sheetPad();
+      const p = m.project(at), c = m.getCanvas();
+      const inside = p.x > pad.left && p.x < c.clientWidth - pad.right && p.y > pad.top && p.y < c.clientHeight - pad.bottom;
+      const zoom = focusZoom(m.getZoom(), inside, min);
+      if (zoom != null) m.easeTo({ center: at, zoom, padding: pad, duration: reducedMotion.matches ? 0 : 600 });
+    };
     // Frames a set of points (a line's stops), at most as close as a street.
     app.fitPoints = pts => {
       if (pts.length < 2) { if (pts.length) app.flyTo(pts[0]); return; }
@@ -856,6 +867,8 @@
       app.fit = () => {};
       app.flyTo = () => {};
       app.fitPoints = () => {};
+      focusOn = () => {};
+      pin.remove();
       disposed = true;
       cancelAnimationFrame(raf);
       reportSoon.cancel();
@@ -1093,6 +1106,40 @@
     if (loaded) map!.setFilter("bus-stop-selected", ["==", ["get", "i"], app.busStop ?? -1]);
   });
 
+  // A red pin on the open stop (bus, metro, tram or suburban); the map moves to it once, when it opens.
+  const pinEl = document.createElement("div");
+  pinEl.className = "stop-pin";
+  pinEl.innerHTML = `<svg viewBox="0 0 24 32" width="28" height="37" aria-hidden="true"><path d="M12 31s10-11.2 10-19A10 10 0 0 0 2 12c0 7.8 10 19 10 19z" fill="#e5383b" stroke="#fff" stroke-width="2"/><circle cx="12" cy="12" r="3.6" fill="#fff"/></svg>`;
+  const pin = new Marker({ element: pinEl, anchor: "bottom" });
+  let pinKey = "";
+  $effect(() => {
+    if (!loaded) return;
+    const at = stopPin(app);
+    const key = at ? at.join(",") : "";
+    if (key === pinKey) return;
+    pinKey = key;
+    if (!at) { pin.remove(); return; }
+    pin.setLngLat(at).addTo(map!);
+    pinEl.classList.remove("drop");
+    void pinEl.offsetWidth;   // restart the drop animation
+    pinEl.classList.add("drop");
+    untrack(() => focusOn(at, STOP_ZOOM));
+  });
+
+  // A tapped vehicle: the map moves to it once, when it is selected (or once its position is in, from a link).
+  let focusKey = "";
+  $effect(() => {
+    if (!loaded) return;
+    const s = app.selection, key = s?.kind === "vehicle" ? `${s.line}/${s.id}` : "";
+    if (key === focusKey) return;
+    if (!key) { focusKey = ""; return; }
+    const c = app.selectedCity ?? app.selectedVehicle?.v, e = untrack(() => fleet.entries.get(key));
+    const at: LngLat | null = e ? e.mover.pos ?? e.pos : c ? [c.lon, c.lat] : null;
+    if (!at) return;
+    focusKey = key;
+    untrack(() => focusOn(at, VEHICLE_ZOOM));
+  });
+
   $effect(() => {
     if (!loaded) return;
     const h = app.highlight;
@@ -1199,6 +1246,10 @@
 
 <style>
   .map { position: absolute; inset: 0; }
+  :global(.stop-pin) { pointer-events: none; filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.35)); }
+  :global(.stop-pin.drop svg) { animation: pin-drop 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) both; transform-origin: 50% 100%; }
+  @keyframes pin-drop { from { transform: translateY(-18px) scale(0.6); opacity: 0; } to { transform: none; opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { :global(.stop-pin.drop svg) { animation: none; } }
   :global(.segpop b) { font-size: 15px; }
   :global(.segpop div) { font-size: 12px; }
   .nogl { position: absolute; inset: auto 16px 16px; padding: 12px 14px; border-radius: 12px;

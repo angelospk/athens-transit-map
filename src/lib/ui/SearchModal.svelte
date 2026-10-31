@@ -87,9 +87,7 @@
   function openStop(id: string, name: string) {
     remember({ kind: "stop", id, label: name });
     close();
-    app.open({ kind: "stop", id, title: name });
-    const s = stops.find(x => x[0] === id);
-    if (s) app.flyTo([s[3], s[2]]);
+    app.open({ kind: "stop", id, title: name });   // the map moves to the stop's pin (MapView)
   }
 
   const native = (id: string) => id.slice(id.indexOf(":") + 1);

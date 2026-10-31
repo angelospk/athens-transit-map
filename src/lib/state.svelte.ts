@@ -272,7 +272,7 @@ export class AppState {
     addEventListener("popstate", e => this.nav?.popped(e.state));
     this.nav.start(cardFromQuery(location.search));
     for (const id of this.selected) this.startLine(id);
-    void Promise.allSettled(this.selected.map(fetchLineStatic)).then(() => this.fit(this.selected));
+    void Promise.allSettled(this.selected.map(fetchLineStatic)).then(() => { if (!this.stack.length) this.fit(this.selected); });   // a linked card frames its own
     this.loadLines();
     void this.refreshStatus();
     if (this.cityOn) this.startCity();
@@ -400,6 +400,7 @@ export class AppState {
         return;
       case "rail-station": {
         this.railStation = l.id;
+        this.loadSuburban();   // its pin needs the stations, also with the trains off
         const name = this.suburban?.stations.find(s => s.id === l.id)?.name;
         if (!c.title && name) this.retitle(name);
         return;
