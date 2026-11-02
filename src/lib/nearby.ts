@@ -73,3 +73,30 @@ export function distText(m: number): string {
   if (n < 1000) return `${n} μ`;
   return `${(n / 1000).toFixed(1).replace(".", ",").replace(",0", "")} χλμ`;
 }
+
+// OASA writes names in capitals: each word in capitals is shown as a name (its first letter up, the rest down);
+// other words are left as they are.
+export const titleCase = (s: string) =>
+  s.replace(/\p{L}+/gu, w => (w.length > 1 && w === w.toLocaleUpperCase("el") ? w[0] + w.toLocaleLowerCase("el").slice(1) : w));
+
+// Minutes on foot for a straight-line distance, at 80 m a minute: an estimate, at least 1.
+export const walkMin = (m: number) => Math.max(1, Math.ceil(m / 80));
+
+const native = (id: string) => id.slice(id.indexOf(":") + 1);
+
+// A stop's rows in its card: closed, the first n and the other lines as chips (rows first, then the quiet ones);
+// open, every row. more: the toggle shows (open, or something is left out).
+export function foldRows<R extends { line: string }>(rows: R[], quiet: string[], n: number, open: boolean): { shown: R[]; rest: string[]; more: boolean } {
+  if (open) return { shown: rows, rest: [], more: true };
+  const shown = rows.slice(0, n), seen = new Set(shown.map(r => native(r.line)));
+  const rest = [...new Set([...rows.slice(n).map(r => native(r.line)), ...quiet])].filter(l => !seen.has(l));
+  return { shown, rest, more: rows.length > n || rest.length > 0 };
+}
+
+// Under a row's headsign: how its next bus runs. A delay is told only when the feed knows it.
+export function rowNote(t: { live: boolean; delay_s: number | null }): { text: string; tone: "ok" | "late" | "muted" } {
+  if (!t.live) return { text: "από το πρόγραμμα", tone: "muted" };
+  if (t.delay_s == null) return { text: "ζωντανά", tone: "muted" };
+  const late = Math.round(t.delay_s / 60);
+  return late >= 2 ? { text: `αργεί ${late}′`, tone: "late" } : { text: "στην ώρα του", tone: "ok" };
+}

@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  export type IconName = "star" | "star-filled" | "bus" | "metro" | "tram" | "suburban" | "pin" | "stop" | "area" | "street" | "dot";
+  export type IconName = "star" | "star-filled" | "bus" | "metro" | "tram" | "suburban" | "pin" | "stop" | "area" | "street" | "dot" | "walk" | "chevron";
 </script>
 
 <script lang="ts">
@@ -26,6 +26,10 @@
     <path d="M10 18s5.5-5.2 5.5-9.5a5.5 5.5 0 0 0-11 0C4.5 12.8 10 18 10 18z" /><circle cx="10" cy="8.5" r="2" />
   {:else if name === "stop"}
     <path d="M7 18V3" /><rect x="7" y="3" width="9" height="7" rx="1.5" /><path d="M10 6.5h3" />
+  {:else if name === "walk"}
+    <circle cx="11" cy="3.6" r="1.6" /><path d="M9.6 7.2 7.2 9.4v2.6M9.6 7.2l1.6 4.2 2.6 1.6M9.6 7.2l2.6.4 1.4 2.4M10.4 10l-2 7.5M11.2 11.4l1.2 6.1" />
+  {:else if name === "chevron"}
+    <path d="M5.5 8l4.5 4.5L14.5 8" />
   {:else if name === "area"}
     <circle cx="10" cy="10" r="7" /><circle cx="10" cy="10" r="3" />
   {:else if name === "street"}

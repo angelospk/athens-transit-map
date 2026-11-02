@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nearbyGroups, focusLines, onOpen, distText } from "../src/lib/nearby";
+import { nearbyGroups, focusLines, onOpen, distText, titleCase, walkMin, foldRows, rowNote } from "../src/lib/nearby";
 import type { TripIndex } from "../src/lib/trip";
 
 // 0 and 1: one stop on both sides of a street (~44 m apart), 2: the same name 1.1 km away,
@@ -103,5 +103,50 @@ describe("distText", () => {
     expect(distText(126)).toBe("130 μ");
     expect(distText(995)).toBe("1 χλμ");
     expect(distText(1240)).toBe("1,2 χλμ");
+  });
+});
+
+describe("titleCase", () => {
+  it("OASA's capitals as a name: first letter of each word up, the rest down, final sigma kept", () => {
+    expect(titleCase("ΠΛ. ΚΥΨΕΛΗΣ")).toBe("Πλ. Κυψελης");
+    expect(titleCase("ΠΛ ΚΥΨΕΛΗΣ (ΤΕΡΜΑ 036)")).toBe("Πλ Κυψελης (Τερμα 036)");
+    expect(titleCase("ΣΤ.ΚΑΤΕΧΑΚΗ-ΓΑΛΑΤΣΙ")).toBe("Στ.Κατεχακη-Γαλατσι");
+    expect(titleCase("Ήδη γραμμένο")).toBe("Ήδη γραμμένο");   // words not in capitals are left as they are
+    expect(titleCase("ΚΑΙΣΑΡΙΑΝΗ (Προσωρινή λόγω έργων)")).toBe("Καισαριανη (Προσωρινή λόγω έργων)");
+    expect(titleCase("Α ΚΥΨΕΛΗ")).toBe("Α Κυψελη");
+    expect(titleCase("ΑΣ ΠΑΜΕ")).toBe("Ας Παμε");   // a final sigma in a two-letter word
+  });
+});
+
+describe("walkMin", () => {
+  it("minutes on foot at 80 m a minute, at least 1", () => {
+    expect(walkMin(0)).toBe(1);
+    expect(walkMin(230)).toBe(3);
+    expect(walkMin(1000)).toBe(13);
+  });
+});
+
+describe("foldRows", () => {
+  const r = (line: string) => ({ line });
+  it("closed: the first n rows, then the other lines (rows first, then the quiet ones), once each", () => {
+    expect(foldRows([r("oasa:1"), r("oasa:2"), r("oasa:3")], ["9"], 2, false)).toEqual({ shown: [r("oasa:1"), r("oasa:2")], rest: ["3", "9"], more: true });
+  });
+  it("a third bus of a line already shown still needs the toggle", () => {
+    expect(foldRows([r("oasa:1"), r("oasa:2"), r("oasa:1")], [], 2, false)).toEqual({ shown: [r("oasa:1"), r("oasa:2")], rest: [], more: true });
+  });
+  it("nothing more to show: no toggle", () => {
+    expect(foldRows([r("oasa:1")], [], 2, false)).toEqual({ shown: [r("oasa:1")], rest: [], more: false });
+  });
+  it("open: every row, and the toggle to close it", () => {
+    expect(foldRows([r("oasa:1"), r("oasa:2"), r("oasa:3")], [], 2, true)).toEqual({ shown: [r("oasa:1"), r("oasa:2"), r("oasa:3")], rest: [], more: true });
+  });
+});
+
+describe("rowNote", () => {
+  it("live and late by 2 minutes or more, live on time, live with no delay known, timetable", () => {
+    expect(rowNote({ live: true, delay_s: 180 })).toEqual({ text: "αργεί 3′", tone: "late" });
+    expect(rowNote({ live: true, delay_s: 60 })).toEqual({ text: "στην ώρα του", tone: "ok" });
+    expect(rowNote({ live: true, delay_s: null })).toEqual({ text: "ζωντανά", tone: "muted" });
+    expect(rowNote({ live: false, delay_s: null })).toEqual({ text: "από το πρόγραμμα", tone: "muted" });
   });
 });
