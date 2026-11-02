@@ -8,6 +8,7 @@
   import LineCard from "./lib/ui/LineCard.svelte";
   import RailStopCard from "./lib/ui/RailStopCard.svelte";
   import FavsPanel from "./lib/ui/FavsPanel.svelte";
+  import NearbyPanel from "./lib/ui/NearbyPanel.svelte";
   import SearchModal from "./lib/ui/SearchModal.svelte";
   import { applyTheme } from "./lib/theme";
 
@@ -29,4 +30,5 @@
 <LineCard {app} />
 <RailStopCard {app} />
 <FavsPanel {app} />
+<NearbyPanel {app} />
 <SearchModal {app} />

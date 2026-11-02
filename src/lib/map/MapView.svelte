@@ -1,6 +1,6 @@
 <script lang="ts">
   import { LngLatBounds, Map as MlMap, Marker, NavigationControl, Popup, setWorkerUrl, type ExpressionSpecification, type FilterSpecification, type GeoJSONSource,
-    type MapGeoJSONFeature } from "maplibre-gl";
+    type MapGeoJSONFeature, type PaddingOptions } from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
   import workerUrl from "virtual:maplibre-worker";
   import { debounce, throttle } from "../debounce";
@@ -16,6 +16,8 @@
   import { fetchStasy, fetchSuburban, fetchTrainRun } from "../api";
   import { PREFETCH_ZOOM, wanted, type Want } from "../prefetch";
   import { Locator, userPlan, type Fix, type LocState } from "../locate";
+  import { onOpen, type Perm } from "../nearby";
+  import { distanceM } from "../glide";
   import { Mover, planOnto } from "../motion";
   import { shapeLength, stopOffsets } from "../predict";
   import { loadSpeed, SPEED_STOPS, type SpeedData } from "../speed";
@@ -456,15 +458,20 @@
   // My location: polled by Locator, drawn as a DOM marker plus an accuracy circle (map metres).
   let locState = $state<LocState>("off");
   let follow = $state(false);
+  // The view's padding around the open sheet (set once the map loads).
+  let padNow: () => PaddingOptions = () => ({ top: 0, bottom: 0, left: 0, right: 0 });
   let flyOnFix = false;
   let me: { marker: Marker; el: HTMLElement; mover: Mover; fix: Fix } | null = null;
   const locator = new Locator({
     geo: navigator.geolocation,
     onState: s => {
-      locState = s;
+      locState = app.locState = s;
+      if (s === "on") store("geoLast", "granted");   // for a browser without the Permissions API (nearby.ts onOpen)
       if (s === "denied") {
         follow = false;
         store("locOn", false);
+        store("geoLast", "denied");
+        app.nearOpen = false;
         app.notify("Ο browser δεν επιτρέπει πρόσβαση στην τοποθεσία. Άλλαξέ το από τις ρυθμίσεις του.");
       } else if (s === "unavailable") app.notify("Δεν βρέθηκε η τοποθεσία σου. Νέα προσπάθεια σε λίγο.");
     },
@@ -490,37 +497,55 @@
       me.mover.apply(h, now);
     }
     me.fix = f;
+    // «Κοντά σου» follows the user, but not every few metres of GPS noise.
+    const at = app.myPos;
+    if (!at || distanceM([at[1], at[0]], f.pos) > 25) app.myPos = [f.pos[1], f.pos[0]];
     me.el.classList.toggle("moving", plan.geom.length > 1);
     if (f.heading != null && Number.isFinite(f.heading)) me.el.style.setProperty("--h", `${f.heading}deg`);
     showAcc(m, f);
     if (flyOnFix) {
       flyOnFix = false;
-      m.flyTo({ center: f.pos, zoom: Math.max(m.getZoom(), 15.5), duration: 1200 });
+      // Above «Κοντά σου», which may still be loading: keep the lower half free on a phone.
+      const pad = padNow();
+      if (innerWidth < 720) pad.bottom = Math.max(pad.bottom ?? 0, innerHeight * 0.5);
+      m.flyTo({ center: f.pos, zoom: Math.max(m.getZoom(), 15.5), padding: pad, duration: 1200 });
     }
   }
 
   function dropMe() {
     me?.marker.remove();
     me = null;
+    app.myPos = null;
     (map?.getSource("me-acc") as GeoJSONSource | undefined)?.setData(EMPTY);
   }
 
   // The locate button: off → find me and follow; following → off; not following → follow again.
+  // Each tap that leaves the location on also opens «Κοντά σου»; turning it off closes it.
   function locateClick() {
     if (locState === "off" || locState === "denied") {
+      locateMe();
+    } else if (!app.nearShown && !app.stack.length) {
+      // On, with «Κοντά σου» closed: open it again (also while the first fix is still on its way).
       follow = true;
-      flyOnFix = true;
-      store("locOn", true);
-      locator.start();
+      app.showNear();
+      if (me) map?.easeTo({ center: me.mover.pos, zoom: Math.max(map.getZoom(), 15), padding: padNow(), duration: 600 });
     } else if (!follow && me) {
       follow = true;
-      map?.easeTo({ center: me.mover.pos, zoom: Math.max(map.getZoom(), 15), duration: 600 });
+      map?.easeTo({ center: me.mover.pos, zoom: Math.max(map.getZoom(), 15), padding: padNow(), duration: 600 });
     } else {
       follow = false;
+      app.nearOpen = false;
       store("locOn", false);
       locator.stop();
       dropMe();
     }
+  }
+  function locateMe() {
+    follow = true;
+    flyOnFix = true;
+    store("locOn", true);
+    app.showNear();
+    locator.start();
   }
 
   // One frame loop for every moving dot (buses and trains). It runs as often as needed for steps of under half a
@@ -750,14 +775,24 @@
       me?.mover.snap();
     };
     document.addEventListener("visibilitychange", onVisible);
-    // Turned on last time and still allowed: start again (no fly-to; the map stays where it opens).
+    // On open, «Κοντά σου» (nearby.ts onOpen): location allowed → find me and show the stops near me; not decided
+    // yet → the browser asks once, later a button in the panel asks; refused or a linked card → nothing. A link with
+    // the location turned on last time and still allowed starts it again (no fly-to: the map shows the link).
     let disposed = false;
-    try {
-      if (JSON.parse(localStorage.getItem("locOn") ?? "false"))
-        navigator.permissions?.query({ name: "geolocation" }).then(r => {
-          if (r.state === "granted" && !disposed) locator.start();
-        }, () => {});
-    } catch { /* storage blocked */ }
+    const raw = (k: string): unknown => { try { return JSON.parse(localStorage.getItem(k) ?? "null"); } catch { return null; } };
+    const read = (k: string) => !!raw(k);
+    const last = raw("geoLast") === "granted" ? "granted" : raw("geoLast") === "denied" ? "denied" : undefined;
+    const perm: Promise<Perm> = navigator.permissions
+      ? navigator.permissions.query({ name: "geolocation" }).then(r => r.state, () => "unknown" as const)
+      : Promise.resolve("unknown");
+    void perm.then(p => {
+      if (disposed) return;
+      const what = onOpen({ linked: app.linked, perm: p, asked: read("nearAsked"), last });
+      if (what === "none") { if (p === "granted" && read("locOn")) locator.start(); return; }
+      if (what === "ask") store("nearAsked", true);
+      if (what === "button") app.showNear();
+      else locateMe();
+    });
     // One dispatcher: DOM marker (its own handler) → train right under the finger → station right under the finger (drawn over the city
     // vehicles, under a picked line's stops) → city vehicle → stop → station near the finger → route → empty map.
     let taps = 0;   // a later tap wins over a stop card still waiting for the stop index
@@ -832,6 +867,7 @@
 
     map = m;
     app.fit = fitTo;
+    app.locate = () => { if (locState === "off" || locState === "denied") locateMe(); };
     // The view's padding with the bottom sheet on a phone. A card that is still loading (opened from the
     // search) is not in the page yet: assume the sheet's usual half screen.
     const sheetPad = () => {
@@ -840,6 +876,7 @@
       if (innerWidth < 720) pad.bottom = Math.max(pad.bottom, card ? innerHeight - card.top + 16 : innerHeight * 0.45);
       return pad;
     };
+    padNow = sheetPad;
     // Into view, closer when far out; not when it is already well inside the view.
     app.flyTo = at => {
       const pad = sheetPad();
@@ -866,6 +903,7 @@
     if (import.meta.env.DEV) Object.assign(window, { __map: m, __fleet: fleet, __doms: doms });
     return () => {
       app.fit = () => {};
+      app.locate = () => {};
       app.flyTo = () => {};
       app.fitPoints = () => {};
       focusOn = () => {};
@@ -1085,7 +1123,9 @@
       ? ["all", ["==", ["get", "line"], s.line], ["==", ["get", "id"], s.id]]
       : s?.kind === "route" ? ["==", ["get", "line"], s.line] : ["boolean", false];
     const o = !s || app.others === "normal" ? 1 : app.others === "dim" ? 0.22 : 1;
-    const opacity: ExpressionSpecification = ["*", ["case", sel, 1, o], ["case", ["get", "stale"], 0.3, 1], ["case", ["to-boolean", ["get", "rewind"]], 0.5, 1]];
+    // «Κοντά σου» with nothing selected: the lines of the nearest stops stay, the others dim.
+    const near = !s && app.nearFocus ? app.nearFocus : null;
+    const opacity: ExpressionSpecification = ["*", ["case", sel, 1, o], near ? ["case", ["in", ["get", "line"], ["literal", near]], 1, 0.22] : 1, ["case", ["get", "stale"], 0.3, 1], ["case", ["to-boolean", ["get", "rewind"]], 0.5, 1]];
     m.setPaintProperty("city-dot", "circle-opacity", opacity);
     m.setPaintProperty("city-dot", "circle-stroke-opacity", opacity);
     m.setPaintProperty("city-label", "text-opacity", opacity);

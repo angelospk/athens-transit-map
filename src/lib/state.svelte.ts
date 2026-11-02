@@ -22,6 +22,8 @@ import { busVehicleCard, cardTitle, legacyOf, routeCard, trainCard } from "./leg
 import { stopIndex } from "./stops";
 import { busFavIds, loadFavs, toggleLine as toggleFavLineIn, toggleStop, type FavLine, type FavStop, type Favs } from "./favs";
 import { fold } from "./search";
+import { focusLines, nearbyGroups } from "./nearby";
+import type { LocState } from "./locate";
 
 export const STALE_S = 120;
 // A picked line whose feed has no vehicles for this many updates in a row is taken off the map.
@@ -95,6 +97,13 @@ export class AppState {
   favs = $state.raw<Favs>(loadFavs(stored<unknown>("fav.v2", null, () => true), stored<unknown>("favorites", null, () => true)));
   // The favourites panel (★ in the top bar); it shows while no card is open.
   favsOpen = $state(false);
+  // «Κοντά σου» (NearbyPanel): the stops near the user, shown while no card and no favourites are open. myPos: the
+  // last location fix ([lat, lon]); locState: the locate button's state. Both written by MapView.
+  nearOpen = $state(false);
+  myPos = $state.raw<[number, number] | null>(null);
+  locState = $state<LocState>("off");
+  // The page opened on a link to a card or to lines: it shows that, not «Κοντά σου».
+  linked = false;
   // The search modal (B8): closed, or open on a kind filter.
   finder = $state<"all" | "lines" | "stops" | null>(null);
   // Favourites only (B7): the map shows the favourite bus lines and not the city layer. The user's own cityOn
@@ -165,6 +174,8 @@ export class AppState {
   // Set by MapView: frame the given lines once their shapes are loaded; bring a point ([lon, lat]) into view.
   fit: (ids: string[]) => void = () => {};
   flyTo: (at: [number, number]) => void = () => {};
+  // Set by MapView: find me (the browser asks for the permission when it must) and follow.
+  locate: () => void = () => {};
   fitPoints: (pts: [number, number][]) => void = () => {};
 
   private clock = new ClockOffset();
@@ -264,6 +275,7 @@ export class AppState {
 
   init() {
     const ids = selectionIds(location.search);
+    this.linked = ids.length > 0 || !!cardFromQuery(location.search);
     this.selected = ids.slice(0, MAX_LINES);
     if (ids.length > MAX_LINES) this.say(`Ο σύνδεσμος είχε ${ids.length} γραμμές. Κράτησα τις πρώτες ${MAX_LINES}.`);
     this.baseTitle = document.title;
@@ -484,9 +496,21 @@ export class AppState {
   isFavLine = (id: string) => this.favs.lines.some(l => l.id === id);
   // ★ shows the panel: over an open card it closes the cards (the panel shows when none is open), else it toggles.
   toggleFavs() {
+    this.nearOpen = false;
     if (this.stack.length) { this.closeCards(); this.favsOpen = true; return; }
     this.favsOpen = !this.favsOpen;
   }
+
+  // «Κοντά σου» opens over the bare map only: an open card stays as it is.
+  showNear() {
+    if (this.stack.length) return;
+    this.favsOpen = false;
+    this.nearOpen = true;
+  }
+  nearShown = $derived(this.nearOpen && !this.favsOpen && this.stack.length === 0);
+  // The stop groups near the user, nearest first; the city layer keeps the lines of the nearest ones and dims the rest.
+  nearGroups = $derived(this.stopIx && this.myPos ? nearbyGroups(this.stopIx, this.myPos, { max: 4 }) : []);
+  nearFocus = $derived(this.nearShown && this.nearGroups.length ? focusLines(this.nearGroups) : null);
 
   setFavOnly(on: boolean) {
     this.favOnly = on;
