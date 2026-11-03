@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrivalGroups, timeText, toward, linesAt, busStopsFC, stopIndex, twins, alertLinesAt, arrivalNote, stopBack, mineFirst, boardLines, linesToWarm, type StopArrival } from "../src/lib/stops";
+import { arrivalGroups, timeText, toward, headTo, linesAt, busStopsFC, stopIndex, twins, alertLinesAt, arrivalNote, stopBack, mineFirst, boardLines, linesToWarm, type StopArrival } from "../src/lib/stops";
 import type { TripIndex } from "../src/lib/trip";
 
 // 0 and 1: one stop on both sides of a street (~44 m), 2: the same name 1 km away, 3: another name close by.
@@ -46,6 +46,51 @@ describe("twins", () => {
     expect(twins(ix, 0)).toEqual([{ i: 1, m: 44 }]);
     expect(twins(ix, 1)).toEqual([{ i: 0, m: 44 }]);
     expect(twins(ix, 3)).toEqual([]);
+  });
+  it("a stop of another name close by, where the same line runs the other way («1η/2η ΚΟΜΒΟΣ»)", () => {
+    expect(twins(loop, 1).map(t => t.i)).toEqual([3]);
+    expect(twins(loop, 3).map(t => t.i)[0]).toBe(1);
+    expect(twins(loop, 1)[0].m).toBeGreaterThan(40);
+    expect(twins(loop, 1)[0].m).toBeLessThan(70);
+  });
+  it("the next stop the same way is not across the street", () => {
+    expect(twins(loop, 4).map(t => t.i)).not.toContain(1);
+    expect(twins(loop, 1).map(t => t.i)).not.toContain(4);
+  });
+});
+
+// A loop line (309Β-like): out from the start along the north side, round at ΑΥΛΑΚΙ, back on the south side.
+// 1 and 3: the two sides of one road (~58 m); 4: the next stop after 1, the same way.
+const loop: TripIndex = {
+  v: "t",
+  s: [
+    ["ΑΦΕΤΗΡΙΑ", 37.9, 23.9, "200"],
+    ["1η ΚΟΜΒΟΣ", 37.9005, 23.905, "201"],
+    ["ΑΥΛΑΚΙ", 37.9, 23.92, "202"],
+    ["2η ΚΟΜΒΟΣ", 37.9, 23.9052, "203"],
+    ["ΕΠΟΜΕΝΗ", 37.9005, 23.906, "204"],
+  ],
+  l: { L: { v: [0, 1, 4, 2, 3, 0] } },
+};
+
+describe("headTo", () => {
+  it("on a loop, before the turn: the headsign's end", () => {
+    expect(headTo(loop, "L", "v", 1, "ΑΦΕΤΗΡΙΑ - ΑΥΛΑΚΙ")).toEqual({ to: "ΑΥΛΑΚΙ", back: false });
+  });
+  it("on a loop, after the turn: back to the headsign's start", () => {
+    expect(headTo(loop, "L", "v", 3, "ΣΤ. ΚΟΡΩΠΙ - ΑΥΛΑΚΙ")).toEqual({ to: "ΣΤ. ΚΟΡΩΠΙ", back: true });
+  });
+  it("a headsign that names no stop: the turn is the stop farthest from the start, the end the first stop", () => {
+    expect(headTo(loop, "L", "v", 3, "ΚΥΚΛΙΚΗ")).toEqual({ to: "ΑΦΕΤΗΡΙΑ", back: true });
+    expect(headTo(loop, "L", "v", 4, "ΚΥΚΛΙΚΗ")).toEqual({ to: "ΚΥΚΛΙΚΗ", back: false });
+  });
+  it("a line that ends elsewhere, or an unknown variant or stop: the headsign's end", () => {
+    expect(headTo(ix, "040", "a", 0, "Χ - Υ")).toEqual({ to: "Υ", back: false });
+    expect(headTo(loop, "L", "nope", 3, "Χ - Υ")).toEqual({ to: "Υ", back: false });
+    expect(headTo(loop, "L", "v", 2, "Χ - ΑΥΛΑΚΙ")).toEqual({ to: "ΑΥΛΑΚΙ", back: false });
+    // Ends 44 m from its start, at another stop: not a loop.
+    const near: TripIndex = { ...loop, s: [...loop.s, ["ΤΕΡΜΑ", 37.9004, 23.9, "205"]], l: { L: { v: [0, 1, 4, 2, 3, 5] } } };
+    expect(headTo(near, "L", "v", 3, "Χ - ΑΥΛΑΚΙ")).toEqual({ to: "ΑΥΛΑΚΙ", back: false });
   });
 });
 

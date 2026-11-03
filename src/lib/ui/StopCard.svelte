@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { fetchLineStatic, fetchStop, peekStop } from "../api";
-  import { alertLinesAt, arrivalGroups, arrivalNote, boardLines, linesAt, linesToWarm, mineFirst, timeText, toward, twins, type ArrivalGroup, type ArrivalTime, type StopBoard } from "../stops";
+  import { alertLinesAt, arrivalGroups, arrivalNote, boardLines, headTo, linesAt, linesToWarm, mineFirst, timeText, toward, twins, type ArrivalGroup, type ArrivalTime, type StopBoard } from "../stops";
   import Bell from "./Bell.svelte";
   import type { AppState } from "../state.svelte";
   import type { FetchResult } from "../poller";
@@ -49,7 +49,7 @@
     const l = alertLines.find(x => x.line === g.line);
     if (!l) return;
     const same = l.variants.filter(v => v.id === g.variant);
-    alertFor = { line: g.line, toward: toward(g.headsign), lines: [{ line: g.line, variants: same.length ? same : l.variants }] };
+    alertFor = { line: g.line, toward: dest(g).to, lines: [{ line: g.line, variants: same.length ? same : l.variants }] };
   }
   const REFRESH_MS = 20_000;
   let failed = $state(false);
@@ -61,6 +61,8 @@
   // The lines with no bus on its way, of the lines shown.
   const quiet = $derived(lines.filter(l => (showAll || mine.includes(l.line)) && !groups.some(g => g.line === l.line)));
   const big = (t: ArrivalTime) => (t.here ? "τώρα" : timeText(t));
+  // Where a row's bus runs to; on a loop, after the turn, back to the start (headTo).
+  const dest = (g: ArrivalGroup) => (ix && i != null ? headTo(ix, g.line, g.variant, i, g.headsign) : { to: toward(g.headsign), back: false });
   const variantsOf = (line: string) => lines.find(l => l.line === line)?.variants ?? [];
 
   const boardOf = (r: FetchResult | undefined) => {
@@ -154,9 +156,10 @@
           {#each shown as g (g.line + g.headsign)}
             {@const t = g.times[0]}
             {@const note = arrivalNote(t)}
+            {@const d = dest(g)}
             <li><button type="button" class="row" onclick={() => app.openLineAt(g.line, g.variant ? [g.variant] : variantsOf(g.line), t.vehicle)}>
               {@render chip(g.line)}
-              <span class="mid"><span class="to" title={g.headsign}>→ {toward(g.headsign)}</span><small class={note.tone}>{note.text}</small></span>
+              <span class="mid"><span class="to" title={g.headsign}>→ {d.to}{#if d.back}{" "}<span class="back">(επιστροφή)</span>{/if}</span><small class={note.tone}>{note.text}</small></span>
               <span class="when"><b>{big(t)}</b>{#if g.times.length > 1}<small>μετά {g.times.slice(1).map(timeText).join(", ")}</small>{/if}</span>
             </button>{#if alertLines.some(l => l.line === g.line)}<button type="button" class="bell" class:on={alertFor?.line === g.line}
               title="Ειδοποίηση για το {g.line}" aria-label="Ειδοποίηση άφιξης για το {g.line} στη στάση {name}" onclick={() => bell(g)}><Bell /></button>{/if}</li>
@@ -171,9 +174,10 @@
         <ul class="also">
           {#each also as g (g.line + g.headsign)}
             {@const t = g.times[0]}
+            {@const d = dest(g)}
             <li><button type="button" class="row" onclick={() => app.openLineAt(g.line, g.variant ? [g.variant] : variantsOf(g.line), t.vehicle)}>
               {@render chip(g.line)}
-              <span class="to" title={g.headsign}>→ {toward(g.headsign)}{#if t.away}{` · ${t.away} στάσεις`}{/if}</span>
+              <span class="to" title={g.headsign}>→ {d.to}{#if d.back}{" (επιστροφή)"}{/if}{#if t.away}{` · ${t.away} στάσεις`}{/if}</span>
               <b class="w">{big(t)}</b>
             </button></li>
           {/each}
@@ -219,6 +223,7 @@
   p { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
   .sub { margin: 2px 0 0; font-size: 13px; }
   .across { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; text-underline-offset: 3px; }
+  .back { font-weight: 500; color: var(--muted); }
   .across:hover { text-decoration: underline; }
   .seg { display: flex; margin: 0 0 4px; border: 1px solid var(--border); border-radius: 20px; overflow: hidden; }
   .seg button { flex: 1; min-height: 38px; padding: 0 8px; border: 0; background: none; color: var(--fg); font: inherit; font-size: 13px;

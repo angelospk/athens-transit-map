@@ -4,11 +4,13 @@
 
 // No value import of trip.ts: it loads with the planner only.
 import { distanceM } from "./glide";
+import { bearingDeg } from "./heading";
 import { fold } from "./search";
 import type { TripIndex } from "./trip";
 
 export const STOPS_ZOOM = 15;
 export const TWIN_M = 200;   // the same name closer than this is the stop across the street
+export const ACROSS_M = 100; // another name closer than this, where a shared line runs the other way, is too
 
 export interface StopArrival {
   line: string; headsign: string; variant: string; vehicle: string;
@@ -64,20 +66,76 @@ export function linesToWarm(arrivals: StopArrival[], max = 4): string[] {
   return out.slice(0, max);
 }
 
-// Stops of the same name within TWIN_M of stop i (the other direction), nearest first; m in metres.
+// The stops across the street from stop i, nearest first; m in metres. Either the same name within TWIN_M,
+// or (a loop line's «1η/2η ΚΟΜΒΟΣ») another name within ACROSS_M where a line of both runs the other way.
 export function twins(ix: TripIndex, i: number): { i: number; m: number }[] {
   const [name, lat, lon] = ix.s[i], key = fold(name);
   const out: { i: number; m: number }[] = [];
+  let mine: Map<string, number[]> | undefined;
   ix.s.forEach(([n, la, lo], j) => {
     if (j === i) return;
     const m = distanceM([lon, lat], [lo, la]);
     if (m <= TWIN_M && fold(n) === key) out.push({ i: j, m: Math.round(m) });
+    else if (m <= ACROSS_M && !adjacent(ix, i, j)) {
+      mine ??= headings(ix, i);
+      const theirs = headings(ix, j);
+      const opposite = [...mine].some(([line, hs]) => theirs.get(line)?.some(b => hs.some(a => angleDiff(a, b) > 120)));
+      if (opposite) out.push({ i: j, m: Math.round(m) });
+    }
   });
   return out.sort((a, b) => a.m - b.m);
 }
 
+const angleDiff = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
+
+// One stop right after the other on some variant: the next stop the same way, never the one across.
+const adjacent = (ix: TripIndex, a: number, b: number) =>
+  Object.values(ix.l).some(vs => Object.values(vs).some(seq => seq.some((x, p) => p > 0 && ((x === a && seq[p - 1] === b) || (x === b && seq[p - 1] === a)))));
+
+// Which way each line runs at stop k: per line, the bearing from the stop before to the stop after, per pass.
+function headings(ix: TripIndex, k: number): Map<string, number[]> {
+  const out = new Map<string, number[]>();
+  const at = (x: number): [number, number] => [ix.s[x][2], ix.s[x][1]];
+  for (const [line, vs] of Object.entries(ix.l)) {
+    for (const seq of Object.values(vs)) {
+      seq.forEach((x, p) => {
+        if (x !== k || seq.length < 2) return;
+        const a = seq[Math.max(0, p - 1)], b = seq[Math.min(seq.length - 1, p + 1)];
+        if (a === b) return;
+        const list = out.get(line) ?? [];
+        list.push(bearingDeg(at(a), at(b)));
+        out.set(line, list);
+      });
+    }
+  }
+  return out;
+}
+
 // Where a bus runs to: OASA headsigns name the route end to end ("ΠΕΙΡΑΙΑΣ - ΣΥΝΤΑΓΜΑ"), the last is the end.
 export const toward = (headsign: string) => headsign.split(" - ").pop()!.trim() || headsign;
+
+// Where a bus of `line`/`variant` at stop k runs to. On a loop the headsign names the turn (OASA: "ΣΤ. ΚΟΡΩΠΙ -
+// ... - ΑΥΛΑΚΙ"), the same on both sides of a road; after the turn the bus runs back to the start: back, and to
+// is the headsign's first place (or the first stop). The turn: the stop named as the headsign's end, else the
+// stop farthest from the start. Anything unknown: the headsign's end.
+export function headTo(ix: TripIndex, line: string, variant: string, k: number, headsign: string): { to: string; back: boolean } {
+  const end = toward(headsign), plain = { to: end, back: false };
+  const seq = ix.l[line]?.[variant];
+  const p = seq ? seq.indexOf(k) : -1;
+  if (!seq || p < 0 || seq.length < 3) return plain;
+  const pt = (x: number): [number, number] => [ix.s[x][2], ix.s[x][1]];
+  const first = seq[0], last = seq[seq.length - 1];
+  if (first !== last) return plain;   // a loop starts and ends at one stop
+  const key = fold(end);
+  let turn = seq.findIndex(x => fold(ix.s[x][0]) === key);
+  if (turn < 0) {
+    let far = -1;
+    seq.forEach((x, q) => { const d = distanceM(pt(first), pt(x)); if (d > far) { far = d; turn = q; } });
+  }
+  if (p <= turn) return plain;
+  const parts = headsign.split(" - ");
+  return { to: parts.length > 1 ? parts[0].trim() : ix.s[first][0], back: true };
+}
 
 const GONE_MS = 60_000;
 
