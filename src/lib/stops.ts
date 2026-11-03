@@ -19,10 +19,17 @@ export interface StopArrival {
   // rev 8; null: unmatched (trip_id, scheduled) or unknown; missing: an older server
   trip_id?: string | null; scheduled?: number | null; stops_away?: number | null; distance_m?: number | null;
 }
+// Contract rev 18: how often a line usually passes at this hour of this kind of day, learnt from the past
+// weeks; next_at only when the weeks agree and today's timetable has a run near it (the server decides).
+export interface Usual {
+  line: string; headsign: string; day_type: string; days: number;
+  headway_min: number | null; next_hour_headway_min: number | null; next_at: number | null; spread_s: number | null;
+}
 export interface StopBoard {
   stop: { id: string; name: string; lat: number; lon: number };
   lines: string[];
   arrivals: StopArrival[];
+  usual?: Usual[];   // rev 18; missing: an older server
   updated_at: number;
 }
 
@@ -201,4 +208,21 @@ export function stopBack(ix: TripIndex, line: string, variant: string, i: number
 // A stop's arrival groups split into the user's lines (favourites and lines on the map) and the others.
 export function mineFirst<G extends { line: string }>(groups: G[], mine: string[]): { mine: G[]; also: G[] } {
   return { mine: groups.filter(g => mine.includes(g.line)), also: groups.filter(g => !mine.includes(g.line)) };
+}
+
+const clock = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Athens", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+// The usual service of the lines with no bus on its way (groups: the live ones), one row per line and headsign
+// (map#24, wording 2): the server's usual time while it is ahead, else the usual gap at this hour; rows with
+// neither are left out. Nothing from a server before rev 18.
+export function usualRows(usual: Usual[] | undefined, groups: ArrivalGroup[], nowMs: number): { line: string; headsign: string; text: string }[] {
+  const out: { line: string; headsign: string; text: string }[] = [];
+  for (const u of usual ?? []) {
+    if (groups.some(g => g.line === u.line)) continue;
+    const text = u.next_at != null && u.next_at * 1000 > nowMs
+      ? `Συνήθως περνά ~${clock.format(new Date(u.next_at * 1000))} (από τις προηγούμενες εβδομάδες)`
+      : u.headway_min != null ? `Συνήθως περνά κάθε ~${u.headway_min}′ τέτοια ώρα` : null;
+    if (text) out.push({ line: u.line, headsign: u.headsign, text });
+  }
+  return out;
 }

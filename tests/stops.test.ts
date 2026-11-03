@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrivalGroups, timeText, toward, headTo, linesAt, busStopsFC, stopIndex, twins, alertLinesAt, arrivalNote, stopBack, mineFirst, boardLines, linesToWarm, type StopArrival } from "../src/lib/stops";
+import { arrivalGroups, timeText, toward, headTo, linesAt, busStopsFC, stopIndex, twins, alertLinesAt, arrivalNote, stopBack, mineFirst, boardLines, linesToWarm, usualRows, type StopArrival, type Usual, type ArrivalGroup } from "../src/lib/stops";
 import type { TripIndex } from "../src/lib/trip";
 
 // 0 and 1: one stop on both sides of a street (~44 m), 2: the same name 1 km away, 3: another name close by.
@@ -232,4 +232,30 @@ describe("linesToWarm (line files loaded ahead from a stop's board)", () => {
     expect(linesToWarm(arr, 3)).toEqual(["040", "10", "B"]);
   });
   it("is empty for an empty board", () => expect(linesToWarm([])).toEqual([]));
+});
+
+describe("usualRows (contract rev 18, map#24)", () => {
+  const now = Date.UTC(2026, 10, 4, 19, 20) // 21:20 in Athens
+  const u = (line: string, o: Partial<Usual> = {}): Usual => ({ line, headsign: "ΠΕΙΡΑΙΑΣ - ΣΥΝΤΑΓΜΑ", day_type: "weekday", days: 9,
+    headway_min: 15, next_hour_headway_min: null, next_at: null, spread_s: null, ...o });
+  const live = (line: string): ArrivalGroup => ({ line, headsign: "x", variant: "v", times: [{ min: 3, vehicle: "1", late: 0 }] });
+
+  it("a line with no live bus: the headway as text", () => {
+    expect(usualRows([u("040")], [], now)).toEqual([
+      { line: "040", headsign: "ΠΕΙΡΑΙΑΣ - ΣΥΝΤΑΓΜΑ", text: "Συνήθως περνά κάθε ~15′ τέτοια ώρα" }]);
+  });
+  it("a time when the server has one, in Athens time", () => {
+    const at = Date.UTC(2026, 10, 4, 19, 40) / 1000;
+    expect(usualRows([u("040", { next_at: at, spread_s: 60 })], [], now)[0].text)
+      .toBe("Συνήθως περνά ~21:40 (από τις προηγούμενες εβδομάδες)");
+  });
+  it("a time already past falls back to the headway, or to nothing", () => {
+    const past = Date.UTC(2026, 10, 4, 19, 10) / 1000;
+    expect(usualRows([u("040", { next_at: past })], [], now)[0].text).toBe("Συνήθως περνά κάθε ~15′ τέτοια ώρα");
+    expect(usualRows([u("040", { next_at: past, headway_min: null })], [], now)).toEqual([]);
+  });
+  it("nothing for a line with a live bus, and nothing from an older server", () => {
+    expect(usualRows([u("040"), u("608")], [live("040")], now).map(r => r.line)).toEqual(["608"]);
+    expect(usualRows(undefined, [], now)).toEqual([]);
+  });
 });

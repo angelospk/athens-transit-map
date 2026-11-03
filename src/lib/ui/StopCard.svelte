@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { fetchLineStatic, fetchStop, peekStop } from "../api";
-  import { alertLinesAt, arrivalGroups, arrivalNote, boardLines, headTo, linesAt, linesToWarm, mineFirst, timeText, toward, twins, type ArrivalGroup, type ArrivalTime, type StopBoard } from "../stops";
+  import { alertLinesAt, arrivalGroups, arrivalNote, boardLines, headTo, linesAt, linesToWarm, mineFirst, timeText, toward, twins, usualRows, type ArrivalGroup, type ArrivalTime, type StopBoard } from "../stops";
   import Bell from "./Bell.svelte";
   import type { AppState } from "../state.svelte";
   import type { FetchResult } from "../poller";
@@ -82,8 +82,10 @@
   const split = $derived(mineFirst(groups, mine));
   const shown = $derived(showAll ? groups : split.mine);
   const also = $derived(showAll ? [] : split.also.slice(0, 4));
-  // The lines with no bus on its way, of the lines shown.
-  const quiet = $derived(lines.filter(l => (showAll || mine.includes(l.line)) && !groups.some(g => g.line === l.line)));
+  // The lines shown with no bus on its way: how often they usually pass now (backend rev 18, map#24), grey,
+  // never mixed with the live rows; the rest as chips.
+  const usual = $derived(board ? usualRows(board.usual, groups, now).filter(u => showAll || mine.includes(u.line)) : []);
+  const quiet = $derived(lines.filter(l => (showAll || mine.includes(l.line)) && !groups.some(g => g.line === l.line) && !usual.some(u => u.line === l.line)));
   const big = (t: ArrivalTime) => (t.here ? "τώρα" : timeText(t));
   // Where a row's bus runs to; on a loop, after the turn, back to the start (headTo).
   const dest = (g: ArrivalGroup) => (ix && i != null ? headTo(ix, g.line, g.variant, i, g.headsign) : { to: toward(g.headsign), back: false });
@@ -211,6 +213,16 @@
           <li><button type="button" class="row all" onclick={() => (all = true)}>Όλες οι γραμμές της στάσης ({lines.length}) ›</button></li>
         </ul>
       {/if}
+      {#if usual.length}
+        <ul class="usual" aria-label="Συνήθως, χωρίς λεωφορείο κοντά τώρα">
+          {#each usual as u (u.line + u.headsign)}
+            <li><button type="button" class="row" onclick={() => app.openLineAt(u.line, variantsOf(u.line))}>
+              {@render chip(u.line)}
+              <span class="mid"><span class="to" title={u.headsign}>→ {toward(u.headsign)}</span><small>{u.text}</small></span>
+            </button></li>
+          {/each}
+        </ul>
+      {/if}
       {#if quiet.length}
         <div class="quiet" role="group" aria-label="Χωρίς λεωφορείο κοντά τώρα">
           <span>Χωρίς λεωφορείο κοντά τώρα:</span>
@@ -285,6 +297,11 @@
   .also .w { flex: none; font-size: 16px; font-variant-numeric: tabular-nums; }
   .also .all { justify-content: center; border-top: 1px solid var(--border); color: var(--accent); font-weight: 600; }
   .tick { margin-right: 4px; vertical-align: -1px; }
+  .usual { margin-top: 8px; }
+  .usual li { border-bottom: 1px solid var(--border); }
+  .usual .row { min-height: 48px; }
+  .usual .to { color: var(--muted); font-weight: 500; }
+  .usual small { color: var(--muted); font-size: 12px; font-weight: 500; line-height: 1.3; white-space: normal; }
   .quiet { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 0 0; color: var(--muted); font-size: 12px; }
   .quiet .chip { min-width: 34px; min-height: 28px; padding: 2px 7px; font-size: 12px; cursor: pointer; }
   .empty { margin: 12px 0; font-size: 13px; }
