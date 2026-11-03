@@ -6,6 +6,7 @@
   import { untrack } from "svelte";
   import { fetchV2LineVehicles, fetchV2Stop } from "../api";
   import { lineSummary, type FavStop } from "../favs";
+  import { forLine } from "../disruptions";
   import { busVehicleCard } from "../legacy";
   import { stopRows, type StopRow, type V2Arrival, type V2Line, type V2Stop, type V2Vehicle } from "../v2";
   import type { AppState } from "../state.svelte";
@@ -143,6 +144,8 @@
         {@const vs = vehicles[l.id]}
         <button type="button" class="row" onclick={() => app.push({ kind: "line", id: l.id, title: label(l.id) })}>
           <span class="pill" style:--c={bd.bg} style:--t={bd.fg}>{label(l.id)}</span>
+          {#if forLine(app.disruptions, l.id, app.serverNow).length}<span class="warn" role="img" aria-label="Ανακοίνωση για τη γραμμή"
+            title="Ανακοίνωση για τη γραμμή: δες την κάρτα της">⚠</span>{/if}
           <span class="head muted">{vs ? lineSummary(vs) + (failed["l:" + l.id] ? " · παλιά δεδομένα" : "") : failed["l:" + l.id] ? "Δεν φόρτωσε. Δοκιμάζω ξανά." : "Φόρτωση…"}</span>
           <span aria-hidden="true" class="chev">›</span>
         </button>
@@ -173,6 +176,7 @@
   .when b { font-size: 15px; }
   .when small { color: var(--muted); font-size: 11px; white-space: nowrap; }
   .chev { flex: none; color: var(--muted); }
+  .warn { flex: none; color: var(--late3); font-size: 14px; }
   .all { display: block; width: 100%; min-height: 36px; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px;
     font-weight: 600; cursor: pointer; }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

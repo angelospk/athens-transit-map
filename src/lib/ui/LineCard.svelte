@@ -9,6 +9,8 @@
   import { dirLabels, headsignName, lineVehicleRows, withDirections, type LineDetail, type V2Vehicle } from "../v2";
   import type { AppState } from "../state.svelte";
   import CardSheet from "./CardSheet.svelte";
+  import DisruptionRows from "./DisruptionRows.svelte";
+  import { forLine } from "../disruptions";
   import Timetable from "./Timetable.svelte";
 
   let { app }: { app: AppState } = $props();
@@ -82,6 +84,7 @@
   let showTimes = $state(false);
   const color = $derived(isBus ? app.lineColor(nativeLine) : { bg: detail?.line.color ?? "#3b5bdb", fg: detail?.line.text_color ?? "#ffffff" });
   const starred = $derived(!!card && app.isFavLine(card.id));
+  const disruptions = $derived(card ? forLine(app.disruptions, card.id, app.serverNow) : []);
 
   function open(v: V2Vehicle) {
     if (isBus) {
@@ -106,6 +109,7 @@
       <span class="pill" style:--c={color.bg} style:--t={color.fg}>{label}</span>
       <h2>{detail?.line.name ?? ""}</h2>
     {/snippet}
+    <DisruptionRows alerts={disruptions} />
     {#if failed}
       <p class="muted">Δεν φόρτωσε η γραμμή. Δοκίμασε ξανά.</p>
     {:else if !detail}

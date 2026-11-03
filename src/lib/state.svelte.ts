@@ -2,7 +2,7 @@
 
 import { directionGroups, isHidden } from "./directions";
 import { ageModeOf, type AgeMode, type Only } from "./format";
-import { fetchCity, fetchLine, fetchLines, fetchLineStatic, fetchRailMotion, fetchStatus, fetchTile, fetchTrains } from "./api";
+import { fetchV2Alerts, fetchCity, fetchLine, fetchLines, fetchLineStatic, fetchRailMotion, fetchStatus, fetchTile, fetchTrains } from "./api";
 import { cityKey, isCityLive } from "./city";
 import { loadMetro, type MetroData } from "./metro";
 import { loadSuburban, type SuburbanData } from "./suburban";
@@ -22,6 +22,7 @@ import { busVehicleCard, cardTitle, legacyOf, routeCard, trainCard } from "./leg
 import { stopIndex } from "./stops";
 import { busFavIds, loadFavs, toggleLine as toggleFavLineIn, toggleStop, type FavLine, type FavStop, type Favs } from "./favs";
 import { fold } from "./search";
+import { parseAlerts, type Disruption } from "./disruptions";
 import { focusLines, nearbyGroups } from "./nearby";
 import type { LocState } from "./locate";
 
@@ -29,6 +30,7 @@ export const STALE_S = 120;
 // A picked line whose feed has no vehicles for this many updates in a row is taken off the map.
 const EMPTY_DROPS = 2;
 const STATUS_EVERY_MS = 60_000;
+const DISRUPTIONS_EVERY_MS = 5 * 60_000;   // the server caches /v2/alerts for 5 min
 const TILE_TIMEOUT_MS = 15_000;
 
 export type RailLine = { kind: "metro" | "suburban"; id: string };
@@ -290,6 +292,8 @@ export class AppState {
     if (this.cityOn) this.startCity();
     this.loadMetro();
     this.startTrains();
+    void this.loadDisruptions();
+    setInterval(() => { if (!document.hidden) void this.loadDisruptions(); }, DISRUPTIONS_EVERY_MS);
     setInterval(() => (this.now = Date.now()), 1000);
     setInterval(() => { if (!document.hidden) void this.refreshStatus(); }, STATUS_EVERY_MS);
     document.addEventListener("visibilitychange", () => {
@@ -494,6 +498,19 @@ export class AppState {
   toggleFavLine(l: FavLine) { this.setFavs(toggleFavLineIn(this.favs, l)); }
   isFavStop = (id: string) => this.favs.stops.some(s => s.id === id);
   isFavLine = (id: string) => this.favs.lines.some(l => l.id === id);
+
+  // Service disruptions (/v2/alerts); a failed load keeps the last list. The strikes closed by the user, by alert id.
+  disruptions = $state.raw<Disruption[]>([]);
+  closedStrikes = $state.raw<string[]>(stored<string[]>("strikesClosed", [], v => Array.isArray(v) && v.every(x => typeof x === "string")));
+  async loadDisruptions() {
+    const r = await fetchV2Alerts();
+    if (r.status === 200) this.disruptions = parseAlerts(r.body);
+  }
+  closeStrike(id: string) {
+    // Only the ids still listed are kept, so the list does not grow.
+    this.closedStrikes = [...this.closedStrikes.filter(x => this.disruptions.some(a => a.id === x)), id];
+    store("strikesClosed", this.closedStrikes);
+  }
   // ★ shows the panel: over an open card it closes the cards (the panel shows when none is open), else it toggles.
   toggleFavs() {
     this.nearOpen = false;

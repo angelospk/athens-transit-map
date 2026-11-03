@@ -7,6 +7,8 @@
   import type { FetchResult } from "../poller";
   import Back from "./Back.svelte";
   import Icon from "./Icon.svelte";
+  import DisruptionRows from "./DisruptionRows.svelte";
+  import { forStop } from "../disruptions";
   import { busStopCard, legacyOf } from "../legacy";
 
   // The tapped bus stop, laid out as the phone app's: the user's lines first («Οι γραμμές μου | Όλες»), each
@@ -32,6 +34,9 @@
   // The star: the stop's /v2 id is oasa:<GTFS id>; an index from before the ids has none.
   const favId = $derived(id ? `oasa:${id}` : null);
   const starred = $derived(!!favId && app.isFavStop(favId));
+  // The OASA notices about the stop or its lines (/v2 ids: oasa:<GTFS stop id>, oasa:<line>).
+  const lineIds = $derived(lines.map(l => `oasa:${l.line}`));
+  const disruptions = $derived(favId ? forStop(app.disruptions, favId, lineIds, app.serverNow) : []);
   const across = $derived(ix && i != null ? twins(ix, i)[0] : undefined);
 
   // «Οι γραμμές μου»: the stop's lines among the favourites and the lines on the map.
@@ -137,6 +142,7 @@
       {/if}
       <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.closeCards()}>×</button>
     </header>
+    <DisruptionRows alerts={disruptions} lines={lineIds} />
     {#if app.alert}
       {@const a = app.alert}
       <p class="on"><Bell /> Ειδοποίηση: {a.lines.map(l => l.line).join(", ")}, {a.n === 1 ? "στην προηγούμενη στάση" : `${a.n} στάσεις πριν`} από {a.label}.

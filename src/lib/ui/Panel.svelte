@@ -9,6 +9,7 @@
   import Icon from "./Icon.svelte";
   import LinePicker from "./LinePicker.svelte";
   import StatusBanner from "./StatusBanner.svelte";
+  import { strikes } from "../disruptions";
 
   let { app }: { app: AppState } = $props();
 
@@ -88,6 +89,9 @@
   $effect(() => { if (focused.length < 2) focusOpen = false; });
 
 
+  // A strike today (/v2/alerts, urgent): one line under the bar until the user closes it.
+  const strike = $derived(strikes(app.disruptions, app.serverNow, app.closedStrikes)[0]);
+
   const oldest = $derived.by(() => {
     const ts = app.selected.flatMap(l => (app.live[l] ? [app.live[l].updated_at] : []));
     return ts.length ? Math.min(...ts) : null;
@@ -107,6 +111,14 @@
   <div class="bar">
     <LinePicker {app} expanded={!collapsed} onsearch={() => (app.finder = "all")} {tail} />
   </div>
+
+  {#if strike}
+    <div class="strike" role="note">
+      <a href={strike.url} target="_blank" rel="noopener" title={strike.title} aria-label="{strike.title}. Ανοίγει σε νέα καρτέλα"><span
+        aria-hidden="true">⚠</span> {strike.title} <span aria-hidden="true">›</span></a>
+      <button type="button" aria-label="Κλείσιμο ειδοποίησης απεργίας" onclick={() => app.closeStrike(strike.id)}>✕</button>
+    </div>
+  {/if}
 
   <!-- Favourites only (B7): what the map shows, as a two-way switch. -->
   {#if app.favorites.length}
@@ -451,6 +463,12 @@
   .focus button:hover { background: var(--control); }
   .focus svg { transition: transform .15s; }
   .focus svg.up { transform: rotate(180deg); }
+  .strike { display: flex; align-items: center; gap: 2px; min-height: 32px; margin-top: 8px; padding: 0 2px 0 10px; border-radius: 10px;
+    background: var(--late3); color: #fff; font-size: 13px; font-weight: 600; }
+  .strike a { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: none; }
+  .strike a:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .strike button { flex: none; width: 32px; height: 30px; border: 0; border-radius: 8px; background: none; color: inherit; font-size: 14px; cursor: pointer; }
+  @media (pointer: coarse) { .strike { min-height: 44px; } .strike button { width: 44px; height: 44px; } }
   .hit { display: flex; align-items: flex-start; gap: 6px; margin-top: 8px; padding: 8px 4px 8px 10px; border-radius: 10px;
     background: var(--accent); color: #fff; font-size: 14px; font-weight: 600; }
   .hit span { flex: 1; }

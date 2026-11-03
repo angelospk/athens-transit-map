@@ -142,3 +142,5 @@ export const fetchV2Run = (id: string) => v2Get(`runs/${enc(id)}`, 15_000, "run"
 // The search indexes (B8): every Line and every Stop of every mode.
 export const fetchV2Lines = () => v2Get("lines", 3_600_000, "lines");
 export const fetchV2Stops = () => v2Get("stops", 3_600_000, "stops");
+// Service disruptions (disruptions.ts), cached 5 min by the server.
+export const fetchV2Alerts = () => v2Get("alerts", 300_000, "alerts");
