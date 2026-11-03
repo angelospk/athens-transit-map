@@ -355,6 +355,7 @@
       paint: { "circle-radius": 3.5, "circle-color": "#fff", "circle-stroke-color": MUNI, "circle-stroke-width": 1.5 } });
   }
   const MUNI_LAYERS = ["municipal-line", "municipal-hit", "municipal-stop"];
+  let closePopup = () => {};   // the map's one popup (set on mount): a municipal one must go with the layer
 
   // A tapped municipal route or stop: its municipality and a link to the municipality's timetable page.
   function municipalInfo(p: Record<string, unknown>) {
@@ -803,6 +804,7 @@
     m.on("moveend", e => (ticked(e) ? reportFollow() : reportSoon()));
 
     const popup = new Popup({ closeButton: false, offset: 10, maxWidth: "240px" });
+    closePopup = () => { if (popup.getElement()?.querySelector(".munipop")) popup.remove(); };
     m.on("load", () => {
       // MapLibre opens the credits at first; collapse them. It does not reopen them (the control is compact).
       const attrib = node.querySelector(".maplibregl-ctrl-attrib");
@@ -838,7 +840,8 @@
       else locateMe();
     });
     // One dispatcher: DOM marker (its own handler) → train right under the finger → station right under the finger (drawn over the city
-    // vehicles, under a picked line's stops) → city vehicle → stop → station near the finger → route → empty map.
+    // vehicles, under a picked line's stops) → city vehicle → stop → station near the finger → route → municipal route or
+    // stop → speed segment → empty map.
     let taps = 0;   // a later tap wins over a stop card still waiting for the stop index
     m.on("click", e => {
       const tap = ++taps;
@@ -902,14 +905,6 @@
       }
       const route = m.queryRenderedFeatures(e.point, { layers: ["routes-hit"] })[0];
       if (route) return app.open(routeCard(String(route.properties.line), String(route.properties.variant)));
-      const box: [[number, number], [number, number]] = [[e.point.x - 8, e.point.y - 8], [e.point.x + 8, e.point.y + 8]];
-      const seg = app.speedOn ? m.queryRenderedFeatures(box, { layers: ["speed"] })[0] : undefined;
-      if (seg) {
-        const p = seg.properties;
-        const kmh = (v: unknown) => (v == null ? "–" : `${Math.round(Number(v))}`);
-        popup.setLngLat(e.lngLat).setDOMContent(segInfo(p, kmh)).addTo(m);
-        return;
-      }
       if (app.municipalOn) {
         const near = (r: number) => m.queryRenderedFeatures([[e.point.x - r, e.point.y - r], [e.point.x + r, e.point.y + r]],
           { layers: ["municipal-stop", "municipal-hit"] });
@@ -919,6 +914,14 @@
             .setDOMContent(municipalInfo(muni.properties)).addTo(m);
           return;
         }
+      }
+      const box: [[number, number], [number, number]] = [[e.point.x - 8, e.point.y - 8], [e.point.x + 8, e.point.y + 8]];
+      const seg = app.speedOn ? m.queryRenderedFeatures(box, { layers: ["speed"] })[0] : undefined;
+      if (seg) {
+        const p = seg.properties;
+        const kmh = (v: unknown) => (v == null ? "–" : `${Math.round(Number(v))}`);
+        popup.setLngLat(e.lngLat).setDOMContent(segInfo(p, kmh)).addTo(m);
+        return;
       }
       app.closeCards();
     });
@@ -1115,6 +1118,7 @@
 
   $effect(() => {
     const vis = app.municipalOn ? "visible" : "none";
+    if (vis === "none") closePopup();
     if (loaded) for (const id of MUNI_LAYERS) map!.setLayoutProperty(id, "visibility", vis);
   });
 
