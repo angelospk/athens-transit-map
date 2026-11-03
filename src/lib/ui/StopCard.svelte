@@ -10,6 +10,8 @@
   import DisruptionRows from "./DisruptionRows.svelte";
   import { forStop } from "../disruptions";
   import { busStopCard, legacyOf } from "../legacy";
+  import { reportedStops } from "../stopfix";
+  import StopFixBar from "./StopFixBar.svelte";
 
   // The tapped bus stop, laid out as the phone app's: the user's lines first («Οι γραμμές μου | Όλες»), each
   // line and headsign with its next bus in big minutes, where it is and whether it runs late, the next ones,
@@ -38,6 +40,23 @@
   const lineIds = $derived(lines.map(l => `oasa:${l.line}`));
   const disruptions = $derived(favId ? forStop(app.disruptions, favId, lineIds, app.serverNow) : []);
   const across = $derived(ix && i != null ? twins(ix, i)[0] : undefined);
+
+  // «Λάθος θέση;»: the card gives way to a short bar while the user drags a pin (StopFixBar, MapView).
+  // sent: this device already reported this stop (one report per device per stop).
+  const fixing = $derived(!!id && app.stopFix?.id === id);
+  let sent = $state(false);
+  $effect(() => {
+    const sid = id;
+    sent = !!sid && reportedStops().includes(sid);
+    untrack(() => { if (app.stopFix && app.stopFix.id !== sid) { app.stopFix = null; app.stopFixAt = null; } });
+  });
+  const at = $derived<[number, number] | null>(stop ? [stop[1], stop[2]] : board ? [board.stop.lat, board.stop.lon] : null);
+  function startFix() {
+    if (!id || !at) return;
+    app.stopFix = { id, name, from: at };
+    app.stopFixAt = at;
+  }
+  const endFix = () => { app.stopFix = null; app.stopFixAt = null; };
 
   // «Οι γραμμές μου»: the stop's lines among the favourites and the lines on the map.
   let all = $state(false);
@@ -112,7 +131,7 @@
   });
 </script>
 
-<svelte:window onkeydown={e => { if (e.key === "Escape" && (stop || early) && !alertFor) app.closeCards(); }} />
+<svelte:window onkeydown={e => { if (e.key !== "Escape") return; if (fixing) endFix(); else if ((stop || early) && !alertFor) app.closeCards(); }} />
 
 {#snippet check()}
   <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true" class="tick"><path d="M2 6.5l2.5 2.5L10 3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
@@ -122,7 +141,9 @@
   <b class="chip" style:--bg={c.bg} style:--fg={c.fg}>{line}</b>
 {/snippet}
 
-{#if stop || early}
+{#if fixing}
+  <StopFixBar {app} ondone={() => (sent = !!id && reportedStops().includes(id))} />
+{:else if stop || early}
   <section class="card" aria-label="Στάση {name}">
     <header>
       <Back {app} />
@@ -206,6 +227,9 @@
     {:else}
       <p>Φόρτωση αφίξεων…</p>
     {/if}
+    {#if id && at}
+      <p class="fix">{#if sent}Έστειλες τη θέση αυτής της στάσης. Ευχαριστούμε!{:else}<button type="button" class="link" onclick={startFix}>Λάθος θέση στάσης;</button>{/if}</p>
+    {/if}
   </section>
   {#if alertFor}
     {@const a = alertFor}
@@ -267,6 +291,8 @@
   .on { margin-bottom: 8px; color: var(--accent); }
   .link { padding: 0; border: 0; background: none; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
   .src { margin: 10px 0 0; font-size: 11px; }
+  .fix { margin: 6px 0 0; font-size: 12px; }
+  .fix .link { min-height: 32px; color: var(--muted); }
   header .bell { margin-top: -2px; }
   .starbtn { flex: none; width: 36px; height: 36px; margin: -4px -4px 0 0; border: 0; background: none; color: var(--muted); font-size: 20px;
     cursor: pointer; border-radius: 8px; }

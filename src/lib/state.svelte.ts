@@ -153,6 +153,9 @@ export class AppState {
   // tapped one (an index into stopIx.s), whose card shows its lines and live arrivals.
   stopIx = $state.raw<TripIndex | null>(null);
   busStop = $state<number | null>(null);
+  // «Λάθος θέση;» of the stop card (stopfix.ts): the stop being placed and where the user's pin is now [lat, lon].
+  stopFix = $state.raw<{ id: string; name: string; from: [number, number] } | null>(null);
+  stopFixAt = $state.raw<[number, number] | null>(null);
   // Starred bus lines (native ids): a chip row under the search, to show several at once.
   get favorites(): string[] { return busFavIds(this.favs); }
   // Stop alert: the planner's lines that are still picked (a line taken off the map stops alerting; put

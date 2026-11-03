@@ -808,6 +808,14 @@
       const tap = ++taps;
       if (!loaded) return;   // the style is being replaced: our layers are not there to hit
       if ((e.originalEvent.target as Element | null)?.closest?.(".bus")) return;
+      // «Λάθος θέση;»: a tap puts the blue pin there (a tap on the pin itself does nothing); nothing else opens.
+      if (app.stopFix) {
+        if (!(e.originalEvent.target as Element | null)?.closest?.(".fix-pin")) {
+          fixPin.setLngLat(e.lngLat);
+          app.stopFixAt = [e.lngLat.lat, e.lngLat.lng];
+        }
+        return;
+      }
       const onTrain = nearestTrain(m, e.point, 4);
       if (onTrain) {
         popup.remove();
@@ -916,6 +924,7 @@
       app.fitPoints = () => {};
       focusOn = () => {};
       pin.remove();
+      fixPin.remove();
       disposed = true;
       cancelAnimationFrame(raf);
       reportSoon.cancel();
@@ -1175,6 +1184,27 @@
     untrack(() => focusOn(at, STOP_ZOOM));
   });
 
+  // «Λάθος θέση;»: a blue pin the user drags to where the pole stands, from the stop's map position (the red
+  // pin stays as the reference). The view comes close, above the bar of the stop card.
+  const fixEl = document.createElement("div");
+  fixEl.className = "fix-pin";
+  fixEl.innerHTML = `<svg viewBox="0 0 24 32" width="34" height="45" aria-hidden="true"><path d="M12 31s10-11.2 10-19A10 10 0 0 0 2 12c0 7.8 10 19 10 19z" fill="#1c7ed6" stroke="#fff" stroke-width="2"/><circle cx="12" cy="12" r="3.6" fill="#fff"/></svg>`;
+  const fixPin = new Marker({ element: fixEl, anchor: "bottom", draggable: true });
+  fixPin.on("drag", () => { const p = fixPin.getLngLat(); app.stopFixAt = [p.lat, p.lng]; });
+  let fixKey = "";
+  $effect(() => {
+    if (!loaded) return;
+    const f = app.stopFix, key = f?.id ?? "";
+    if (key === fixKey) return;
+    fixKey = key;
+    if (!f) { fixPin.remove(); return; }
+    const at: LngLat = [f.from[1], f.from[0]];
+    fixPin.setLngLat(at).addTo(map!);
+    const bar = document.querySelector(".fixbar")?.getBoundingClientRect();
+    const pad = { top: 70, left: 16, right: 16, bottom: bar && innerWidth < 720 ? innerHeight - bar.top + 24 : 70 };
+    untrack(() => map!.easeTo({ center: at, zoom: Math.max(map!.getZoom(), 18), padding: pad, duration: reducedMotion.matches ? 0 : 600 }));
+  });
+
   // A tapped vehicle: the map moves to it once, when it is selected (or once its position is in, from a link).
   let focusKey = "";
   $effect(() => {
@@ -1295,6 +1325,7 @@
 
 <style>
   .map { position: absolute; inset: 0; }
+  :global(.fix-pin) { cursor: grab; touch-action: none; filter: drop-shadow(0 3px 4px rgb(0 0 0 / 0.4)); }
   :global(.stop-pin) { pointer-events: none; filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.35)); }
   :global(.stop-pin.drop svg) { animation: pin-drop 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) both; transform-origin: 50% 100%; }
   @keyframes pin-drop { from { transform: translateY(-18px) scale(0.6); opacity: 0; } to { transform: none; opacity: 1; } }
