@@ -738,6 +738,14 @@
       credit.setAttribute("aria-haspopup", "dialog");
       credit.addEventListener("click", e => { e.preventDefault(); e.stopImmediatePropagation(); void openInfo(); }, true);
     }
+    // OpenStreetMap's licence wants a credit the user can see: a short one stays beside the ⓘ (#34).
+    const osm = document.createElement("a");
+    osm.className = "maplibregl-ctrl osm-credit";
+    osm.href = "https://www.openstreetmap.org/copyright";
+    osm.target = "_blank";
+    osm.rel = "noopener";
+    osm.textContent = "© OpenStreetMap";
+    node.querySelector(".maplibregl-ctrl-bottom-right")?.append(osm);
     m.on("dragstart", () => (follow = false));   // only user gestures fire it
     // The city layer loads the tiles of the view: at first, and 300 ms after the map stops moving (never during a move).
     const reportView = () => {

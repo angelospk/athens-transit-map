@@ -52,6 +52,10 @@ button, input { font: inherit; color: inherit; }
 .maplibregl-popup-content { background: var(--panel); color: var(--fg); font-size: 13px; padding: 6px 10px; border-radius: 8px; }
 .maplibregl-popup-tip { border-top-color: var(--panel) !important; border-bottom-color: var(--panel) !important; }
 .maplibregl-ctrl-top-right { top: env(safe-area-inset-top); }
+/* The ⓘ with the short OpenStreetMap credit (MapView) on its left, both on the bottom line. */
+.maplibregl-ctrl-bottom-right { display: flex; flex-direction: row-reverse; align-items: flex-end; }
+.maplibregl-ctrl-bottom-right .osm-credit { margin-right: 0; padding: 1px 5px; border-radius: 4px; font-size: 11px;
+  line-height: 16px; white-space: nowrap; background: var(--panel); color: var(--fg); text-decoration: none; }
 /* The zoom buttons are for the mouse: a phone pinches. */
 @media (max-width: 719px) { .maplibregl-ctrl-group:has(.maplibregl-ctrl-zoom-in) { display: none; } }
 /* A finger needs 44 px (B10); the panel's rail of buttons (Panel.svelte) grows with them. */
