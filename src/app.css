@@ -52,20 +52,11 @@ button, input { font: inherit; color: inherit; }
 .maplibregl-popup-content { background: var(--panel); color: var(--fg); font-size: 13px; padding: 6px 10px; border-radius: 8px; }
 .maplibregl-popup-tip { border-top-color: var(--panel) !important; border-bottom-color: var(--panel) !important; }
 .maplibregl-ctrl-top-right { top: env(safe-area-inset-top); }
-/* The ⓘ with the short OpenStreetMap credit (MapView) on its left, both on the bottom line. */
-.maplibregl-ctrl-bottom-right { display: flex; flex-direction: row-reverse; align-items: flex-end; }
-.maplibregl-ctrl-bottom-right .osm-credit { margin-right: 0; padding: 1px 5px; border-radius: 4px; font-size: 11px;
-  line-height: 16px; white-space: nowrap; background: var(--panel); color: var(--fg); text-decoration: none; }
 /* The zoom buttons are for the mouse: a phone pinches. */
 @media (max-width: 719px) { .maplibregl-ctrl-group:has(.maplibregl-ctrl-zoom-in) { display: none; } }
 /* A finger needs 44 px (B10); the panel's rail of buttons (Panel.svelte) grows with them. */
 @media (pointer: coarse) {
   .maplibregl-ctrl-group button { width: 44px; height: 44px; }
-  /* The ⓘ (the compact attribution's button, which opens the info sheet). */
-  /* MapLibre gives it 24 px of right padding (content-box) and a 12 px pill: at 44 px that made a 68×48 white tab.
-     Make it a 44 px square like the other map buttons. */
-  .maplibregl-ctrl-attrib.maplibregl-compact { box-sizing: border-box; width: 44px; min-height: 44px; padding: 0; border-radius: 4px; }
-  .maplibregl-ctrl-attrib-button { width: 44px; height: 44px; background-position: center; background-repeat: no-repeat; }
 }
 /* «Ηλικία θέσης» (B4): "old" shows only a stale marker's age (it says why the marker is pale), "never" none. */
 .ages-old .vm:not(.stale) .age, .ages-never .vm .age { display: none; }
@@ -107,6 +98,7 @@ button, input { font: inherit; color: inherit; }
   font: 600 11px/1.4 system-ui, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
 
+.maplibregl-ctrl-group button.details { width: auto; padding: 0 10px; font: 13px var(--font, inherit); color: #333; }
 .maplibregl-ctrl-group button.locate { display: grid; place-items: center; color: #333; }
 .locate .core { fill: none; }
 .locate[data-state="searching"] { animation: locating 1s ease-in-out infinite alternate; }

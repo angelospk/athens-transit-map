@@ -766,23 +766,7 @@
     m.touchZoomRotate.disableRotation();
     m.addControl(new NavigationControl({ showCompass: false }), "top-right");
     m.addControl({ onAdd: () => locateCtl, onRemove: () => locateCtl.remove() }, "top-right");
-    // Only the ⓘ stays on the map: it opens the info dialog (sources, credits, statistics) instead of toggling the
-    // credits. Capture + stopImmediatePropagation: MapLibre's own click handler must not run.
-    const credit = node.querySelector<HTMLElement>(".maplibregl-ctrl-attrib-button");
-    if (credit) {
-      credit.title = "Πηγές δεδομένων";
-      credit.setAttribute("aria-label", "Πηγές δεδομένων");
-      credit.setAttribute("aria-haspopup", "dialog");
-      credit.addEventListener("click", e => { e.preventDefault(); e.stopImmediatePropagation(); void openInfo(); }, true);
-    }
-    // OpenStreetMap's licence wants a credit the user can see: a short one stays beside the ⓘ (#34).
-    const osm = document.createElement("a");
-    osm.className = "maplibregl-ctrl osm-credit";
-    osm.href = "https://www.openstreetmap.org/copyright";
-    osm.target = "_blank";
-    osm.rel = "noopener";
-    osm.textContent = "© OpenStreetMap";
-    node.querySelector(".maplibregl-ctrl-bottom-right")?.append(osm);
+    m.addControl({ onAdd: () => infoCtl, onRemove: () => infoCtl.remove() }, "bottom-right");
     m.on("dragstart", () => (follow = false));   // only user gestures fire it
     // The city layer loads the tiles of the view: at first, and 300 ms after the map stops moving (never during a move).
     const reportView = () => {
@@ -806,10 +790,6 @@
     const popup = new Popup({ closeButton: false, offset: 10, maxWidth: "240px" });
     closePopup = () => { if (popup.getElement()?.querySelector(".munipop")) popup.remove(); };
     m.on("load", () => {
-      // MapLibre opens the credits at first; collapse them. It does not reopen them (the control is compact).
-      const attrib = node.querySelector(".maplibregl-ctrl-attrib");
-      attrib?.classList.remove("maplibregl-compact-show");
-      attrib?.removeAttribute("open");
       addAll(m);
       if (untrack(() => dark) !== styleDark) restyle(m, untrack(() => dark));   // the theme changed while the map loaded
     });
@@ -1348,6 +1328,18 @@
     locateBtn.setAttribute("aria-label", label);
     locateBtn.setAttribute("aria-pressed", String(s !== "off" && s !== "denied"));
   });
+
+  // «Λεπτομέρειες» (a control above the ⓘ, bottom right) opens the info sheet. The ⓘ stays MapLibre's: it shows the
+  // map's credits (open at first, closed by the first drag), which the licences want visible (#34).
+  const infoCtl = document.createElement("div");
+  infoCtl.className = "maplibregl-ctrl maplibregl-ctrl-group";
+  const infoBtn = document.createElement("button");
+  infoBtn.type = "button";
+  infoBtn.className = "details";
+  infoBtn.textContent = "Λεπτομέρειες";
+  infoBtn.setAttribute("aria-haspopup", "dialog");
+  infoBtn.onclick = () => void openInfo();
+  infoCtl.append(infoBtn);
 
   let infoOpen = $state(false);
   let infoTab = $state<"sources" | "stats" | "feedback">("sources");
