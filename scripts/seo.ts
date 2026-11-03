@@ -106,7 +106,7 @@ ${o.ld === undefined ? "" : `<script type="application/ld+json">${jsonLd(o.ld)}<
 <main>
 ${o.body}
 </main>
-<footer><a href="/">Athens Transit</a> · ζωντανός χάρτης λεωφορείων, τρόλεϊ, μετρό και τραμ στην Αθήνα</footer>
+<footer><a href="/">Στάσεις</a> · ζωντανός χάρτης λεωφορείων, τρόλεϊ, μετρό και τραμ στην Αθήνα</footer>
 </body>
 </html>
 `;
@@ -124,7 +124,7 @@ export function stopPage(stop: StopEntry, lines: SeoLine[]): string {
   const known = stopLines(stop, lines);
   const labels = known.map(labelOf);
   const canonical = SITE + encodeURI(stopPath(id));
-  const title = [`Στάση ${name}`, labels.length ? labels.join(", ") : "", "Athens Transit"].filter(Boolean).join(" · ");
+  const title = [`Στάση ${name}`, labels.length ? labels.join(", ") : "", "Στάσεις"].filter(Boolean).join(" · ");
   const description = `Στάση ${name}: γραμμές ${labels.join(", ") || "—"}. Δες ζωντανά στον χάρτη πού είναι το όχημα και πότε φτάνει.`;
   const rows = known.map(
     l => `<li><a class="badge" href="${escape(encodeURI(linePath(l.id)))}" style="background:${escape(l.color)};color:${escape(l.text_color)}">${escape(l.label || MODE_WORD[l.mode] || l.name)}</a> <a class="ln" href="${escape(encodeURI(linePath(l.id)))}">${escape(l.name)}</a></li>`,
@@ -154,8 +154,8 @@ export function linePage(detail: LineDetail): string {
   const canonical = SITE + encodeURI(linePath(line.id));
   const mode = MODE_WORD[line.mode] ?? line.mode;
   const ids = new Set(patterns.flatMap(p => p.stops));
-  const title = `${head(mode, line.label, line.name)} · στάσεις και ζωντανή θέση · Athens Transit`;
-  const description = `${head(mode, line.label, line.name)}: ${ids.size} στάσεις, ζωντανή θέση οχημάτων και χάρτης στο Athens Transit.`;
+  const title = `${head(mode, line.label, line.name)} · στάσεις και ζωντανή θέση · Στάσεις`;
+  const description = `${head(mode, line.label, line.name)}: ${ids.size} στάσεις, ζωντανή θέση οχημάτων και χάρτης στο Στάσεις.`;
   // One list per headsign, the longest pattern first; a shorter one is listed too only when it
   // has stops the ones before it lack (a branch), so no stop of the line is left without a link.
   const listed: Pattern[] = [];

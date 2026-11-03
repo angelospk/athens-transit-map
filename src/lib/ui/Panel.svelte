@@ -101,7 +101,7 @@
   onkeydowncapture={onEscape} />
 
 <section class="panel" class:compact inert={!!pop && narrow.current} aria-label="Πίνακας ελέγχου">
-  <h1 class="sr">Λεωφορεία ΟΑΣΑ</h1>
+  <h1 class="sr">Στάσεις: συγκοινωνίες live</h1>
 
   <!-- Always shown: the picked lines, the search, and the chevron. The map buttons are on the right (.rail). -->
   <div class="bar">

@@ -62,7 +62,9 @@ button, input { font: inherit; color: inherit; }
 @media (pointer: coarse) {
   .maplibregl-ctrl-group button { width: 44px; height: 44px; }
   /* The ⓘ (the compact attribution's button, which opens the info sheet). */
-  .maplibregl-ctrl-attrib.maplibregl-compact { min-width: 44px; min-height: 44px; }
+  /* MapLibre gives it 24 px of right padding (content-box) and a 12 px pill: at 44 px that made a 68×48 white tab.
+     Make it a 44 px square like the other map buttons. */
+  .maplibregl-ctrl-attrib.maplibregl-compact { box-sizing: border-box; width: 44px; min-height: 44px; padding: 0; border-radius: 4px; }
   .maplibregl-ctrl-attrib-button { width: 44px; height: 44px; background-position: center; background-repeat: no-repeat; }
 }
 /* «Ηλικία θέσης» (B4): "old" shows only a stale marker's age (it says why the marker is pale), "never" none. */
