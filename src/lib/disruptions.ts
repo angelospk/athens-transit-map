@@ -10,9 +10,13 @@ export interface Disruption {
 
 const NO_DATES_S = 3 * 86_400;   // an alert with no dates shows this long after it was published (contract)
 
-const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" });
-// The calendar day in Athens, YYYY-MM-DD: the dates of an alert are Athens days.
-export const athensDay = (ms: number) => day.format(new Date(ms));
+const day = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Athens", year: "numeric", month: "2-digit", day: "2-digit" });
+// The calendar day in Athens, YYYY-MM-DD: the dates of an alert are Athens days. Built from the parts: the
+// shape of format() is not fixed.
+export function athensDay(ms: number): string {
+  const p = Object.fromEntries(day.formatToParts(new Date(ms)).map(x => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}`;
+}
 
 const isDay = (v: unknown): v is string | null => v === null || (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v));
 const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every(x => typeof x === "string");
@@ -29,12 +33,12 @@ export function parseAlerts(body: unknown): Disruption[] {
   });
 }
 
-// Shown from `from` to `until` (Athens days, both included; one date alone is both ends); with no dates, for
-// 3 days after `published`.
+// Shown from `from` to `until` (Athens days, both included; a missing one leaves that end open); with no dates,
+// for 3 days after `published`.
 export function isActive(a: Disruption, nowMs: number): boolean {
-  const from = a.from ?? a.until, until = a.until ?? a.from;
-  if (from && until) { const today = athensDay(nowMs); return from <= today && today <= until; }
-  return nowMs / 1000 - a.published <= NO_DATES_S;
+  if (!a.from && !a.until) return nowMs / 1000 - a.published <= NO_DATES_S;
+  const today = athensDay(nowMs);
+  return (!a.from || a.from <= today) && (!a.until || today <= a.until);
 }
 
 export const forLine = (alerts: Disruption[], line: string, nowMs: number) =>

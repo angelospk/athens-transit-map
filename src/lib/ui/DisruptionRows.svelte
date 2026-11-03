@@ -6,12 +6,11 @@
 
   let { alerts, lines = [] }: { alerts: Disruption[]; lines?: string[] } = $props();
   const native = (id: string) => id.slice(id.indexOf(":") + 1);
-  const MAX = 3;
 </script>
 
 {#if alerts.length}
   <ul class="dis" aria-label="Ανακοινώσεις">
-    {#each alerts.slice(0, MAX) as a (a.id)}
+    {#each alerts as a (a.id)}
       {@const which = a.lines.filter(l => lines.includes(l)).map(native).join(", ")}
       {@const when = dateRange(a)}
       <li><a href={a.url} target="_blank" rel="noopener" title={a.title}

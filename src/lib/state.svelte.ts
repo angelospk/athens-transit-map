@@ -300,7 +300,7 @@ export class AppState {
       this.now = Date.now();
       for (const p of this.pollers.values()) p.visibilityChanged();
       this.cityPoller?.visibilityChanged();
-      if (!document.hidden) this.startTrains();   // the trains of now, not of the last poll
+      if (!document.hidden) { this.startTrains(); void this.loadDisruptions(); }   // the trains of now, not of the last poll
     });
   }
 

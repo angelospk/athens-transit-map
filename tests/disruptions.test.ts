@@ -26,10 +26,11 @@ describe("isActive", () => {
     expect(isActive(alert("a", { from: "2026-11-04", until: "2026-11-04" }), NOW)).toBe(false);   // tomorrow
     expect(isActive(alert("a", { from: "2026-11-01", until: "2026-11-02" }), NOW)).toBe(false);   // over
   });
-  it("takes one date alone as both ends", () => {
-    expect(isActive(alert("a", { from: "2026-11-03" }), NOW)).toBe(true);
-    expect(isActive(alert("a", { until: "2026-11-03" }), NOW)).toBe(true);
-    expect(isActive(alert("a", { from: "2026-11-02" }), NOW)).toBe(false);
+  it("checks one date alone as an open range: from that day, or up to that day", () => {
+    expect(isActive(alert("a", { from: "2026-11-02" }), NOW)).toBe(true);
+    expect(isActive(alert("a", { from: "2026-11-04" }), NOW)).toBe(false);
+    expect(isActive(alert("a", { until: "2026-11-05" }), NOW)).toBe(true);
+    expect(isActive(alert("a", { until: "2026-11-02" }), NOW)).toBe(false);
   });
   it("shows an alert with no dates for 3 days after it was published", () => {
     expect(isActive(alert("a", { published: NOW / 1000 - 2 * DAY }), NOW)).toBe(true);
