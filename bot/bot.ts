@@ -735,14 +735,19 @@ export class Bot {
     try {
       const r = await this.d.get(`${this.d.urls.api}/v2/stops/${encodeURIComponent(stop)}`);
       const after = this.d.now(), skew = r.date != null ? r.date - after : 0;
-      if (r.status === 404) {   // the server does not know the stop: its alerts are of nothing
+      // The server does not know the stop: its alerts are of nothing. Any other 404 (an edge, a proxy) is an error.
+      if (r.status === 404 && (r.body as { error?: unknown } | null)?.error === "unknown_stop") {
         this.state.rails = this.rails.filter(a => a.spec.stop !== stop);
         this.save();
         st.next = after + STOP_GAP_MS;
         return;
       }
-      const body = r.body as { arrivals?: unknown } | null;
+      const body = r.body as { arrivals?: unknown; sources?: unknown } | null;
       if (r.status !== 200 || !body || !Array.isArray(body.arrivals)) throw new Error(`stop ${r.status}`);
+      // The stop's own source still loading or without data answers empty arrivals: no train is not a strike then.
+      const own = stop.slice(0, stop.indexOf(":"));
+      const src = Array.isArray(body.sources) ? (body.sources as { id?: unknown; state?: unknown }[]).find(x => x?.id === own) : undefined;
+      if (src?.state === "warming_up" || src?.state === "down") throw new Error(`stop ${own} ${src.state}`);
       st.errors = 0;
       st.next = after + STOP_GAP_MS;
       this.checkStop(stop, body.arrivals as V2Arrival[], (after + skew) / 1000);

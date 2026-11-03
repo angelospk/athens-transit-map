@@ -17,7 +17,8 @@ function setup(saved0?: BotState, failSave: () => boolean = () => false) {
   const gets: string[] = [];
   const pushed: { sub: PushSub; data: Record<string, unknown> }[] = [];
   const sent: { method: string; body: Record<string, unknown> }[] = [];
-  const board: { status: number; arrivals: Partial<V2Arrival>[]; hang?: boolean } = { status: 200, arrivals: [] };
+  const board: { status: number; arrivals: Partial<V2Arrival>[]; hang?: boolean; sources?: { id: string; state: string }[]; body404?: unknown } =
+    { status: 200, arrivals: [] };
   let pushReply = () => 201;
   const line = { status: 200 };
   const deps: BotDeps = {
@@ -35,7 +36,10 @@ function setup(saved0?: BotState, failSave: () => boolean = () => false) {
         patterns: [{ direction: 1, headsign: "Δ. ΠΛΑΚΕΝΤΙΑΣ" }, { direction: 0, headsign: "ΔΗΜΟΤΙΚΟ ΘΕΑΤΡΟ" }],
         stops: { a: { name: "Δουκίσσης Πλακεντίας" }, b: { name: "Δημοτικό Θέατρο" } },
       } };
-      if (url === BOARD) return { status: board.status, body: board.status === 200 ? { stop: { id: STOP, name: "Σύνταγμα" }, lines: [{ id: "stasy:M3", label: "Μ3", name: "Γραμμή 3" }], arrivals: board.arrivals } : { error: "unknown_stop" }, date: now };
+      if (url === BOARD) return { status: board.status, body: board.status === 200
+        ? { stop: { id: STOP, name: "Σύνταγμα" }, lines: [{ id: "stasy:M3", label: "Μ3", name: "Γραμμή 3" }], arrivals: board.arrivals,
+          sources: board.sources ?? [{ id: "stasy", state: "ok", updated_at: 1 }] }
+        : "body404" in board ? board.body404 : { error: "unknown_stop" }, date: now };
       return { status: 404, body: null };
     },
   };
@@ -183,6 +187,60 @@ describe("Bot rail alerts", () => {
     t.board.status = 404;
     await t.tick();
     expect(t.saved()?.rails).toEqual([]);
+  });
+
+  it("keeps the alerts when a 404 is not the server's unknown_stop (an edge or proxy 404)", async () => {
+    for (const body404 of [null, { error: "not_found" }, "Not Found"]) {
+      const t = setup();
+      await t.post({ rail, sub: sub() });
+      t.board.status = 404;
+      t.board.body404 = body404;
+      await t.tick();
+      expect(t.saved()?.rails).toHaveLength(1);
+      t.board.status = 200;
+      t.board.arrivals = [arr()];
+      t.advance(20_000);
+      await t.tick();
+      expect(t.pushed).toHaveLength(1);   // it still watches
+    }
+  });
+
+  it("does not call a board of its own source warming up or down a strike: a failed poll, said once it is back", async () => {
+    for (const state of ["warming_up", "down"]) {
+      const t = setup();
+      await t.post({ rail, sub: sub() });
+      t.board.sources = [{ id: "oasa", state: "ok" }, { id: "stasy", state }];
+      await t.tick();
+      t.advance(20_000);
+      await t.tick();
+      expect(t.pushed).toEqual([]);
+      t.board.sources = undefined;
+      t.advance(60_000);
+      await t.tick();
+      expect(t.pushed.map(p => p.data.body)).toEqual([
+        "⚠️ Μ3 προς Δουκίσσης Πλακεντίας: κανένα δρομολόγιο στο Σύνταγμα τώρα. Ίσως απεργία ή τέλος δρομολογίων."]);
+    }
+  });
+
+  it("backs off on a board whose own source is down, as on an error", async () => {
+    const t = setup();
+    await t.post({ rail, sub: sub() });
+    t.board.sources = [{ id: "stasy", state: "down" }];
+    await t.tick();                  // error 1: 10 s
+    t.advance(20_000); await t.tick();   // error 2: 20 s
+    t.advance(20_000); await t.tick();   // error 3: 40 s
+    const asked = t.gets.filter(u => u === BOARD).length;
+    expect(asked).toBe(3);
+    t.advance(30_000); await t.tick();
+    expect(t.gets.filter(u => u === BOARD)).toHaveLength(3);   // still backing off: not a normal 20 s gap
+  });
+
+  it("still says a strike when another source is down but the stop's own is fine", async () => {
+    const t = setup();
+    await t.post({ rail, sub: sub() });
+    t.board.sources = [{ id: "oasa", state: "down" }, { id: "proastiakos", state: "warming_up" }, { id: "stasy", state: "indicative" }];
+    await t.tick();
+    expect(t.pushed).toHaveLength(1);
   });
 
   it("follows only its own train when it has a run", async () => {
