@@ -2,7 +2,7 @@
 // only (dynamic import), as is public/trips.json, its stop index (scripts/trips.ts).
 
 import type { MetroData } from "./metro";
-import { fold } from "./search";
+import { fold, greeklish, greeklishKeys, hasLatin } from "./search";
 import type { AppState } from "./state.svelte";
 
 export type Pt = [number, number];   // [lat, lon]
@@ -72,16 +72,22 @@ const isWordChar = (c: string | undefined) => !!c && /[\p{L}\p{N}]/u.test(c);
 // Places whose name has the text at a word start ("ταυρ" is not in ΔΙΑΣΤΑΥΡΩΣΗ); whole name first,
 // then name start, then busier places.
 export function searchPlaces(list: Place[], query: string, max = 6): Place[] {
-  const q = fold(query.trim());
-  if (!q) return [];
-  const rank = (p: Place) => {
-    let f = folded.get(p);
-    if (f == null) folded.set(p, (f = fold(p.label)));
+  const raw = fold(query.trim());
+  if (!raw) return [];
+  const latin = hasLatin(raw);   // Greeklish: «ampelokipoi» finds ΑΜΠΕΛΟΚΗΠΟΙ, also while typed
+  const qs = latin ? greeklishKeys(raw) : [raw];
+  const rankBy = (f: string, q: string) => {
     if (f === q) return 0;
     for (let at = f.indexOf(q); at >= 0; at = f.indexOf(q, at + 1))
       if (at === 0) return 1;
       else if (!isWordChar(f[at - 1])) return 2;
     return -1;
+  };
+  const rank = (p: Place) => {
+    let f = latin ? greeklish(p.label) : folded.get(p);
+    if (f == null) folded.set(p, (f = fold(p.label)));
+    const rs = qs.map(q => rankBy(f, q)).filter(r => r >= 0);
+    return rs.length ? Math.min(...rs) : -1;
   };
   return list.map(p => [rank(p), p] as const).filter(([r]) => r >= 0)
     .sort((a, b) => a[0] - b[0] || +(b[1].kind === "metro") - +(a[1].kind === "metro") || b[1].lines.length - a[1].lines.length || a[1].label.localeCompare(b[1].label, "el"))

@@ -97,6 +97,9 @@ describe("places and searchPlaces", () => {
     expect(labels("γεωργιου")).toEqual(["ΠΛ. ΑΓ. ΓΕΩΡΓΙΟΥ"]);
     expect(labels("αγ. γεωρ")).toEqual(["ΠΛ. ΑΓ. ΓΕΩΡΓΙΟΥ"]);
     expect(labels("εκκλησιας")).toEqual([]);
+    expect(labels("ampelokipoi")[0]).toBe("ΑΜΠΕΛΟΚΗΠΟΙ");   // Greeklish
+    expect(labels("agiou georgiou")).toEqual([]);
+    expect(labels("ag. georg")).toEqual(["ΠΛ. ΑΓ. ΓΕΩΡΓΙΟΥ"]);
     expect(labels("  ")).toEqual([]);
   });
 });

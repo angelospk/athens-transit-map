@@ -46,7 +46,8 @@ describe("findLines", () => {
   });
   it("matches the name without accents or case, Greek or English", () => {
     expect(ids(findLines(lines, "πειραιας", []))).toEqual(["oasa:040", "oasa:400", "oasa:Α1", "proastiakos:A1"]);
-    expect(ids(findLines(lines, "syntagma", []))).toEqual(["oasa:040"]);
+    expect(ids(findLines(lines, "syntagma", []))).toEqual(["oasa:040", "stasy:T6"]);
+    expect(ids(findLines(lines, "kypseli", []))).toEqual(["oasa:2"]);
   });
   it("keeps only the chosen modes; trolleys count as bus", () => {
     expect(ids(findLines(lines, "πειραιας", ["suburban"]))).toEqual(["proastiakos:A1"]);
@@ -63,6 +64,13 @@ describe("findStops", () => {
   it("puts names that start with the query first (a station before the bus poles of the same rank), then a word that starts with it, then any match", () => {
     expect(ids(findStops(stops, "συνταγμα", []))).toEqual(
       ["stasy:συνταγμα-metro", "stasy:συνταγμα-tram", "oasa:1", "oasa:2", "oasa:3"]);
+  });
+  it("finds Greek names from Greeklish, in the same order", () => {
+    expect(ids(findStops(stops, "syntagma", []))).toEqual(ids(findStops(stops, "συνταγμα", [])));
+    expect(ids(findStops(stops, "pireas", []))).toEqual(["oasa:4"]);
+    expect(ids(findStops(stops, "syn", [])).length).toBe(5);   // typing: «syn» before «synt»
+    expect(ids(findStops([stop("oasa:5", "ΘΗΣΕΙΟ", ["bus"])], "th", []))).toEqual(["oasa:5"]);   // two letters, one sound
+    expect(ids(findStops(stops, "sintagmatos", ["bus"]))).toEqual(["oasa:2"]);
   });
   it("keeps only the chosen modes; a bus + trolley stop counts as bus", () => {
     expect(ids(findStops(stops, "συνταγμα", ["metro"]))).toEqual(["stasy:συνταγμα-metro"]);

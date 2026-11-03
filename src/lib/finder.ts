@@ -1,6 +1,6 @@
 // Finder search: lines by label or name, stops by name, plus the recent-picks list. Pure, no Svelte.
 
-import { fold } from "./search";
+import { fold, greeklish, greeklishKeys, hasLatin } from "./search";
 import { normalizeLineId } from "./selection";
 import type { V2Line } from "./v2";
 
@@ -28,6 +28,7 @@ export function findLines(lines: V2Line[], query: string, chips: Chip[]): V2Line
   if (!q) return [];
   const qid = fold(normalizeLineId(query));
   const qz = noZeros(qid);
+  const gq = hasLatin(q) ? greeklishKeys(q) : [];   // Greeklish: «syntagma» finds ΣΥΝΤΑΓΜΑ
   const rank = (l: V2Line) => {
     if (l.label) {
       const id = fold(normalizeLineId(l.label));
@@ -35,7 +36,7 @@ export function findLines(lines: V2Line[], query: string, chips: Chip[]): V2Line
       if (id === qid || iz === qz) return 0;
       if (id.startsWith(qid) || iz.startsWith(qz)) return 1;
     }
-    if (fold(l.name).includes(q) || (l.name_en && fold(l.name_en).includes(q))) return 2;
+    if (fold(l.name).includes(q) || (l.name_en && fold(l.name_en).includes(q)) || gq.some(k => greeklish(l.name).includes(k))) return 2;
     return -1;
   };
   const shown = chips.length ? lines.filter(l => { const c = chipOf(l.mode); return c !== null && chips.includes(c); }) : lines;
@@ -51,12 +52,16 @@ function wordStarts(name: string, q: string): boolean {
 }
 
 export function findStops(stops: StopEntry[], query: string, chips: Chip[]): StopEntry[] {
-  const q = fold(query.trim());
-  if (q.length < 2) return [];
+  const raw = fold(query.trim());
+  if (raw.length < 2) return [];
+  const latin = hasLatin(raw);   // Greeklish: «syntagma» finds ΣΥΝΤΑΓΜΑ, also while typed
+  const qs = latin ? greeklishKeys(raw) : [raw];
   // A station (metro, tram, suburban) before the bus poles of the same rank: there are few of them, and dozens of poles.
   const rank = (s: StopEntry) => {
-    const name = fold(s[1]);
-    const r = name.startsWith(q) ? 0 : wordStarts(name, q) ? 2 : name.includes(q) ? 4 : -1;
+    const name = latin ? greeklish(s[1]) : fold(s[1]);
+    const at = (q: string) => (name.startsWith(q) ? 0 : wordStarts(name, q) ? 2 : name.includes(q) ? 4 : -1);
+    const rs = qs.map(at).filter(x => x >= 0);
+    const r = rs.length ? Math.min(...rs) : -1;
     return r < 0 ? r : r + (s[4].every(m => chipOf(m) === "bus") ? 1 : 0);
   };
   const shown = chips.length ? stops.filter(s => s[4].some(m => { const c = chipOf(m); return c !== null && chips.includes(c); })) : stops;
