@@ -101,3 +101,16 @@ describe("versionLabel", () => {
     expect(versionLabel("0.2.0", "2026-10-30", "")).toBe("0.2.0 · 30/10");
   });
 });
+
+describe("feedbackBody with a Turnstile token", () => {
+  it("carries the token only when there is one", () => {
+    expect(JSON.parse(feedbackBody({ ...fb, turnstile: "tok.123" })).turnstile).toBe("tok.123");
+    expect("turnstile" in JSON.parse(feedbackBody({ ...fb, turnstile: "" }))).toBe(false);
+  });
+  it("the old Google Form never gets the token", async () => {
+    const f = vi.fn(async () => new Response(null));
+    await sendFeedback({ ...fb, turnstile: "tok.123" }, "", f);
+    const [, init] = f.mock.calls[0] as unknown as [string, RequestInit];
+    expect(new URLSearchParams(init.body as URLSearchParams).get(FORM_FIELD)).not.toContain("tok.123");
+  });
+});

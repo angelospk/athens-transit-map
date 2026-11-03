@@ -10,7 +10,7 @@
 
 import { readFileSync } from "node:fs";
 import type { TripIndex } from "../src/lib/trip";
-import { decideCorrection, gpsFromAudit, parseCsv, parseStopReports, type Correction, type GpsMeasure } from "../src/lib/stopfix";
+import { decideCorrection, gpsFromAudit, handCheck, parseCsv, parseStopReports, sheetReportRows, type Correction, type GpsMeasure } from "../src/lib/stopfix";
 
 const [feedbackCsv] = process.argv.slice(2);
 const ix: TripIndex = JSON.parse(readFileSync("public/trips.json", "utf8"));
@@ -27,10 +27,8 @@ for (const r of rows) {
   if (g.suspect) suspects.add(o.stop_id);
 }
 
-// Sheet rows are in send order: the row number is the report's time.
-const reports = feedbackCsv
-  ? parseStopReports(parseCsv(readFileSync(feedbackCsv, "utf8")).flatMap((r, at) => r.filter(c => c.includes("#stopfix")).map(text => ({ text, at }))))
-  : [];
+// Sheet rows are in send order: the row number is the report's time. The Verified column: the bot check.
+const reports = feedbackCsv ? parseStopReports(sheetReportRows(parseCsv(readFileSync(feedbackCsv, "utf8")))) : [];
 
 const byId = new Map(ix.s.map(s => [s[3], s] as const));
 const ids = [...new Set([...reports.map(r => r.stop), ...suspects])].filter(id => !done[id]).sort();
@@ -42,8 +40,8 @@ for (const id of ids) {
   const d = decideCorrection({ id, lat: s[1], lon: s[2] }, gps.get(id) ?? null, reports);
   if (!d.apply) { if (d.reports) console.error(`${id} ${s[0]}: no (${d.reason})`); continue; }
   out[id] = { lat: +d.lat.toFixed(6), lon: +d.lon.toFixed(6), basis: d.basis,
-    // Device ids come from the page: reports alone can be one person; a human checks those on the satellite map.
-    note: `${d.basis === "reports" ? "CHECK BY HAND (reports only) " : ""}${s[0]}: ${Math.round(d.moved)} m, ${d.reports} reports, proposed ${day}` };
+    // Device ids come from the page: unchecked reports can be one script; a human checks those on the satellite map.
+    note: `${handCheck(d)}${s[0]}: ${Math.round(d.moved)} m, ${d.reports} reports, proposed ${day}` };
 }
 console.error(`${reports.length} reports, ${suspects.size} GPS suspects confirmed by OSM, ${Object.keys(out).length} proposals`);
 console.log(JSON.stringify(out, null, 1));

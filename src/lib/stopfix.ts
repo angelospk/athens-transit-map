@@ -24,7 +24,8 @@ export function offsetPoint(p: LatLon, n: number, e: number): LatLon {
   return [p[0] + n / 111_320, p[1] + e / (111_320 * Math.cos((p[0] * Math.PI) / 180))];
 }
 
-export interface StopReport { stop: string; lat: number; lon: number; device: string; at: number }
+// verified: the feedback endpoint's bot check (Turnstile) passed; missing or false: unchecked.
+export interface StopReport { stop: string; lat: number; lon: number; device: string; at: number; verified?: boolean }
 
 /** The feedback text of a report: a line for people, then the line scripts/stopfix.ts reads. */
 export function stopReportText(r: StopReport & { name: string; from: LatLon }): string {
@@ -36,14 +37,14 @@ export function stopReportText(r: StopReport & { name: string; from: LatLon }): 
 const LINE = /#stopfix stop=([A-Za-z0-9_:-]+) lat=(-?\d+(?:\.\d+)?) lon=(-?\d+(?:\.\d+)?)(?: from=\S+)? dev=([A-Za-z0-9]+)/;
 
 /** The stop reports among feedback rows (text and time); other rows are skipped. */
-export function parseStopReports(rows: { text: string; at: number }[]): StopReport[] {
+export function parseStopReports(rows: { text: string; at: number; verified?: boolean }[]): StopReport[] {
   const out: StopReport[] = [];
   for (const r of rows) {
     const m = LINE.exec(r.text);
     if (!m) continue;
     const lat = +m[2], lon = +m[3];
     if (Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
-    out.push({ stop: m[1], lat, lon, device: m[4], at: r.at });
+    out.push({ stop: m[1], lat, lon, device: m[4], at: r.at, verified: r.verified === true });
   }
   return out;
 }
@@ -51,7 +52,7 @@ export function parseStopReports(rows: { text: string; at: number }[]): StopRepo
 export interface GpsMeasure { lat: number; lon: number; confidence: "high" | "medium" | "low" | "none"; suspect: boolean }
 export type Basis = "gps" | "gps+reports" | "reports";
 export type Decision =
-  | { apply: true; lat: number; lon: number; basis: Basis; moved: number; reports: number }
+  | { apply: true; lat: number; lon: number; basis: Basis; moved: number; reports: number; unverified: number }
   | { apply: false; reason: string; reports: number };
 
 const mid = (v: number[]) => {
@@ -100,16 +101,18 @@ export function decideCorrection(stop: { id: string; lat: number; lon: number },
   if (!found) return no(`${n} reports: too many to group, check by hand`);
   const group = found;
   const grouped = group.length >= MIN_REPORTS ? centre(group) : null;
-  const yes = (p: LatLon, basis: Basis): Decision => {
+  // used: the reports the new position rests on (unverified ones make it a case for a person).
+  const yes = (p: LatLon, basis: Basis, used: StopReport[] = []): Decision => {
     const moved = distM(here, p);
-    return moved < MIN_MOVE_M ? no(`move ${moved.toFixed(1)} m < ${MIN_MOVE_M} m`) : { apply: true, lat: p[0], lon: p[1], basis, moved, reports: n };
+    return moved < MIN_MOVE_M ? no(`move ${moved.toFixed(1)} m < ${MIN_MOVE_M} m`)
+      : { apply: true, lat: p[0], lon: p[1], basis, moved, reports: n, unverified: used.filter(r => !r.verified).length };
   };
 
   if (gps?.suspect && gps.confidence === "high") {
     const g: LatLon = [gps.lat, gps.lon];
     if (grouped && distM(g, grouped) > CONFLICT_M) return no(`GPS halt point and ${group.length} reports are ${Math.round(distM(g, grouped))} m apart`);
     const near = rs.filter(r => distM(g, [r.lat, r.lon]) <= NEAR_GPS_M);
-    return near.length ? yes(centre(near), "gps+reports") : yes(g, "gps");
+    return near.length ? yes(centre(near), "gps+reports", near) : yes(g, "gps");
   }
   if (!grouped) return no(`${group.length} agreeing reports (of ${n}), need ${MIN_REPORTS}`);
   if (gps && (gps.confidence === "high" || gps.confidence === "medium")) {
@@ -117,7 +120,25 @@ export function decideCorrection(stop: { id: string; lat: number; lon: number },
     if (distM(g, grouped) > CONFLICT_M || distM(g, here) + MIN_MOVE_M < distM(g, grouped))
       return no(`GPS (${gps.confidence}) puts the halts nearer the current position than the reports`);
   }
-  return yes(grouped, "reports");
+  return yes(grouped, "reports", group);
+}
+
+/** The note's prefix for a proposal that a person must check on the satellite map: it rests on reports
+ *  alone (the bot check proves a person, not three: device ids come from the page), or on a report that
+ *  did not pass the bot check (it can be a script). */
+export function handCheck(d: { basis: Basis; unverified: number }): string {
+  const u = d.unverified;
+  if (d.basis === "reports") return `CHECK BY HAND (reports only${u ? `, ${u} unverified` : ""}) `;
+  return u > 0 ? `CHECK BY HAND (${u} unverified report${u > 1 ? "s" : ""}) ` : "";
+}
+
+/** The feedback rows of a CSV export of the Sheet that hold a stop report, with the row number as the
+ *  time (rows are in send order) and the Verified column (TRUE: the bot check passed). Only the header
+ *  row (the first) names the column: other rows hold what senders wrote. */
+export function sheetReportRows(rows: string[][]): { text: string; at: number; verified: boolean }[] {
+  const v = rows[0]?.indexOf("Verified") ?? -1;
+  return rows.flatMap((r, at) => r.filter(c => c.includes("#stopfix"))
+    .map(text => ({ text, at, verified: v >= 0 && /^true$/i.test((r[v] ?? "").trim()) })));
 }
 
 /**

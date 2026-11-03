@@ -89,8 +89,10 @@ they accept into `scripts/stop-corrections.json`, runs `bun scripts/trips.ts` an
 - Moves under 5 m are dropped.
 
 Limits: the device id is made by the page, so one person can pose as several devices. Proposals based on
-reports alone say so in their note and need a look on the satellite map before they are committed. A bot
-check (e.g. Cloudflare Turnstile) needs a site key and a secret in the Apps Script, which is not set up.
+reports alone say so in their note and need a look on the satellite map before they are committed. The
+Cloudflare Turnstile bot check (optional, `docs/feedback/README.md`) fills the Sheet's "Verified" column;
+`sheetReportRows` reads it, and a proposal that rests on an unverified report is CHECK BY HAND too. It proves
+a person, not three people, so reports alone stay CHECK BY HAND.
 
 On 2026-11-04 the 125 OSM-confirmed suspects went into `scripts/stop-corrections.json` (basis `gps`, no
 reports yet); the same list for OASA is `docs/stops-for-oasa.csv`.

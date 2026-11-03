@@ -6,11 +6,13 @@
   import type { AppState } from "../state.svelte";
   import type { IdeaStatus } from "../idea";
   import { sendFeedback } from "../feedback";
+  import BotCheck from "./BotCheck.svelte";
   import { MAX_MOVE_M, deviceId, distM, markReported, stopReportText } from "../stopfix";
   import { VERSION } from "../version";
 
   let { app, ondone }: { app: AppState; ondone: () => void } = $props();
   let status = $state<IdeaStatus>("edit");
+  let bot = $state<BotCheck>();
 
   const f = $derived(app.stopFix);
   const at = $derived(app.stopFixAt ?? f?.from);
@@ -26,8 +28,9 @@
     const target = f, pos = at;
     status = "sending";
     const text = stopReportText({ stop: target.id, name: target.name, from: target.from, lat: pos[0], lon: pos[1], device: deviceId(), at: Date.now() });
+    const turnstile = (await bot?.token()) ?? "";
     const sent = await sendFeedback({ text, version: VERSION, page: location.pathname + location.search,
-      ua: `${navigator.userAgent} · ${innerWidth}×${innerHeight}` });
+      ua: `${navigator.userAgent} · ${innerWidth}×${innerHeight}`, turnstile });
     if (sent) markReported(target.id);
     if (app.stopFix !== target) return;   // closed or another stop: nothing to show here
     status = sent ? "done" : "failed";
@@ -51,6 +54,7 @@
       <button type="button" class="btn" onclick={close} disabled={status === "sending"}>Άκυρο</button>
       <button type="button" class="btn primary" onclick={send} disabled={!ok}>{status === "sending" ? "Αποστολή…" : "Αποστολή"}</button>
     </div>
+    <BotCheck active={true} bind:this={bot} />
     <p class="fine">Στέλνεται η θέση της πινέζας, η στάση και ένας τυχαίος κωδικός συσκευής.</p>
   {/if}
 </section>

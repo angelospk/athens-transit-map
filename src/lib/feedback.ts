@@ -18,6 +18,7 @@ export interface Feedback {
   ua: string;
   image?: { type: string; data: string }; // base64, no data: prefix
   diag?: DiagSnapshot;
+  turnstile?: string; // bot-check token (turnstile.ts), checked by the Apps Script only
 }
 
 export function canSendFeedback(text: string): boolean {
@@ -26,8 +27,8 @@ export function canSendFeedback(text: string): boolean {
 }
 
 export function feedbackBody(f: Feedback): string {
-  const { image, ...rest } = f;
-  return JSON.stringify({ ...rest, text: f.text.trim(), ...(image ? { image } : {}) });
+  const { image, turnstile, ...rest } = f;
+  return JSON.stringify({ ...rest, text: f.text.trim(), ...(image ? { image } : {}), ...(turnstile ? { turnstile } : {}) });
 }
 
 /** True only when the script answered {ok: true} (the old form: unless the request failed). */

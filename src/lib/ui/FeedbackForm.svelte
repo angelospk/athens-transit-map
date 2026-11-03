@@ -6,6 +6,7 @@
   import { FEEDBACK_URL, MAX_TEXT, canSendFeedback, sendFeedback, shrinkImage } from "../feedback";
   import { VERSION } from "../version";
   import { diag } from "../diag";
+  import BotCheck from "./BotCheck.svelte";
 
   // visible: the tab is shown; leaving it after the thanks brings the form back.
   let { visible }: { visible: boolean } = $props();
@@ -17,6 +18,7 @@
   let imageErr = $state(false);
   let converting = $state(false); // a picked image is being shrunk: no send until it is ready
   let input = $state<HTMLInputElement>();
+  let bot = $state<BotCheck>();
 
   const ok = $derived(canSendFeedback(draft) && status !== "sending" && !converting);
   $effect(() => { if (!visible && status === "done") status = "edit"; });
@@ -44,7 +46,8 @@
     e.preventDefault();
     if (!ok) return;
     status = "sending";
-    const sent = await sendFeedback({ ...context(), text: draft, ...(image ? { image } : {}) });
+    const turnstile = (await bot?.token()) ?? "";
+    const sent = await sendFeedback({ ...context(), text: draft, ...(image ? { image } : {}), turnstile });
     if (!sent) { status = "failed"; return; }
     draft = "";
     dropImage();
@@ -92,6 +95,7 @@
       {#if status === "failed"}<span class="err" role="alert">Δεν στάλθηκε. Έλεγξε τη σύνδεση και ξαναδοκίμασε σε λίγο.</span>{:else}<span></span>{/if}
       <span>{draft.length}/{MAX_TEXT}</span>
     </div>
+    <BotCheck active={visible} bind:this={bot} />
     <button class="btn send" type="submit" disabled={!ok}>{status === "sending" ? "Αποστολή…" : "Αποστολή"}</button>
     <p class="fine">Δεν στέλνεται όνομα ή email. Μαζί πάνε αυτόματα η σελίδα που βλέπεις, η έκδοση, η συσκευή και τα
       τελευταία αιτήματα και σφάλματα της σελίδας, για να βρούμε το πρόβλημα. Και η εικόνα, αν βάλεις.</p>

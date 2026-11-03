@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  AGREE_M, MAX_MOVE_M, applyCorrections, deviceId, gpsFromAudit, markReported, parseCsv, reportedStops, decideCorrection, distM, offsetPoint, parseStopReports, stopReportText,
+  AGREE_M, MAX_MOVE_M, applyCorrections, deviceId, gpsFromAudit, markReported, parseCsv, reportedStops, decideCorrection, distM, offsetPoint, parseStopReports, sheetReportRows, handCheck, stopReportText,
   type GpsMeasure, type StopReport,
 } from "../src/lib/stopfix";
 
@@ -202,5 +202,50 @@ describe("browser storage", () => {
     expect(deviceId(st)).toBe(id);
     markReported("10183", st);
     expect(reportedStops(st)).toEqual(["10183"]);
+  });
+});
+
+describe("bot check (Turnstile) in the Sheet", () => {
+  const line = (dev: string) => stopReportText({ name: "Χ", from: [STOP.lat, STOP.lon], ...rep(dev, 25) });
+  const sheet = [
+    ["Ώρα", "Κείμενο", "Έκδοση", "Σελίδα", "Συσκευή", "Εικόνα", "Logs", "Verified"],
+    ["1/11", line("a"), "0.3.0", "/", "ua", "", "", "TRUE"],
+    ["1/11", line("b"), "0.3.0", "/", "ua", "", "", "FALSE"],
+    ["1/11", line("c"), "0.2.9", "/", "ua", "", ""],
+    ["1/11", "Το 040 άργησε", "0.3.0", "/", "ua", "", "", "TRUE"],
+  ];
+  it("reads the Verified column per row (missing or FALSE: unverified)", () => {
+    const rs = parseStopReports(sheetReportRows(sheet));
+    expect(rs.map(r => [r.device, r.verified])).toEqual([["a", true], ["b", false], ["c", false]]);
+    expect(rs.map(r => r.at)).toEqual([1, 2, 3]);
+  });
+  it("a Sheet from before the column: every report is unverified", () => {
+    const rs = parseStopReports(sheetReportRows([sheet[0].slice(0, 7), sheet[1].slice(0, 7)]));
+    expect(rs).toHaveLength(1);
+    expect(rs[0].verified).toBe(false);
+  });
+  it("only the Sheet's header row names the column: a sender cannot forge it", () => {
+    const legacy = [
+      sheet[0].slice(0, 7),
+      ["1/11", "spam", "Verified", "/", "ua", "", ""],
+      ["1/11", line("a"), "TRUE", "/", "ua", "", ""],
+    ];
+    expect(parseStopReports(sheetReportRows(legacy)).map(r => r.verified)).toEqual([false]);
+  });
+  it("a decision says how many of the reports it used were unverified", () => {
+    const d = decideCorrection(STOP, null, [{ ...rep("a", 25), verified: true }, { ...rep("b", 26), verified: true }, rep("c", 27)]);
+    expect(d.apply).toBe(true);
+    if (d.apply) expect(d.unverified).toBe(1);
+    const g = decideCorrection(STOP, gps(40, "high", true), [rep("a", 5)]);   // far from the halt point: not used
+    expect(g.apply && g.basis).toBe("gps");
+    if (g.apply) expect(g.unverified).toBe(0);
+  });
+  it("handCheck: an unverified report used, or reports alone, mean CHECK BY HAND; GPS does not", () => {
+    expect(handCheck({ basis: "gps+reports", unverified: 2 })).toMatch(/^CHECK BY HAND \(2 unverified reports\)/);
+    expect(handCheck({ basis: "gps+reports", unverified: 0 })).toBe("");
+    expect(handCheck({ basis: "gps", unverified: 0 })).toBe("");
+    // The bot check proves a person, not three: reports alone still need a look.
+    expect(handCheck({ basis: "reports", unverified: 0 })).toMatch(/^CHECK BY HAND \(reports only\)/);
+    expect(handCheck({ basis: "reports", unverified: 1 })).toMatch(/^CHECK BY HAND \(reports only, 1 unverified\)/);
   });
 });

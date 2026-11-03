@@ -22,6 +22,35 @@ form field, without the image.
 
 A code change needs Deploy → Manage deployments → edit → New version; the URL stays the same.
 
+## Bot check (Cloudflare Turnstile, optional)
+
+The feedback form and «Λάθος θέση στάσης;» can send a Turnstile token. Each side works without the other:
+
+- No `VITE_TURNSTILE_SITE_KEY`: no widget, and the page loads no Cloudflare script.
+- No `TURNSTILE_SECRET`: the script does not check tokens, and the "Verified" column (H) stays empty.
+- Both set: the script asks Turnstile's siteverify about each token and writes `TRUE` or `FALSE` in
+  "Verified". A row that fails is kept. `scripts/stopfix.ts` marks proposals that rest on an unverified
+  report as CHECK BY HAND.
+
+The page loads the Turnstile script only when a form opens, never with the map. The widget is
+"interaction-only": most people see nothing; a box shows only when Cloudflare wants a click.
+
+Setup:
+
+1. Cloudflare dashboard → Turnstile → Add widget. Hostnames: `staseis.gr` and `bus.haroldpoi.dev` (it
+   redirects there; `localhost` too for tests). Mode: Managed. Copy the site key and the secret key.
+2. GitHub: Settings → Secrets and variables → Actions → Variables: add `VITE_TURNSTILE_SITE_KEY` = the site
+   key. (The site key is public: it ends up in the page.)
+3. Apps Script: replace `Code.gs` with this repo's `Code.gs`. Save.
+4. Project Settings → Script properties: add `TURNSTILE_SECRET` = the secret key.
+5. In the editor, select the function `checkTurnstileSetup` and click Run. Allow the new permission
+   ("Connect to an external service"). The log must say `invalid-input-response` (the secret is good;
+   the test token is fake). `invalid-input-secret` means the secret is wrong.
+6. Deploy → Manage deployments → edit (pencil) → Version: New version → Deploy. The URL stays the same.
+7. Re-run the "Deploy to GitHub Pages" workflow (or push), so the build gets the site key.
+
+Order does not matter: until both are set, rows are kept as today.
+
 Limits: request 2 MB, text 2000 characters, image 1.5 MB, 20 sends per minute and 50 images a
 day for everyone together (counted in the script properties as `images_<day>`; old keys can be
 deleted by hand). A send over a limit is refused whole, so the page keeps the text and the image. The

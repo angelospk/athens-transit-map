@@ -30,7 +30,7 @@
 | `bus_passes` | Διελεύσεις λεωφορείων από τη στάση στις 3 εβδομάδες |
 | `osm` | `agrees`: το OpenStreetMap συμφωνεί με τη νέα θέση |
 
-Οι συντεταγμένες είναι WGS84. Στο bus.haroldpoi.dev οι 125 στάσεις δείχνονται ήδη στη νέα θέση.
+Οι συντεταγμένες είναι WGS84. Στο staseis.gr οι 125 στάσεις δείχνονται ήδη στη νέα θέση.
 
 Λεπτομέρειες της μέτρησης: [lab/stops/README.md](../lab/stops/README.md). Δεδομένα OSM © OpenStreetMap
 contributors, ODbL.
