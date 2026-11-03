@@ -4,7 +4,7 @@
 // Env: TELEGRAM_TOKEN (required), STATE_DIR (default ~/.local/state/oasa-bus-bot), and the data URLs
 // TRIPS_URL, STATIC_BASE, API_BASE. Never log the token: it is in every Telegram URL.
 // Web push (off without the keys): VAPID_PUBLIC, VAPID_PRIVATE (`npx web-push generate-vapid-keys`),
-// PUSH_PORT (default 8188, on 127.0.0.1 behind the Cloudflare tunnel), ORIGINS (default the map's).
+// PUSH_PORT (default 8188, on 127.0.0.1 behind the Cloudflare tunnel), ORIGINS (default the map's: staseis.gr and the old bus.haroldpoi.dev).
 
 import { createServer } from "node:http";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -82,7 +82,7 @@ const bot = new Bot({
   now: Date.now, sleep, save, tg, get, push,
 }, load());
 
-const ORIGINS = (process.env.ORIGINS || "https://bus.haroldpoi.dev").split(",").map(s => s.trim());
+const ORIGINS = (process.env.ORIGINS || "https://staseis.gr,https://bus.haroldpoi.dev").split(",").map(s => s.trim());
 if (vapid.pub && vapid.priv)
   createServer(pushApi(bot, { key: vapid.pub, origins: ORIGINS }, () => void bot.flush())).listen(Number(process.env.PUSH_PORT) || 8188, "127.0.0.1");
 else console.log("web push off: no VAPID keys");
