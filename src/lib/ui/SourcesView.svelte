@@ -73,6 +73,8 @@
       <p>Μετρό, ΗΣΑΠ και τραμ: σταθμοί από το GTFS της ΣΤΑΣΥ, χάραξη γραμμών από το OpenStreetMap.</p>
       <p class="src"><a href={STASY_GTFS_PAGE} target="_blank" rel="noopener">GTFS της ΣΤΑΣΥ (data.gov.gr)</a><span aria-hidden="true">&nbsp;·&nbsp;</span><a
         href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap (ODbL)</a></p>
+      <p>Δημοτικά λεωφορεία: διαδρομές και στάσεις από το OpenStreetMap, χωρίς ώρες· το πρόγραμμα είναι στη σελίδα κάθε δήμου.</p>
+      <p class="src"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors (ODbL)</a></p>
     </li>
     <li>
       <h3><span>1</span> Βασικός χάρτης</h3>

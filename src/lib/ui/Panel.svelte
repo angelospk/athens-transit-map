@@ -39,6 +39,7 @@
     if (pop === "help") void tick().then(() => document.getElementById("pop-help")?.focus());
     if (pop !== "layers") return;
     app.loadMetro();   // again, if the first load failed
+    app.loadMunicipal();   // the «Δημοτικά» switch shows once its data is there
   };
 
   // «Οδηγίες εδώ» in the search modal: the trip planner opens and takes the place as its end.
@@ -287,6 +288,13 @@
             <span><b>Τρένα</b> <small>{#if app.trainsOn && (app.stasyTrains.length || app.suburbanTrains.length)}· {app.stasyTrains.length + app.suburbanTrains.length} τώρα{/if}</small><br />
               <small>Μετρό, τραμ και Προαστιακός, με τους σταθμούς τους. Μετρό και τραμ κατά προσέγγιση από το πρόγραμμα· Προαστιακός με GPS.</small></span>
           </label>
+          {#if app.municipal}
+            <label class="switch">
+              <input type="checkbox" checked={app.municipalOn} onchange={e => app.setMunicipalOn(e.currentTarget.checked)} />
+              <span><b>Δημοτικά</b> <small>· {new Set(app.municipal.routes.map(r => r.municipality)).size} δήμοι</small><br />
+                <small>Τα λεωφορεία των δήμων, από το OpenStreetMap. Χωρίς ώρες: πάτα μια γραμμή για το πρόγραμμα του δήμου.</small></span>
+            </label>
+          {/if}
         </section>
         <section>
           <h4>Θέμα χάρτη</h4>

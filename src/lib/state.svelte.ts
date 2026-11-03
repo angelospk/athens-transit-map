@@ -6,6 +6,7 @@ import { fetchV2Alerts, fetchCity, fetchLine, fetchLines, fetchLineStatic, fetch
 import { cityKey, isCityLive } from "./city";
 import { loadMetro, type MetroData } from "./metro";
 import { loadSuburban, type SuburbanData } from "./suburban";
+import { loadMunicipal, type MunicipalData } from "./municipal";
 import { railMotions, runIds, type RailMotion, type StasyVehicle, type SuburbanTrain, type TrainSel } from "./trains";
 import type { Place, TripIndex } from "./trip";
 import { LinePoller, type PollState } from "./poller";
@@ -122,6 +123,11 @@ export class AppState {
   motion = $state(stored("motion", true, isBool));
   // Typical bus speed per road segment (public/speed/segments.geojson, lab/segspeed).
   speedOn = $state(stored("speedOn", false, isBool));
+  // «Δημοτικά»: the municipal bus routes (municipal.ts). Off at first; the switch shows only once the data
+  // is there (loaded when the map menu opens, or at start when the switch was left on).
+  municipalOn = $state(stored("municipalOn", false, isBool));
+  municipal = $state.raw<MunicipalData | null>(null);
+  private municipalLoading = false;
   // Map filters; the selected vehicle is always shown.
   only = $state.raw<Only>(stored("only", { fresh: false, onTime: false },
     v => !!v && isBool((v as Only).fresh) && isBool((v as Only).onTime)));
@@ -296,6 +302,7 @@ export class AppState {
     void this.refreshStatus();
     if (this.cityOn) this.startCity();
     this.loadMetro();
+    if (this.municipalOn) this.loadMunicipal();
     this.startTrains();
     void this.loadDisruptions();
     setInterval(() => { if (!document.hidden) void this.loadDisruptions(); }, DISRUPTIONS_EVERY_MS);
@@ -735,6 +742,19 @@ export class AppState {
   setAgeMode(m: AgeMode) {
     this.ageMode = m;
     store("ageMode", m);
+  }
+
+  setMunicipalOn(on: boolean) {
+    this.municipalOn = on;
+    store("municipalOn", on);
+    if (on) this.loadMunicipal();
+  }
+
+  // Once; again after a failure or an empty answer (the backend may not have the data yet).
+  loadMunicipal() {
+    if (this.municipal || this.municipalLoading) return;
+    this.municipalLoading = true;
+    loadMunicipal().then(d => (this.municipal = d), () => {}).finally(() => (this.municipalLoading = false));
   }
 
   setSpeedOn(on: boolean) {

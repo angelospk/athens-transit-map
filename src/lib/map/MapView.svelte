@@ -21,6 +21,7 @@
   import { Mover, planOnto } from "../motion";
   import { shapeLength, stopOffsets } from "../predict";
   import { loadSpeed, SPEED_STOPS, type SpeedData } from "../speed";
+  import { municipalFC } from "../municipal";
   import { resolveDark } from "../theme";
   import type { Variant } from "../types";
   import type { AppState } from "../state.svelte";
@@ -337,8 +338,43 @@
   // Fainter while a line is followed: the line and its vehicles come first.
   const speedOpacity = () => (app.detailLines.length ? 0.3 : 0.6);
 
+  // «Δημοτικά» (municipal.ts): the municipal bus routes, thin, dashed and muted, under every other layer of ours
+  // but the speeds; their stops from zoom 14. Hidden while the switch is off; empty until the data loads.
+  const MUNI = "#8c7fa6";
+  function addMunicipal(m: MlMap) {
+    const vis = app.municipalOn ? "visible" : "none";
+    m.addSource("municipal", { type: "geojson", data: app.municipal ? municipalFC(app.municipal) : EMPTY });
+    m.addLayer({ id: "municipal-line", type: "line", source: "municipal", filter: ["==", ["get", "kind"], "line"],
+      layout: { "line-join": "round", "line-cap": "round", visibility: vis },
+      paint: { "line-color": MUNI, "line-opacity": 0.75, "line-dasharray": [2, 1.5],
+        "line-width": ["interpolate", ["linear"], ["zoom"], 11, 1.2, 14, 2.5, 17, 4] } });
+    m.addLayer({ id: "municipal-hit", type: "line", source: "municipal", filter: ["==", ["get", "kind"], "line"],
+      layout: { visibility: vis }, paint: { "line-width": 14, "line-opacity": 0 } });
+    m.addLayer({ id: "municipal-stop", type: "circle", source: "municipal", filter: ["==", ["get", "kind"], "stop"], minzoom: 14,
+      layout: { visibility: vis },
+      paint: { "circle-radius": 3.5, "circle-color": "#fff", "circle-stroke-color": MUNI, "circle-stroke-width": 1.5 } });
+  }
+  const MUNI_LAYERS = ["municipal-line", "municipal-hit", "municipal-stop"];
+
+  // A tapped municipal route or stop: its municipality and a link to the municipality's timetable page.
+  function municipalInfo(p: Record<string, unknown>) {
+    const el = document.createElement("div");
+    el.className = "munipop";
+    const add = (text: string, tag = "div") => el.appendChild(Object.assign(document.createElement(tag), { textContent: text }));
+    add("Δημοτική συγκοινωνία", "small");
+    add(String(p.m), "b");
+    if (p.kind === "stop") { add(String(p.name)); if (p.lines) add(`Γραμμές: ${p.lines}`); }
+    else add(String(p.title));
+    if (p.url) Object.assign(el.appendChild(document.createElement("a")),
+      { href: String(p.url), target: "_blank", rel: "noopener", textContent: "Πρόγραμμα στον δήμο ›" });
+    else add("Δεν έχουμε τη σελίδα του προγράμματος.", "small");
+    add("Χωρίς ώρες ή ζωντανές θέσεις · © OpenStreetMap", "small");
+    return el;
+  }
+
   function addLayers(m: MlMap) {
     addSpeed(m);
+    addMunicipal(m);
     addMetroLayers(m);
     addSuburbanLayers(m);
     addCityLayers(m);
@@ -874,9 +910,19 @@
         popup.setLngLat(e.lngLat).setDOMContent(segInfo(p, kmh)).addTo(m);
         return;
       }
+      if (app.municipalOn) {
+        const near = (r: number) => m.queryRenderedFeatures([[e.point.x - r, e.point.y - r], [e.point.x + r, e.point.y + r]],
+          { layers: ["municipal-stop", "municipal-hit"] });
+        const hits = near(10), muni = hits.find(f => f.properties.kind === "stop") ?? hits[0];
+        if (muni) {
+          popup.setLngLat(muni.geometry.type === "Point" ? (muni.geometry.coordinates as [number, number]) : e.lngLat)
+            .setDOMContent(municipalInfo(muni.properties)).addTo(m);
+          return;
+        }
+      }
       app.closeCards();
     });
-    for (const layer of ["routes-hit", "stops", "city-dot", "metro-station", "suburban-station", "speed", "train-dot"]) {
+    for (const layer of ["routes-hit", "stops", "city-dot", "metro-station", "suburban-station", "speed", "train-dot", "municipal-hit", "municipal-stop"]) {
       m.on("mouseenter", layer, () => (m.getCanvas().style.cursor = "pointer"));
       m.on("mouseleave", layer, () => (m.getCanvas().style.cursor = ""));
     }
@@ -1065,6 +1111,16 @@
       app.setSpeedOn(false);
     });
     if (loaded) map!.setLayoutProperty("speed", "visibility", on ? "visible" : "none");
+  });
+
+  $effect(() => {
+    const vis = app.municipalOn ? "visible" : "none";
+    if (loaded) for (const id of MUNI_LAYERS) map!.setLayoutProperty(id, "visibility", vis);
+  });
+
+  $effect(() => {
+    const d = app.municipal;
+    if (loaded) (map!.getSource("municipal") as GeoJSONSource).setData(d ? municipalFC(d) : EMPTY);
   });
 
   $effect(() => {
@@ -1332,6 +1388,10 @@
   @media (prefers-reduced-motion: reduce) { :global(.stop-pin.drop svg) { animation: none; } }
   :global(.segpop b) { font-size: 15px; }
   :global(.segpop div) { font-size: 12px; }
+  :global(.munipop) { display: grid; gap: 2px; }
+  :global(.munipop b) { font-size: 14px; }
+  :global(.munipop small) { font-size: 11px; opacity: 0.75; }
+  :global(.munipop a) { display: inline-block; padding: 6px 0; font-weight: 600; color: var(--accent); }
   .nogl { position: absolute; inset: auto 16px 16px; padding: 12px 14px; border-radius: 12px;
     background: var(--warn-bg); box-shadow: var(--shadow); }
 </style>
