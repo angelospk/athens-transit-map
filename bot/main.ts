@@ -123,4 +123,5 @@ setInterval(() => {
 }, 1000);
 
 console.log(`oasa-bus-bot started, state in ${file}`);
+bot.init();
 void updates();

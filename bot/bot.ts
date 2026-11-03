@@ -20,8 +20,9 @@ import { AlertWatch, hitText, type AlertSpec } from "../src/lib/alerts";
 import { clock } from "../src/lib/format";
 import { walkUrl } from "../src/lib/maps";
 import { railCheck, railHitText, railNoneText, type RailSpec } from "../src/lib/railAlerts";
-import { decodeAlert, type Rep } from "../src/lib/tglink";
-import type { TripIndex } from "../src/lib/trip";
+import { alertLinesAt, arrivalGroups, headTo, linesAt, stopIndex, timeText, twins, type StopBoard } from "../src/lib/stops";
+import { decodeAlert, encodeAlert, type Rep } from "../src/lib/tglink";
+import type { Place, TripIndex } from "../src/lib/trip";
 import type { LineLive, LineStatic } from "../src/lib/types";
 import { fold } from "../src/lib/search";
 import { headsignName, type V2Arrival, type V2Stop } from "../src/lib/v2";
@@ -51,9 +52,11 @@ export interface SavedRail {
   fired: [string, number][];   // arrival key → when it was sent (s)
   said?: boolean;              // "nothing is coming" was sent: say it once
 }
-export interface BotState { offset: number; alerts: SavedAlert[]; rails?: SavedRail[] }
+export interface BotState { offset: number; alerts: SavedAlert[]; rails?: SavedRail[]; favs?: Record<string, FavStop[]> }
+// A stop a chat saved (⭐): its GTFS id and its name as the index has it.
+export interface FavStop { id: string; name: string }
 
-interface Msg { chat: { id: number; type: string }; text?: string }
+interface Msg { chat: { id: number; type: string }; text?: string; location?: { latitude: number; longitude: number } }
 interface Callback { id: string; from: { id: number }; data?: string; message?: { chat: { id: number }; message_id: number } }
 interface Update { update_id: number; message?: Msg; callback_query?: Callback }
 
@@ -73,15 +76,69 @@ const FORCE_GAP_MS = 60_000;   // a link newer than the bot's data reloads it, a
 const START_GAP_MS = 2000;     // one new alert per chat this often
 const SEND_GAP_MS = 40;        // Telegram: about 30 messages a second in all
 const MIN_POLL_MS = 5000;      // the contract's floor per line
+const NEAR_M = 400;            // a location offers the stops this close to it
+const FAV_MAX = 8;             // saved stops per chat
+const BOARD_MS = 15_000;       // one stop board answers every chat this long
+const BOARD_GAP_MS = 3000;     // one 🔄 per chat this often
+const MAX_BUTTONS = 6;         // stops offered for one search or location
 // Push services of the browsers: the bot sends only there, never to any other URL it is given.
 const PUSH_HOSTS = [/^fcm\.googleapis\.com$/, /^android\.googleapis\.com$/, /(^|\.)push\.apple\.com$/, /(^|\.)push\.services\.mozilla\.com$/, /\.notify\.windows\.com$/];
 
 type Made = { ok: true; a: SavedAlert; n: number } | { ok: false; why: "data" | "bad" | "old" | "updating" | "soon" | "busy" | "full" };
 
+// The bot's menu (setMyCommands, bot/main.ts calls init()) and the reply keyboard that comes with HELP.
+export const COMMANDS = [
+  { command: "stasi", description: "Αφίξεις σε μια στάση: όνομα ή 📍" },
+  { command: "fav", description: "Οι στάσεις μου" },
+  { command: "list", description: "Οι ειδοποιήσεις σου" },
+  { command: "stop", description: "Σταμάτα όλες τις ειδοποιήσεις" },
+];
+const FAV_TEXT = "⭐ Οι στάσεις μου";
+const KEYBOARD = {
+  keyboard: [[{ text: "📍 Κοντά μου", request_location: true }, { text: FAV_TEXT }]],
+  resize_keyboard: true, is_persistent: true,
+};
+
 const HELP = "Γεια! Σου γράφω όταν το λεωφορείο σου πλησιάζει τη στάση σου.\n\n" +
+  "Στείλε μου όνομα στάσης ή πάτα 📍 Κοντά μου για να δεις τις αφίξεις.\n\n" +
   "Άνοιξε τον χάρτη https://bus.haroldpoi.dev, πάτα 🧭, διάλεξε από πού και προς τα πού, και μετά «Στο Telegram».\n\n" +
+  "/stasi: οι αφίξεις σε μια στάση.\n" +
+  "/fav: οι στάσεις σου.\n" +
   "/list: οι ειδοποιήσεις σου.\n" +
   "/stop: σταματάει όλες τις ειδοποιήσεις.";
+
+// A message button, or a row of them.
+interface Button { text: string; callback_data?: string; request_location?: boolean }
+
+// trips.json's places and search (src/lib/trip.ts) load on the first search. That file reads
+// import.meta.env as it loads, and the node build (bot/main.ts) has none: give it one first.
+type Trip = typeof import("../src/lib/trip");
+let tripMod: Trip | null = null;
+async function trip(): Promise<Trip> {
+  (import.meta as unknown as { env?: Record<string, string> }).env ??= {};
+  tripMod ??= await import("../src/lib/trip");
+  return tripMod;
+}
+
+// places() builds a place for every stop name; once per index.
+const placeList = new WeakMap<TripIndex, Place[]>();
+
+// The lines that call at stop k, short: the stop buttons.
+const lineText = (ix: TripIndex, k: number) => linesAt(ix, k).map(l => l.line).slice(0, 5).join(", ");
+const stopButton = (ix: TripIndex, k: number, sid: string, tail?: string): Button => {
+  const lines = lineText(ix, k);
+  return { text: `${ix.s[k][0]}${tail ?? ""}${lines ? ` · ${lines}` : ""}`, callback_data: `b:${sid}` };
+};
+
+// A stop's board: its name, one line per arrival group, and when this answer was made.
+function boardText(ix: TripIndex, k: number, b: StopBoard, now: number): string {
+  const out = [`🚏 ${b.stop.name || ix.s[k][0]}`];
+  const groups = arrivalGroups(b.arrivals, now);
+  for (const g of groups) out.push(`${g.line} → ${headTo(ix, g.line, g.variant, k, g.headsign).to}: ${g.times.map(timeText).join(", ")}`);
+  if (!groups.length) out.push("Κανένα λεωφορείο καθ' οδόν τώρα.");
+  out.push(`Ενημέρωση ${clock(Math.floor(now / 1000)).slice(0, 5)}`);
+  return out.join("\n");
+}
 
 export class Bot {
   private state: BotState;
@@ -98,13 +155,35 @@ export class Bot {
   private queue: { method: string; body: Record<string, unknown> }[] = [];
   private draining: Promise<void> | null = null;
   private railLinks = new Map<string, { spec: Omit<RailSpec, "until">; at: number }>();
+  private boards = new Map<string, { at: number; b: Promise<StopBoard | null> }>();
+  private lastBoard = new Map<number, number>();   // chat → its last 🔄
+  private tasks = new Set<Promise<void>>();        // board work that runs apart from handle()
 
   constructor(private d: BotDeps, saved?: BotState) {
-    this.state = { offset: saved?.offset ?? 0, alerts: saved?.alerts ?? [], rails: saved?.rails ?? [] };
+    this.state = { offset: saved?.offset ?? 0, alerts: saved?.alerts ?? [], rails: saved?.rails ?? [], favs: saved?.favs ?? {} };
     for (const a of this.state.alerts) this.watches.set(a.id, new AlertWatch(a.watch));
   }
 
   private get rails(): SavedRail[] { return (this.state.rails ??= []); }
+  private get favs(): Record<string, FavStop[]> { return (this.state.favs ??= {}); }
+
+  // The command menu, once at start.
+  init() {
+    this.queue.push({ method: "setMyCommands", body: { commands: COMMANDS } });
+  }
+
+  // Waits for the stop boards started by handle(): the tests, and nothing left behind.
+  async settle() {
+    while (this.tasks.size) await Promise.all([...this.tasks]);
+  }
+
+  // A board runs as a task: a slow stop board must not hold up the other updates. Its messages are sent
+  // as soon as it is done. It changes no saved state, so the update offset need not wait for it.
+  private task(p: Promise<void>) {
+    const t = p.catch(e => console.error("update:", (e as Error).message))
+      .finally(() => { this.tasks.delete(t); void this.flush(); });
+    this.tasks.add(t);
+  }
 
   get offset() { return this.state.offset; }
 
@@ -115,7 +194,7 @@ export class Bot {
       offset = Math.max(offset, u.update_id + 1);
       try {
         if (u.message) await this.onMessage(u.message);
-        else if (u.callback_query) this.onCallback(u.callback_query);
+        else if (u.callback_query) await this.onCallback(u.callback_query);
       } catch (e) {
         console.error("update failed:", (e as Error).message);
       }
@@ -176,6 +255,7 @@ export class Bot {
         const chat = m.body.chat_id;
         this.remove(a => a.chat === chat);
         this.state.rails = this.rails.filter(a => a.chat !== chat);
+        if (this.state.favs) delete this.state.favs[String(chat)];   // his saved stops go with him
         this.queue = this.queue.filter(q => q.body.chat_id !== chat);
         this.save();
       } else if (!r.ok) console.error(`telegram ${m.method}: ${r.error_code ?? "network"}`);
@@ -185,8 +265,10 @@ export class Bot {
 
   private async onMessage(m: Msg) {
     const chat = m.chat.id;
-    const [cmd, arg] = (m.text ?? "").trim().split(/\s+/);
     if (m.chat.type !== "private") return this.send(chat, "Δουλεύω μόνο σε προσωπική συζήτηση.");
+    const text = (m.text ?? "").trim();
+    const [cmd, ...words] = text ? text.split(/\s+/) : [""];
+    const arg = words[0];
     if (cmd === "/stop") {
       const had = this.state.alerts.some(a => a.chat === chat) || this.rails.some(a => a.chat === chat);
       this.remove(a => a.chat === chat);
@@ -196,7 +278,15 @@ export class Bot {
     if (cmd === "/list") return this.list(chat);
     if (cmd === "/start" && arg?.startsWith("r")) return this.startRailChat(chat, arg);
     if (cmd === "/start" && arg) return this.start(chat, arg);
-    this.send(chat, HELP);
+    if (m.location) return this.near(chat, m.location.latitude, m.location.longitude);
+    if (cmd === "/stasi") {   // a name, or a location from the keyboard
+      const q = words.join(" ");
+      return q ? this.find(chat, q) : this.say(chat, "Γράψε όνομα στάσης ή πάτα 📍 Κοντά μου.", { reply_markup: KEYBOARD });
+    }
+    if (cmd === "/fav" || text === FAV_TEXT) return this.favList(chat);
+    if (text && !cmd.startsWith("/")) return this.find(chat, text);
+    // /start alone, and anything else: what the bot is and how to use it.
+    this.say(chat, HELP, { reply_markup: KEYBOARD });
   }
 
   // One-off alerts, and recurring ones inside their window, are polled; the data must be the alert's own.
@@ -219,6 +309,146 @@ export class Bot {
       [{ text: "Απεγγραφή από όλα", callback_data: "all" }],
     ];
     this.queue.push({ method: "sendMessage", body: { chat_id: chat, text, disable_web_page_preview: true, reply_markup: { inline_keyboard } } });
+  }
+
+  // A plain message, with the reply keyboard or inline buttons when given.
+  private say(chat: number, text: string, extra: { reply_markup?: unknown } = {}) {
+    this.queue.push({ method: "sendMessage", body: { chat_id: chat, text, disable_web_page_preview: true, ...extra } });
+  }
+
+  // Stops by name: the index's places (src/lib/trip.ts), each of its stops to its own board.
+  private async find(chat: number, q: string) {
+    await this.loadData();
+    const ix = this.ix;
+    if (!ix) return this.send(chat, "Δεν φορτώνουν τα δεδομένα των στάσεων. Δοκίμασε σε λίγο.");
+    const t = await trip();
+    const cached = placeList.get(ix);
+    const list = cached ?? t.places(ix);
+    if (!cached) placeList.set(ix, list);
+    const rows: Button[][] = [];
+    for (const p of t.searchPlaces(list, q, MAX_BUTTONS)) {
+      const key = fold(p.label);
+      for (let k = 0; k < ix.s.length && rows.length < MAX_BUTTONS; k++) {
+        const [name, lat, lon, sid] = ix.s[k];
+        if (!sid || fold(name) !== key || !p.pts.some(x => t.distM(x, [lat, lon]) <= 1)) continue;
+        rows.push([stopButton(ix, k, sid)]);
+      }
+      if (rows.length >= MAX_BUTTONS) break;
+    }
+    if (!rows.length) return this.send(chat, `Δεν βρήκα στάση «${q}». Δοκίμασε άλλο όνομα.`);
+    this.say(chat, "Ποια στάση;", { reply_markup: { inline_keyboard: rows } });
+  }
+
+  // Stops around a location: the nearest ones, each to its board.
+  private async near(chat: number, lat: number, lon: number) {
+    await this.loadData();
+    const ix = this.ix;
+    if (!ix) return this.send(chat, "Δεν φορτώνουν τα δεδομένα των στάσεων. Δοκίμασε σε λίγο.");
+    const t = await trip();
+    const near = ix.s.map((x, k) => ({ k, sid: x[3], m: t.distM([lat, lon], [x[1], x[2]]) }))
+      .filter((x): x is { k: number; sid: string; m: number } => !!x.sid && x.m <= NEAR_M)
+      .sort((a, b) => a.m - b.m).slice(0, MAX_BUTTONS);
+    if (!near.length) return this.send(chat, `Καμία στάση σε ${NEAR_M} μ. Δοκίμασε όνομα στάσης.`);
+    this.say(chat, "Οι κοντινότερες στάσεις:", { reply_markup: { inline_keyboard: near.map(x => [stopButton(ix, x.k, x.sid, ` · ${Math.round(x.m)} μ`)]) } });
+  }
+
+  // ⭐ and /fav: the chat's saved stops, each to its board.
+  private favList(chat: number) {
+    const mine = this.favs[String(chat)] ?? [];
+    if (!mine.length) return this.send(chat, "Δεν έχεις αποθηκευμένες στάσεις. Γράψε όνομα στάσης ή πάτα 📍 Κοντά μου.");
+    this.say(chat, "Οι στάσεις σου:", { reply_markup: { inline_keyboard: mine.map(f => [{ text: f.name, callback_data: `b:${f.id}` }]) } });
+  }
+
+  // b:<sid> sends the board, r:<sid> (🔄) edits the message it came from; one 🔄 per chat per 3 s.
+  private async showBoard(q: Callback, edit: boolean, sid: string) {
+    const chat = q.from.id;
+    if (edit) {
+      const now = this.d.now();
+      if (now - (this.lastBoard.get(chat) ?? -Infinity) < BOARD_GAP_MS) return this.answer(q.id, "Μόλις ανανέωσες. Δοκίμασε σε λίγο.");
+      this.lastBoard.set(chat, now);
+    }
+    await this.loadData();
+    const ix = this.ix;
+    const k = ix ? stopIndex(ix, sid) : -1;
+    if (!ix || k < 0) return this.answer(q.id, "Δεν βρήκα αυτή τη στάση.");
+    const board = await this.boardOf(sid);
+    if (!board) {
+      this.send(chat, "Δεν φορτώνουν οι αφίξεις. Δοκίμασε σε λίγο.");
+      return this.answer(q.id);
+    }
+    const text = boardText(ix, k, board, this.d.now());
+    const reply_markup = { inline_keyboard: this.boardButtons(chat, ix, k, sid) };
+    if (edit && q.message && q.message.chat.id === chat)
+      this.queue.push({ method: "editMessageText", body: { chat_id: chat, message_id: q.message.message_id, text, reply_markup } });
+    else this.queue.push({ method: "sendMessage", body: { chat_id: chat, text, disable_web_page_preview: true, reply_markup } });
+    this.answer(q.id);
+  }
+
+  // One stop's /v1 board, cached 15 s for every chat; chats asking at once share the request in flight.
+  // Old answers go, so the cache stays small.
+  private boardOf(sid: string): Promise<StopBoard | null> {
+    const now = this.d.now();
+    for (const [key, v] of this.boards) if (now - v.at >= BOARD_MS) this.boards.delete(key);
+    const hit = this.boards.get(sid);
+    if (hit) return hit.b;
+    const b = this.d.get(`${this.d.urls.api}/v1/stops/${encodeURIComponent(sid)}`).then(r => {
+      const body = r.body as StopBoard | null;
+      return r.status === 200 && body && Array.isArray(body.arrivals) && typeof body.stop?.name === "string" ? body : null;
+    }, () => null);
+    this.boards.set(sid, { at: now, b });
+    return b;
+  }
+
+  // The board's buttons: 🔄, ⭐ or ★, a 🔔 per line, and the stop across the street.
+  private boardButtons(chat: number, ix: TripIndex, k: number, sid: string): Button[][] {
+    const saved = (this.favs[String(chat)] ?? []).some(f => f.id === sid);
+    const rows: Button[][] = [[
+      { text: "🔄 Ανανέωση", callback_data: `r:${sid}` },
+      { text: saved ? "★ Αφαίρεση" : "⭐ Αποθήκευση", callback_data: `f:${sid}` },
+    ]];
+    const bells: Button[] = [];
+    for (const l of linesAt(ix, k)) {
+      const data = encodeAlert(ix, 3, alertLinesAt(ix, k, [l.line]));
+      if (!data || `a:${data}`.length > 64) continue;
+      bells.push({ text: `🔔 ${l.line}`, callback_data: `a:${data}` });
+    }
+    for (let i = 0; i < bells.length; i += 4) rows.push(bells.slice(i, i + 4));
+    const twin = twins(ix, k)[0];
+    const tid = twin ? ix.s[twin.i][3] : undefined;
+    if (twin && tid) rows.push([{ text: `↔ Απέναντι στάση · ${twin.m} μ`, callback_data: `b:${tid}` }]);
+    return rows;
+  }
+
+  // f:<sid>: save or remove a stop (at most FAV_MAX), and flip its star on the board.
+  private async star(q: Callback, sid: string) {
+    const chat = q.from.id;
+    await this.loadData();
+    const ix = this.ix;
+    const k = ix ? stopIndex(ix, sid) : -1;
+    if (!ix || k < 0) return this.answer(q.id, "Δεν βρήκα αυτή τη στάση.");
+    const key = String(chat), mine = this.favs[key] ?? [];
+    const at = mine.findIndex(f => f.id === sid);
+    if (at < 0 && mine.length >= FAV_MAX) return this.answer(q.id, `Έχεις ${FAV_MAX} αποθηκευμένες στάσεις. Αφαίρεσε μία πρώτα.`);
+    const list = at < 0 ? [...mine, { id: sid, name: ix.s[k][0] }] : mine.filter((_, i) => i !== at);
+    const before = this.state.favs;
+    const favs = { ...this.favs, [key]: list };
+    if (!list.length) delete favs[key];
+    this.state.favs = favs;
+    // Saved before the answer: a ⭐ must survive a restart.
+    if (!this.save()) { this.state.favs = before; return this.answer(q.id, "Δεν αποθηκεύτηκε. Δοκίμασε σε λίγο."); }
+    if (q.message && q.message.chat.id === chat)
+      this.queue.push({ method: "editMessageReplyMarkup", body: { chat_id: chat, message_id: q.message.message_id, reply_markup: { inline_keyboard: this.boardButtons(chat, ix, k, sid) } } });
+    this.answer(q.id, at < 0 ? "Αποθηκεύτηκε." : "Αφαιρέθηκε.");
+  }
+
+  // 🔔 on a board: the same alert a map link would start, saved with the update offset as /start is.
+  private async alert(q: Callback, payload: string) {
+    await this.start(q.from.id, payload);
+    this.answer(q.id);
+  }
+
+  private answer(id: string, text?: string) {
+    this.queue.push({ method: "answerCallbackQuery", body: { callback_query_id: id, ...(text ? { text } : {}) } });
   }
 
   private async start(chat: number, payload: string) {
@@ -397,8 +627,13 @@ export class Bot {
     return { ok: true, a, n: d.n };
   }
 
-  private onCallback(q: Callback) {
+  // Boards run apart (task()); 🔔 and ⭐ change state, so they finish here, in update order.
+  private async onCallback(q: Callback) {
     const user = q.from.id, data = q.data ?? "";
+    if (data.startsWith("b:")) return this.task(this.showBoard(q, false, data.slice(2)));
+    if (data.startsWith("r:")) return this.task(this.showBoard(q, true, data.slice(2)));
+    if (data.startsWith("f:")) return this.star(q, data.slice(2));
+    if (data.startsWith("a:")) return this.alert(q, data.slice(2));
     let text = "Τίποτα για σταμάτημα.";
     if (data === "all" || data.startsWith("stop:")) {
       const id = data.slice(5);
