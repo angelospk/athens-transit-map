@@ -83,6 +83,53 @@ describe("geometry", () => {
   });
 });
 
+// Local metres (x east, y north) near 37.97°N, for hand-built shapes and stops.
+const KX = 111_320 * Math.cos(37.97 * Math.PI / 180);
+const xy = (x: number, y: number): [number, number] => [23.70 + x / KX, 37.97 + y / 111_320];   // [lon, lat]
+const shapeXY = (pts: [number, number][]) => pts.map(([x, y]) => [xy(x, y)[1], xy(x, y)[0]] as [number, number]);
+const LEFT_OUT = 171;
+// Least cost over every order: each stop takes a leg (no more than 30 m behind any before it) or is left out.
+function bestCost(shape: [number, number][], stops: [number, number][]): number {
+  const cands = stops.map(p => projectCandidates(shape, p));
+  let best = Infinity;
+  const go = (i: number, max: number, cost: number) => {
+    if (i === stops.length) { best = Math.min(best, cost); return; }
+    for (const c of cands[i]) if (c.s >= max - 30) go(i + 1, Math.max(max, c.s), cost + c.offM);
+    go(i + 1, max, cost + LEFT_OUT);
+  };
+  go(0, 0, 0);
+  return best;
+}
+const costOf = (shape: [number, number][], stops: [number, number][], s: number[]) => s.reduce((t, x, i) => {
+  const c = projectCandidates(shape, stops[i]).find(c => Math.abs(c.s - x) < 0.01);
+  return t + (c ? c.offM : LEFT_OUT);
+}, 0);
+
+describe("stopOffsets finds the least-cost order (web#20)", () => {
+  it("on an out-and-back, keeps a costlier path to a leg when it rules out fewer later legs", () => {
+    // 200 m out, 1 m apart, 200 m back. One best path per leg gives cost 21; 20 exists.
+    const shape = shapeXY([[0, 0], [200, 0], [200, 1], [0, 1]]);
+    const stops = ([[138, 10], [120, 3], [136, 3], [160, 5], [148, 0]] as [number, number][]).map(([x, y]) => xy(x, y));
+    const s = stopOffsets(shape, stops);
+    expect(bestCost(shape, stops)).toBeCloseTo(20, 1);
+    expect(costOf(shape, stops, s)).toBeCloseTo(20, 1);
+  });
+  it("takes the leg nearer by 0.1 m, also when it lies far along the route", () => {
+    // 2 km out, 1 m apart, 2 km back; the stop is 0.55 m from the way out, 0.45 m from the way back.
+    const shape = shapeXY([[0, 0], [2000, 0], [2000, 1], [0, 1]]);
+    const s = stopOffsets(shape, [xy(200, 0.55)]);
+    expect(s[0]).toBeCloseTo(2000 + 1 + 1800, -1);
+  });
+  it("on a straight route, leaves out the one stop that rules out two", () => {
+    // Stops at 100, 80, 60, 65, 70 m: leaving 100 out costs 171; one best path per leg left two out (342).
+    const shape = shapeXY([[0, 0], [500, 0]]);
+    const stops = [100, 80, 60, 65, 70].map(x => xy(x, 0));
+    const s = stopOffsets(shape, stops);
+    expect(costOf(shape, stops, s)).toBeCloseTo(LEFT_OUT, 0);
+    expect(s.map(Math.round)).toEqual([0, 80, 60, 65, 70]);
+  });
+});
+
 describe("updateTrack", () => {
   const r = route(east);
   it("starts with no speed, then measures it", () => {

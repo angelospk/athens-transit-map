@@ -102,28 +102,31 @@ export function shapeLength(shape: [number, number][]): number {
 // not stop by stop: on a loop the first stop is near both ends of the shape, and taking the end would
 // push every later stop to the end too (web#16). A stop may also be left out: it takes the place of the stop
 // before, at a cost above any leg's. So a terminus found only at the shape's end is left out, not every stop after it.
+// The paths no other one beats. A path is worth keeping while no other has both a lower cost and no
+// higher max (a higher max rules more later legs out): one best path per leg is not enough (web#20).
+// Of two equal ones, the earlier stays.
+function frontier<T extends { max: number; cost: number }>(xs: T[]): T[] {
+  return xs.filter((y, j) => !xs.some((x, i) => i !== j && x.max <= y.max && x.cost <= y.cost
+    && (x.max < y.max || x.cost < y.cost || i < j)));
+}
+
 export function stopOffsets(shape: [number, number][], stops: LngLat[]): number[] {
   type Step = { s: number; max: number; cost: number; from: number };
   const steps: Step[][] = [];
   for (const p of stops) {
     const before = steps[steps.length - 1] ?? [{ s: 0, max: 0, cost: 0, from: -1 }];
     const next: Step[] = [];
-    for (const c of projectCandidates(shape, p)) {
-      let best: Step | null = null;
-      before.forEach((b, k) => {
-        if (c.s < b.max - BACK_TOLERANCE_M) return;
-        const cost = b.cost + c.offM;
-        if (!best || cost < best.cost - 0.5) best = { s: c.s, max: Math.max(b.max, c.s), cost, from: k };
-      });
-      if (best) next.push(best);
-    }
+    for (const c of projectCandidates(shape, p)) before.forEach((b, k) => {
+      if (c.s >= b.max - BACK_TOLERANCE_M) next.push({ s: c.s, max: Math.max(b.max, c.s), cost: b.cost + c.offM, from: k });
+    });
     // After the legs: on equal cost, a stop in place wins over one left out.
     before.forEach((b, k) => next.push({ ...b, cost: b.cost + LEFT_OUT_COST, from: k }));
-    steps.push(next);
+    steps.push(frontier(next));
   }
   const last = steps[steps.length - 1];
   if (!last) return [];
-  let k = last.reduce((b, x, i) => (x.cost < last[b].cost - 0.5 ? i : b), 0);
+  // The least cost; on a tie (float noise only: 0.1 m less may be a leg km away), the earlier path.
+  let k = last.reduce((b, x, i) => (x.cost < last[b].cost - 1e-6 ? i : b), 0);
   const out: number[] = [];
   for (let i = steps.length - 1; i >= 0; i--) {
     out.push(steps[i][k].s);
