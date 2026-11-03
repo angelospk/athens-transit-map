@@ -11,7 +11,12 @@ export type DayStats = {
   version: number; date: string; tz: string; generated_at: number; first_fix: number; last_fix: number;
   files: number; fixes: number; vehicles: number; lines: number; hours: HourStats[]; by_line: LineStats[];
   trips?: TripStats; // missing on days before 2026-10-27 or without a static GTFS
+  start_delay?: StartDelays; // missing on days before the backend measured it (rt#72)
 };
+// How late a line's runs of OASA's daily schedule left their first stop on a day (rt docs/API.md
+// "Start delays"). minutes: [floor(delay / 60), runs] pairs, so several days add up.
+export type LineDelay = { line: string; runs: number; mean_s: number; p90_s: number; sum_s: number; minutes: [number, number][] };
+export type StartDelays = { runs: number; by_line: LineDelay[] };
 export type Ranked = { line: string; kmh: number; km: number; hours: number };
 
 export const MIN_LINE_HOURS = 15; // vehicle-hours of speed samples before a line is ranked
@@ -74,6 +79,58 @@ export async function latestDay(now = Date.now()): Promise<DayStats | null> {
   if (day.version !== 1 || day.hours?.length !== 24) throw new Error("stats: unknown format");
   cache = { at: now, day };
   return day;
+}
+
+// ---- Start delays: the slowest lines over the newest days.
+
+export const MIN_DELAY_RUNS = 20; // measured runs in the period before a line is ranked by delay
+
+const int = (v: unknown) => typeof v === "number" && Number.isInteger(v);
+// The well-formed line entries of a day's start_delay; none when the day has no such field.
+function delayLines(d: DayStats): LineDelay[] {
+  const by = d.start_delay?.by_line;
+  if (!Array.isArray(by)) return [];
+  return by.filter(l => typeof l?.line === "string" && int(l.runs) && l.runs > 0 && int(l.sum_s) && Array.isArray(l.minutes)
+    && l.minutes.every(m => Array.isArray(m) && int(m[0]) && int(m[1]) && m[1] >= 0)
+    && l.minutes.reduce((s, m) => s + m[1], 0) === l.runs); // else the p90 would be made up
+}
+
+export const hasDelays = (days: DayStats[]) => days.some(d => delayLines(d).length > 0);
+
+export type SlowLine = { line: string; runs: number; mean_s: number; p90_min: number };
+
+// The lines whose runs left latest on average over the `window` calendar days ending at the newest
+// day, with at least minRuns runs measured. p90_min: 9 in 10 runs left less than this many minutes
+// late (from the days' minute histograms added up). Ties: higher p90, then line id.
+export function slowLines(days: DayStats[], window: number, n = 10, minRuns = MIN_DELAY_RUNS) {
+  const newest = days.reduce((a, d) => (d.date > a ? d.date : a), "");
+  const from = newest ? new Date(Date.parse(`${newest}T12:00:00Z`) - (window - 1) * 86_400_000).toISOString().slice(0, 10) : "";
+  const sums = new Map<string, { runs: number; sum: number; minutes: Map<number, number> }>();
+  let measured = 0, runs = 0;
+  for (const d of days) {
+    if (d.date < from) continue;
+    const ls = delayLines(d);
+    if (ls.length) measured++;
+    for (const l of ls) {
+      const s = sums.get(l.line) ?? { runs: 0, sum: 0, minutes: new Map() };
+      s.runs += l.runs; s.sum += l.sum_s; runs += l.runs;
+      for (const [m, k] of l.minutes) s.minutes.set(m, (s.minutes.get(m) ?? 0) + k);
+      sums.set(l.line, s);
+    }
+  }
+  const all: (SlowLine & { mean: number })[] = [];
+  for (const [line, s] of sums) {
+    if (s.runs < minRuns) continue;
+    const need = Math.ceil(0.9 * s.runs);
+    let seen = 0, p90 = 0;
+    for (const [m, k] of [...s.minutes].sort((a, b) => a[0] - b[0])) {
+      seen += k;
+      if (seen >= need) { p90 = m + 1; break; }
+    }
+    all.push({ line, runs: s.runs, mean: s.sum / s.runs, mean_s: Math.round(s.sum / s.runs), p90_min: p90 });
+  }
+  all.sort((a, b) => b.mean - a.mean || b.p90_min - a.p90_min || a.line.localeCompare(b.line));
+  return { days: measured, runs, eligible: all.length, rows: all.slice(0, n).map(({ mean: _, ...l }) => l) };
 }
 
 // ---- Long-term: the stored days combined. Speeds are pooled (sum dist / sum time), never a mean of means.
@@ -167,7 +224,8 @@ export function validDay(d: unknown, date: string): d is DayStats {
     && Array.isArray(x.by_line) && x.by_line.every(l => typeof l?.line === "string" && [l.dist_m, l.time_s].every(num));
 }
 
-export type Stored = { days: DayStats[]; partial: number; bad: number };
+// days: the complete ones (long-term figures); all: every readable one, partial too (start delays).
+export type Stored = { days: DayStats[]; partial: number; bad: number; all: DayStats[] };
 
 const TIMEOUT = 15_000;
 // null for 404. A body that is not JSON throws, or gives null when `lenient` (a day file: counted as bad).
@@ -198,7 +256,7 @@ export function storedDays(now = Date.now()): Promise<Stored | null> {
     const files = await Promise.all(dates.map(d => get(`days/${d}.json`, true)));
     const ok = files.filter((f, i): f is DayStats => validDay(f, dates[i]));
     const days = ok.filter(complete);
-    return { days, partial: ok.length - days.length, bad: files.length - ok.length };
+    return { days, partial: ok.length - days.length, bad: files.length - ok.length, all: ok };
   })();
   stored = { at: now, load };
   load.catch(() => { if (stored?.load === load) stored = null; });

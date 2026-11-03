@@ -1,7 +1,8 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { byDayType, DATA_URL, hourBand, lineTrends, LONG_DAYS, MIN_LINE_HOURS, storedDays, type Stored } from "../stats";
+  import { byDayType, DATA_URL, hasDelays, hourBand, lineTrends, LONG_DAYS, MIN_LINE_HOURS, storedDays, type Stored } from "../stats";
   import HourChart from "./HourChart.svelte";
+  import SlowLines from "./SlowLines.svelte";
 
   let data = $state<{ kind: "loading" } | { kind: "ok"; s: Stored } | { kind: "none" } | { kind: "error" }>({ kind: "loading" });
 
@@ -33,6 +34,8 @@
   const MIN_DAYS = 2;
   const stored = $derived(data.kind === "ok" ? data.s : null);
   const days = $derived(stored?.days ?? []);
+  // Only when the backend measured start delays on some stored day (rt#72); else nothing new shows.
+  const slow = $derived(stored && hasDelays(stored.all) ? stored.all : null);
   const band = $derived(hourBand(days));
   const types = $derived(byDayType(days));
   const trends = $derived(lineTrends(days, 8));
@@ -65,6 +68,7 @@
   <button type="button" class="retry" onclick={load}>Δοκίμασε ξανά</button>
 {:else if !stored || days.length < MIN_DAYS}
   <p class="muted">Λίγες μέρες ακόμα: {days.length} πλήρεις. Τα μακροχρόνια γραφήματα χρειάζονται τουλάχιστον {MIN_DAYS}.</p>
+  {#if slow}<SlowLines days={slow} />{/if}
 {:else}
   <p class="lede">{days.length} πλήρεις μέρες, {dm(days[0].date)} – {dm(days.at(-1)!.date)}: {weekday} καθημερινές και {weekend} {weekend === 1 ? "μέρα" : "μέρες"} Σαββατοκύριακου.
     {#if stored.partial || stored.bad}<br /><span class="warn">Εκτός:
@@ -120,6 +124,8 @@
       <p class="muted">Χρειάζονται τουλάχιστον 2 προηγούμενες πλήρεις μέρες ίδιου τύπου με την τελευταία ({days.at(-1) && dm(days.at(-1)!.date, true)}).</p>
     {/if}
   </section>
+
+  {#if slow}<SlowLines days={slow} />{/if}
 
   <p class="foot"><a href={DATA_URL} target="_blank" rel="noopener">Δες τα δεδομένα</a> · έως {LONG_DAYS} τελευταίες μέρες, μόνο πλήρεις</p>
 {/if}
