@@ -2,9 +2,13 @@
 // the backend's static data (STATIC_BASE): no file there lists all stops at once.
 //
 //   bun scripts/trips.ts   → public/trips.json   (again when OASA publishes a new GTFS)
+//
+// Stop positions found wrong (scripts/stop-corrections.json, proposed by scripts/stopfix.ts and committed
+// by hand) replace the GTFS ones.
 
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import type { TripIndex } from "../src/lib/trip";
+import { applyCorrections, type Correction } from "../src/lib/stopfix";
 import type { LineStatic, LinesIndex } from "../src/lib/types";
 
 const BASE = (process.env.VITE_STATIC_BASE || "https://angelospk.github.io/athens-transit-rt/static/v1").replace(/\/+$/, "");
@@ -20,6 +24,7 @@ const files: LineStatic[] = [];
 for (let i = 0; i < ix.lines.length; i += 8)   // 8 at a time: a polite load on GitHub Pages
   files.push(...await Promise.all(ix.lines.slice(i, i + 8).map(l => get<LineStatic>(`${BASE}/lines/${encodeURIComponent(l.id)}.json`))));
 
+const fixes: Record<string, Correction> = JSON.parse(readFileSync("scripts/stop-corrections.json", "utf8"));
 const data: TripIndex = { v: ix.gtfs_version, s: [], l: {} };
 const at = new Map<string, number>();
 for (const f of files) {
@@ -32,7 +37,8 @@ for (const f of files) {
       let k = at.get(sid);
       if (k == null) {
         at.set(sid, (k = data.s.length));
-        data.s.push([s.name.trim(), +s.lat.toFixed(5), +s.lon.toFixed(5), sid]);
+        const [lat, lon] = applyCorrections(sid, s.lat, s.lon, fixes);
+        data.s.push([s.name.trim(), +lat.toFixed(5), +lon.toFixed(5), sid]);
       }
       return k;
     });
