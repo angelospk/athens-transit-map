@@ -122,6 +122,21 @@
     else inputs[f]?.blur();
   }
 
+  // A place from the search modal (app.tripTo) is the end; the start is asked for next.
+  $effect(() => {
+    const p = app.tripTo;
+    if (!p) return;
+    untrack(() => {
+      app.tripTo = null;
+      stopSearch();
+      openField = null;
+      locGen.to++;
+      if (locating === "to") locating = null;
+      ends = { ...ends, to: { text: p.label, place: p } };
+      next("to");
+    });
+  });
+
   function locate(f: Field) {
     const g = ++locGen[f];
     ends = { ...ends, [f]: { text: ME, place: null } };

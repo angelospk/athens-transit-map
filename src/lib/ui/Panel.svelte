@@ -41,6 +41,9 @@
     app.loadMetro();   // again, if the first load failed
   };
 
+  // «Οδηγίες εδώ» in the search modal: the trip planner opens and takes the place as its end.
+  $effect(() => { if (app.tripTo) pop = "trip"; });
+
   // The chevron: opens and closes the dropdown.
   function fold() {
     collapsed = !collapsed;

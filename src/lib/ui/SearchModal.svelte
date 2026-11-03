@@ -1,9 +1,12 @@
 <script lang="ts">
-  // The search modal (B8): lines and stops of every mode, from the /v2 indexes (loaded once, cached 1 h).
+  // The search modal (B8): lines and stops of every mode, from the /v2 indexes (loaded once, cached 1 h), and
+  // places from the geocoder (web#18), each with «Οδηγίες εδώ» to the trip planner.
   // Full screen on a phone, a 560 px dialog on a desktop. An empty query shows the favourites, then the last
   // picks. A pick closes the modal and replaces the card stack with that card.
   import { tick, untrack } from "svelte";
   import { fetchV2Lines, fetchV2Stops } from "../api";
+  import { placeSearch, type PlaceAnswer } from "../placeSearch";
+  import { geocode, type Place } from "../trip";
   import { chipOf, findLines, findStops, lineStopPoints, pushRecent, toggleChip, type Chip, type Recent, type StopEntry } from "../finder";
   import type { V2Line } from "../v2";
   import type { AppState } from "../state.svelte";
@@ -12,7 +15,7 @@
   let { app }: { app: AppState } = $props();
 
   const GROUP = 5, PAGE = 60, RECENT_KEY = "recent.v2";
-  const KINDS = [["all", "Όλα"], ["lines", "Γραμμές"], ["stops", "Στάσεις"]] as const;
+  const KINDS = [["all", "Όλα"], ["lines", "Γραμμές"], ["stops", "Στάσεις"], ["places", "Μέρη"]] as const;
   const CHIPS: [Chip, string][] = [["bus", "Λεωφ."], ["metro", "Μετρό"], ["tram", "Τραμ"], ["suburban", "Προαστ."]];
 
   let query = $state("");
@@ -27,10 +30,19 @@
   let shown = $state(PAGE);   // rows of one group, with the kind filter on it: «Περισσότερα» adds a page
 
   const kind = $derived(app.finder ?? "all");
+  const isOpen = $derived(!!app.finder);
   const byId = $derived(new Map(lines.map(l => [l.id, l])));
   const stopById = $derived(new Map(stops.map(s => [s[0], s])));
-  const foundLines = $derived(kind === "stops" ? [] : findLines(lines, query, chips));
-  const foundStops = $derived(kind === "lines" ? [] : findStops(stops, query, chips));
+  const foundLines = $derived(kind === "stops" || kind === "places" ? [] : findLines(lines, query, chips));
+  const foundStops = $derived(kind === "lines" || kind === "places" ? [] : findStops(stops, query, chips));
+  // Places: no mode, so a mode chip hides them. Near the user when the map knows where they are.
+  let geo = $state.raw<PlaceAnswer>({ q: "", places: [], busy: false });
+  const places = placeSearch((q, signal) => geocode(q, signal, app.myPos ?? undefined), a => (geo = a));
+  const wantPlaces = $derived(isOpen && (kind === "all" || kind === "places") && !chips.length);
+  $effect(() => { if (wantPlaces) places.set(query); else places.stop(); });
+  $effect(() => () => places.stop());
+  const foundPlaces = $derived(wantPlaces && geo.q === query.trim() ? geo.places : []);
+  const placesBusy = $derived(wantPlaces && geo.busy && geo.q === query.trim());
   const cap = $derived(kind === "all" ? GROUP : shown);
   const chipOk = (modes: string[]) => !chips.length || modes.some(m => { const c = chipOf(m); return !!c && chips.includes(c); });
   const empty = $derived(!query.trim());
@@ -38,7 +50,6 @@
 
   // Opening (not a change of kind): a native modal dialog (the page behind it is inert), the indexes (once), the
   // recent picks, the focus.
-  const isOpen = $derived(!!app.finder);
   $effect(() => {
     if (!isOpen || !dialog) return;
     untrack(() => {
@@ -63,13 +74,14 @@
     failed = l.status !== 200 || s.status !== 200;
   }
 
-  function close() {
+  // refocus: back to the button that opened the modal; not when the focus goes on, to the trip planner.
+  function close(refocus = true) {
     if (dialog?.open) dialog.close();
     app.finder = null;
     query = "";
     const o = opener as HTMLElement | null;
     opener = null;
-    void tick().then(() => o?.focus?.());
+    if (refocus) void tick().then(() => o?.focus?.());
   }
 
   function remember(r: Recent) {
@@ -83,6 +95,11 @@
     app.open({ kind: "line", id, title: label });
     // A bus line frames its route once the route loads (showRoute); the other modes frame their stops.
     if (!id.startsWith("oasa:")) app.fitPoints(lineStopPoints(stops, id));
+  }
+  // «Οδηγίες εδώ»: the trip planner, with the place as its end.
+  function planTo(p: Place) {
+    close(false);
+    app.tripTo = p;
   }
   function openStop(id: string, name: string) {
     remember({ kind: "stop", id, label: name });
@@ -113,6 +130,7 @@
       const l = foundLines[0], s = foundStops[0];
       if (l) openLine(l.id, lineLabel(l));
       else if (s) openStop(s[0], s[1]);
+      else if (foundPlaces[0]) planTo(foundPlaces[0]);
     }
   }
 </script>
@@ -131,9 +149,9 @@
   </li>
 {/snippet}
 
-{#snippet more(n: number, k: "lines" | "stops")}
+{#snippet more(n: number, k: "lines" | "stops" | "places")}
   {#if kind === "all"}
-    <button type="button" class="more" onclick={() => (app.finder = k)}>{k === "lines" ? "Όλες οι γραμμές" : "Όλες οι στάσεις"} ({n}) ›</button>
+    <button type="button" class="more" onclick={() => (app.finder = k)}>{{ lines: "Όλες οι γραμμές", stops: "Όλες οι στάσεις", places: "Όλα τα μέρη" }[k]} ({n}) ›</button>
   {:else}
     <button type="button" class="more" onclick={() => (shown += PAGE)}>Περισσότερα ({n - shown}) ›</button>
   {/if}
@@ -148,6 +166,16 @@
   </li>
 {/snippet}
 
+{#snippet placeRow(p: Place)}
+  <li class="row">
+    <button type="button" class="pick" onclick={() => planTo(p)} aria-label="Οδηγίες προς {p.label}{p.hint ? `, ${p.hint}` : ''}">
+      <span class="modes"><Icon name={p.kind === "area" || p.kind === "street" ? p.kind : "pin"} /></span>
+      <span class="name">{p.label}{#if p.hint}<small>{p.hint}</small>{/if}</span>
+      <span class="go">Οδηγίες εδώ ›</span>
+    </button>
+  </li>
+{/snippet}
+
 <!-- A press on the backdrop (the dialog element itself, around .modal) closes it. -->
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions (Escape closes) -->
 <dialog bind:this={dialog} aria-label="Αναζήτηση" {onkeydown} oncancel={e => { e.preventDefault(); close(); }}
@@ -156,8 +184,8 @@
     <div class="modal">
       <div class="top">
         <input bind:this={input} bind:value={query} type="search" enterkeyhint="search" autocomplete="off" spellcheck="false"
-          placeholder="Γραμμή ή στάση, π.χ. 040, Σύνταγμα" aria-label="Αναζήτηση γραμμής ή στάσης" />
-        <button type="button" class="x" aria-label="Κλείσιμο" onclick={close}>×</button>
+          placeholder="Γραμμή, στάση ή μέρος, π.χ. 040, Σύνταγμα" aria-label="Αναζήτηση γραμμής, στάσης ή μέρους" />
+        <button type="button" class="x" aria-label="Κλείσιμο" onclick={() => close()}>×</button>
       </div>
       <div class="seg" role="group" aria-label="Τι ψάχνω">
         {#each KINDS as [k, t] (k)}
@@ -181,15 +209,15 @@
         {#if empty}
           {@const favLines = app.favs.lines.filter(l => chipOk([byId.get(l.id)?.mode ?? ""]))}
           {@const favStops = app.favs.stops.filter(s => chipOk(stopById.get(s.id)?.[4] ?? []))}
-          {#if favLines.length && kind !== "stops"}
+          {#if favLines.length && (kind === "all" || kind === "lines")}
             <h3>Αγαπημένες γραμμές</h3>
             <ul>{#each favLines as l (l.id)}{@render lineRow(l.id, l.label, byId.get(l.id)?.name)}{/each}</ul>
           {/if}
-          {#if favStops.length && kind !== "lines"}
+          {#if favStops.length && (kind === "all" || kind === "stops")}
             <h3>Αγαπημένες στάσεις</h3>
             <ul>{#each favStops as s (s.id)}{@render stopRow(stopById.get(s.id) ?? [s.id, s.name, s.lat, s.lon, [], []])}{/each}</ul>
           {/if}
-          {@const rec = recent.filter(r => (kind === "all" || (kind === "lines") === (r.kind === "line"))
+          {@const rec = recent.filter(r => (kind === "all" || kind === (r.kind === "line" ? "lines" : "stops"))
             && chipOk(r.kind === "line" ? [byId.get(r.id)?.mode ?? ""] : stopById.get(r.id)?.[4] ?? []))}
           {#if rec.length}
             <h3>Πρόσφατα</h3>
@@ -209,8 +237,16 @@
             <ul>{#each foundStops.slice(0, cap) as s (s[0])}{@render stopRow(s)}{/each}</ul>
             {#if foundStops.length > cap}{@render more(foundStops.length, "stops")}{/if}
           {/if}
-          {#if !foundLines.length && !foundStops.length}
-            <p class="muted">{kind === "all" && query.trim().length < 2 ? "Γράψε λίγο ακόμα." : `Τίποτα για «${query.trim()}».`}</p>
+          {#if foundPlaces.length}
+            <h3>Μέρη</h3>
+            <ul>{#each foundPlaces.slice(0, cap) as p (`${p.kind}|${p.label}|${p.pts[0].join()}`)}{@render placeRow(p)}{/each}</ul>
+            {#if foundPlaces.length > cap}{@render more(foundPlaces.length, "places")}{/if}
+          {/if}
+          {#if placesBusy}
+            <p class="muted">Αναζήτηση μερών…</p>
+          {:else if !foundLines.length && !foundStops.length && !foundPlaces.length}
+            {@const short = query.trim().length < (kind === "places" ? 3 : 2)}
+            <p class="muted">{short && (kind === "all" || kind === "places") ? "Γράψε λίγο ακόμα." : kind === "places" && chips.length ? "Τα μέρη δεν έχουν μέσο: πάτα «Όλα»." : `Τίποτα για «${query.trim()}».`}</p>
           {/if}
         {/if}
       </div>
@@ -247,6 +283,7 @@
   .pill { flex: none; min-width: 40px; padding: 2px 8px; border-radius: 10px; background: var(--c); color: var(--t); font-weight: 700; text-align: center; font-size: 13px; }
   .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .name small { display: block; color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
+  .go { flex: none; color: var(--accent); font-size: 13px; font-weight: 600; white-space: nowrap; }
   .modes { flex: none; display: inline-flex; gap: 2px; min-width: 40px; color: var(--muted); }
   .star { flex: none; width: 44px; height: 44px; border: 0; border-radius: 8px; background: none; color: var(--muted); font-size: 18px; cursor: pointer; }
   .star.on { color: #f59f00; }

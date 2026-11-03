@@ -7,7 +7,7 @@ import { cityKey, isCityLive } from "./city";
 import { loadMetro, type MetroData } from "./metro";
 import { loadSuburban, type SuburbanData } from "./suburban";
 import { railMotions, runIds, type RailMotion, type StasyVehicle, type SuburbanTrain, type TrainSel } from "./trains";
-import type { TripIndex } from "./trip";
+import type { Place, TripIndex } from "./trip";
 import { LinePoller, type PollState } from "./poller";
 import { BACKOFF_MS, ClockOffset } from "./schedule";
 import { CityTiles, loadTiles, viewTiles, type Tile, type View } from "./tiles";
@@ -107,7 +107,9 @@ export class AppState {
   // The page opened on a link to a card or to lines: it shows that, not «Κοντά σου».
   linked = false;
   // The search modal (B8): closed, or open on a kind filter.
-  finder = $state<"all" | "lines" | "stops" | null>(null);
+  finder = $state<"all" | "lines" | "stops" | "places" | null>(null);
+  // A place from the search modal to plan a trip to: the panel opens the trip planner, which takes it as its end.
+  tripTo = $state.raw<Place | null>(null);
   // Favourites only (B7): the map shows the favourite bus lines and not the city layer. The user's own cityOn
   // choice is kept in localStorage and comes back when this is off.
   favOnly = $state(stored("favOnly", true, isBool));
