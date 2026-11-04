@@ -148,6 +148,19 @@ describe("Bot crash safety", () => {
     await t.bot.flush();
     expect(t.texts().filter(x => x.startsWith("🚌"))).toEqual([]);
   });
+
+  it("queues no confirmation and keeps no alert when the save of the batch fails", async () => {
+    const t = setup({ failSave: () => true });
+    await t.bot.handle([msg(`/start ${payload}`)]);
+    await t.bot.flush();
+    expect(t.sent).toEqual([]);
+    expect(t.bot.offset).toBe(0);
+    t.live.vehicles = [bus("s2")];
+    await t.bot.tick();   // no alert left to watch
+    await t.bot.flush();
+    expect(t.sent).toEqual([]);
+    expect(t.saved()).toBeUndefined();
+  });
 });
 
 describe("Bot alerts", () => {

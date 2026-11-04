@@ -152,7 +152,8 @@ export class Bot {
   private lines = new Map<string, { next: number; busy: boolean; errors: number }>();
   private stops = new Map<string, { next: number; busy: boolean; errors: number }>();
   private lastStart = new Map<number | string, number>();
-  private queue: { method: string; body: Record<string, unknown> }[] = [];
+  private queue: { method: string; body: Record<string, unknown>; keep?: boolean }[] = [];   // keep: goes out although the batch's save fails
+  private mark: ReturnType<Bot["snap"]> | null = null;
   private draining: Promise<void> | null = null;
   private railLinks = new Map<string, { spec: Omit<RailSpec, "until">; at: number }>();
   private boards = new Map<string, { at: number; b: Promise<StopBoard | null> }>();
@@ -189,6 +190,9 @@ export class Bot {
 
   // Telegram updates (getUpdates), in order; the new offset is saved with what they changed.
   async handle(updates: Update[]) {
+    // What the batch starts from, moved on by every save inside it: a failed save at the end puts it back, so
+    // nothing the batch changed or queued unsaved is left behind.
+    this.mark = this.snap();
     let offset = this.state.offset;
     for (const u of updates) {
       offset = Math.max(offset, u.update_id + 1);
@@ -201,7 +205,20 @@ export class Bot {
     }
     const before = this.state.offset;
     this.state.offset = offset;
-    if (!this.save()) this.state.offset = before;   // Telegram sends them again
+    if (!this.save()) {   // Telegram sends them again: so nothing of them may stay or go out
+      this.state.offset = before;
+      const m = this.mark!;
+      this.state.alerts = m.alerts; this.state.rails = m.rails; this.state.favs = m.favs;
+      this.watches = m.watches;
+      this.queue = this.queue.filter(q => q.keep || m.queued.has(q));
+    }
+    this.mark = null;
+  }
+
+  private snap() {
+    const { rails, favs } = this.state;
+    return { alerts: [...this.state.alerts], rails: rails && [...rails], favs: favs && { ...favs },
+      watches: new Map(this.watches), queued: new Set(this.queue) };
   }
 
   // Once a second: end old alerts, ask the due lines.
@@ -435,7 +452,7 @@ export class Bot {
     if (!list.length) delete favs[key];
     this.state.favs = favs;
     // Saved before the answer: a ⭐ must survive a restart.
-    if (!this.save()) { this.state.favs = before; return this.answer(q.id, "Δεν αποθηκεύτηκε. Δοκίμασε σε λίγο."); }
+    if (!this.save()) { this.state.favs = before; this.answer(q.id, "Δεν αποθηκεύτηκε. Δοκίμασε σε λίγο."); this.queue.at(-1)!.keep = true; return; }
     if (q.message && q.message.chat.id === chat)
       this.queue.push({ method: "editMessageReplyMarkup", body: { chat_id: chat, message_id: q.message.message_id, reply_markup: { inline_keyboard: this.boardButtons(chat, ix, k, sid) } } });
     this.answer(q.id, at < 0 ? "Αποθηκεύτηκε." : "Αφαιρέθηκε.");
@@ -579,7 +596,9 @@ export class Bot {
     if (!this.save()) {
       this.state.rails = before;
       this.lastStart.delete(chat);
-      return this.send(chat, "Δεν αποθηκεύτηκε. Δοκίμασε ξανά σε λίγο.");
+      this.send(chat, "Δεν αποθηκεύτηκε. Δοκίμασε ξανά σε λίγο.");
+      this.queue.at(-1)!.keep = true;
+      return;
     }
     const s = a.spec;
     this.send(chat, `🚇 Θα σου γράψω όταν το ${s.label} προς ${s.toward} είναι ${s.min}′ πριν από το ${s.name}.\nΈως ${clock(s.until).slice(0, 5)}.`, a.id);
@@ -816,6 +835,7 @@ export class Bot {
   private save(): boolean {
     try {
       this.d.save(this.state);
+      if (this.mark) this.mark = this.snap();
       return true;
     } catch (e) {
       console.error("save failed:", (e as Error).message);
