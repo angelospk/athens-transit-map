@@ -82,6 +82,28 @@ locate tap inside another city's radius switches the city. Without a location (o
 unavailable), «Κοντά σου» shows a two-button city picker. A city that is not ready shows a note in
 the status banner. No Thessaloniki data is loaded yet: setting `ready: true` waits for the backend.
 
+## 0.3 Update 2026-11-05: backend merged, sources for the next steps
+
+- **Backend.** rt PR #83 (`--city thessaloniki`) was merged on 2026-11-05 as 28f4e4d. The public Athens service runs with the default city, so it does not change. A Thessaloniki service is a second deployment with its own flags and state, and with `OASTH_TOKEN_SALT` in its env.
+- **Unmapped stops (rt#86).** 334 of 3,713 GTFS stops have no OASTH arrival code. Meta loads a route's stops only when a bus runs on it: stop lists existed for 248 of 456 routes. Fix: fetch the stops of every route once per refresh, which is about 208 requests.
+- **Lines OASTH vs OSETH.** The GTFS has 254 lines and OASTH has 276; 252 are in both. Only the GTFS has `79H` and `T1`. Only OASTH has 24 more, for example 01M, 06, 07, 70, 71, 81 and 86x. So OSETH adds almost no lines. It can still add **vehicles**: KTEL Thessaloniki and KTEL Serres run the 43 suburban lines for OSETH under an interim contract, from 16 Mar 2026 to 31 Dec 2026 ([powergame](https://www.powergame.gr/epichirisis/1318401/thessaloniki-bikan-oi-ypografes-stin-endiamesi-symvasi-ton-42-ekat-gia-tis-periastikes-leoforeiakes-grammes/)). In 2022, KTEL buses had no telematics ([Parliament question](https://www.hellenicparliament.gr/UserFiles/c0d5184d-7550-4265-8e0b-078e1bc7375a/12007005.pdf)). Not verified yet: compare the vehicles on the same routes in OSETH `/route/{id}/info` and OASTH `getBusLocation`.
+- **No GTFS-RT feed** for Thessaloniki. Checked: data.gov.gr CKAN, Mobility Database, Transitland.
+- **Newest GTFS, automatic.** Call `https://data.gov.gr/api/3/action/package_show?id=42c9a7da-c86c-48b1-914c-f340e8bef00d`. Each resource name holds `GTFS dd/mm/yyyy-dd/mm/yyyy`; take the slice that covers today. The resource id changes with every slice. Slices can have gaps or an empty `url`, so keep the last good file.
+- **Metro: no GTFS.** We synthesize a frequency-based schedule, marked as scheduled, from the official table ([thessmetro.gr](https://www.thessmetro.gr/en/?p=654)). Hours: 05:15 to 00:30, and to 02:00 on Fri and Sat.
+
+  | Section | Day | Headway to 07:30 | Headway after 07:30 |
+  |---|---|---|---|
+  | Trunk (New Railway Station to 25th Martiou) | Mon to Fri | 5:00 | 2:55 |
+  | Trunk | Sat | 10:00 | 2:55 |
+  | Trunk | Sun | 10:00 | 3:25 |
+  | 25th Martiou to Mikra | Mon to Sat | 7:30 | 4:23 |
+  | 25th Martiou to Mikra | Sun | 15:00 | 5:07 |
+  | 25th Martiou to Nea Elvetia | Mon to Fri | 15:00 | 8:45 |
+  | 25th Martiou to Nea Elvetia | Sat | 30:00 | 8:45 |
+  | 25th Martiou to Nea Elvetia | Sun | 30:00 | 10:15 |
+
+  Stations: New Railway Station, Dimokratias, Venizelou, Agias Sofias, Sintrivani, Panepistimio, Papafi, Efkleidis, Fleming, Analipsi and 25th Martiou. From 25th Martiou one branch goes to Voulgari and Nea Elvetia. The other goes to Nomarchia, Kalamaria, Aretsou, Nea Krini and Mikra; this branch opened on 27 Aug 2026. Mikra to New Railway Station takes about 24 to 26 minutes ([gocar](https://www.gocar.gr/news/feed/54662,Metro_8essalonikhs_Ti_wra_einai_egkainia.html)). The thessmetro.gr page has no date, so check the table before we use it.
+
 ## 1. Data sources
 
 Summary:
