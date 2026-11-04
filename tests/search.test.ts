@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { greeklish, greeklishKeys, hasLatin } from "../src/lib/search";
+import { fold, greeklish, greeklishKeys, hasLatin } from "../src/lib/search";
 
 // The Greek name and the Greeklish query fold to one key; a query matches the names whose key holds its own.
 const same = (greek: string, ...latin: string[]) => {
@@ -41,5 +41,14 @@ describe("greeklish", () => {
     expect(hasLatin("syntagma")).toBe(true);
     expect(hasLatin("Σύνταγμα")).toBe(false);
     expect(hasLatin("040")).toBe(false);
+  });
+});
+
+describe("fold", () => {
+  it("folds a null or missing name to an empty string instead of throwing", () => {
+    expect(fold(null as any)).toBe("");
+    expect(fold(undefined as any)).toBe("");
+    expect(greeklish(null as any)).toBe("");
+    expect(fold("Σύνταγμα")).toBe("συνταγμα");
   });
 });

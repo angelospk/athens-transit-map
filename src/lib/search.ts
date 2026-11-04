@@ -1,5 +1,5 @@
 // Case-, accent- and final-sigma-insensitive Greek matching.
-export const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase("el").replace(/ς/g, "σ");
+export const fold = (s: string | null | undefined) => (s ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase("el").replace(/ς/g, "σ");
 
 // Greeklish: a Greek name and a Latin query fold to one rough Latin key, so «syntagma», «sintagma» and
 // «Σύνταγμα» are one. Sounds written in more than one way fold to one letter (η ι υ ει οι → i, ω → o,
