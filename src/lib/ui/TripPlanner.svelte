@@ -3,12 +3,14 @@
 
   // Kept across close and reopen.
   interface End { text: string; place: Place | null }
-  const memo = { from: { text: "", place: null } as End, to: { text: "", place: null } as End, radius: 500, applied: "" };
+  const memo = { from: { text: "", place: null } as End, to: { text: "", place: null } as End, radius: 500, applied: "", plan: null as { key: string; at: string } | null };
 </script>
 
 <script lang="ts">
   import { tick, untrack } from "svelte";
-  import { fetchLines } from "../api";
+  import { fetchLines, getJSON } from "../api";
+  import { API_BASE } from "../config";
+  import { parsePlan, planFC, planStops, planSummary, planUrl, type Itinerary, type PlanResponse } from "../plan";
   import { MAX_LINES } from "../selection";
   import type { AppState } from "../state.svelte";
   import AlertForm from "./AlertForm.svelte";
@@ -202,6 +204,61 @@
   });
   $effect(() => { app.tripEnds = from && toPt ? { from: centre(from.pts), to: toPt } : null; });
 
+  // Timed trips from the backend (/v2/plan), above the lines: asked once per pair of ends, and again when every
+  // option has left. When the backend fails or is busy, only the lines below show.
+  let plan = $state.raw<{ key: string; r: PlanResponse } | null>(null);
+  let planGen = $state(0);
+  // The timed trip on the map (its ends and departure), kept across close and reopen like the ends.
+  let planSel = $state.raw(memo.plan);
+  $effect(() => { memo.plan = planSel; });
+  const planKey = $derived(from && to && !anyEnd && !tooClose ? JSON.stringify([centre(from.pts), centre(to.pts)]) : null);
+  function dropPlan() {
+    if (app.tripPlan) { app.tripPlan = null; app.tripStops = []; }
+    planSel = null;
+  }
+  $effect(() => {
+    const key = planKey;
+    void planGen;
+    untrack(() => {
+      if (planSel && planSel.key !== key) dropPlan();   // new ends: the old trip goes
+      if (plan?.key !== key) plan = null;
+    });
+    if (!key) return;
+    const [a, b] = JSON.parse(key) as [Pt, Pt];
+    const ctl = new AbortController();
+    getJSON(planUrl(API_BASE, a, b), ctl.signal).then(res => {
+      const r = res.status === 200 ? parsePlan(res.body) : null;
+      if (!ctl.signal.aborted && r) plan = { key, r };
+    }, () => {});
+    return () => ctl.abort();
+  });
+  const nowS = $derived(app.serverNow / 1000);
+  // One option per departure, arrival and changes (CONTRACT §9 returns no two alike).
+  const itKey = (it: Itinerary) => `${it.depart_at}-${it.arrive_at}-${it.transfers}`;
+  // Options that left over a minute ago are dropped; with none left, a list asked for long ago is asked again.
+  const planRows = $derived(plan ? plan.r.itineraries.filter(it => it.depart_at > nowS - 60).map(it => ({ at: itKey(it), ...planSummary(it, plan!.r, nowS) })) : []);
+  $effect(() => {
+    if (plan && !planRows.length && plan.r.itineraries.length && plan.r.after < nowS - 60) untrack(() => { plan = null; planGen++; });   // one request, not one a second
+  });
+  // The key of the timed trip on the map; null once a line replaced it (app.showTrip clears app.tripPlan).
+  const planOn = $derived(app.tripPlan && planSel && planSel.key === planKey ? planSel.at : null);
+  const planShown = $derived.by(() => {
+    const it = planOn == null ? null : plan?.r.itineraries.find(x => itKey(x) === planOn);
+    return it && plan ? planSummary(it, plan.r, nowS) : null;
+  });
+  function pickPlan(at: string) {
+    const r = plan!.r, it = r.itineraries.find(x => itKey(x) === at)!, fc = planFC(it, r);
+    app.showPlan(fc);
+    app.tripStops = planStops(it, r);
+    planSel = { key: plan!.key, at };
+    picked = null;
+    app.fitPoints(fc.features.flatMap(f => f.geometry.coordinates as [number, number][]));
+    if (phone()) {
+      folded = true;
+      (document.activeElement as HTMLElement | null)?.blur?.();
+    }
+  }
+
   // The result shown alone (a line, or "l1>l2" for a change), with its stops on the map.
   let picked = $state<string | null>(null);
   const stopAt = (k: number) => ({ at: ptOf(k), name: stop(k) });
@@ -238,6 +295,7 @@
     if (key === memo.applied) return;
     memo.applied = key;
     untrack(() => {
+      if (app.tripPlan) return;   // a timed trip picked before the stops loaded stays
       picked = null;
       app.tripStops = [];
       if (trips.length) app.showTrip(trips.map(t => ({ id: t.line, variants: t.variants.map(v => v.id) })));
@@ -253,6 +311,7 @@
     stopSearch();
     app.tripEnds = null;
     app.tripStops = [];
+    app.tripPlan = null;
     onclose();
   }
 
@@ -317,12 +376,17 @@
 
 <div class="trip" role="dialog" tabindex="-1" aria-labelledby="trip-h" {@attach focusIn}
   onkeydown={e => { if (e.key === "Escape" && !openField) { e.stopPropagation(); close(); } }}>
-  {#if folded && from && to && trips}
+  {#if folded && from && to && (trips || planRows.length)}
     <span id="trip-h" class="sr">Διαδρομή</span>
     <div class="row">
       <button type="button" class="summary" aria-expanded="false" onclick={() => (folded = false)}>
         <b>{from.label} → {to.label}</b>
+        {#if planShown}
+          {@const p = planShown}
+          <small>{p.depart} → {p.arrive} · {p.mins}′ · {p.rides.map(r => r.label).join(" › ")}</small>
+        {:else if trips}
         <small>{#if trips.length}{trips.length} {trips.length === 1 ? "γραμμή" : "γραμμές"}{#if trips.length > MAX_LINES} · {MAX_LINES} στον χάρτη{/if}{:else if xfers.length}με μία αλλαγή{/if}{#if app.alert} · <Bell label="ειδοποίηση" />{/if}</small>
+        {/if}
         {#if onMap.length || xferLines.length}
           <span class="lines">
             {#each onMap as t (t.line)}
@@ -339,7 +403,7 @@
   {:else}
     <div class="row">
       <h3 id="trip-h">Διαδρομή</h3>
-      {#if trips?.length || xfers.length}
+      {#if trips?.length || xfers.length || planRows.length}
         <button type="button" class="icon" aria-label="Σύμπτυξη" title="Σύμπτυξη" onclick={() => (folded = true)}>
           <svg viewBox="0 0 12 8" width="14" height="10" aria-hidden="true"><path d="M1 6.5l5-5 5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
         </button>
@@ -385,6 +449,21 @@
 
     {#if err}<p class="warn" role="status">{err}</p>{/if}
     {#if byMetro}<p class="metro"><Icon name="metro" /> Με {byMetro.line}: {byMetro.from} → {byMetro.to}{#if byMetro.walk >= 50} · περπάτημα {metres(byMetro.walk)}{/if}. Συνήθως πιο γρήγορα από το λεωφορείο.</p>{/if}
+    {#if planRows.length}
+      <h4 class="sub">Επόμενες διαδρομές</h4>
+      <ol class="results">
+        {#each planRows as p (p.at)}
+          <li class:picked={planOn === p.at}>
+            <button type="button" class="pick" aria-pressed={planOn === p.at} title="Η διαδρομή στον χάρτη" onclick={() => pickPlan(p.at)}>
+              <span><b>{p.depart} → {p.arrive}</b> · {p.mins}′{#if p.leaveIn <= 60} · {p.leaveIn ? `φύγε σε ${p.leaveIn}′` : "φύγε τώρα"}{/if}</span>
+              <span class="rides">{#each p.rides as r, j (j)}<b class="chip on" style:--c={r.color} style:--t={r.text}>{r.label}</b>{/each}</span>
+              <small>{p.rides.map(r => `${r.label} ${r.from} → ${r.to}`).join(" · ")} · περπάτημα {metres(p.walk_m)}{#if p.transfers} · {p.transfers} {p.transfers === 1 ? "αλλαγή" : "αλλαγές"}{/if}</small>
+            </button>
+          </li>
+        {/each}
+      </ol>
+      <h4 class="sub">Γραμμές κοντά, χωρίς ώρες</h4>
+    {/if}
     {#if failed}
       <p class="warn">Δεν φόρτωσαν οι στάσεις. <button type="button" class="link" onclick={load}>Ξανά</button></p>
     {:else if !data}
@@ -402,7 +481,7 @@
           <li class:out={k >= MAX_LINES} class:picked={picked === t.line}>
             <button type="button" class="chip" style:--c={app.lineColor(t.line).bg} style:--t={app.lineColor(t.line).fg}
               aria-pressed={app.selected.includes(t.line)} title={info?.name}
-              onclick={() => toggleTripLine(app, t)}>{t.line}</button>
+              onclick={() => { dropPlan(); toggleTripLine(app, t); }}>{t.line}</button>
             <button type="button" class="pick" aria-pressed={picked === t.line} title="Μόνο αυτή στον χάρτη, με τις στάσεις της" onclick={() => solo(t)}>
               <span><b>{mins(t.min)}</b> {stop(v.from)} → {offAt(v.to)}</span>
               <small>{#if going(t)}προς {going(t)} · {/if}{t.stops} {t.stops === 1 ? "στάση" : "στάσεις"} · περπάτημα {metres(t.walk)}{#if k >= MAX_LINES} · εκτός χάρτη (έως {MAX_LINES}){/if}</small>
@@ -477,6 +556,7 @@
       <label>Περπάτημα έως
         <select bind:value={radius}>{#each RADII as r (r)}<option value={r}>{r} μ.</option>{/each}</select>
       </label>
+      {#if planRows.length}<small>Ώρες από το πρόγραμμα, όχι live.</small>{/if}
       {#if trips?.length || xfers.length}<small>Χρόνοι κατά προσέγγιση, χωρίς την αναμονή στη στάση.</small>{/if}
       {#if data?.stale}<small>Στάσεις από {data.stale}· μπορεί να έχουν αλλάξει.</small>{/if}
       {#if geo?.places.length}<small>Περιοχές: © OpenStreetMap</small>{/if}
@@ -529,6 +609,8 @@
     background: none; color: var(--fg); font-weight: 700; cursor: pointer; }
   .chip[aria-pressed="true"], .chip.on { background: var(--c); color: var(--t); }
   .chip.on { display: inline-grid; place-items: center; min-width: 0; cursor: default; }
+  .rides { display: flex; flex-wrap: wrap; gap: 3px; margin: 2px 0; }
+  .rides .chip { min-width: 34px; min-height: 22px; font-size: 12px; }
   .pair { flex: none; display: flex; flex-direction: column; gap: 2px; }
   .pick { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 2px 6px; margin: -2px 0;
     border: 0; border-radius: 8px; background: none; color: var(--fg); font-size: 13px; text-align: left; cursor: pointer; }

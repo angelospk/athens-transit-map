@@ -9,6 +9,7 @@ import { loadSuburban, type SuburbanData } from "./suburban";
 import { loadMunicipal, type MunicipalData } from "./municipal";
 import { railMotions, runIds, type RailMotion, type StasyVehicle, type SuburbanTrain, type TrainSel } from "./trains";
 import type { Place, TripIndex } from "./trip";
+import type { FeatureCollection, LineString } from "geojson";
 import { LinePoller, type PollState } from "./poller";
 import { BACKOFF_MS, ClockOffset } from "./schedule";
 import { CityTiles, loadTiles, viewTiles, type Tile, type View } from "./tiles";
@@ -183,6 +184,8 @@ export class AppState {
   tripEnds = $state.raw<{ from: [number, number]; to: [number, number] } | null>(null);
   // The stops of the trip picked in the planner: where to get on, change and get off ([lat, lon]).
   tripStops = $state.raw<{ at: [number, number]; name: string }[]>([]);
+  // The planner's timed trip (/v2/plan, plan.ts) on the map: rides in their line's colour, walks dotted.
+  tripPlan = $state.raw<FeatureCollection<LineString> | null>(null);
 
   // Set by MapView: frame the given lines once their shapes are loaded; bring a point ([lon, lat]) into view.
   fit: (ids: string[]) => void = () => {};
@@ -603,6 +606,7 @@ export class AppState {
   // keepAlert: the same trip shown otherwise (one of its lines, all again); the alert stays while its lines stay.
   showTrip(lines: { id: string; variants: string[] }[], keepAlert = false): string[] {
     if (!lines.length) return [];
+    this.tripPlan = null;
     const keep = lines.slice(0, MAX_LINES), ids = keep.map(l => l.id), left = lines.slice(MAX_LINES).map(l => l.id);
     if (!keepAlert || this.alert?.lines.some(l => !ids.includes(l.line))) this.setAlert(null);   // a new trip: the old alert no longer fits
     this.closeCards();   // the trip replaces any card (its fields clear once the move lands)
@@ -620,6 +624,20 @@ export class AppState {
     void Promise.allSettled(ids.map(fetchLineStatic)).then(() => { if (gen === this.tripGen) this.fit(ids); });
     if (left.length) this.say(`Έως ${MAX_LINES} γραμμές ταυτόχρονα. Εκτός: ${left.join(", ")}.`);
     return left;
+  }
+
+  // A timed trip from the planner replaces the picks: no line in detail, only the trip's own path.
+  showPlan(fc: FeatureCollection<LineString>) {
+    this.setAlert(null);
+    this.closeCards();
+    this.metroStation = this.railStation = this.train = this.busStop = this.railLine = null;
+    this.selection = null;
+    this.dropTemp();
+    for (const id of this.selected) this.closeLine(id);
+    this.selected = [];
+    this.writeUrl();
+    ++this.tripGen;   // a fit still waiting for the lines of an older trip must not move the map
+    this.tripPlan = fc;
   }
 
   constructor() {

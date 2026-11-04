@@ -434,6 +434,16 @@
     m.addLayer({ id: "stops", type: "circle", source: "stops",
       paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 3, 16, 6], "circle-color": "#ffffff",
         "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2 } });
+    // The planner's timed trip (app.tripPlan): rides in their line's colour on a white casing, walks dotted.
+    m.addSource("trip-plan", { type: "geojson", data: app.tripPlan ?? EMPTY });
+    const ride = ["==", ["get", "kind"], "ride"] as ["==", ["get", string], string];
+    m.addLayer({ id: "trip-plan-casing", type: "line", source: "trip-plan", filter: ride,
+      layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#ffffff", "line-width": 9 } }, under);
+    m.addLayer({ id: "trip-plan-ride", type: "line", source: "trip-plan", filter: ride,
+      layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": ["get", "color"], "line-width": 5 } }, under);
+    m.addLayer({ id: "trip-plan-walk", type: "line", source: "trip-plan", filter: ["==", ["get", "kind"], "walk"],
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": "#5f6368", "line-width": 4, "line-dasharray": [0, 2] } }, under);
   }
 
   // The train under a click (finger margin r), the nearest if several.
@@ -1143,6 +1153,10 @@
       return new Marker({ element: el, anchor: "bottom" }).setLngLat([ends[k][1], ends[k][0]]).addTo(m);
     });
     return () => pins.forEach(p => p.remove());
+  });
+
+  $effect(() => {
+    if (loaded) (map!.getSource("trip-plan") as GeoJSONSource | undefined)?.setData(app.tripPlan ?? EMPTY);
   });
 
   // The picked trip's stops: get on, change, get off.
