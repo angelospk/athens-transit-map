@@ -11,8 +11,14 @@
   import type { AppState } from "../state.svelte";
   import CardSheet, { whenText } from "./CardSheet.svelte";
   import Icon from "./Icon.svelte";
+  import { CITIES, type CityId } from "../cities";
 
   let { app }: { app: AppState } = $props();
+
+  function pickCity(c: CityId) {
+    app.setCity(c);
+    app.nearOpen = false;   // the map, not the empty list, is what to look at now
+  }
 
   const POLL_MS = 30_000, PARALLEL = 6, ROWS = 2;
   const native = (id: string) => id.slice(id.indexOf(":") + 1);
@@ -76,18 +82,37 @@
   }
 </script>
 
+<!-- The city picker: without a location the user says where they are; a pick moves the map there. -->
+{#snippet cities()}
+  <div class="cities" role="group" aria-label="Πόλη">
+    {#each Object.values(CITIES) as c (c.id)}
+      <button type="button" class="city" aria-pressed={app.cityId === c.id} onclick={() => pickCity(c.id)}>
+        <b>{c.name}</b><small>{c.hint}</small>
+      </button>
+    {/each}
+  </div>
+{/snippet}
+
 {#if app.nearShown}
   <CardSheet {app} key="near" onclose={() => (app.nearOpen = false)}>
     {#snippet header()}
       <h2 class="title">Κοντά σου</h2>
     {/snippet}
-    {#if !app.myPos}
-      {#if app.locState === "off" || app.locState === "denied"}
+    {#if !app.myPos || app.locState === "denied"}
+      {#if app.locState === "denied"}
+        <p class="muted">Ο browser δεν δίνει τη θέση σου. Διάλεξε πόλη:</p>
+      {:else if app.locState === "unavailable"}
+        <p class="muted">Δεν βρίσκω τη θέση σου. Διάλεξε πόλη:</p>
+      {:else if app.locState === "off"}
         <p class="muted">Δες ποια λεωφορεία περνάνε από τις στάσεις γύρω σου.</p>
         <button type="button" class="use" onclick={() => app.locate()}>Χρήση της θέσης μου</button>
       {:else}
         <p class="muted">Βρίσκω τη θέση σου…</p>
       {/if}
+      {@render cities()}
+    {:else if !app.cityInfo.ready}
+      <p class="muted">{app.cityInfo.name}: οι στάσεις και τα λεωφορεία έρχονται σύντομα.</p>
+      {@render cities()}
     {:else if !app.stopIx}
       <p class="muted">Φορτώνω τις στάσεις…</p>
     {:else if !app.nearGroups.length}
@@ -149,6 +174,12 @@
   .muted.pad { margin: 6px 0 8px; }
   .use { min-height: 40px; margin: 4px 0 6px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--accent); color: #fff;
     font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .cities { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 6px 0 4px; }
+  .city { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 52px; padding: 8px 12px;
+    border: 1px solid var(--border); border-radius: 12px; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+  .city b { font-size: 15px; font-weight: 700; }
+  .city small { color: var(--muted); font-size: 11.5px; }
+  .city[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
   .stop { margin: 0 0 10px; padding: 10px 12px 2px; border: 1px solid var(--border); border-radius: 14px; }
   .stop:last-child { margin-bottom: 2px; }
   .shead { display: flex; align-items: flex-start; gap: 10px; padding-bottom: 6px; }

@@ -16,6 +16,7 @@
   import { fetchStasy, fetchSuburban, fetchTrainRun } from "../api";
   import { PREFETCH_ZOOM, wanted, type Want } from "../prefetch";
   import { Locator, userPlan, type Fix, type LocState } from "../locate";
+  import { CITIES, nearestCity as cityAt } from "../cities";
   import { onOpen, type Perm } from "../nearby";
   import { distanceM } from "../glide";
   import { Mover, planOnto } from "../motion";
@@ -508,6 +509,7 @@
   // The view's padding around the open sheet (set once the map loads).
   let padNow: () => PaddingOptions = () => ({ top: 0, bottom: 0, left: 0, right: 0 });
   let flyOnFix = false;
+  let cityOnFix = true;   // the first fix of the page, and of each locate tap, may switch the city
   let me: { marker: Marker; el: HTMLElement; mover: Mover; fix: Fix } | null = null;
   const locator = new Locator({
     geo: navigator.geolocation,
@@ -517,8 +519,7 @@
       if (s === "denied") {
         follow = false;
         store("locOn", false);
-        store("geoLast", "denied");
-        app.nearOpen = false;
+        store("geoLast", "denied");   // «Κοντά σου» stays open: it asks for the city instead
         app.notify("Ο browser δεν επιτρέπει πρόσβαση στην τοποθεσία. Άλλαξέ το από τις ρυθμίσεις του.");
       } else if (s === "unavailable") app.notify("Δεν βρέθηκε η τοποθεσία σου. Νέα προσπάθεια σε λίγο.");
     },
@@ -544,6 +545,11 @@
       me.mover.apply(h, now);
     }
     me.fix = f;
+    // The first fix of the page or after a locate tap, in another city's area: the app switches to it. Later fixes
+    // leave the city alone, so a hand pick in «Κοντά σου» stays.
+    const near = cityOnFix ? cityAt(f.pos) : null;
+    cityOnFix = false;
+    if (near && near !== app.cityId) app.setCity(near, false);
     // «Κοντά σου» follows the user, but not every few metres of GPS noise.
     const at = app.myPos;
     if (!at || distanceM([at[1], at[0]], f.pos) > 25) app.myPos = [f.pos[1], f.pos[0]];
@@ -590,6 +596,7 @@
   function locateMe() {
     follow = true;
     flyOnFix = true;
+    cityOnFix = true;
     store("locOn", true);
     app.showNear();
     locator.start();
@@ -761,8 +768,8 @@
       m = new MlMap({
         container: node,
         style: STYLE(styleDark),
-        center: [23.73, 37.98],
-        zoom: 11.5,
+        center: CITIES[untrack(() => app.cityId)].center,   // untracked: a city change moves this map, it does not rebuild it
+        zoom: CITIES[untrack(() => app.cityId)].zoom,
         attributionControl: { compact: true },
         dragRotate: false,
         pitchWithRotate: false,
@@ -923,6 +930,10 @@
     map = m;
     app.fit = fitTo;
     app.locate = () => { if (locState === "off" || locState === "denied") locateMe(); };
+    app.showCity = c => {
+      follow = false;
+      m.flyTo({ center: CITIES[c].center, zoom: CITIES[c].zoom, duration: reducedMotion.matches ? 0 : 1200 });
+    };
     // The view's padding with the bottom sheet on a phone. A card that is still loading (opened from the
     // search) is not in the page yet: assume the sheet's usual half screen.
     const sheetPad = () => {
@@ -959,6 +970,7 @@
     return () => {
       app.fit = () => {};
       app.locate = () => {};
+      app.showCity = () => {};
       app.flyTo = () => {};
       app.fitPoints = () => {};
       focusOn = () => {};

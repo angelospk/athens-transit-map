@@ -6,6 +6,82 @@ Product rules (Harold): one site, two cities. Without location permission the pa
 city; with location it picks the nearest one. Each city has its own stops, lines, search index,
 vehicles, favourites and alerts. Athens items never show in Thessaloniki, and the reverse.
 
+## 0. Update 2026-11-04: a keyless live API exists (OSETH website)
+
+Found through the open-source Astiko Android client (github.com/uw0s/astiko, `OseThApi.kt`), then
+tested from the mini PC (Greek IP), about 6 requests, all HTTP 200:
+
+- Base: `https://oseth.com.gr/{el|en}/telematics-api` (Drupal 10 site of OSETH). No key, no special
+  headers. Every answer is `{"data": ..., "error": "", "status_code": 200}`.
+- `GET /route?page=1&size=1000&language=el`: 255 routes; `id` (e.g. `22_7128_1_3`, the GTFS
+  route id form), `shortName`, `longName`, `color`, `tripHeadsigns[{routeId, headsign, shapeId}]`.
+- `GET /route/{routeId}/info?shapeId=&language=`: `shape{id, color, lineString (WKT)}`,
+  `stops[{id, code, name, latitude, longitude, sequence}]`, **`vehicles[{id, latitude, longitude,
+  bearing}]`** (live positions per route direction).
+- `GET /stop/{stopId}/timetable?language=&date=dd/MM/yyyy HH:mm:ss`: **live arrivals**,
+  `trips[{id, headsign, shapeId, route, arrivalTime, departureTime, delay, monitored,
+  arrivalInMinutes, departureInMinutes, vehicle{id, latitude, longitude, bearing}|null}]`.
+  `monitored:false, delay:0` was seen on a trip with a vehicle: the delay may not be reliable.
+- `GET /stop/nearby?page&size&longitude&latitude&language`: `stops[{id, code, name, latitude,
+  longitude, distance, routes[]}]`.
+- Untested (from Astiko): `/stop?size=1000` (3,698 stops, 4 pages), `/stop/{id}/info`,
+  `/route/{id}/timetable`.
+- **No CORS headers** (`Access-Control-Allow-Origin` absent on GET and OPTIONS): the browser cannot
+  call it from staseis.gr. It needs a server (an atrt instance or a thin proxy).
+- **No all-vehicles endpoint**: the whole fleet means one `/route/{id}/info` per route direction
+  (~255+ per sweep). At ~1 req/s that is over 4 minutes; poll only routes in view or in use, or
+  read vehicles from stop timetables.
+- No published terms or rate limit. Same caution as OASA: start at ~1 req/s.
+
+The OSETH Bus app (Flutter, `libapp.so`) uses another host,
+`https://telematics.oseth.com.gr/amco-telematics/api/` (`route/shortNames`, `stop/nearby`,
+`trip/plan`, `server/time`), with `X-API-Key` + `X-OSETH-Client` and a login/token flow. The key is
+not in the APK; the Azure gateway answers 403 to every probe. Not usable. Other app hosts:
+`ticketing.oseth.com.gr`, `osm.oseth.com.gr/tile` (403).
+
+This replaces B1's "no open live bus API" for planning: the website API is the first live source to
+try. The OASTH telematics result is in section 0.1.
+
+## 0.1 Update 2026-11-04: OASTH telematics works without a browser
+
+Tested from the mini PC, about 20 requests at ~1 req/s, all HTTP 200 once authorised.
+
+- The HTML pages of `telematics.oasth.gr` answer 403 to every client (headless and real Chrome,
+  Firefox, laptop, oracle-vm). Only `/api/` answers. A browser bootstrap is neither possible nor
+  needed.
+- Auth (flow from the community client orestislef/oasth-flutter, `api.dart`; verified live):
+  1. `GET /api/?act=webGetLangs` needs nothing and sets `PHPSESSID` (expires after 1 hour).
+  2. `X-CSRF-TOKEN` is a SHA-256 of a fixed string from that client plus the date (YYYYMMDD,
+     Europe/Athens); it changes at Greek midnight. The string is not copied here.
+  3. Send the cookie, the token, a User-Agent and `Referer`/`Origin: https://telematics.oasth.gr`.
+     Plain `fetch` from Bun works.
+- Static acts need no auth: `webGetLines` (276 lines: `LineCode, LineID, LineIDGR, LineDescr,
+  LineDescrEng`), `webGetRoutes&p1=LineCode` (`RouteCode, RouteDescr, RouteType, ...`).
+- Live acts need cookie + token (else 401): `getBusLocation&p1=RouteCode` (`VEH_NO, CS_DATE,
+  CS_LAT, CS_LNG, ROUTE_CODE`; positions 3-6 s old), `getStopArrivals&p1=StopCode` (`btime2`
+  minutes, `route_code`, `veh_code`), `getStopNameAndXY`. Also `webGetStops&p1=RouteCode`
+  (`StopCode, StopID, StopLat, StopLng, RouteStopOrder, ...`), `webGetRoutesDetailsAndStops`.
+- CORS: none on data calls. A server is needed, as for the OSETH API.
+- Id mapping with the OSETH GTFS (2026-10-27): GTFS `stop_id` = OASTH **StopID** (42 of 43 stops on
+  the test route, median 0.4 m apart); `getStopArrivals` takes StopCode, mapped through
+  `webGetStops`. Lines: OASTH `LineID` = GTFS `route_short_name` for 244 of 276; most of the rest
+  differ only in Latin vs Greek letters (`02M`/`02Μ`, use `LineIDGR`). GTFS `route_id` has no
+  OASTH RouteCode: match directions by stops.
+- Risk: the token recipe is reverse-engineered and can change any day; OASTH terms not checked.
+
+**Which live source:** the OSETH website API (section 0) is keyless and already speaks GTFS ids,
+but has no fleet-wide call. OASTH has per-route vehicle positions (also per route only) and needs
+the token recipe. Recommended: OSETH API first, OASTH as a fallback, both behind a Thessaloniki
+atrt instance (or a thin proxy) on a Greek IP.
+
+## 0.2 Web groundwork shipped 2026-11-04
+
+`src/lib/cities.ts` lists the cities (Athens ready, Thessaloniki `ready: false`). `app.cityId` comes
+from `?city=`, else localStorage `city`, else Athens. The first location fix of the page or of a
+locate tap inside another city's radius switches the city. Without a location (off, denied,
+unavailable), «Κοντά σου» shows a two-button city picker. A city that is not ready shows a note in
+the status banner. No Thessaloniki data is loaded yet: setting `ready: true` waits for the backend.
+
 ## 1. Data sources
 
 Summary:

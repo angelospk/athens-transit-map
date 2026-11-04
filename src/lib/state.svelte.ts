@@ -27,6 +27,7 @@ import { fold } from "./search";
 import { parseAlerts, type Disruption } from "./disruptions";
 import { focusLines, nearbyGroups } from "./nearby";
 import type { LocState } from "./locate";
+import { CITIES, initialCity, type CityId } from "./cities";
 
 export const STALE_S = 120;
 // A picked line whose feed has no vehicles for this many updates in a row is taken off the map.
@@ -106,6 +107,9 @@ export class AppState {
   nearOpen = $state(false);
   myPos = $state.raw<[number, number] | null>(null);
   locState = $state<LocState>("off");
+  // The city the map shows (cities.ts): ?city=, else the last one chosen, else Athens. A location fix inside another
+  // city's area switches to it (MapView); «Κοντά σου» lets the user pick one by hand.
+  cityId = $state<CityId>("athens");
   // The page opened on a link to a card or to lines: it shows that, not «Κοντά σου».
   linked = false;
   // The search modal (B8): closed, or open on a kind filter.
@@ -192,6 +196,8 @@ export class AppState {
   flyTo: (at: [number, number]) => void = () => {};
   // Set by MapView: find me (the browser asks for the permission when it must) and follow.
   locate: () => void = () => {};
+  // MapView: moves the view to a city's centre.
+  showCity: (c: CityId) => void = () => {};
   fitPoints: (pts: [number, number][]) => void = () => {};
 
   private clock = new ClockOffset();
@@ -292,6 +298,8 @@ export class AppState {
   init() {
     const ids = selectionIds(location.search);
     this.linked = ids.length > 0 || !!cardFromQuery(location.search);
+    this.cityId = initialCity(location.search, stored<unknown>("city", null, () => true));
+    store("city", this.cityId);
     this.selected = ids.slice(0, MAX_LINES);
     if (ids.length > MAX_LINES) this.say(`Ο σύνδεσμος είχε ${ids.length} γραμμές. Κράτησα τις πρώτες ${MAX_LINES}.`);
     this.baseTitle = document.title;
@@ -532,6 +540,16 @@ export class AppState {
     if (this.stack.length) { this.closeCards(); this.favsOpen = true; return; }
     this.favsOpen = !this.favsOpen;
   }
+
+  // fly: also move the map there (a hand pick); a location fix moves the map itself.
+  setCity(c: CityId, fly = true) {
+    if (c !== this.cityId) {
+      this.cityId = c;
+      store("city", c);
+    }
+    if (fly) this.showCity(c);
+  }
+  get cityInfo() { return CITIES[this.cityId]; }
 
   // «Κοντά σου» opens over the bare map only: an open card stays as it is.
   showNear() {
