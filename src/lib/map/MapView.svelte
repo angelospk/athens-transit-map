@@ -784,6 +784,8 @@
     m.addControl(new NavigationControl({ showCompass: false }), "top-right");
     m.addControl({ onAdd: () => locateCtl, onRemove: () => locateCtl.remove() }, "top-right");
     m.addControl({ onAdd: () => infoCtl, onRemove: () => infoCtl.remove() }, "bottom-right");
+    // MapLibre puts a new bottom control above the others; after the credits it floats left of the ⓘ, on its row.
+    infoCtl.parentElement?.append(infoCtl);
     m.on("dragstart", () => (follow = false));   // only user gestures fire it
     // The city layer loads the tiles of the view: at first, and 300 ms after the map stops moving (never during a move).
     const reportView = () => {
@@ -1355,10 +1357,10 @@
     locateBtn.setAttribute("aria-pressed", String(s !== "off" && s !== "denied"));
   });
 
-  // «Λεπτομέρειες» (a control above the ⓘ, bottom right) opens the info sheet. The ⓘ stays MapLibre's: it shows the
+  // «Λεπτομέρειες» (a control left of the ⓘ, bottom right) opens the info sheet. The ⓘ stays MapLibre's: it shows the
   // map's credits (open at first, closed by the first drag), which the licences want visible (#34).
   const infoCtl = document.createElement("div");
-  infoCtl.className = "maplibregl-ctrl maplibregl-ctrl-group";
+  infoCtl.className = "maplibregl-ctrl maplibregl-ctrl-group details-ctl";
   const infoBtn = document.createElement("button");
   infoBtn.type = "button";
   infoBtn.className = "details";
