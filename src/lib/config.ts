@@ -14,7 +14,9 @@ function cityFromPage() {
   return typeof location === "undefined" ? initialCity("", null) : initialCity(location.search, storedCity());
 }
 
-const bases = basesFor(cityFromPage(), import.meta.env);
+// The city of this page load.
+export const PAGE_CITY = cityFromPage();
+const bases = basesFor(PAGE_CITY, import.meta.env);
 
 export const API_BASE = bases.api;
 export const STATIC_BASE = bases.static;
