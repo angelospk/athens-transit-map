@@ -201,6 +201,12 @@ describe("stopRows", () => {
     expect(late.find(r => r.ref === "010" && r.dir === 0)).toMatchObject({ timetable: true, times: [] });
     expect(rows.find(r => r.ref === "010")!.card).toBe(cards.find(c => c.ref === "010")!.id);
   });
+  it("keeps a terminus with no more runs today as its own row, last, never folded into another", () => {
+    const later = stopRows("s", data, cards, athensClock(at(14, 35)), 3).filter(r => r.ref === "Α");
+    expect(later.map(r => [r.at, r.times])).toEqual([["Μετρό", ["15:20"]], ["Βεργίνας", []]]);
+    const night = stopRows("s", data, cards, athensClock(at(20, 0)), 3).filter(r => r.ref === "Α");
+    expect(night.map(r => [r.at, r.times])).toEqual([["Μετρό", []], ["Βεργίνας", []]]);   // in the order of their first run
+  });
   it("an unknown stop has no rows", () => {
     expect(stopRows("nope", data, cards, athensClock(at(14, 0)), 3)).toEqual([]);
   });

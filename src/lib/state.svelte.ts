@@ -143,6 +143,7 @@ export class AppState {
   // «Κάτι δεν ισχύει;» on a municipal route or stop: the report sheet (MuniReport) for its lines, with the times shown.
   // One card per municipal line (muniLine.ts); the open one's direction and its estimated buses go on the map.
   muniCards = $derived<MuniCard[]>(this.municipal ? muniCards(this.municipal, this.muniTimes) : []);
+  muniStop = $state.raw<[number, number] | null>(null);   // the open municipal stop, [lon, lat] (MuniStopCard)
   muniFocus = $state.raw<{ route: MunicipalRoute; vehicles: SimVehicle[] } | null>(null);
   muniReport = $state.raw<{ stop: string | null; items: { table: MuniTimetable; line: MuniLine; shown: string[] }[] } | null>(null);
   // Map filters; the selected vehicle is always shown.

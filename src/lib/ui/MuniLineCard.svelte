@@ -37,7 +37,10 @@
     return [...m];
   });
   const line = $derived(mc && route ? mc.lines.find(l => l.routes.includes(route.id)) ?? null : null);
-  const stopNames = $derived(route && app.municipal ? route.stops.map(id => app.municipal!.stops[id]?.name).filter((n): n is string => !!n) : []);
+  const stopList = $derived(route && app.municipal ? route.stops.flatMap(id => {
+    const n = app.municipal!.stops[id]?.name;
+    return n ? [{ id, name: n }] : [];
+  }) : []);
   const label = $derived(mc ? (mc.ref ? `${mc.ref} · ${mc.name}` : mc.name) : "");
 
   $effect(() => { if (mc) untrack(() => app.retitle(label)); });
@@ -128,11 +131,12 @@
         {/if}
       {/if}
 
-      {#if stopNames.length}
+      {#if stopList.length}
         <button type="button" class="times" aria-expanded={showStops} aria-controls="muni-stops" onclick={() => (showStops = !showStops)}>
-          Στάσεις · {stopNames.length} <svg viewBox="0 0 12 8" width="9" height="6" aria-hidden="true" class={{ up: showStops }}><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          Στάσεις · {stopList.length} <svg viewBox="0 0 12 8" width="9" height="6" aria-hidden="true" class={{ up: showStops }}><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
         </button>
-        {#if showStops}<ol id="muni-stops" class="stops">{#each stopNames as n, i (i)}<li>{n}</li>{/each}</ol>{/if}
+        {#if showStops}<ol id="muni-stops" class="stops">{#each stopList as s, i (i)}<li><button type="button"
+          onclick={() => app.push({ kind: "stop", id: `muni:${s.id.replace(/^osm:/, "")}`, title: s.name })}>{s.name}</button></li>{/each}</ol>{/if}
       {/if}
 
       <div class="foot">
@@ -171,6 +175,8 @@
   .chips { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 0; font-size: 13px; font-variant-numeric: tabular-nums; }
   .chips .past { color: var(--muted); text-decoration: line-through; opacity: .6; }
   .stops { margin: 0; padding-left: 22px; font-size: 13px; }
+  .stops button { min-height: 30px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .stops button:hover { color: var(--accent); text-decoration: underline; }
   .foot { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; margin-top: 10px; font-size: 12px; }
   .foot small { flex-basis: 100%; color: var(--muted); }
   .report { padding: 6px 0; border: 0; background: none; color: var(--muted); font: inherit; text-decoration: underline; cursor: pointer; }

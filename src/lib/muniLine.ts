@@ -263,3 +263,29 @@ export function simulate(route: MunicipalRoute, stops: Record<string, MunicipalS
   }
   return out;
 }
+
+export interface StopRow {
+  card: string; ref: string | null; dir: 0 | 1; to: string; at: string | null; approx: boolean; times: string[];
+  timetable: boolean;   // false: the municipality gives no times for this line
+}
+
+// A municipal stop's card (MuniStopCard), shaped as a bus stop's: each line and direction through it, one row
+// per terminus with its next departures from there (the timetables give no times at the other stops), the
+// soonest first; the lines with no times left last.
+export function stopRows(stopId: string, d: MunicipalData, cards: MuniCard[], clock: Clock, n = 3): StopRow[] {
+  if (!d.stops[stopId]) return [];
+  const out: StopRow[] = [];
+  for (const c of cards) c.routes.forEach((r, i) => {
+    if (i > 1 || !r.stops.includes(stopId)) return;
+    const base = { card: c.id, ref: c.ref, dir: i as 0 | 1, to: routeLabel(r, c.lines), timetable: !!c.table };
+    // Grouped by terminus over the whole day, so one with no more runs keeps its own (empty) row.
+    const byAt = new Map<string | null, TodayRun[]>();
+    for (const run of todayRuns(c.lines, r.id, clock)) byAt.set(run.at, [...(byAt.get(run.at) ?? []), run]);
+    if (!byAt.size) out.push({ ...base, at: null, approx: false, times: [] });
+    for (const [at, runs] of byAt) {
+      const next = runs.filter(x => !x.past);
+      out.push({ ...base, at, approx: next.some(x => x.approx), times: next.slice(0, n).map(x => x.time) });
+    }
+  });
+  return out.sort((a, b) => (a.times[0] ?? "99") < (b.times[0] ?? "99") ? -1 : (a.times[0] ?? "99") > (b.times[0] ?? "99") ? 1 : 0);
+}
