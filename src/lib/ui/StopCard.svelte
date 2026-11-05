@@ -75,7 +75,7 @@
     const same = l.variants.filter(v => v.id === g.variant);
     alertFor = { line: g.line, toward: dest(g).to, lines: [{ line: g.line, variants: same.length ? same : l.variants }] };
   }
-  const REFRESH_MS = 20_000;
+  const REFRESH_MS = 20_000, QUICK_RETRY_MS = 2_000;
   let failed = $state(false);
   let now = $state(Date.now());   // set from app.serverMs() when a stop opens
   const groups = $derived(board ? arrivalGroups(board.arrivals, now) : []);
@@ -103,12 +103,13 @@
     if (!sid) return;
     const ac = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let busy = false;
+    let busy = false, misses = 0;
     now = app.serverMs();
     board = boardOf(peekStop(sid));
     const load = async () => {
       if (busy) return;
       clearTimeout(timer);
+      let quick = false;
       if (document.visibilityState !== "hidden") {
         busy = true;
         const r = await fetchStop(sid);
@@ -121,9 +122,12 @@
           // Loaded once per page (api.ts): a tapped bus then shows its stops ahead with no wait.
           for (const l of linesToWarm(b.arrivals)) void fetchLineStatic(l).catch(() => {});
         }
-        failed = !b;
+        // Nothing shown yet and the first try lost on the network (a weak phone network): once more in 2 s, still «Φόρτωση».
+        misses = b ? 0 : misses + 1;
+        quick = !board && misses === 1 && r?.status === 0;   // a 429 or 5xx keeps the long wait
+        failed = !b && !quick;
       }
-      timer = setTimeout(load, REFRESH_MS);
+      timer = setTimeout(load, quick ? QUICK_RETRY_MS : REFRESH_MS);
     };
     const shown = () => { if (document.visibilityState === "visible") load(); };
     load();

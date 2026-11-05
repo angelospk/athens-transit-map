@@ -93,11 +93,65 @@ describe("LinePoller", () => {
     t.poller.stop();
   });
 
-  it("treats network errors (status 0) like 5xx", async () => {
-    const t = setup(n => (n === 1 ? { status: 0, body: null } : { status: 200, body: body(30) }));
+  it("treats network errors (status 0) like 5xx once the line has data", async () => {
+    const t = setup(n => (n === 2 ? { status: 0, body: null } : { status: 200, body: body(30) }));
+    t.poller.start();
+    await vi.advanceTimersByTimeAsync(31_000 + 10_000);
+    expect(gaps(t.starts)).toEqual([31_000, 10_000]);
+    t.poller.stop();
+  });
+
+  // A phone on a weak network loses a request: an open card must not wait 10-25 s for its line.
+  it("retries a lost first request at the 5 s floor, once, then backs off as usual", async () => {
+    const t = setup(n => (n <= 2 ? { status: 0, body: null } : { status: 200, body: body(30) }));
+    t.poller.start();
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect(gaps(t.starts)).toEqual([5_000, 20_000]);   // the second failure counts as the second
+    t.poller.stop();
+  });
+
+  it("gives up on a hung first request after 5 s and asks again at once", async () => {
+    const t = setup(n => (n === 1 ? new Promise<FetchResult>(() => {}) : { status: 200, body: body(30) }));
+    t.poller.start();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(t.signals[0].aborted).toBe(true);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(t.starts).toHaveLength(2);
+    expect(t.starts[1] - T0).toBeGreaterThanOrEqual(5_000);
+    expect(t.starts[1] - T0).toBeLessThanOrEqual(5_010);   // at once, not after a 10 s backoff
+    expect(t.data).toHaveLength(1);
+    t.poller.stop();
+  });
+
+  it("cuts the first request after a reopen at 5 s even when an older failure is still counted", async () => {
+    const t = setup(n => (n === 1 ? { status: 503, body: null } : n === 2 ? new Promise<FetchResult>(() => {}) : { status: 200, body: body(30) }));
+    t.poller.start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    t.poller.stop();
+    t.poller.start();   // the 10 s backoff of the 503 is kept
+    await vi.advanceTimersByTimeAsync(9_000 + 5_000);
+    expect(t.starts[1] - T0).toBe(10_000);
+    expect(t.signals[1].aborted).toBe(true);
+    t.poller.stop();
+  });
+
+  it("keeps the 10 s backoff for 429 and 5xx even before the first data", async () => {
+    const t = setup(n => (n === 1 ? { status: 503, body: null } : { status: 200, body: body(30) }));
     t.poller.start();
     await vi.advanceTimersByTimeAsync(10_000);
     expect(gaps(t.starts)).toEqual([10_000]);
+    t.poller.stop();
+  });
+
+  it("is quick again for a line reopened after stop/start", async () => {
+    const t = setup(n => (n === 2 ? { status: 0, body: null } : { status: 200, body: body(30) }));
+    t.poller.start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    t.poller.stop();
+    await vi.advanceTimersByTimeAsync(9_000);
+    t.poller.start();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(t.starts).toEqual([T0, T0 + 10_000, T0 + 15_000]);
     t.poller.stop();
   });
 
@@ -160,13 +214,15 @@ describe("LinePoller", () => {
   });
 
   it("never has two requests in flight, even with slow responses", async () => {
-    const t = setup(() => new Promise<FetchResult>(r => setTimeout(() => r({ status: 200, body: body(-10) }), 8_000)));
+    // The first answer is quick (a first request has its own 5 s timeout, tested apart); then 8 s each.
+    const t = setup(n => n === 1 ? { status: 200, body: body(-10) }
+      : new Promise<FetchResult>(r => setTimeout(() => r({ status: 200, body: body(-10) }), 8_000)));
     t.poller.start();
-    await vi.advanceTimersByTimeAsync(3_000);
+    await vi.advanceTimersByTimeAsync(8_000);
     t.poller.visibilityChanged(); // a visibility event mid-flight must not start a second request
     await vi.advanceTimersByTimeAsync(60_000);
     expect(t.maxInFlight()).toBe(1);
-    for (const g of gaps(t.starts)) expect(g).toBeGreaterThanOrEqual(8_000);
+    for (const g of gaps(t.starts).slice(1)) expect(g).toBeGreaterThanOrEqual(8_000);
     t.poller.stop();
   });
 
@@ -180,14 +236,14 @@ describe("LinePoller", () => {
   });
 
   it("retries a failure that took 8 s no earlier than 18 s after its start", async () => {
-    const t = setup(n => n === 1
+    const t = setup(n => n === 2
       ? new Promise<FetchResult>(r => setTimeout(() => r({ status: 500, body: null }), 8_000))
       : { status: 200, body: body(30) });
     t.poller.start();
-    await vi.advanceTimersByTimeAsync(17_999);
-    expect(t.starts).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(31_000 + 17_999);
+    expect(t.starts).toHaveLength(2);
     await vi.advanceTimersByTimeAsync(1);
-    expect(t.starts).toEqual([T0, T0 + 18_000]);
+    expect(t.starts).toEqual([T0, T0 + 31_000, T0 + 49_000]);
     t.poller.stop();
   });
 
@@ -257,14 +313,14 @@ describe("LinePoller", () => {
     t.poller.stop();
   });
 
-  it("times out a hung request after 15 s and backs off", async () => {
-    const t = setup(n => (n === 1 ? new Promise<FetchResult>(() => {}) : { status: 200, body: body(30) }));
+  it("times out a hung request after 15 s once the line has data, and backs off", async () => {
+    const t = setup(n => (n === 2 ? new Promise<FetchResult>(() => {}) : { status: 200, body: body(30) }));
     t.poller.start();
-    await vi.advanceTimersByTimeAsync(15_000);
-    expect(t.signals[0].aborted).toBe(true);
+    await vi.advanceTimersByTimeAsync(31_000 + 15_000);
+    expect(t.signals[1].aborted).toBe(true);
     expect(t.states.at(-1)).toBe("backoff");
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(t.starts).toEqual([T0, T0 + 25_000]);
+    expect(t.starts).toEqual([T0, T0 + 31_000, T0 + 56_000]);
     t.poller.stop();
   });
 
