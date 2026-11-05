@@ -28,6 +28,7 @@ import { parseAlerts, type Disruption } from "./disruptions";
 import { focusLines, nearbyGroups } from "./nearby";
 import type { LocState } from "./locate";
 import { CITIES, initialCity, type CityId } from "./cities";
+import { cityUrl, favKey } from "./cityBases";
 
 export const STALE_S = 120;
 // A picked line whose feed has no vehicles for this many updates in a row is taken off the map.
@@ -56,6 +57,12 @@ function store(key: string, v: unknown) {
   try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* private mode */ }
 }
 const isBool = (v: unknown) => typeof v === "boolean";
+
+// The city of this page load (config.ts computes the same): ?city=, else the last choice, else Athens.
+// Known before the fields below, because the favourites key and the rail features depend on it.
+function pageCity(): CityId {
+  return typeof location === "undefined" ? "athens" : initialCity(location.search, stored<unknown>("city", null, () => true));
+}
 
 // A stop alert from the trip planner; label: the boarding stop's name; push: the bot's id for the same
 // alert as web push (src/lib/push.ts).
@@ -98,8 +105,13 @@ export class AppState {
   // City layer (/v1/vehicles/tiles): the live vehicles of the map view; null before data or when the server lacks it.
   city = $state.raw<CityLive | null>(null);
   cityState = $state<PollState | null>(null);
-  // Favourite stops and lines of every mode (favs.ts, `fav.v2`); the old `favorites` (bus line ids) move into it once.
-  favs = $state.raw<Favs>(loadFavs(stored<unknown>("fav.v2", null, () => true), stored<unknown>("favorites", null, () => true)));
+  // The city the map shows (cities.ts): ?city=, else the last one chosen, else Athens. A location fix inside another
+  // city's area switches to it (MapView); «Κοντά σου» lets the user pick one by hand. A switch reloads the page.
+  cityId = $state<CityId>(pageCity());
+  // Favourite stops and lines of every mode (favs.ts), one list per city; the old `favorites` (bus line ids) move
+  // into Athens' list once.
+  favs = $state.raw<Favs>(loadFavs(stored<unknown>(favKey(this.cityId), null, () => true),
+    this.cityId === "athens" ? stored<unknown>("favorites", null, () => true) : null));
   // The favourites panel (★ in the top bar); it shows while no card is open.
   favsOpen = $state(false);
   // «Κοντά σου» (NearbyPanel): the stops near the user, shown while no card and no favourites are open. myPos: the
@@ -107,9 +119,6 @@ export class AppState {
   nearOpen = $state(false);
   myPos = $state.raw<[number, number] | null>(null);
   locState = $state<LocState>("off");
-  // The city the map shows (cities.ts): ?city=, else the last one chosen, else Athens. A location fix inside another
-  // city's area switches to it (MapView); «Κοντά σου» lets the user pick one by hand.
-  cityId = $state<CityId>("athens");
   // The page opened on a link to a card or to lines: it shows that, not «Κοντά σου».
   linked = false;
   // The search modal (B8): closed, or open on a kind filter.
@@ -524,7 +533,7 @@ export class AppState {
 
   private setFavs(f: Favs) {
     this.favs = f;
-    store("fav.v2", f);
+    store(favKey(this.cityId), f);
   }
   toggleFavorite(id: string) { this.toggleFavLine({ id: `oasa:${id}`, label: id }); }
   toggleFavStop(s: FavStop) { this.setFavs(toggleStop(this.favs, s)); }
@@ -536,6 +545,7 @@ export class AppState {
   disruptions = $state.raw<Disruption[]>([]);
   closedStrikes = $state.raw<string[]>(stored<string[]>("strikesClosed", [], v => Array.isArray(v) && v.every(x => typeof x === "string")));
   async loadDisruptions() {
+    if (!this.rail) return;
     const r = await fetchV2Alerts();
     if (r.status === 200) this.disruptions = parseAlerts(r.body);
   }
@@ -552,14 +562,18 @@ export class AppState {
   }
 
   // fly: also move the map there (a hand pick); a location fix moves the map itself.
+  // A new city is a new page: every cache and the API base belong to one city, so reload on the city's URL.
   setCity(c: CityId, fly = true) {
     if (c !== this.cityId) {
-      this.cityId = c;
       store("city", c);
+      if (typeof location !== "undefined") location.replace(cityUrl(location.pathname + location.search, c));
+      return;
     }
     if (fly) this.showCity(c);
   }
   get cityInfo() { return CITIES[this.cityId]; }
+  // Metro, tram, Proastiakos, municipal buses and OASA alerts: Athens only.
+  private get rail() { return CITIES[this.cityId].rail; }
 
   // «Κοντά σου» opens over the bare map only: an open card stays as it is.
   showNear() {
@@ -737,7 +751,7 @@ export class AppState {
   private trainGen = 0;
   private startTrains() {
     const gen = ++this.trainGen;
-    if (!this.trainsOn) return;
+    if (!this.trainsOn || !this.rail) return;
     this.loadSuburban();   // the corridors' colours and paths
     const poll = async (kind: "metro" | "suburban", every: number) => {
       if (gen !== this.trainGen) return;
@@ -765,7 +779,7 @@ export class AppState {
   // Loads the suburban data once, with the trains; after a failure, the next start tries again.
   private suburbanLoading = false;
   loadSuburban() {
-    if (this.suburban || this.suburbanLoading) return;
+    if (!this.rail || this.suburban || this.suburbanLoading) return;
     this.suburbanLoading = true;
     loadSuburban().then(d => (this.suburban = d), () => this.say("Δεν φόρτωσε ο Προαστιακός."))
       .finally(() => (this.suburbanLoading = false));
@@ -774,7 +788,7 @@ export class AppState {
   // Loads the metro data once; after a failure, the next call tries again (the layers menu calls it).
   private metroLoading = false;
   loadMetro() {
-    if (this.metro || this.metroLoading) return;
+    if (!this.rail || this.metro || this.metroLoading) return;
     this.metroLoading = true;
     loadMetro().then(d => { this.metro = d; this.findStation(); }, () => this.say("Δεν φόρτωσαν οι γραμμές του μετρό."))
       .finally(() => (this.metroLoading = false));
@@ -798,7 +812,7 @@ export class AppState {
 
   // Once; again after a failure or an empty answer (the backend may not have the data yet).
   loadMunicipal() {
-    if (this.municipal || this.municipalLoading) return;
+    if (!this.rail || this.municipal || this.municipalLoading) return;
     this.municipalLoading = true;
     loadMunicipal().then(d => (this.municipal = d), () => {}).finally(() => (this.municipalLoading = false));
   }
