@@ -17,6 +17,7 @@
   import { PREFETCH_ZOOM, wanted, type Want } from "../prefetch";
   import { Locator, userPlan, type Fix, type LocState } from "../locate";
   import { CITIES, nearestCity as cityAt } from "../cities";
+  import { autoCityOnFix } from "../cityBases";
   import { onOpen, type Perm } from "../nearby";
   import { distanceM } from "../glide";
   import { Mover, planOnto } from "../motion";
@@ -514,7 +515,8 @@
   // The view's padding around the open sheet (set once the map loads).
   let padNow: () => PaddingOptions = () => ({ top: 0, bottom: 0, left: 0, right: 0 });
   let flyOnFix = false;
-  let cityOnFix = true;   // the first fix of the page, and of each locate tap, may switch the city
+  // The first fix of the page may switch the city, unless the URL names one; a locate tap always may.
+  let cityOnFix = autoCityOnFix(location.search);
   let me: { marker: Marker; el: HTMLElement; mover: Mover; fix: Fix } | null = null;
   const locator = new Locator({
     geo: navigator.geolocation,

@@ -11,7 +11,7 @@
   import type { AppState } from "../state.svelte";
   import CardSheet, { whenText } from "./CardSheet.svelte";
   import Icon from "./Icon.svelte";
-  import { CITIES, type CityId } from "../cities";
+  import { CITIES, nearestCity, type CityId } from "../cities";
 
   let { app }: { app: AppState } = $props();
 
@@ -27,6 +27,10 @@
   let boards = $state.raw<Record<string, V2Arrival[]>>({});
 
   $effect(() => { if (app.nearShown) void app.loadStops(); });
+
+  // The city of the last fix (myPos is [lat, lon]), and whether the map shows another one: then the user picks.
+  const fixCity = $derived(app.myPos ? nearestCity([app.myPos[1], app.myPos[0]]) : null);
+  const elsewhere = $derived(!!app.myPos && fixCity !== app.cityId);
 
   const ids = $derived(app.nearGroups.flatMap(g => g.ids));
   const idKey = $derived(ids.join("|"));
@@ -98,7 +102,10 @@
     {#snippet header()}
       <h2 class="title">Κοντά σου</h2>
     {/snippet}
-    {#if !app.myPos || app.locState === "denied"}
+    {#if elsewhere}
+      <p class="muted">{#if fixCity}Η θέση σου είναι στην {CITIES[fixCity].name}· δείχνεις {app.cityInfo.name}.{:else}Η θέση σου δεν είναι σε πόλη που ξέρω.{/if} Διάλεξε πόλη:</p>
+      {@render cities()}
+    {:else if !app.myPos || app.locState === "denied"}
       {#if app.locState === "denied"}
         <p class="muted">Ο browser δεν δίνει τη θέση σου. Διάλεξε πόλη:</p>
       {:else if app.locState === "unavailable"}

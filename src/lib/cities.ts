@@ -9,14 +9,15 @@ export interface City {
   zoom: number;
   radiusKm: number;           // a location fix this close to the centre is in the city
   ready: boolean;             // false: the city has no data in the app yet
+  rail: boolean;              // metro, tram, Proastiakos, municipal buses and OASA alerts: Athens only
   hint: string;
 }
 
 export const CITIES: Record<CityId, City> = {
-  athens: { id: "athens", name: "Αθήνα", center: [23.73, 37.98], zoom: 11.5, radiusKm: 70, ready: true,
+  athens: { id: "athens", name: "Αθήνα", center: [23.73, 37.98], zoom: 11.5, radiusKm: 70, ready: true, rail: true,
     hint: "ΟΑΣΑ · Μετρό · Τραμ · Προαστιακός" },
-  thessaloniki: { id: "thessaloniki", name: "Θεσσαλονίκη", center: [22.94, 40.63], zoom: 12, radiusKm: 40, ready: false,
-    hint: "ΟΑΣΘ · σύντομα" },
+  thessaloniki: { id: "thessaloniki", name: "Θεσσαλονίκη", center: [22.94, 40.63], zoom: 12, radiusKm: 40, ready: true, rail: false,
+    hint: "ΟΑΣΘ · λεωφορεία" },
 };
 
 export const DEFAULT_CITY: CityId = "athens";
