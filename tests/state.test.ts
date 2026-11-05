@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PALETTE } from "../src/lib/lineColors";
 import { AppState } from "../src/lib/state.svelte";
+import { routeCard } from "../src/lib/legacy";
 
 vi.stubGlobal("history", { state: null, replaceState: () => {} });
 vi.stubGlobal("location", { pathname: "/", search: "", hash: "" });
@@ -235,6 +236,22 @@ describe("AppState rail and favourites", () => {
     app.showFavorites();
     await new Promise(r => setTimeout(r, 0));
     expect(fits).toEqual([["F1", "F2"]]);
+    vi.stubGlobal("fetch", () => new Promise(() => {}));
+  });
+});
+
+describe("AppState line card framing", () => {
+  it("frames the whole line when its route card opens from a vehicle's card (variant known)", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response(JSON.stringify({ line: "R7", variants: { v1: { stops: [] } } }))));
+    const app = new AppState();
+    const fits: string[][] = [];
+    app.fit = ids => fits.push(ids);
+    const c = routeCard("R7", "v1");
+    app.stack = [c];
+    (app as unknown as { show(c: unknown): void }).show(c);
+    expect(app.selection).toEqual({ kind: "route", line: "R7", variant: "v1" });
+    await new Promise(r => setTimeout(r, 0));
+    expect(fits).toEqual([["R7"]]);
     vi.stubGlobal("fetch", () => new Promise(() => {}));
   });
 });

@@ -470,7 +470,12 @@ export class AppState {
       this.dropTemp();
       if (!this.selected.includes(line)) { this.tempLine = line; this.startLine(line); }
     }
-    if (variant) { this.selection = { kind: "route", line, variant }; return; }
+    if (variant) {
+      // From a vehicle's card too: the map steps back to the whole line, with its other vehicles.
+      this.selection = { kind: "route", line, variant };
+      void fetchLineStatic(line).then(() => { if (this.isTop(c)) this.fit([line]); }, () => {});
+      return;
+    }
     void fetchLineStatic(line).then(st => {
       const v = directionGroups(st)[dir ?? 0]?.variants[0] ?? Object.keys(st.variants)[0];
       if (v && this.isTop(c)) { this.selection = { kind: "route", line, variant: v }; this.fit([line]); }

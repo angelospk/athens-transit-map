@@ -16,6 +16,13 @@
   // Only the starred lines not on the map: the chips above already show the others.
   const favsOff = $derived(favs.filter(id => !app.selected.includes(id)));
 
+  const openCard = (id: string) => app.open({ kind: "line", id: `oasa:${id}`, title: id });
+  // A quick pick puts the line on the map and opens its card (not when the 5-line limit refused it).
+  function add(id: string) {
+    app.toggleLine(id);
+    if (app.selected.includes(id)) openCard(id);
+  }
+
   function chipState(id: string) {
     const s = app.pollState[id];
     const age = app.live[id] ? app.serverNow / 1000 - app.live[id].updated_at : 0;
@@ -32,18 +39,12 @@
       {#each app.selected as id (id)}
         {@const info = app.lineInfo.get(id)}
         {@const st = chipState(id)}
-        <li>
-          <button
-            type="button"
-            class="chip"
-            style:--c={app.lineColor(id).bg}
-            style:--t={app.lineColor(id).fg}
-            title={st?.title ?? info?.name}
-            aria-label="Αφαίρεση γραμμής {id}"
-            onclick={() => app.toggleLine(id)}
-          >
-            {id}{#if st}<span class="st">{st.icon}</span>{/if}<span class="x" aria-hidden="true">×</span>
-          </button>
+        <!-- A tap on the chip opens the line's card; only its × takes the line off the map. -->
+        <li class="chip" style:--c={app.lineColor(id).bg} style:--t={app.lineColor(id).fg}>
+          <button type="button" class="open" title={st?.title ?? info?.name} aria-label="Γραμμή {id}: πληροφορίες"
+            onclick={() => openCard(id)}>{id}{#if st}<span class="st">{st.icon}</span>{/if}</button>
+          <button type="button" class="x" title="Αφαίρεση" aria-label="Αφαίρεση γραμμής {id}"
+            onclick={() => app.toggleLine(id)}>×</button>
         </li>
       {/each}
     </ul>
@@ -64,7 +65,7 @@
       <Icon name="star-filled" size={14} />
       {#each favsOff as id (id)}
         <button type="button" class="fav" style:--c={app.lineColor(id).bg} style:--t={app.lineColor(id).fg}
-          aria-label="Εμφάνιση γραμμής {id}" onclick={() => app.toggleLine(id)}>{id}</button>
+          aria-label="Εμφάνιση γραμμής {id}" onclick={() => add(id)}>{id}</button>
       {/each}
       {#if favsOff.length > 1}
         <button type="button" class="all" onclick={() => app.showFavorites()}>Όλες</button>
@@ -74,7 +75,7 @@
     <div class="quick">
       <span>Δημοφιλείς:</span>
       {#each quick as id (id)}
-        <button type="button" class="q" style:--c={app.lineInfo.get(id)?.color} onclick={() => app.toggleLine(id)}>{id}</button>
+        <button type="button" class="q" style:--c={app.lineInfo.get(id)?.color} onclick={() => add(id)}>{id}</button>
       {/each}
     </div>
     <div class="tip">Πάτα <Icon name="star" size={12} label="το αστέρι" /> σε μια γραμμή ή στάση για να μπει στα αγαπημένα.</div>
@@ -94,9 +95,11 @@
     border: 0; border-radius: 18px; background: var(--control); color: var(--muted); font-size: 13px; cursor: pointer; }
   .find:hover { background: var(--control-hover); }
   .quick, .tip { grid-column: 1 / -1; }
-  .chip { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 0 10px; border: 0;
-    border-radius: 16px; background: var(--c); color: var(--t); font-weight: 700; cursor: pointer; }
-  .chip .x { opacity: .8; font-weight: 400; margin-left: 2px; }
+  .chip { display: inline-flex; align-items: stretch; min-height: 32px; border-radius: 16px; background: var(--c); color: var(--t); }
+  .chip button { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; color: inherit; cursor: pointer; }
+  .chip .open { padding: 0 4px 0 10px; font-weight: 700; }
+  .chip .x { min-width: 28px; justify-content: center; padding: 0 8px 0 2px; opacity: .8; font-size: 15px; }
+  .chip .x:hover { opacity: 1; }
   .chip .st { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%;
     background: rgba(0, 0, 0, .3); font-size: 11px; }
   .quick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; color: var(--muted); font-size: 12px; }

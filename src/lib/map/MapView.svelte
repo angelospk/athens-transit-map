@@ -105,6 +105,7 @@
     d.dir.style.transform = `translate(${Math.sin(a) * rx}px, ${-Math.cos(a) * ry}px) rotate(${h}deg)`;
   }
 
+  const CREDITS_MS = 5000;   // the map's credits show this long, then fold to the ⓘ
   const LANE_PX = 3;   // each direction drawn to the right of its travel direction (two lanes)
   const key = (line: string, id: string) => `${line}/${id}`;
 
@@ -127,7 +128,11 @@
 
   function fitTo(ids: string[]) {
     const b = bounds(drawn.filter(d => ids.includes(d.id)));
-    if (b && map) map.fitBounds(b, { padding: padding(), maxZoom: 15, duration: 600 });
+    if (!b || !map) return;
+    // With a card open, clear of the sheet too, at its usual height on a phone (a loading card grows), as focusOn.
+    const pad = app.stack.length ? padNow() : padding();
+    if (app.stack.length && innerWidth < 720 && typeof pad !== "number") pad.bottom = Math.max(pad.bottom ?? 0, sheetReserve(innerHeight));
+    map.fitBounds(b, { padding: pad, maxZoom: 15, duration: 600 });
   }
 
   // A right-pointing chevron; symbol layers turn it along each line in travel direction.
@@ -786,6 +791,14 @@
     m.addControl({ onAdd: () => infoCtl, onRemove: () => infoCtl.remove() }, "bottom-right");
     // MapLibre puts a new bottom control above the others; after the credits it floats left of the ⓘ, on its row.
     infoCtl.parentElement?.append(infoCtl);
+    // MapLibre shows the credits (ⓘ) open until the first drag: on a phone they cover the map. They fold after a few
+    // seconds instead; a tap on the ⓘ opens them again (#34: they must be seen first).
+    // A tap on the ⓘ before then is the user's choice: the timer stops.
+    m.once("load", () => {
+      const t = setTimeout(() =>
+        node.querySelector(".maplibregl-ctrl-attrib.maplibregl-compact-show")?.classList.remove("maplibregl-compact-show"), CREDITS_MS);
+      node.querySelector(".maplibregl-ctrl-attrib-button")?.addEventListener("click", () => clearTimeout(t), { once: true });
+    });
     m.on("dragstart", () => (follow = false));   // only user gestures fire it
     // The city layer loads the tiles of the view: at first, and 300 ms after the map stops moving (never during a move).
     const reportView = () => {
@@ -1358,7 +1371,7 @@
   });
 
   // «Λεπτομέρειες» (a control left of the ⓘ, bottom right) opens the info sheet. The ⓘ stays MapLibre's: it shows the
-  // map's credits (open at first, closed by the first drag), which the licences want visible (#34).
+  // map's credits (open at first, closed after CREDITS_MS or the first drag), which the licences want visible (#34).
   const infoCtl = document.createElement("div");
   infoCtl.className = "maplibregl-ctrl maplibregl-ctrl-group details-ctl";
   const infoBtn = document.createElement("button");
