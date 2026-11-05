@@ -233,11 +233,14 @@ export class AppState {
     return colorOf(this.lineSlots, id) ?? { bg: info?.color || "#3b5bdb", fg: info?.text_color || "#ffffff" };
   }
 
+  // The selected vehicle stays (not faded) when its trip leaves the focused direction, e.g. it turned at the
+  // terminus: its open card must not say it is gone. Only a direction picked by the user lets go of it (setFocus).
   vehicles: PlacedVehicle[] = $derived(this.detailLines.flatMap(line => {
     const f = this.focus[line] ? new Set(this.focus[line]) : undefined;
     const known = new Set(Object.keys(this.statics[line]?.variants ?? {}));
-    return (this.live[line]?.vehicles ?? []).flatMap(v =>
-      isHidden(v.variant, f, known) ? [] : [{ line, v, faded: !!f && !(v.variant && f.has(v.variant)) }]);
+    const s = this.selection, keep = s?.kind === "vehicle" && s.line === line ? s.id : null;
+    return (this.live[line]?.vehicles ?? []).flatMap(v => v.id === keep ? [{ line, v, faded: false }]
+      : isHidden(v.variant, f, known) ? [] : [{ line, v, faded: !!f && !(v.variant && f.has(v.variant)) }]);
   }));
 
   cityByKey = $derived(new Map((this.city?.vehicles ?? []).map(v => [cityKey(v), v])));
@@ -828,7 +831,10 @@ export class AppState {
     const s = this.selection;
     if (!variants || s?.line !== line) return;
     if (s.kind === "route" && !variants.includes(s.variant)) this.selection = { kind: "route", line, variant: variants[0] };
-    if (s.kind === "vehicle" && !this.vehicles.some(p => p.line === line && p.v.id === s.id)) this.selection = null;
+    if (s.kind === "vehicle") {
+      const v = this.live[line]?.vehicles.find(x => x.id === s.id);
+      if (!v || isHidden(v.variant, new Set(variants), new Set(Object.keys(this.statics[line]?.variants ?? {})))) this.selection = null;
+    }
   }
 
   selectVehicle(line: string, id: string) {

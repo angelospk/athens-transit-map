@@ -101,6 +101,22 @@ describe("AppState city focus (temporary line)", () => {
     expect(app.cityExclude.has("Α1")).toBe(false);
   });
 
+  it("keeps the selected vehicle when its trip leaves the focused direction (the bus turned at the terminus)", () => {
+    const app = new AppState();
+    app.statics = { ...app.statics, "Α7": { variants: { "2085": {}, "2086": {} } } as never };
+    app.openLineAt("Α7", ["2085"], "61195");   // the stop card's arrival: the line focused on its direction
+    app.selectCityVehicle("Α7", "61195");
+    const feed = (variant: string) => hook(app).onData("Α7", { line: "Α7", updated_at: 1, next_update_at: 31,
+      vehicles: [{ id: "61195", variant }, { id: "61219", variant: "2086" }] });
+    feed("2086");
+    expect(app.selectedVehicle?.v.id).toBe("61195");
+    expect(app.vehicles.map(p => p.v.id)).toEqual(["61195"]);   // the other 2086 bus stays hidden
+    // The user focusing the other direction still lets go of the vehicle.
+    feed("2085");
+    app.setFocus("Α7", ["2086"]);
+    expect(app.selection).toBeNull();
+  });
+
   it("forgets a deselected pick's data too", () => {
     const app = new AppState();
     app.toggleLine("040");
