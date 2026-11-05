@@ -1,28 +1,39 @@
 name: Preview on Cloudflare Pages
 
-# Every branch but main gets its own preview: https://<branch>.athens-transit-map.pages.dev (the PR shows
-# it as "View deployment"). Production stays on GitHub Pages (deploy.yml). Forks get no secrets: no preview.
+# Every branch but main gets its own preview: https://<branch>.athens-transit-map.pages.dev. An open PR of
+# the branch gets one bot comment with the link, edited in place on each push. Production stays on GitHub
+# Pages (deploy.yml). Forks get no secrets: no preview.
 on:
   push:
     branches-ignore: [main]
+    paths-ignore: ['docs/**', '**/*.md', 'LICENSE']
+  pull_request:
+    types: [opened, reopened] # a PR opened after the branch's last push still gets its comment
     paths-ignore: ['docs/**', '**/*.md', 'LICENSE']
   workflow_dispatch:
 
 permissions:
   contents: read
+  pull-requests: write # the preview comment
 
 concurrency:
-  group: preview-${{ github.ref_name }}
+  group: preview-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true # only the branch's last push matters
 
 jobs:
   preview:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     environment:
       name: preview
       url: ${{ steps.deploy.outputs.url }}
+    env:
+      BRANCH: ${{ github.head_ref || github.ref_name }}
+      SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SHA }} # the branch head, not the PR's merge commit
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - run: bun run test
@@ -34,8 +45,25 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          BRANCH: ${{ github.ref_name }}
         run: |
-          out=$(bunx wrangler@4 pages deploy dist --project-name athens-transit-map --branch "$BRANCH" --commit-hash "$GITHUB_SHA" 2>&1 | tee /dev/stderr)
+          out=$(bunx wrangler@4 pages deploy dist --project-name athens-transit-map --branch "$BRANCH" --commit-hash "$SHA" 2>&1 | tee /dev/stderr)
           url=$(printf '%s\n' "$out" | grep -o 'https://[^ ]*\.athens-transit-map\.pages\.dev' | tail -1)
           echo "url=$url" >> "$GITHUB_OUTPUT"
+      - name: Comment on the PR
+        if: steps.deploy.outputs.url != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          URL: ${{ steps.deploy.outputs.url }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          pr=${PR:-$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json number --jq '.[0].number')}
+          [ -n "$pr" ] || { echo "no open PR for $BRANCH"; exit 0; }
+          marker='<!-- preview-comment -->'
+          body=$(printf '%s\n**Preview:** %s\n\nCommit `%s` · %s UTC\n' "$marker" "$URL" "${SHA:0:7}" "$(date -u '+%Y-%m-%d %H:%M')")
+          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$pr/comments" --paginate \
+            --jq "map(select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\")))) | .[0].id // empty" | head -1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -f body="$body" > /dev/null
+          else
+            gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" --body "$body"
+          fi
