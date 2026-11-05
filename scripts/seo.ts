@@ -5,7 +5,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-export const SITE = "https://bus.haroldpoi.dev";
+// The site's one host: bus.haroldpoi.dev answers with a 301 to it.
+export const SITE = "https://staseis.gr";
 
 export interface SeoLine {
   id: string;
@@ -100,13 +101,21 @@ function layout(o: { title: string; description: string; canonical: string; body
 <title>${escape(o.title)}</title>
 <meta name="description" content="${escape(o.description)}">
 <link rel="canonical" href="${escape(o.canonical)}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Στάσεις">
+<meta property="og:locale" content="el_GR">
+<meta property="og:title" content="${escape(o.title)}">
+<meta property="og:description" content="${escape(o.description)}">
+<meta property="og:url" content="${escape(o.canonical)}">
+<meta property="og:image" content="${SITE}/icon-512.png">
+<meta name="twitter:card" content="summary">
 ${o.ld === undefined ? "" : `<script type="application/ld+json">${jsonLd(o.ld)}</script>\n`}${STYLE}
 </head>
 <body>
 <main>
 ${o.body}
 </main>
-<footer><a href="/">Στάσεις</a> · ζωντανός χάρτης λεωφορείων, τρόλεϊ, μετρό και τραμ στην Αθήνα</footer>
+<footer><a href="/">Στάσεις</a> · ζωντανός χάρτης λεωφορείων, τρόλεϊ, μετρό και τραμ στην Αθήνα · <a href="/lines.html">Όλες οι γραμμές</a></footer>
 </body>
 </html>
 `;
@@ -146,6 +155,28 @@ ${rows.length ? `<ul class="lines">\n${rows.join("\n")}\n</ul>` : ""}`;
       url: canonical,
       geo: { "@type": "GeoCoordinates", latitude: lat, longitude: lon },
     },
+  });
+}
+
+export const LINES_PATH = "/lines.html";
+const MODE_GROUP: Record<string, string> = { bus: "Λεωφορεία", trolley: "Τρόλεϊ", metro: "Μετρό", tram: "Τραμ", suburban: "Προαστιακός" };
+
+// Every line page from one place: the map itself (a script) links none, so search engines
+// reach the line pages, and through them the stops, from here and the footer.
+export function linesPage(lines: SeoLine[]): string {
+  const order = Object.keys(MODE_WORD);
+  const modes = [...new Set(lines.map(l => l.mode))].sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99));
+  const sections = modes.map(mode => {
+    const rows = lines.filter(l => l.mode === mode)
+      .sort((a, b) => labelOf(a).localeCompare(labelOf(b), "el", { numeric: true }))
+      .map(l => `<li><a class="badge" href="${escape(encodeURI(linePath(l.id)))}" style="background:${escape(l.color)};color:${escape(l.text_color)}">${escape(labelOf(l))}</a> <a class="ln" href="${escape(encodeURI(linePath(l.id)))}">${escape(l.name)}</a></li>`);
+    return `<h2>${escape(MODE_GROUP[mode] ?? mode)}</h2>\n<ul class="lines">\n${rows.join("\n")}\n</ul>`;
+  });
+  return layout({
+    title: "Όλες οι γραμμές · λεωφορεία, τρόλεϊ, μετρό, τραμ, προαστιακός · Στάσεις",
+    description: `Οι ${lines.length} γραμμές της Αθήνας: λεωφορεία, τρόλεϊ, μετρό, τραμ και προαστιακός, με στάσεις και ζωντανή θέση οχημάτων.`,
+    canonical: SITE + LINES_PATH,
+    body: `<p class="kicker">Στάσεις</p>\n<h1>Όλες οι γραμμές</h1>\n<a class="cta" href="/">Άνοιξε τον ζωντανό χάρτη ›</a>\n${sections.join("\n")}`,
   });
 }
 
@@ -230,7 +261,8 @@ export async function build(outDir: string, getJson: GetJson): Promise<{ stops: 
     ...details.map(d => writeFile(join(outDir, linePath(d.line.id)), linePage(d))),
   ]);
 
-  const paths = ["/", ...lines.map(l => linePath(l.id)), ...stops.map(s => stopPath(s[0]))];
+  await writeFile(join(outDir, LINES_PATH.slice(1)), linesPage(lines));
+  const paths = ["/", LINES_PATH, ...lines.map(l => linePath(l.id)), ...stops.map(s => stopPath(s[0]))];
   await writeFile(join(outDir, "sitemap.xml"), sitemap(paths));
   await writeFile(join(outDir, "robots.txt"), robots());
   return { stops: stops.length, lines: lines.length };
