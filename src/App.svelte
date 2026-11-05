@@ -6,6 +6,7 @@
   import StopCard from "./lib/ui/StopCard.svelte";
   import VehicleCard from "./lib/ui/VehicleCard.svelte";
   import LineCard from "./lib/ui/LineCard.svelte";
+  import MuniLineCard from "./lib/ui/MuniLineCard.svelte";
   import RailStopCard from "./lib/ui/RailStopCard.svelte";
   import FavsPanel from "./lib/ui/FavsPanel.svelte";
   import NearbyPanel from "./lib/ui/NearbyPanel.svelte";
@@ -29,6 +30,7 @@
 <StopCard {app} />
 <VehicleCard {app} />
 <LineCard {app} />
+<MuniLineCard {app} />
 <RailStopCard {app} />
 <FavsPanel {app} />
 <NearbyPanel {app} />

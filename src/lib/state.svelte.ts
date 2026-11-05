@@ -9,6 +9,8 @@ import { loadSuburban, type SuburbanData } from "./suburban";
 import { loadMunicipal, type MunicipalData } from "./municipal";
 import { loadTimetables } from "./muniTables";
 import type { MuniLine, MuniTimetable } from "./muniTimes";
+import { muniCards, type MuniCard, type SimVehicle } from "./muniLine";
+import type { MunicipalRoute } from "./municipal";
 import { railMotions, runIds, type RailMotion, type StasyVehicle, type SuburbanTrain, type TrainSel } from "./trains";
 import type { Place, TripIndex } from "./trip";
 import type { FeatureCollection, LineString } from "geojson";
@@ -139,6 +141,9 @@ export class AppState {
   muniTimes = $state.raw<MuniTimetable[]>([]);
   private muniTimesLoading = false;
   // «Κάτι δεν ισχύει;» on a municipal route or stop: the report sheet (MuniReport) for its lines, with the times shown.
+  // One card per municipal line (muniLine.ts); the open one's direction and its estimated buses go on the map.
+  muniCards = $derived<MuniCard[]>(this.municipal ? muniCards(this.municipal, this.muniTimes) : []);
+  muniFocus = $state.raw<{ route: MunicipalRoute; vehicles: SimVehicle[] } | null>(null);
   muniReport = $state.raw<{ stop: string | null; items: { table: MuniTimetable; line: MuniLine; shown: string[] }[] } | null>(null);
   // Map filters; the selected vehicle is always shown.
   only = $state.raw<Only>(stored("only", { fresh: false, onTime: false },
@@ -723,7 +728,7 @@ export class AppState {
     this.startTrains();
     if (!on) {
       const top = this.stack[this.stack.length - 1];
-      if (top && !top.id.startsWith("oasa:")) this.closeCards();   // a rail card has nothing to show now
+      if (top && !top.id.startsWith("oasa:") && !top.id.startsWith("muni:")) this.closeCards();   // a rail card has nothing to show now
       this.selectTrain(null); this.selectRailLine(null); this.selectStation(null); this.selectRailStation(null);
       this.stasyTrains = this.suburbanTrains = [];
       this.stasyMotion = {};

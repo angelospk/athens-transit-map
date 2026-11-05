@@ -93,6 +93,8 @@ describe("stitch", () => {
   it("joins the pieces of an OSM shape into one path, turning a piece round where it fits backwards", () => {
     const a: [number, number][] = [[0, 0], [0, 1]], b: [number, number][] = [[0, 2], [0, 1]], c: [number, number][] = [[0, 3], [0, 2]];
     expect(stitch([a, c, b])).toEqual([[0, 0], [0, 1], [0, 2], [0, 3]]);
+    const mid = stitch([b, a, c]);   // the first piece in the middle: either way round, no jumps
+    expect([mid, [...mid].reverse()]).toContainEqual([[0, 0], [0, 1], [0, 2], [0, 3]]);
     expect(stitch([a])).toEqual(a);
     expect(stitch([])).toEqual([]);
   });
@@ -137,6 +139,28 @@ describe("simulate", () => {
     expect(v.lon).toBeGreaterThan(23);
     expect(v.lon).toBeLessThan(23.002);
     expect(simulate({ ...loop, stops: ["m"] }, st, l, at(14, 8), 15)).toEqual([]);
+  });
+  it("starts a bus at a terminus it cannot find among the stops only when it is the line's one terminus", () => {
+    const one = table([{ routes: ["osm:r1"], name: "Α", services: [{ days: [4], at: "Βεργίνας", times: ["14:00"] }] }]).lines;
+    const two = table([{ routes: ["osm:r1"], name: "Α", services: [
+      { days: [4], at: "Βεργίνας", times: ["14:00"] },
+      { days: [4], at: "Ηλιούπολη", times: ["14:00"] },   // neither is a stop name: where each starts is unknown
+    ] }]).lines;
+    expect(simulate(east, stops, one, at(14, 3), 15).map(x => x.at)).toEqual(["Βεργίνας"]);
+    expect(simulate(east, stops, two, at(14, 3), 15)).toEqual([]);
+    expect(simulate({ ...east, stops: [] }, stops, one, at(14, 3), 15)).toEqual([]);   // no stops: no known way round
+  });
+  it("with one known stop, runs an open path away from the stop a service leaves from", () => {
+    const back = { ...east, shape: [[[38, 23.02], [38, 23]]] as [number, number][][], stops: ["s1"] };
+    const one = table([{ routes: ["osm:r1"], name: "Α", services: [{ days: [4], at: "Πλατεία", times: ["14:00"] }] }]).lines;
+    const [v] = simulate(back, stops, one, at(14, 3), 15);
+    expect(v?.lon).toBeCloseTo(23 + 0.75 / 87.6, 3);
+  });
+  it("runs the path the way the route's stops go, whichever way OSM drew it", () => {
+    const back = { ...east, shape: [[[38, 23.02], [38, 23]]] as [number, number][][] };   // drawn west, stops go east
+    const [v] = simulate(back, stops, lines, at(14, 3), 15).filter(x => x.at === "Πλατεία");
+    expect(v.lon).toBeCloseTo(23 + 0.75 / 87.6, 3);
+    expect(v.bearing).toBeCloseTo(90, 0);
   });
   it("leaves nothing to show with no path, and none on another day", () => {
     expect(simulate({ ...east, shape: [] }, stops, lines, at(14, 3), 15)).toEqual([]);
