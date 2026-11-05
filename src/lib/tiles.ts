@@ -17,6 +17,8 @@ export type TileGet = (t: Tile, signal?: AbortSignal) => Promise<FetchResult>;
 const BOXES: Record<CityId, { south: number; north: number; west: number; east: number }> = {
   athens: { south: 37.5, north: 38.5, west: 22.9, east: 24.5 },
   thessaloniki: { south: 40.3, north: 41.0, west: 22.6, east: 23.4 },
+  heraklion: { south: 35.2, north: 35.45, west: 24.9, east: 25.4 },   // stops of citybus agency 110: 35.24-35.35, 25.04-25.22
+  patras: { south: 38.0, north: 38.4, west: 21.5, east: 22.0 },
 };
 const BOX = BOXES[PAGE_CITY];
 // The tiles of the box at both zooms, as the backend computes them (tileRange).

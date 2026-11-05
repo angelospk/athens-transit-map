@@ -122,12 +122,12 @@
     {#snippet header()}
       {@render label(line, app.lineColor(line).bg, app.lineColor(line).fg)}
       <h2>{busHead ? `→ ${busHead}` : (app.lineInfo.get(line)?.name ?? "")}</h2>
-      {#if bus}<span class="fresh" class:warn={busAge > 90}>{ageLabel(busAge)}</span>{/if}
+      {#if bus}<span class="fresh" class:warn={busAge > 90}>{app.cityInfo.estimated ? "≈ θέση" : ageLabel(busAge)}</span>{/if}
     {/snippet}
     {#if bus}
       <p class="meta">{delayText(bus.v.delay_s)} · #{bus.v.id}</p>
       {#if ahead.length}
-        <p class="note" class:warn={busStale}>{busStale ? `Καμία νέα θέση εδώ και ${Math.round(busAge / 60)}′· οι ώρες μπορεί να μην ισχύουν` : "ώρες κατά προσέγγιση"}</p>
+        <p class="note" class:warn={busStale}>{busStale ? `Καμία νέα θέση εδώ και ${Math.round(busAge / 60)}′· οι ώρες μπορεί να μην ισχύουν` : app.cityInfo.estimated ? "θέση και ώρες κατά προσέγγιση, από τις αφίξεις στις στάσεις" : "ώρες κατά προσέγγιση"}</p>
         <ol class="ahead" aria-live="polite" aria-label="Επόμενες στάσεις">
           {#each ahead.slice(0, 8) as a, k (a.id + "/" + a.i)}
             <li class:next={k === 0}>

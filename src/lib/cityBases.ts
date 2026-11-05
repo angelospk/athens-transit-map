@@ -7,6 +7,7 @@ export interface BasesEnv {
   VITE_API_BASE?: string;
   VITE_STATIC_BASE?: string;
   VITE_API_BASE_THESSALONIKI?: string;
+  VITE_API_BASE_CITYBUS?: string;
 }
 
 export interface Bases { api: string; static: string }
@@ -19,6 +20,11 @@ const ATHENS: Bases = { api: "https://transit.haroldpoi.dev", static: "https://a
 const THESSALONIKI_API = "https://transit-thess.haroldpoi.dev";
 
 export function basesFor(city: CityId, env: BasesEnv): Bases {
+  // citybus.gr cities: one citybus-bridge, a path per city (static/v1 from it too).
+  if (city === "heraklion" || city === "patras") {
+    const api = `${strip(env.VITE_API_BASE_CITYBUS ?? "")}/${city}`;
+    return { api, static: `${api}/static/v1` };
+  }
   if (city === "thessaloniki") {
     const api = strip(env.VITE_API_BASE_THESSALONIKI || THESSALONIKI_API);
     return { api, static: `${api}/static/v1` };

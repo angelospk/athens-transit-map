@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CITIES } from "../src/lib/cities";
+import { CITIES, CITYBUS } from "../src/lib/cities";
 import { basesFor, cityUrl, favKey, autoCityOnFix } from "../src/lib/cityBases";
 
 describe("Thessaloniki live (web#40)", () => {
@@ -44,5 +44,23 @@ describe("Thessaloniki live (web#40)", () => {
     expect(autoCityOnFix("?lines=040")).toBe(true);
     expect(autoCityOnFix("?city=thessaloniki")).toBe(false);
     expect(autoCityOnFix("?city=patra")).toBe(true);   // unknown city: ignored
+  });
+
+  it("basesFor: a citybus.gr city is a path of the one citybus-bridge, which also serves its static/v1", () => {
+    expect(basesFor("heraklion", { VITE_API_BASE_CITYBUS: "https://minipc.example.ts.net:10446/" })).toEqual({
+      api: "https://minipc.example.ts.net:10446/heraklion",
+      static: "https://minipc.example.ts.net:10446/heraklion/static/v1",
+    });
+    expect(basesFor("patras", { VITE_API_BASE_CITYBUS: "http://b" }).api).toBe("http://b/patras");
+  });
+
+  it("citybus.gr cities: buses only, positions marked as estimates", () => {
+    expect(CITYBUS.heraklion).toMatchObject({ rail: false, ready: true, estimated: true });
+    expect(CITYBUS.patras).toMatchObject({ rail: false, ready: true, estimated: true });
+  });
+
+  it("without VITE_API_BASE_CITYBUS (production today) the citybus cities are not offered", () => {
+    expect(Object.hasOwn(CITIES, "heraklion")).toBe(false);
+    expect(Object.hasOwn(CITIES, "patras")).toBe(false);
   });
 });

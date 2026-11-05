@@ -1,6 +1,6 @@
 // The cities the app knows, and how one is picked: ?city=, the last choice, or the user's location.
 
-export type CityId = "athens" | "thessaloniki";
+export type CityId = "athens" | "thessaloniki" | "heraklion" | "patras";
 
 export interface City {
   id: CityId;
@@ -11,14 +11,26 @@ export interface City {
   ready: boolean;             // false: the city has no data in the app yet
   rail: boolean;              // metro, tram, Proastiakos, municipal buses and OASA alerts: Athens only
   hint: string;
+  estimated?: boolean;        // bus positions come from stop arrival boards (citybus.gr), not from a GPS feed
 }
+
+// Cities on citybus.gr (docs/research/greek-cities.md), served by citybus-bridge. They exist only in a
+// build that sets VITE_API_BASE_CITYBUS: without it they are not in CITIES, and ?city=heraklion is ignored.
+export const CITYBUS: Record<"heraklion" | "patras", City> = {
+  heraklion: { id: "heraklion", name: "Ηράκλειο", center: [25.135, 35.33], zoom: 13, radiusKm: 25, ready: true, rail: false,
+    hint: "Αστικό ΚΤΕΛ · θέσεις κατά προσέγγιση", estimated: true },
+  patras: { id: "patras", name: "Πάτρα", center: [21.74, 38.245], zoom: 13, radiusKm: 25, ready: true, rail: false,
+    hint: "Αστικό ΚΤΕΛ · θέσεις κατά προσέγγιση", estimated: true },
+};
+const citybusOn = typeof import.meta.env !== "undefined" && !!import.meta.env.VITE_API_BASE_CITYBUS;
 
 export const CITIES: Record<CityId, City> = {
   athens: { id: "athens", name: "Αθήνα", center: [23.73, 37.98], zoom: 11.5, radiusKm: 70, ready: true, rail: true,
     hint: "ΟΑΣΑ · Μετρό · Τραμ · Προαστιακός" },
   thessaloniki: { id: "thessaloniki", name: "Θεσσαλονίκη", center: [22.94, 40.63], zoom: 12, radiusKm: 40, ready: true, rail: false,
     hint: "ΟΑΣΘ · λεωφορεία" },
-};
+  ...(citybusOn ? CITYBUS : {}),
+} as Record<CityId, City>;
 
 export const DEFAULT_CITY: CityId = "athens";
 

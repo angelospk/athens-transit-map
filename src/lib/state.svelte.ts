@@ -511,7 +511,10 @@ export class AppState {
 
   // The stop index (public/trips.json, shared with the planner), loaded once it is needed; null after a
   // failure (the next call tries again).
+  // trips.json is Athens only: another city gets none, so a stop card shows from its board alone
+  // (StopCard `early`) instead of «Η στάση δεν βρέθηκε» from a lookup in the Athens stops.
   loadStops(): Promise<TripIndex | null> {
+    if (this.cityId !== "athens") return Promise.resolve(null);
     if (this.stopIx) return Promise.resolve(this.stopIx);
     return import("./trip").then(t => t.loadTripIndex()).then(ix => (this.stopIx = ix), () => null);
   }

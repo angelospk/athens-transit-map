@@ -136,7 +136,8 @@ export function nextStops(run: V2Run, max = 8) {
 
 // Age of a GPS fix (red over 90″); an estimate comes from the timetable.
 export function freshness(v: V2Vehicle, nowS: number): { text: string; warn: boolean } {
-  if (v.position.kind === "estimate") return { text: "πρόγραμμα", warn: false };
+  // A bus estimate (citybus.gr cities) comes from stop arrival boards; a rail one from the timetable.
+  if (v.position.kind === "estimate") return { text: v.mode === "bus" ? "≈ θέση" : "πρόγραμμα", warn: false };
   const age = nowS - v.position.at;
   return { text: ageLabel(age), warn: age > 90 };
 }
