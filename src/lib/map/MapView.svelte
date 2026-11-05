@@ -23,6 +23,7 @@
   import { shapeLength, stopOffsets } from "../predict";
   import { loadSpeed, SPEED_STOPS, type SpeedData } from "../speed";
   import { municipalFC } from "../municipal";
+  import { athensClock, lineFor, nextByStop, type MuniLine, type MuniTimetable } from "../muniTimes";
   import { resolveDark } from "../theme";
   import type { Variant } from "../types";
   import type { AppState } from "../state.svelte";
@@ -365,12 +366,52 @@
     const add = (text: string, tag = "div") => el.appendChild(Object.assign(document.createElement(tag), { textContent: text }));
     add("Δημοτική συγκοινωνία", "small");
     add(String(p.m), "b");
-    if (p.kind === "stop") { add(String(p.name)); if (p.lines) add(`Γραμμές: ${p.lines}`); }
+    const stop = p.kind === "stop" ? String(p.name) : null;
+    if (stop) { add(stop); if (p.lines) add(`Γραμμές: ${p.lines}`); }
     else add(String(p.title));
-    if (p.url) Object.assign(el.appendChild(document.createElement("a")),
-      { href: String(p.url), target: "_blank", rel: "noopener", textContent: "Πρόγραμμα στον δήμο ›" });
-    else add("Δεν έχουμε τη σελίδα του προγράμματος.", "small");
-    add("Χωρίς ώρες ή ζωντανές θέσεις · © OpenStreetMap", "small");
+    // The next scheduled departures of each line here (data/municipal), from its terminus: never live.
+    const rids = String((p.kind === "stop" ? p.rids : p.rid) ?? "").split(",").filter(Boolean);
+    const found: NonNullable<ReturnType<typeof lineFor>>[] = [];
+    for (const r of rids) { const x = lineFor(app.muniTimes, r); if (x && !found.some(y => y.line === x.line)) found.push(x); }
+    if (found.length) {
+      const box = el.appendChild(Object.assign(document.createElement("div"), { className: "munitimes" }));
+      box.appendChild(Object.assign(document.createElement("span"), { className: "sched", textContent: "Προγραμματισμένα · όχι live" }));
+      const rows = box.appendChild(Object.assign(document.createElement("div"), { className: "rows" }));
+      let items: { table: MuniTimetable; line: MuniLine; shown: string[] }[] = [];
+      // Rebuilt each minute while the popup is open, so a departure gone by is never shown as next.
+      const fill = () => {
+        const clock = athensClock(app.serverMs());
+        rows.replaceChildren();
+        items = found.map(({ table, line }) => {
+          const groups = nextByStop(line, clock, 3);
+          const head = found.length > 1 || stop ? line.ref ?? line.name : null;
+          if (!groups.length) groups.push({ at: null, approx: false, times: [] });
+          groups.forEach((g, i) => {
+            const row = rows.appendChild(document.createElement("div"));
+            row.className = "row";
+            if (head) row.appendChild(Object.assign(document.createElement("b"), { textContent: i ? "" : head }));
+            row.appendChild(Object.assign(document.createElement("span"), { textContent: g.times.length
+              ? `${g.approx ? "περίπου " : ""}${g.times.join(" · ")}${g.at ? ` από ${g.at}` : ""}`
+              : "Σήμερα κανένα άλλο δρομολόγιο" }));
+          });
+          return { table, line, shown: groups.filter(g => g.times.length).map(g => `${g.times.join(" · ")}${g.at ? ` από ${g.at}` : ""}`) };
+        });
+      };
+      fill();
+      const tick = setInterval(() => (el.isConnected ? fill() : clearInterval(tick)), 60_000);
+      const t = found[0].table, [y, mo, d] = t.checked.split("-");
+      const foot = box.appendChild(Object.assign(document.createElement("div"), { className: "foot" }));
+      Object.assign(foot.appendChild(document.createElement("a")),
+        { href: t.source, target: "_blank", rel: "noopener", textContent: `Ωράριο δήμου · ελέγχθηκε ${+d}/${+mo}/${y} ›` });
+      const report = Object.assign(foot.appendChild(document.createElement("button")), { type: "button", className: "report", textContent: "Κάτι δεν ισχύει;" });
+      report.onclick = () => (app.muniReport = { stop, items });
+    } else {
+      if (p.url) Object.assign(el.appendChild(document.createElement("a")),
+        { href: String(p.url), target: "_blank", rel: "noopener", textContent: "Πρόγραμμα στον δήμο ›" });
+      else add("Δεν έχουμε τη σελίδα του προγράμματος.", "small");
+      add("Χωρίς ώρες ή ζωντανές θέσεις", "small");
+    }
+    add("Διαδρομή: © OpenStreetMap", "small");
     return el;
   }
 
@@ -1416,6 +1457,14 @@
   :global(.munipop b) { font-size: 14px; }
   :global(.munipop small) { font-size: 11px; opacity: 0.75; }
   :global(.munipop a) { display: inline-block; padding: 6px 0; font-weight: 600; color: var(--accent); }
+  :global(.munitimes) { display: grid; gap: 3px; margin: 4px 0 2px; padding-top: 6px; border-top: 1px solid var(--border); font-size: 13px; }
+  :global(.munitimes .sched) { justify-self: start; padding: 1px 6px; border-radius: 4px; background: var(--control); font-size: 11px; font-weight: 600; }
+  :global(.munitimes .rows) { display: grid; gap: 3px; }
+  :global(.munitimes .row b) { min-width: 1.6em; }
+  :global(.munitimes .row) { display: flex; gap: 6px; font-variant-numeric: tabular-nums; }
+  :global(.munitimes .foot) { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
+  :global(.munitimes .foot a) { font-size: 12px; }
+  :global(.munitimes .report) { padding: 6px 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
   .nogl { position: absolute; inset: auto 16px 16px; padding: 12px 14px; border-radius: 12px;
     background: var(--warn-bg); box-shadow: var(--shadow); }
 </style>

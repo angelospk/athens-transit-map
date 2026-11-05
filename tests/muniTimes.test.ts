@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeServices, athensClock, lineFor, nextDepartures, parseTimetable, reportText, timesSignature, type MuniTimetable } from "../src/lib/muniTimes";
+import { activeServices, athensClock, lineFor, nextByStop, nextDepartures, parseTimetable, reportText, timesSignature, type MuniTimetable } from "../src/lib/muniTimes";
 
 // 2026-11-05 is a Thursday. 12:00 UTC is 14:00 in Athens (EET, UTC+2).
 const THU_14 = Date.UTC(2026, 10, 5, 12, 0);
@@ -79,6 +79,20 @@ describe("activeServices and nextDepartures", () => {
       { time: "10:00", at: null, approx: true },
     ]);
     expect(nextDepartures(circ, athensClock(THU_14), 3)).toEqual([]);   // last at 13:00
+  });
+});
+
+describe("nextByStop", () => {
+  it("groups the next departures by the stop they are timed at, never giving one stop's times to another", () => {
+    const both = parseTimetable({ ...raw, lines: [{ routes: ["osm:a"], ref: "Α", name: "Α", services: [
+      { days: [4], at: "Βεργίνας", times: ["13:30", "14:30", "15:30", "16:30"] },
+      { days: [4], at: "Μετρό Δάφνης", times: ["14:00", "15:00"] },
+    ] }] })!;
+    expect(nextByStop(both.lines[0], athensClock(THU_14), 3)).toEqual([
+      { at: "Βεργίνας", approx: false, times: ["14:30", "15:30", "16:30"] },
+      { at: "Μετρό Δάφνης", approx: false, times: ["14:00", "15:00"] },
+    ]);
+    expect(nextByStop(both.lines[0], athensClock(SUN_9), 3)).toEqual([]);
   });
 });
 

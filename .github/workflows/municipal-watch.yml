@@ -1,0 +1,35 @@
+name: Municipal timetables check
+
+# Weekly: did a municipality change the timetable we transcribed (data/municipal)? scripts/municipal-watch.ts
+# compares each source with its stored hash. A change opens one issue for a person (or comments on the open one).
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 08:00/09:00 Athens
+  workflow_dispatch:
+
+# One run at a time: two runs could both find no open issue and open two.
+concurrency:
+  group: municipal-watch
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun scripts/municipal-watch.ts > report.md
+      - name: Open or update the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: "Δημοτικά: ίσως άλλαξε ένα ωράριο"
+        run: |
+          if [ ! -s report.md ]; then echo "no change"; exit 0; fi
+          n=$(gh issue list --state open --search "\"$TITLE\" in:title" --json number -q '.[0].number')
+          if [ -n "$n" ]; then gh issue comment "$n" --body-file report.md
+          else gh issue create --title "$TITLE" --body-file report.md --label human --assignee angelospk; fi
