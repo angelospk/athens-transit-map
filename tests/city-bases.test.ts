@@ -46,3 +46,14 @@ describe("Thessaloniki live (web#40)", () => {
     expect(autoCityOnFix("?city=patra")).toBe(true);   // unknown city: ignored
   });
 });
+
+describe("per-city stop index and geocoder area (web#40 review)", async () => {
+  const { tripsFile, GEOCODE_BOX } = await import("../src/lib/trip");
+  it("Athens keeps trips.json; Thessaloniki has its own index and Photon box", () => {
+    expect(tripsFile("athens")).toBe("trips.json");
+    expect(tripsFile("thessaloniki")).toBe("trips-thessaloniki.json");
+    const [w, s, e, n] = GEOCODE_BOX.thessaloniki.split(",").map(Number);
+    expect(w < 22.94 && e > 22.94 && s < 40.63 && n > 40.63).toBe(true);   // Aristotelous inside
+    expect(GEOCODE_BOX.athens).toBe("23.35,37.65,24.15,38.25");
+  });
+});

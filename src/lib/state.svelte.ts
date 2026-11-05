@@ -28,7 +28,7 @@ import { parseAlerts, type Disruption } from "./disruptions";
 import { focusLines, nearbyGroups } from "./nearby";
 import type { LocState } from "./locate";
 import { CITIES, initialCity, type CityId } from "./cities";
-import { cityUrl, favKey } from "./cityBases";
+import { autoCityOnFix, cityUrl, favKey } from "./cityBases";
 
 export const STALE_S = 120;
 // A picked line whose feed has no vehicles for this many updates in a row is taken off the map.
@@ -121,6 +121,9 @@ export class AppState {
   locState = $state<LocState>("off");
   // The page opened on a link to a card or to lines: it shows that, not «Κοντά σου».
   linked = false;
+  // The URL named the city (a hand pick or a shared link): kept in the URL, and a location fix does not
+  // switch away from it until the user taps locate.
+  cityLocked = false;
   // The search modal (B8): closed, or open on a kind filter.
   finder = $state<"all" | "lines" | "stops" | "places" | null>(null);
   // A place from the search modal to plan a trip to: the panel opens the trip planner, which takes it as its end.
@@ -310,13 +313,14 @@ export class AppState {
   init() {
     const ids = selectionIds(location.search);
     this.linked = ids.length > 0 || !!cardFromQuery(location.search);
+    this.cityLocked = !autoCityOnFix(location.search);
     this.cityId = initialCity(location.search, stored<unknown>("city", null, () => true));
     store("city", this.cityId);
     this.selected = ids.slice(0, MAX_LINES);
     if (ids.length > MAX_LINES) this.say(`Ο σύνδεσμος είχε ${ids.length} γραμμές. Κράτησα τις πρώτες ${MAX_LINES}.`);
     this.baseTitle = document.title;
     this.nav = new CardNav(history, s => { this.stack = s; this.show(s[s.length - 1] ?? null); },
-      s => location.pathname + cardQuery(s[s.length - 1] ?? null, this.selected) + location.hash);
+      s => location.pathname + this.withCity(cardQuery(s[s.length - 1] ?? null, this.selected)) + location.hash);
     addEventListener("popstate", e => this.nav?.popped(e.state));
     addEventListener("online", () => this.backOnline());
     this.nav.start(cardFromQuery(location.search));
@@ -972,7 +976,13 @@ export class AppState {
 
   private writeUrl() {
     const top = this.stack[this.stack.length - 1] ?? null;
-    history.replaceState(history.state, "", location.pathname + cardQuery(top, this.selected) + location.hash);
+    history.replaceState(history.state, "", location.pathname + this.withCity(cardQuery(top, this.selected)) + location.hash);
+  }
+
+  // A city named in the URL at load stays in it, so a reload or a shared link opens the same city.
+  private withCity(q: string): string {
+    if (!this.cityLocked) return q;
+    return `${q ? `${q}&` : "?"}city=${this.cityId}`;
   }
 
   private startLine(id: string) {

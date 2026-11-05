@@ -15,7 +15,6 @@
   import { RailGlide, trackStops, type Track } from "../rails";
   import { Locator, userPlan, type Fix, type LocState } from "../locate";
   import { CITIES, nearestCity as cityAt } from "../cities";
-  import { autoCityOnFix } from "../cityBases";
   import { onOpen, type Perm } from "../nearby";
   import { distanceM } from "../glide";
   import { Mover, planOnto } from "../motion";
@@ -521,8 +520,9 @@
   // The view's padding around the open sheet (set once the map loads).
   let padNow: () => PaddingOptions = () => ({ top: 0, bottom: 0, left: 0, right: 0 });
   let flyOnFix = false;
-  // The first fix of the page may switch the city, unless the URL names one; a locate tap always may.
-  let cityOnFix = autoCityOnFix(location.search);
+  // The first fix of the page, and of each locate tap, may switch the city; a city named in the URL
+  // (app.cityLocked) stops it until the user taps locate.
+  let cityOnFix = true;
   let me: { marker: Marker; el: HTMLElement; mover: Mover; fix: Fix } | null = null;
   const locator = new Locator({
     geo: navigator.geolocation,
@@ -560,7 +560,7 @@
     me.fix = f;
     // The first fix of the page or after a locate tap, in another city's area: the app switches to it. Later fixes
     // leave the city alone, so a hand pick in «Κοντά σου» stays.
-    const near = cityOnFix ? cityAt(f.pos) : null;
+    const near = cityOnFix && !app.cityLocked ? cityAt(f.pos) : null;
     cityOnFix = false;
     if (near && near !== app.cityId) app.setCity(near, false);
     // «Κοντά σου» follows the user, but not every few metres of GPS noise.
@@ -589,6 +589,7 @@
   // Each tap that leaves the location on also opens «Κοντά σου»; turning it off closes it.
   function locateClick() {
     if (locState === "off" || locState === "denied") {
+      app.cityLocked = false;   // a tap asks for the city the user is in
       locateMe();
     } else if (!app.nearShown && !app.stack.length) {
       // On, with «Κοντά σου» closed: open it again (also while the first fix is still on its way).
