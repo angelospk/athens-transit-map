@@ -438,8 +438,9 @@ export class AppState {
       case "route": return this.showRoute(c, l.line, l.variant, l.dir);
       case "bus-stop":
         void this.loadStops().then(ix => {
-          const i = ix ? stopIndex(ix, l.code) : -1;
-          if (!this.isTop(c)) return;
+          // No stop index (another city than Athens, or a failed load): the card shows from its board alone.
+          if (!ix || !this.isTop(c)) return;
+          const i = stopIndex(ix, l.code);
           if (i < 0) return this.say("Η στάση δεν βρέθηκε.");
           this.busStop = i;
           if (!c.title) this.retitle(ix!.s[i][0]);
