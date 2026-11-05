@@ -192,12 +192,14 @@
           <button type="button" aria-pressed={kind === k} onclick={() => (app.finder = k)}>{t}</button>
         {/each}
       </div>
+      {#if app.cityInfo.rail}<!-- one mode only (buses) elsewhere: no chips -->
       <div class="chips" role="group" aria-label="Μέσο">
         <button type="button" class="chip" aria-pressed={!chips.length} onclick={() => (chips = [])}>Όλα</button>
         {#each CHIPS as [c, t] (c)}
           <button type="button" class="chip" aria-pressed={chips.includes(c)} onclick={() => (chips = toggleChip(chips, c))}><Icon name={c} />{t}</button>
         {/each}
       </div>
+      {/if}
 
       <div class="results" aria-live="polite">
         {#if failed}
