@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { muniCards, routeLabel, simulate, stitch, todayRuns } from "../src/lib/muniLine";
+import { muniCards, routeLabel, simulate, stitch, stopRows, todayRuns } from "../src/lib/muniLine";
 import { parseTimetable, athensClock, type MuniTimetable } from "../src/lib/muniTimes";
 import type { MunicipalData, MunicipalRoute } from "../src/lib/municipal";
 
@@ -165,5 +165,43 @@ describe("simulate", () => {
   it("leaves nothing to show with no path, and none on another day", () => {
     expect(simulate({ ...east, shape: [] }, stops, lines, at(14, 3), 15)).toEqual([]);
     expect(simulate(east, stops, lines, Date.UTC(2026, 10, 6, 12, 3), 15)).toEqual([]);   // a Friday
+  });
+});
+
+describe("stopRows", () => {
+  const data: MunicipalData = { attribution: "", stops: { s: { name: "Πλατεία", lat: 38, lon: 23 } }, routes: [
+    route("osm:r1", "010", "Δημοτικό Λεωφορείο 010: ΗΣΑΠ → Φιλοθέη", "Δήμος Χ", undefined, ["s", "x"]),
+    route("osm:r2", "010", "Δημοτικό Λεωφορείο 010: Φιλοθέη → ΗΣΑΠ", "Δήμος Χ", undefined, ["y", "s"]),
+    route("osm:r3", "Α", "Γραμμή Α", "Δήμος Χ", undefined, ["s"]),
+    route("osm:r4", "Γ", "Δημοτικό Λεωφορείο Γ: Κάτω → Πάνω", "Δήμος Χ", undefined, ["s"]),
+    route("osm:r5", "Ζ", "Γραμμή Ζ", "Δήμος Χ", undefined, ["x"]),   // not at this stop
+  ] };
+  const t = table([
+    { routes: ["osm:r1"], ref: "010", name: "ΗΣΑΠ → Φιλοθέη", services: [{ days: [4], at: "ΗΣΑΠ", times: ["13:00", "15:00", "16:00", "17:00", "18:00"] }] },
+    { routes: ["osm:r2"], ref: "010", name: "Φιλοθέη → ΗΣΑΠ", services: [{ days: [4], at: "Αγ. Γεωργίου", times: ["14:10"] }] },
+    { routes: ["osm:r3"], ref: "Α", name: "Βεργίνας – Μετρό", services: [
+      { days: [4], at: "Βεργίνας", times: ["14:30"] }, { days: [4], at: "Μετρό", times: ["14:20", "15:20"] },
+    ] },
+  ]);
+  const cards = muniCards(data, [t]);
+  const rows = stopRows("s", data, cards, athensClock(at(14, 0)), 3);
+
+  it("lists each line and direction through the stop, one row per terminus, the soonest first, the ones with no times last", () => {
+    expect(rows.map(r => [r.ref, r.dir, r.to, r.at, r.times])).toEqual([
+      ["010", 1, "ΗΣΑΠ", "Αγ. Γεωργίου", ["14:10"]],
+      ["Α", 0, "Γραμμή Α", "Μετρό", ["14:20", "15:20"]],
+      ["Α", 0, "Γραμμή Α", "Βεργίνας", ["14:30"]],
+      ["010", 0, "Φιλοθέη", "ΗΣΑΠ", ["15:00", "16:00", "17:00"]],
+      ["Γ", 0, "Πάνω", null, []],
+    ]);
+  });
+  it("tells a line with no timetable from one with no more runs today, and names the card to open", () => {
+    expect(rows.find(r => r.ref === "Γ")).toMatchObject({ timetable: false, card: cards.find(c => c.ref === "Γ")!.id });
+    const late = stopRows("s", data, cards, athensClock(at(19, 0)), 3);
+    expect(late.find(r => r.ref === "010" && r.dir === 0)).toMatchObject({ timetable: true, times: [] });
+    expect(rows.find(r => r.ref === "010")!.card).toBe(cards.find(c => c.ref === "010")!.id);
+  });
+  it("an unknown stop has no rows", () => {
+    expect(stopRows("nope", data, cards, athensClock(at(14, 0)), 3)).toEqual([]);
   });
 });
