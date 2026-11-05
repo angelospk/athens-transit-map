@@ -949,7 +949,8 @@
 
     map = m;
     app.fit = fitTo;
-    app.locate = () => { if (locState === "off" || locState === "denied") locateMe(); };
+    // «Χρήση της θέσης μου» (NearbyPanel): a tap, so the user's city wins over a ?city= in the URL.
+    app.locate = () => { if (locState === "off" || locState === "denied") { app.cityLocked = false; locateMe(); } };
     app.showCity = c => {
       follow = false;
       m.flyTo({ center: CITIES[c].center, zoom: CITIES[c].zoom, duration: reducedMotion.matches ? 0 : 1200 });
