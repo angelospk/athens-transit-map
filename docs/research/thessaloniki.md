@@ -104,6 +104,15 @@ the status banner. No Thessaloniki data is loaded yet: setting `ready: true` wai
 
   Stations: New Railway Station, Dimokratias, Venizelou, Agias Sofias, Sintrivani, Panepistimio, Papafi, Efkleidis, Fleming, Analipsi and 25th Martiou. From 25th Martiou one branch goes to Voulgari and Nea Elvetia. The other goes to Nomarchia, Kalamaria, Aretsou, Nea Krini and Mikra; this branch opened on 27 Aug 2026. Mikra to New Railway Station takes about 24 to 26 minutes ([gocar](https://www.gocar.gr/news/feed/54662,Metro_8essalonikhs_Ti_wra_einai_egkainia.html)). The thessmetro.gr page has no date, so check the table before we use it.
 
+## 0.4 Update 2026-11-05: follow-ups done or tracked
+
+- **Public Athens atrt** runs 239f4e2 (includes the merge of #83). `atrt-deploy.timer` on the VPS pulls `:latest` every 10 min and restarts only on a new image.
+- **rt#86, all stops get an arrival code:** PR rt#88. Live at `--rps 1`: 456 of 456 routes have a stop list, and 3,697 of 3,713 GTFS stops have an arrival code. The other 16 are on no OASTH route.
+- **rt#87, GTFS from data.gov.gr:** PR rt#89. Without `--gtfs`, the server picks the CKAN slice for today and keeps it in its state dir. Live: slice 517f491b (27/10-15/11), 23,499 trips.
+- **rt#92, OSETH as a second vehicle source:** measured on 16 lines. Suburban (KTEL) buses are in OASTH with the same ids. OSETH added 1 real bus out of about 50 and showed 2 frozen ones. Recommendation: do not merge yet; Harold decides.
+- **rt#91, metro:** frequency-based GTFS in the backend, shown as scheduled. The thessmetro.gr table changed: Friday has its own row, and on Saturday before 07:30 the Mikra branch runs every 15:00 (the table above says 7:30).
+- **rt#90, deploy** (human: abinop + angelospk). **web#40**, Thessaloniki in the web, waits for it. The web also needs Thessaloniki stops and lines: `STATIC_BASE` is an Athens-only build.
+
 ## 1. Data sources
 
 Summary:
