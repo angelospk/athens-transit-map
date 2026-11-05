@@ -189,8 +189,8 @@ describe("stopRows", () => {
   it("lists each line and direction through the stop, one row per terminus, the soonest first, the ones with no times last", () => {
     expect(rows.map(r => [r.ref, r.dir, r.to, r.at, r.times])).toEqual([
       ["010", 1, "ΗΣΑΠ", "Αγ. Γεωργίου", ["14:10"]],
-      ["Α", 0, "Γραμμή Α", "Μετρό", ["14:20", "15:20"]],
-      ["Α", 0, "Γραμμή Α", "Βεργίνας", ["14:30"]],
+      ["Α", 0, "Βεργίνας – Μετρό", "Μετρό", ["14:20", "15:20"]],
+      ["Α", 0, "Βεργίνας – Μετρό", "Βεργίνας", ["14:30"]],
       ["010", 0, "Φιλοθέη", "ΗΣΑΠ", ["15:00", "16:00", "17:00"]],
       ["Γ", 0, "Πάνω", null, []],
     ]);
