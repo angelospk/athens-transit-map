@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { joinWays, osmPaths, simplify, type OsmElement } from "../scripts/osm";
+import { joinWays, osmPaths, simplify, snapStations, type OsmElement } from "../scripts/osm";
 
 const way = (id: number, ...pts: [number, number][]): OsmElement =>
   ({ type: "way", id, geometry: pts.map(([lon, lat]) => ({ lon, lat })) });
@@ -64,5 +64,21 @@ describe("simplify", () => {
   it("keeps a real bend", () => {
     const bend: [number, number][] = [[23.7, 37.9], [23.701, 37.901], [23.702, 37.9]];
     expect(simplify(bend, 3)).toEqual(bend);
+  });
+});
+
+describe("snapStations", () => {
+  const line = { id: "M1", name: "", color: "", paths: [[[23.70, 38.0], [23.72, 38.0]] as [number, number][]] };
+
+  it("moves a one-line station beside its track onto it", () => {
+    const [s] = snapStations([{ name: "A", lon: 23.71, lat: 38.0005, lines: ["M1"] }], [line], 150);
+    expect(s.lat).toBeCloseTo(38.0, 6);
+    expect(s.lon).toBeCloseTo(23.71, 6);
+  });
+
+  it("leaves an interchange, and a station too far from its track, where they are", () => {
+    const far = { name: "B", lon: 23.71, lat: 38.003, lines: ["M1"] };   // ~330 m off
+    const both = { name: "C", lon: 23.71, lat: 38.0005, lines: ["M1", "M2"] };
+    expect(snapStations([far, both], [line], 150)).toEqual([far, both]);
   });
 });
