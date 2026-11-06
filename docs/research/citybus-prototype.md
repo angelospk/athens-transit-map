@@ -56,8 +56,10 @@ The positions in a board are real coordinates: on Heraklion stop 1235 the bus of
 - The page calls only the bridge for transit data (no call to transit.haroldpoi.dev).
 - Daytime coverage, 2026-11-06 08:08 Athens: lines with a trip running by the timetable vs lines with
   a bus on the map. Heraklion: 12 of 15 lines seen, 34 buses (not seen: 91, 92, 93; line 50 one bus
-  of 3). Patras: 19 of 21 lines seen, 49 buses (not seen: 606, 803). The probes find most buses;
-  the missed lines need a probe check (short routes, or trips in the timetable that do not run).
+  of 3). Patras: 19 of 21 lines seen, 49 buses (not seen: 606, 803). Cause, checked at 09:20:
+  91, 92 and 93 (the red, blue and green centre lines) have no live row on any citybus.gr board,
+  only timetable times, so they send no position. 50, 606 and 803 are school runs (only morning
+  and noon trips); they had ended by 09:20, so whether they send positions is still open.
 
 Timetable: the bridge has every trip of every route per weekday (`trips/route`), so stop cards also
 show the scheduled runs that no live bus covers, `/v1/lines/{id}/schedule` gives the day's
@@ -81,7 +83,8 @@ rounds (section 8).
 | Limit | Why | Way out |
 |---|---|---|
 | Bus positions up to ~2 min old, moved by estimate | no fleet call; 1 req/s for 116 probe stops | e-analysis gives a fleet or per-line call (email, section 7), or a higher rate (their permission) |
-| 3 of 15 lines in Heraklion and 2 of 21 in Patras had no bus seen at 08:08 | unknown: probe placement, or timetable trips that do not run | look at those routes' boards; add a probe per route if needed |
+| Heraklion 91, 92, 93: no live buses | citybus.gr itself has no live rows for them (timetable only) | none; the stop card shows their timetable |
+| School runs (Heraklion 50, Patras 606, 803): not seen at 08:08 | not known: no GPS, or the runs did not run | check their boards during a school run (about 13:00) |
 | No fleet numbers; the vehicle card shows a trip key (`#20261106_31018_…`) | citybus `vehicleCode` is a trip key | hide the id for citybus cities (small web change) |
 | No delay («χωρίς δρομολόγιο») | live buses are not matched to timetable runs | match by route and time (bridge work, M) |
 | Timetable per weekday only; no public holidays | the API has days 0-6, no dates | holiday table, as athens-transit-rt has |
