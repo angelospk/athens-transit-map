@@ -355,6 +355,7 @@
   // «Δημοτικά» (municipal.ts): the municipal bus routes, thin, dashed and muted, under every other layer of ours
   // but the speeds; their stops from zoom 14. Hidden while the switch is off; empty until the data loads.
   const MUNI = "#8c7fa6";
+  const MUNI_FOCUS = "#4f3d7a";
   function addMunicipal(m: MlMap) {
     const vis = app.municipalOn ? "visible" : "none";
     m.addSource("municipal", { type: "geojson", data: app.municipal ? municipalFC(app.municipal) : EMPTY });
@@ -369,12 +370,17 @@
       paint: { "circle-radius": 3.5, "circle-color": "#fff", "circle-stroke-color": MUNI, "circle-stroke-width": 1.5 } });
     // The open municipal card (MuniLineCard): its direction, solid, and its buses as the timetable implies them,
     // hollow, so they never pass for live ones. Shown with the layer switch off too.
+    // Darker than the dashed lines and on a white casing, as a picked OASA line, so it never blends with them;
+    // the other municipal lines fade while it is open (the effect on app.muniFocus).
     m.addSource("muni-focus", { type: "geojson", data: muniFocusFC() });
+    m.addLayer({ id: "muni-focus-casing", type: "line", source: "muni-focus", filter: ["==", ["get", "kind"], "line"],
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": "#fff", "line-width": ["interpolate", ["linear"], ["zoom"], 11, 6, 14, 9, 17, 12] } });
     m.addLayer({ id: "muni-focus-line", type: "line", source: "muni-focus", filter: ["==", ["get", "kind"], "line"],
       layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": MUNI, "line-width": ["interpolate", ["linear"], ["zoom"], 11, 3, 14, 5, 17, 7] } });
+      paint: { "line-color": MUNI_FOCUS, "line-width": ["interpolate", ["linear"], ["zoom"], 11, 3.5, 14, 5.5, 17, 7.5] } });
     m.addLayer({ id: "muni-focus-bus", type: "circle", source: "muni-focus", filter: ["==", ["get", "kind"], "bus"],
-      paint: { "circle-radius": 7, "circle-color": "#fff", "circle-stroke-color": MUNI, "circle-stroke-width": 3 } });
+      paint: { "circle-radius": 7, "circle-color": "#fff", "circle-stroke-color": MUNI_FOCUS, "circle-stroke-width": 3 } });
   }
   function muniFocusFC(): GeoJSON.FeatureCollection {
     const f = app.muniFocus;
@@ -1124,8 +1130,10 @@
   });
 
   $effect(() => {
-    void app.muniFocus;
-    if (loaded) (map!.getSource("muni-focus") as GeoJSONSource).setData(muniFocusFC());
+    const focus = !!app.muniFocus;
+    if (!loaded) return;
+    (map!.getSource("muni-focus") as GeoJSONSource).setData(muniFocusFC());
+    map!.setPaintProperty("municipal-line", "line-opacity", focus ? 0.2 : 0.75);
   });
 
   $effect(() => {

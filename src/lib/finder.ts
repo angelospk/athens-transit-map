@@ -1,6 +1,8 @@
 // Finder search: lines by label or name, stops by name, plus the recent-picks list. Pure, no Svelte.
 
 import { fold, greeklish, greeklishKeys, hasLatin } from "./search";
+import type { MuniCard } from "./muniLine";
+import type { MunicipalRoute, MunicipalStop } from "./municipal";
 import { normalizeLineId } from "./selection";
 import type { V2Line } from "./v2";
 
@@ -66,6 +68,47 @@ export function findStops(stops: StopEntry[], query: string, chips: Chip[]): Sto
   };
   const shown = chips.length ? stops.filter(s => s[4].some(m => { const c = chipOf(m); return c !== null && chips.includes(c); })) : stops;
   return rankSort(shown, rank);
+}
+
+// Municipal lines and stops (the «Δημοτικά» layer). People say «Χολαργός», the data says «Δήμος
+// Παπάγου-Χολαργού»: a query word of 5+ letters matches by its stem (the last 2 letters cut), so the
+// nominative finds the genitive.
+const stems = (query: string) => fold(query.trim()).split(/[^\p{L}\p{N}]+/u).filter(Boolean).map(w => (w.length >= 5 ? w.slice(0, -2) : w));
+const hasAll = (text: string, ws: string[]) => { const t = fold(text); return ws.every(w => t.includes(w)); };
+
+export function findMuniLines(cards: MuniCard[], query: string): MuniCard[] {
+  const ws = stems(query);
+  if (!ws.length) return [];
+  const qid = normalizeLineId(query);
+  const rank = (c: MuniCard) => {
+    const ref = c.ref ? normalizeLineId(c.ref) : "";
+    if (ref && ref === qid) return 0;
+    if (ref && ref.startsWith(qid)) return 1;
+    if (hasAll(c.municipality, ws)) return 2;
+    if (hasAll(c.name, ws)) return 3;
+    return -1;
+  };
+  return rankSort(cards, rank);
+}
+
+export interface MuniStopHit { id: string; name: string; municipality: string }
+
+// Named stops only (an unnamed one cannot be told apart in a list), with the municipality of a route
+// through them.
+export function findMuniStops(stops: Record<string, MunicipalStop>, routes: MunicipalRoute[], query: string): MuniStopHit[] {
+  const q = fold(query.trim());
+  if (q.length < 2) return [];
+  const where = new Map<string, string>();
+  for (const r of routes) for (const id of r.stops) if (!where.has(id)) where.set(id, r.municipality);
+  const hits: MuniStopHit[] = [];
+  for (const [id, s] of Object.entries(stops)) if (s.name) hits.push({ id, name: s.name, municipality: where.get(id) ?? "" });
+  const rank = (h: MuniStopHit) => { const n = fold(h.name); return n.startsWith(q) ? 0 : wordStarts(n, q) ? 1 : n.includes(q) ? 2 : -1; };
+  return rankSort(hits, rank);
+}
+
+// The municipalities on the layer, each once, without «Δήμος», sorted.
+export function muniPlaces(routes: MunicipalRoute[]): string[] {
+  return [...new Set(routes.map(r => r.municipality.replace(/^Δήμος\s+/, "")))].sort((a, b) => a.localeCompare(b, "el"));
 }
 
 // Newest first, no duplicates (same kind + id), at most `max` entries.
