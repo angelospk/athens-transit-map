@@ -1,0 +1,38 @@
+{
+  "municipality": "Δήμος Ηρακλείου Αττικής",
+  "checked": "2026-11-05",
+  "valid": null,
+  "source": "https://www.iraklio.gr/el/dimotiki-sygkoinonia",
+  "watch": [
+    {
+      "url": "https://www.iraklio.gr/el/dimotiki-sygkoinonia",
+      "kind": "times",
+      "sha256": "3d0c617f865b3183d0ddead317207004778e6888fbf7794633645bf6635bb45d"
+    }
+  ],
+  "lines": [
+    {
+      "routes": [
+        "osm:r20516010"
+      ],
+      "ref": "1",
+      "name": "Πλατεία Καραϊσκάκη – κυκλικό δρομολόγιο",
+      "services": [
+        {
+          "days": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "at": "Πλατεία Καραϊσκάκη",
+          "every": 60,
+          "first": "07:30",
+          "last": "13:30"
+        }
+      ],
+      "note": "Κυκλική γραμμή με αφετηρία και τέρμα την Πλατεία Καραϊσκάκη· το λεωφορείο αναχωρεί ανά 1 ώρα."
+    }
+  ]
+}

@@ -10,6 +10,7 @@
   import FavsPanel from "./lib/ui/FavsPanel.svelte";
   import NearbyPanel from "./lib/ui/NearbyPanel.svelte";
   import SearchModal from "./lib/ui/SearchModal.svelte";
+  import MuniReport from "./lib/ui/MuniReport.svelte";
   import { applyTheme } from "./lib/theme";
 
   const app = new AppState();
@@ -32,3 +33,4 @@
 <FavsPanel {app} />
 <NearbyPanel {app} />
 <SearchModal {app} />
+{#if app.muniTimes.length}<MuniReport {app} />{/if}

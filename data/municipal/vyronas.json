@@ -1,0 +1,65 @@
+{
+  "municipality": "Δήμος Βύρωνα",
+  "checked": "2026-11-05",
+  "valid": null,
+  "source": "https://www.dimosbyrona.gr/discover/sygkoinonia-sto-dimo-vyrona/",
+  "watch": [
+    {
+      "url": "https://www.dimosbyrona.gr/discover/sygkoinonia-sto-dimo-vyrona/",
+      "kind": "times",
+      "sha256": "695d3aa44497e6f9d5cae95fff21453b4e3932ae94ddc34c4f786db887230ac0"
+    },
+    {
+      "url": "https://www.dimosbyrona.gr/anakoinosi-dromologia-dimotikis-sygkoinonias/",
+      "kind": "times",
+      "sha256": "71c0afa32669badbce4b5443b74fbd79511b7d5d84c4e2f44649520b0ef3983c"
+    }
+  ],
+  "lines": [
+    {
+      "routes": [
+        "osm:r20633754"
+      ],
+      "ref": "10",
+      "name": "Καρέας – Ντάνκαν – Καρέας (κυκλική)",
+      "services": [
+        {
+          "days": [
+            1,
+            2,
+            4,
+            5
+          ],
+          "at": "Πλατεία Δ. Νικολαΐδη (Καρέας)",
+          "times": [
+            "08:00",
+            "08:30",
+            "09:00",
+            "09:30",
+            "10:00",
+            "10:30",
+            "11:30",
+            "12:00",
+            "12:30",
+            "13:00"
+          ]
+        },
+        {
+          "days": [
+            3,
+            6
+          ],
+          "at": "Πλατεία Δ. Νικολαΐδη (Καρέας)",
+          "times": [
+            "08:30",
+            "09:30",
+            "10:30",
+            "11:30",
+            "12:30"
+          ]
+        }
+      ],
+      "note": "Δευτέρα–Σάββατο, εκτός Κυριακής και αργιών. Το δρομολόγιο των 11:00 δεν εκτελείται (πηγή). Την Πέμπτη 5/11/2026 ίσχυε προσωρινά ωράριο ανά ώρα 08:30–12:30 (ανακοίνωση, άδεια οδηγού)."
+    }
+  ]
+}
