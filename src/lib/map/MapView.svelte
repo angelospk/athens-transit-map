@@ -13,8 +13,6 @@
   import { suburbanFC } from "../suburban";
   import { trainsFC } from "../trains";
   import { RailGlide, trackStops, type Track } from "../rails";
-  import { fetchStasy, fetchSuburban, fetchTrainRun } from "../api";
-  import { PREFETCH_ZOOM, wanted, type Want } from "../prefetch";
   import { Locator, userPlan, type Fix, type LocState } from "../locate";
   import { CITIES, nearestCity as cityAt } from "../cities";
   import { onOpen, type Perm } from "../nearby";
@@ -30,7 +28,7 @@
   import { lightenDark } from "./basemap";
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
-  import { STOPS_ZOOM, busStopsFC, stopIndex } from "../stops";
+  import { STOPS_ZOOM, busStopsFC } from "../stops";
   import { STOP_ZOOM, VEHICLE_ZOOM, focusZoom, sheetReserve, stopPin } from "../focus";
   import { busStopCard, busVehicleCard, railStationCard, routeCard, stationCard } from "../legacy";
   // Rail stations show from these zooms, small like the bus stops (from STOPS_ZOOM); there are fewer of them.
@@ -693,7 +691,8 @@
     }
     // Corrections and trails: 30 fps close up; zoomed out, where they are a few pixels and every frame
     // steps the whole city, 4 fps.
-    const idle = Math.min(1000, Math.max(16, (0.5 * mpp / 20) * 1000));
+    // With motion off nothing steps: between fixes (a new one leaves a trail, fast again) once a second is enough.
+    const idle = still ? 1000 : Math.min(1000, Math.max(16, (0.5 * mpp / 20) * 1000));
     nextDue = t + (fixing ? Math.min(idle, z >= 13 ? 33 : 250) : idle);
   }
 
@@ -776,6 +775,9 @@
         center: CITIES[untrack(() => app.cityId)].center,   // untracked: a city change moves this map, it does not rebuild it
         zoom: CITIES[untrack(() => app.cityId)].zoom,
         attributionControl: { compact: true },
+        // Greek names for the map's own controls (a screen reader read them in English).
+        locale: { "Map.Title": "Χάρτης", "NavigationControl.ZoomIn": "Μεγέθυνση", "NavigationControl.ZoomOut": "Σμίκρυνση",
+          "AttributionControl.ToggleAttribution": "Πηγές του χάρτη" },
         dragRotate: false,
         pitchWithRotate: false,
       });
@@ -805,7 +807,6 @@
       if (m.getZoom() >= STOPS_ZOOM - 0.5 && !app.stopIx) loadStops();
       const b = m.getBounds();
       app.setCityView({ north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() }, m.getZoom());
-      prefetchSoon();
     };
     const reportSoon = debounce(reportView, VIEW_SETTLE_MS);
     m.on("load", reportView);
@@ -813,7 +814,6 @@
     const reportFollow = throttle(reportView, FOLLOW_VIEW_MS);
     const ticked = (e: object) => "follow" in e;
     m.on("movestart", e => {
-      prefetchSoon.cancel(); ahead = [];   // the old view's: not wanted any more (follow mode too)
       if (ticked(e)) return;
       reportSoon.cancel(); reportFollow.cancel(); app.setCityMoving();
     });
@@ -854,9 +854,7 @@
     // One dispatcher: DOM marker (its own handler) → train right under the finger → station right under the finger (drawn over the city
     // vehicles, under a picked line's stops) → city vehicle → stop → station near the finger → route → municipal route or
     // stop → speed segment → empty map.
-    let taps = 0;   // a later tap wins over a stop card still waiting for the stop index
     m.on("click", e => {
-      const tap = ++taps;
       if (!loaded) return;   // the style is being replaced: our layers are not there to hit
       if ((e.originalEvent.target as Element | null)?.closest?.(".bus")) return;
       // «Λάθος θέση;»: a tap puts the blue pin there (a tap on the pin itself does nothing); nothing else opens.
@@ -885,16 +883,10 @@
       }
       const stop = m.queryRenderedFeatures(e.point, { layers: ["stops"] })[0];
       if (stop) {
-        // Its card; the stop index loads first when the map was never close enough to show stops.
-        const id = String(stop.properties.id), name = String(stop.properties.name);
-        const ll = (stop.geometry as GeoJSON.Point).coordinates as [number, number];
+        // Its card at once: it shows from the stop's board until the stop index loads (AppState.show, which also
+        // drops a late index answer once another card is on top).
         popup.remove();
-        void (app.stopIx ? Promise.resolve(app.stopIx) : loadStops()).then(ix => {
-          if (tap !== taps || disposed) return;
-          const at = ix ? stopIndex(ix, id) : -1;
-          if (at >= 0) app.open(busStopCard(id, ix!.s[at][0]));
-          else popup.setLngLat(ll).setText(name).addTo(m);
-        });
+        app.open(busStopCard(String(stop.properties.id), String(stop.properties.name)));
         return;
       }
       const bus = nearestBusStop(m, e.point);
@@ -994,7 +986,6 @@
       disposed = true;
       cancelAnimationFrame(raf);
       reportSoon.cancel();
-      prefetchSoon.cancel();
       reportFollow.cancel();
       document.removeEventListener("visibilitychange", onVisible);
       locator.stop();
@@ -1035,37 +1026,6 @@
   });
 
   $effect(() => { const f = ageFilter(app.ageMode); if (loaded) map!.setFilter("train-age", f); });
-
-  // The rail cards' data of what is on screen, loaded while the map rests (prefetch.ts), by at most
-  // four requests at a time from one queue that each view replaces; what the cache holds fresh is
-  // not asked again. Also after each trains poll (they move into view), unless the map is moving.
-  const loadAhead = (w: Want) =>
-    w.kind === "stasy" ? fetchStasy(w.id) : w.kind === "suburban-station" ? fetchSuburban(w.id)
-      : fetchTrainRun(w.kind === "metro-run" ? "metro" : "suburban", w.id);
-  let ahead: Want[] = [], workers = 0;
-  const work = async () => {
-    workers++;
-    for (let w = ahead.shift(); w; w = ahead.shift()) await loadAhead(w);
-    workers--;
-  };
-  const prefetchSoon = debounce(() => {
-    const m = map;
-    if (!m || !loaded || document.hidden || m.isMoving() || m.getZoom() < PREFETCH_ZOOM) return;
-    const layers = ["train-dot", "metro-station", "suburban-station"].filter(id => m.getLayer(id) && m.getLayoutProperty(id, "visibility") !== "none");
-    if (!layers.length) return;
-    const c = m.getCanvas();
-    const seen = m.queryRenderedFeatures({ layers }).map(f => {
-      const q = m.project((f.geometry as GeoJSON.Point).coordinates as [number, number]);
-      return { layer: f.layer.id, px: [q.x, q.y] as [number, number], props: f.properties };
-    });
-    ahead = wanted(seen, [c.clientWidth / 2, c.clientHeight / 2], app.metro?.stations ?? []);
-    while (workers < 4 && ahead.length) void work();
-  }, VIEW_SETTLE_MS);
-
-  $effect(() => {
-    void app.stasyTrains; void app.suburbanTrains;
-    prefetchSoon();
-  });
 
   // Each metro/tram line's tracks as [lat, lon] shapes (rails.ts), and the Proastiakos trains snapped
   // onto their corridor, run on along it at their speed between fixes (server time: fixes carry it).
