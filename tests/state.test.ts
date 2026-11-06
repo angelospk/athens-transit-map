@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PALETTE } from "../src/lib/lineColors";
 import { AppState } from "../src/lib/state.svelte";
-import { routeCard } from "../src/lib/legacy";
+import { busStopCard, routeCard } from "../src/lib/legacy";
 
 vi.stubGlobal("history", { state: null, replaceState: () => {} });
 vi.stubGlobal("location", { pathname: "/", search: "", hash: "" });
@@ -572,5 +572,111 @@ describe("AppState push alert", () => {
     const app = fresh();
     app.setAlert(spec());
     expect(app.alert).toBeNull();
+  });
+});
+
+// A link to a stop or a line that does not exist: a notice, and the card leaves the history, so the URL is not stale.
+describe("AppState unknown card from a link", () => {
+  const show = (app: AppState, c: unknown) => (app as unknown as { show(c: unknown): void }).show(c);
+  const tick = () => new Promise(r => setTimeout(r, 0));
+
+  it("goes Back from a bus stop that is not in the stop index", async () => {
+    const app = new AppState();
+    app.stopIx = { s: [] } as unknown as AppState["stopIx"];
+    const back = vi.spyOn(app, "back").mockImplementation(() => {});
+    const c = busStopCard("99999999", "");
+    app.stack = [c];
+    show(app, c);
+    await tick();
+    expect(app.notice).toContain("Η στάση δεν βρέθηκε");
+    expect(back).toHaveBeenCalledOnce();
+  });
+
+  it("goes Back from a line route that does not exist", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response("{}", { status: 404 })));
+    const app = new AppState();
+    const back = vi.spyOn(app, "back").mockImplementation(() => {});
+    const c = routeCard("QA-NO-LINE", "");
+    app.stack = [c];
+    show(app, c);
+    await tick(); await tick();
+    expect(app.notice).toContain("Άγνωστη γραμμή");
+    expect(back).toHaveBeenCalledOnce();
+    vi.stubGlobal("fetch", () => new Promise(() => {}));
+  });
+
+  // Offline is not «unknown»: the card stays, and shows its own load error.
+  it("keeps a line route's card when the line file fails to load (offline)", async () => {
+    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("offline")));
+    const app = new AppState();
+    const back = vi.spyOn(app, "back").mockImplementation(() => {});
+    const c = routeCard("QA-OFFLINE-LINE", "");
+    app.stack = [c];
+    show(app, c);
+    await tick(); await tick();
+    expect(app.notice ?? "").not.toContain("Άγνωστη γραμμή");
+    expect(back).not.toHaveBeenCalled();
+    vi.stubGlobal("fetch", () => new Promise(() => {}));
+  });
+
+  it("keeps a bus stop's card when the stop index fails to load", async () => {
+    const app = new AppState();
+    app.loadStops = () => Promise.resolve(null);
+    const back = vi.spyOn(app, "back").mockImplementation(() => {});
+    const c = busStopCard("10001", "");
+    app.stack = [c];
+    show(app, c);
+    await tick();
+    expect(app.notice ?? "").not.toContain("δεν βρέθηκε");
+    expect(back).not.toHaveBeenCalled();
+  });
+});
+
+// The «no connection» notice comes from the status call (every 60 s); data that arrives proves the server is reached.
+describe("AppState connection notice", () => {
+  it("clears the no-connection flag as soon as a line's data arrives", () => {
+    const app = new AppState();
+    app.statusFailed = true;
+    (app as unknown as { onData(id: string, d: unknown): void }).onData("040", { line: "040", updated_at: 1, next_update_at: 2, vehicles: [] });
+    expect(app.statusFailed).toBe(false);
+  });
+
+  // Opened offline: the line index and a line's route file failed once. Data coming back asks for them again.
+  it("asks again for the line index and a line's static file that failed, once data arrives", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", (u: string) => { urls.push(u); return new Promise(() => {}); });
+    const app = new AppState();
+    app.linesFailed = true;
+    (app as unknown as { onData(id: string, d: unknown): void }).onData("QA-RETRY", { line: "QA-RETRY", updated_at: 1, next_update_at: 2, vehicles: [] });
+    expect(urls.some(u => u.endsWith("/lines.json"))).toBe(true);
+    expect(urls.some(u => u.endsWith("/lines/QA-RETRY.json"))).toBe(true);
+  });
+
+  // A status call sent before the data came back, failing after it: old news, not a lost connection.
+  it("ignores a status failure from a call sent before data arrived", async () => {
+    let fail!: (r: Response) => void;
+    vi.stubGlobal("fetch", (u: string) => new Promise<Response>(r => { if (u.endsWith("/v1/status")) fail = r; }));
+    const app = new AppState();
+    const pending = (app as unknown as { refreshStatus(): Promise<void> }).refreshStatus();
+    (app as unknown as { onData(id: string, d: unknown): void }).onData("040", { line: "040", updated_at: 1, next_update_at: 2, vehicles: [] });
+    fail(new Response("", { status: 502 }));
+    await pending;
+    expect(app.statusFailed).toBe(false);
+    vi.stubGlobal("fetch", () => new Promise(() => {}));
+  });
+});
+
+describe("AppState unknown card while the history moves", () => {
+  // The index answers while CardNav is going to another card: that move replaces the card, a Back would close the new one.
+  it("does not go Back while a card move is in flight", async () => {
+    const app = new AppState();
+    app.stopIx = { s: [] } as unknown as AppState["stopIx"];
+    const back = vi.spyOn(app, "back").mockImplementation(() => {});
+    (app as unknown as { nav: { busy: boolean } }).nav = { busy: true } as never;
+    const c = busStopCard("99999999", "");
+    app.stack = [c];
+    (app as unknown as { show(c: unknown): void }).show(c);
+    await new Promise(r => setTimeout(r, 0));
+    expect(back).not.toHaveBeenCalled();
   });
 });

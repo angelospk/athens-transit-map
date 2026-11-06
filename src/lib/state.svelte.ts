@@ -309,6 +309,7 @@ export class AppState {
     this.nav = new CardNav(history, s => { this.stack = s; this.show(s[s.length - 1] ?? null); },
       s => location.pathname + cardQuery(s[s.length - 1] ?? null, this.selected) + location.hash);
     addEventListener("popstate", e => this.nav?.popped(e.state));
+    addEventListener("online", () => { if (this.linesFailed) this.loadLines(); void this.refreshStatus(); });
     this.nav.start(cardFromQuery(location.search));
     for (const id of this.selected) this.startLine(id);
     void Promise.allSettled(this.selected.map(fetchLineStatic)).then(() => { if (!this.stack.length) this.fit(this.selected); });   // a linked card frames its own
@@ -429,11 +430,12 @@ export class AppState {
       case "route": return this.showRoute(c, l.line, l.variant, l.dir);
       case "bus-stop":
         void this.loadStops().then(ix => {
-          const i = ix ? stopIndex(ix, l.code) : -1;
-          if (!this.isTop(c)) return;
-          if (i < 0) return this.say("Η στάση δεν βρέθηκε.");
+          // No index (offline): the card shows from the stop's board alone.
+          if (!ix || !this.isTop(c)) return;
+          const i = stopIndex(ix, l.code);
+          if (i < 0) return this.notFound("Η στάση δεν βρέθηκε.");
           this.busStop = i;
-          if (!c.title) this.retitle(ix!.s[i][0]);
+          if (!c.title) this.retitle(ix.s[i][0]);
         });
         return;
       case "station":
@@ -460,7 +462,7 @@ export class AppState {
     const s = this.metro.stations.find(s => fold(s.name).replace(/\s+/g, " ").trim() === want);
     this.pendingStation = null;
     if (s) { this.metroStation = s.name; this.retitle(s.name); }
-    else this.say("Ο σταθμός δεν βρέθηκε.");
+    else this.notFound("Ο σταθμός δεν βρέθηκε.");   // pending: its card is still the top one (show() clears it)
   }
 
   // A bus line's card: one direction drawn, the line shown for a while if it is not a pick. Without a
@@ -479,7 +481,7 @@ export class AppState {
     void fetchLineStatic(line).then(st => {
       const v = directionGroups(st)[dir ?? 0]?.variants[0] ?? Object.keys(st.variants)[0];
       if (v && this.isTop(c)) { this.selection = { kind: "route", line, variant: v }; this.fit([line]); }
-    }, () => { if (this.isTop(c)) this.say(`Άγνωστη γραμμή: ${line}.`); });
+    }, (e: { status?: number }) => { if (e?.status === 404 && this.isTop(c)) this.notFound(`Άγνωστη γραμμή: ${line}.`); });
   }
 
   // A station tapped on the map (null: none). Its card replaces a vehicle's or route's.
@@ -930,7 +932,7 @@ export class AppState {
       fetchLine: (l, signal) => this.cityFetch(l, signal),
       validate: isCityLive,
       clock: this.clock,
-      onData: () => this.publishCity(),
+      onData: () => { this.reached(); this.publishCity(); },
       onState: s => (this.cityState = s),
     });
     this.cityPoller.start();
@@ -938,6 +940,13 @@ export class AppState {
 
   notify(text: string) {
     this.say(text);
+  }
+
+  // A card from a link whose stop, station or line does not exist: a notice, and Back, so no empty card stays
+  // and the URL does not keep pointing at it.
+  private notFound(text: string) {
+    this.say(text);
+    if (!this.nav?.busy) this.back();   // a move in flight replaces the card anyway; a Back queued after it would close the next one
   }
 
   private say(text: string) {
@@ -966,10 +975,26 @@ export class AppState {
     }
     if (!this.live[id]) this.pollState = { ...this.pollState, [id]: "loading" };
     p.start();
+    this.loadStatic(id);
+  }
+
+  // A failed load is not memoized (api.ts once): a later call asks again; one in flight is shared.
+  private loadStatic(id: string) {
     fetchLineStatic(id).then(s => (this.statics = { ...this.statics, [id]: s }), () => {});
   }
 
+  // Data came, or the browser is online again: the server is reached (the status call runs only every
+  // 60 s), and what failed to load meanwhile is asked again.
+  private reachedN = 0;   // counts data arrivals: a status call sent before one of them is old news
+  private reached() {
+    this.reachedN++;
+    this.statusFailed = false;
+    if (this.linesFailed) this.loadLines();
+  }
+
   private onData(id: string, d: LineLive) {
+    this.reached();
+    if (!this.statics[id]) this.loadStatic(id);   // its route file failed (offline): again
     this.live = { ...this.live, [id]: d };
     const s = this.selection;
     if (s?.kind === "vehicle" && s.line === id && !d.vehicles.some(v => v.id === s.id)) {
@@ -1017,6 +1042,7 @@ export class AppState {
   }
 
   private loadLines() {
+    this.linesFailed = false;   // set again if this load fails: no second load while this one runs
     fetchLines().then(
       ix => {
         this.lines = ix.lines;
@@ -1031,7 +1057,9 @@ export class AppState {
   }
 
   private async refreshStatus() {
+    const n = this.reachedN;
     const s = await fetchStatus();
+    if (!s && n !== this.reachedN) return;   // it failed, but data came meanwhile: the server is reached
     this.statusFailed = !s;
     if (s) this.status = s;
   }
