@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boardRows, nextBoards, stasyUrl, stationNames, type StasyBoard } from "../src/lib/rail";
+import { boardRows, nextBoards, stationNames, type StasyBoard } from "../src/lib/rail";
 import type { MetroStation } from "../src/lib/metro";
 
 const stations: MetroStation[] = [
@@ -17,14 +17,6 @@ describe("stationNames", () => {
   });
   it("a station alone asks only its own name", () => {
     expect(stationNames(stations, "ΟΜΟΝΟΙΑ")).toEqual(["ΟΜΟΝΟΙΑ"]);
-  });
-});
-
-describe("stasyUrl", () => {
-  // The same query as the app, so both share one Cloudflare cache entry.
-  it("sends the name as it is, with n=4", () => {
-    expect(stasyUrl("Σύνταγμα (Κέντρο)")).toBe(
-      "https://transit.haroldpoi.dev/v1/rail/stasy/departures?stop=%CE%A3%CF%8D%CE%BD%CF%84%CE%B1%CE%B3%CE%BC%CE%B1%20(%CE%9A%CE%AD%CE%BD%CF%84%CF%81%CE%BF)&n=4");
   });
 });
 

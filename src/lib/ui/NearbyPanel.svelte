@@ -34,13 +34,15 @@
   $effect(() => {
     if (!app.nearShown || !idKey) return;
     const want = untrack(() => ids);
+    // Only the stops near now: the boards of the ones passed on the way go.
+    untrack(() => { boards = Object.fromEntries(Object.entries(boards).filter(([k]) => want.includes(k))); });
     const ac = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const load = async () => {
       if (document.visibilityState !== "hidden") {
         let next = 0;
         const worker = async () => {
-          while (next < want.length && !ac.signal.aborted) {
+          while (next < want.length && !ac.signal.aborted && document.visibilityState !== "hidden") {
             const id = want[next++], r = await fetchV2Stop(`oasa:${id}`);
             if (ac.signal.aborted) return;
             const b = r.body as { arrivals?: V2Arrival[] } | null;

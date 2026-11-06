@@ -26,8 +26,12 @@ export interface PollerOptions<T extends Paced = LineLive> {
 export function isLineLive(b: unknown): b is LineLive {
   const d = b as LineLive;
   return !!d && typeof d === "object" && typeof d.line === "string" && Number.isFinite(d.updated_at)
-    && Number.isFinite(d.next_update_at) && Array.isArray(d.vehicles);
+    && Number.isFinite(d.next_update_at) && Array.isArray(d.vehicles) && d.vehicles.every(placed);
 }
+
+// A vehicle the map can draw: a record with a position (a null one would throw in onData every poll).
+const placed = (v: unknown) =>
+  !!v && typeof v === "object" && Number.isFinite((v as { lat: unknown }).lat) && Number.isFinite((v as { lon: unknown }).lon);
 
 export class LinePoller<T extends Paced = LineLive> {
   readonly line: string;

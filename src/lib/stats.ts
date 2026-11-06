@@ -76,7 +76,7 @@ export async function latestDay(now = Date.now()): Promise<DayStats | null> {
   }
   if (!r.ok) throw new Error(`stats: HTTP ${r.status}`);
   const day = (await r.json()) as DayStats;
-  if (day.version !== 1 || day.hours?.length !== 24) throw new Error("stats: unknown format");
+  if (!validDay(day, day?.date)) throw new Error("stats: unknown format");
   cache = { at: now, day };
   return day;
 }

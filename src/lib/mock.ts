@@ -103,17 +103,6 @@ export async function mockLineStatic(line: string): Promise<LineStatic> {
   return st;
 }
 
-// A STASY board for any station: two trains each way of M2, every 4 min (times in Athens).
-export async function mockStasy(name: string): Promise<FetchResult> {
-  const now = Date.now() / 1000;
-  const hm = (s: number) => new Date(s * 1000).toLocaleTimeString("el-GR", { timeZone: "Europe/Athens", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  const departures = ["ΕΛΛΗΝΙΚΟ", "ΑΝΘΟΥΠΟΛΗ"].flatMap((headsign, k) => [0, 1].map(i => {
-    const in_s = 60 + k * 90 + i * 240;
-    return { line: "M2", route_color: "#e30613", headsign, t: hm(now + in_s), in_s };
-  }));
-  return { status: 200, body: { stop: name, indicative: false, departures } };
-}
-
 // Today's timetable: a run every 20 min, 05:00-23:40, to the end of each variant; every fifth one
 // gone is missed.
 export async function mockSchedule(line: string): Promise<FetchResult> {
@@ -126,17 +115,6 @@ export async function mockSchedule(line: string): Promise<FetchResult> {
     return m + 10 < nowMin ? { t, trip: "", seen: i % 5 !== 4 } : { t, trip: "" };
   }) }));
   return { status: 200, body: { line, date, expired: false, source: "oasa-daily", directions } };
-}
-
-// A suburban board: a train every 15 min each way, one of them late.
-export async function mockSuburban(id: string): Promise<FetchResult> {
-  const now = athensClock(Date.now(), new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Athens" }));
-  const hm = (m: number) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-  const departures = [0, 1, 2].flatMap(i => [
-    { train: `${1300 + i}`, from: "Πειραιάς", to: "Κιάτο", t: hm(now + 4 + 15 * i), delay_min: i === 0 ? 6 : 0, platform: "1", status: i === 0 ? "delayed" : "scheduled" },
-    { train: `${1500 + i}`, from: "Χαλκίδα", to: "Αθήνα", t: hm(now + 11 + 15 * i), delay_min: null, platform: null, status: "scheduled" },
-  ]);
-  return { status: 200, body: { station: id, departures } };
 }
 
 // Two metro trains between Σύνταγμα and Ακρόπολη, and two Proastiakos trains (one with an old fix).
@@ -155,15 +133,6 @@ export async function mockTrains(kind: "metro" | "suburban"): Promise<FetchResul
   const tr = (train: string, lat: number, lon: number, age: number, delay: number) => ({ train, corridor: "PIRAIR", service: "Suburban",
     lat, lon, course: 80, speed_kmh: 72, delay_min: delay, from: "Πειραιάς", to: "Αεροδρόμιο", next_station: "Πλακεντίας", position_at: now - age });
   return { status: 200, body: { updated_at: now, trains: [tr("1226", 38.0235, 23.8335, 8, 3), tr("1230", 37.97, 23.66, 150, 0)] } };
-}
-
-export async function mockTrainRun(kind: "metro" | "suburban", id: string): Promise<FetchResult> {
-  const now = Math.floor(Date.now() / 1000);
-  const names = kind === "metro" ? ["ΣΥΓΓΡΟΥ-ΦΙΞ", "ΣΥΝΤΑΓΜΑ", "ΑΚΡΟΠΟΛΗ", "ΝΕΟΣ ΚΟΣΜΟΣ"] : ["Πειραιάς", "Νερατζιώτισσα", "Πλακεντίας", "Αεροδρόμιο"];
-  const stops = names.map((name, i) => ({ id: `s${i}`, name, lat: 38, lon: 23.7, t: "", at: now + (i - 1) * 240, platform: null, delay_min: null }));
-  return kind === "metro"
-    ? { status: 200, body: { trip: id, line: "M2", route_color: "#e30613", headsign: "ΕΛΛΗΝΙΚΟ", stops } }
-    : { status: 200, body: { train: id, from: "Πειραιάς", to: "Αεροδρόμιο", status: "in_progress", delay_min: 3, stops } };
 }
 
 export async function mockStop(id: string): Promise<FetchResult> {

@@ -89,8 +89,16 @@ export function planUrl(base: string, from: [number, number], to: [number, numbe
 
 export function parsePlan(body: unknown): PlanResponse | null {
   if (!isRec(body) || !Array.isArray(body.itineraries) || !isRec(body.lines) || !isRec(body.stops)) return null;
-  return body as unknown as PlanResponse;
+  // An itinerary without legs or times would crash the planner's rows (or draw nothing): dropped, the others kept.
+  const itineraries = body.itineraries.filter(it => isRec(it) && Array.isArray(it.legs) && it.legs.length > 0 && Number.isFinite(it.depart_at) && Number.isFinite(it.arrive_at));
+  return { ...body, itineraries } as unknown as PlanResponse;
 }
+
+// A failed plan request is asked again (tries: retries so far) when offline, busy or a server error;
+// a 4xx, or a 200 that did not parse, would only repeat itself.
+export const PLAN_RETRY_MS = 30_000;
+export const planRetry = (status: number, tries: number) =>
+  tries < 3 && (status === 0 || status === 429 || status >= 500);
 
 const hhmm = (t: number) => clock(t).slice(0, 5);
 

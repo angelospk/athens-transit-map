@@ -13,8 +13,6 @@
   import { suburbanFC } from "../suburban";
   import { trainsFC } from "../trains";
   import { RailGlide, trackStops, type Track } from "../rails";
-  import { fetchStasy, fetchSuburban, fetchTrainRun } from "../api";
-  import { PREFETCH_ZOOM, wanted, type Want } from "../prefetch";
   import { Locator, userPlan, type Fix, type LocState } from "../locate";
   import { CITIES, nearestCity as cityAt } from "../cities";
   import { onOpen, type Perm } from "../nearby";
@@ -31,7 +29,7 @@
   import { lightenDark } from "./basemap";
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
-  import { STOPS_ZOOM, busStopsFC, stopIndex } from "../stops";
+  import { STOPS_ZOOM, busStopsFC } from "../stops";
   import { STOP_ZOOM, VEHICLE_ZOOM, focusZoom, sheetReserve, stopPin } from "../focus";
   import { busStopCard, busVehicleCard, railStationCard, routeCard, stationCard } from "../legacy";
   // Rail stations show from these zooms, small like the bus stops (from STOPS_ZOOM); there are fewer of them.
@@ -106,6 +104,7 @@
     d.dir.style.transform = `translate(${Math.sin(a) * rx}px, ${-Math.cos(a) * ry}px) rotate(${h}deg)`;
   }
 
+  const CREDITS_MS = 5000;   // the map's credits show this long, then fold to the ⓘ
   const LANE_PX = 3;   // each direction drawn to the right of its travel direction (two lanes)
   const key = (line: string, id: string) => `${line}/${id}`;
 
@@ -128,7 +127,11 @@
 
   function fitTo(ids: string[]) {
     const b = bounds(drawn.filter(d => ids.includes(d.id)));
-    if (b && map) map.fitBounds(b, { padding: padding(), maxZoom: 15, duration: 600 });
+    if (!b || !map) return;
+    // With a card open, clear of the sheet too, at its usual height on a phone (a loading card grows), as focusOn.
+    const pad = app.stack.length ? padNow() : padding();
+    if (app.stack.length && innerWidth < 720 && typeof pad !== "number") pad.bottom = Math.max(pad.bottom ?? 0, sheetReserve(innerHeight));
+    map.fitBounds(b, { padding: pad, maxZoom: 15, duration: 600 });
   }
 
   // A right-pointing chevron; symbol layers turn it along each line in travel direction.
@@ -320,10 +323,18 @@
 
   // The other theme: the base map's style is swapped. diff: false builds the style anew, so `style.load` fires.
   function restyle(m: MlMap, d: boolean) {
+    // Offline the new style cannot load, and setStyle drops the old one first: the map would stay blank, with no
+    // layers to tap. It keeps its look; the online event (setup) switches it then.
+    if (!navigator.onLine) return;
     styleDark = d;
     loaded = false;
     const gen = ++styleGen;
-    m.once("style.load", () => { if (gen === styleGen) addAll(m); });   // a style replaced before it loaded never fires
+    m.once("style.load", () => {   // a style replaced before it loaded never fires
+      if (gen !== styleGen) return;
+      addAll(m);
+      const want = untrack(() => dark);
+      if (want !== styleDark) restyle(m, want);   // the theme changed meanwhile, offline (restyle skipped it)
+    });
     m.setStyle(STYLE(d), { diff: false });
   }
 
@@ -729,7 +740,8 @@
     }
     // Corrections and trails: 30 fps close up; zoomed out, where they are a few pixels and every frame
     // steps the whole city, 4 fps.
-    const idle = Math.min(1000, Math.max(16, (0.5 * mpp / 20) * 1000));
+    // With motion off nothing steps: between fixes (a new one leaves a trail, fast again) once a second is enough.
+    const idle = still ? 1000 : Math.min(1000, Math.max(16, (0.5 * mpp / 20) * 1000));
     nextDue = t + (fixing ? Math.min(idle, z >= 13 ? 33 : 250) : idle);
   }
 
@@ -812,6 +824,9 @@
         center: CITIES[untrack(() => app.cityId)].center,   // untracked: a city change moves this map, it does not rebuild it
         zoom: CITIES[untrack(() => app.cityId)].zoom,
         attributionControl: { compact: true },
+        // Greek names for the map's own controls (a screen reader read them in English).
+        locale: { "Map.Title": "Χάρτης", "NavigationControl.ZoomIn": "Μεγέθυνση", "NavigationControl.ZoomOut": "Σμίκρυνση",
+          "AttributionControl.ToggleAttribution": "Πηγές του χάρτη" },
         dragRotate: false,
         pitchWithRotate: false,
       });
@@ -827,13 +842,20 @@
     m.addControl({ onAdd: () => infoCtl, onRemove: () => infoCtl.remove() }, "bottom-right");
     // MapLibre puts a new bottom control above the others; after the credits it floats left of the ⓘ, on its row.
     infoCtl.parentElement?.append(infoCtl);
+    // MapLibre shows the credits (ⓘ) open until the first drag: on a phone they cover the map. They fold after a few
+    // seconds instead; a tap on the ⓘ opens them again (#34: they must be seen first).
+    // A tap on the ⓘ before then is the user's choice: the timer stops.
+    m.once("load", () => {
+      const t = setTimeout(() =>
+        node.querySelector(".maplibregl-ctrl-attrib.maplibregl-compact-show")?.classList.remove("maplibregl-compact-show"), CREDITS_MS);
+      node.querySelector(".maplibregl-ctrl-attrib-button")?.addEventListener("click", () => clearTimeout(t), { once: true });
+    });
     m.on("dragstart", () => (follow = false));   // only user gestures fire it
     // The city layer loads the tiles of the view: at first, and 300 ms after the map stops moving (never during a move).
     const reportView = () => {
       if (m.getZoom() >= STOPS_ZOOM - 0.5 && !app.stopIx) loadStops();
       const b = m.getBounds();
       app.setCityView({ north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() }, m.getZoom());
-      prefetchSoon();
     };
     const reportSoon = debounce(reportView, VIEW_SETTLE_MS);
     m.on("load", reportView);
@@ -841,7 +863,6 @@
     const reportFollow = throttle(reportView, FOLLOW_VIEW_MS);
     const ticked = (e: object) => "follow" in e;
     m.on("movestart", e => {
-      prefetchSoon.cancel(); ahead = [];   // the old view's: not wanted any more (follow mode too)
       if (ticked(e)) return;
       reportSoon.cancel(); reportFollow.cancel(); app.setCityMoving();
     });
@@ -861,6 +882,8 @@
       me?.mover.snap();
     };
     document.addEventListener("visibilitychange", onVisible);
+    const onOnline = () => { const d = untrack(() => dark); if (loaded && d !== styleDark) restyle(m, d); };   // a theme chosen offline
+    addEventListener("online", onOnline);
     // On open, «Κοντά σου» (nearby.ts onOpen): location allowed → find me and show the stops near me; not decided
     // yet → the browser asks once, later a button in the panel asks; refused or a linked card → nothing. A link with
     // the location turned on last time and still allowed starts it again (no fly-to: the map shows the link).
@@ -882,9 +905,7 @@
     // One dispatcher: DOM marker (its own handler) → train right under the finger → station right under the finger (drawn over the city
     // vehicles, under a picked line's stops) → city vehicle → stop → station near the finger → route → municipal route or
     // stop → speed segment → empty map.
-    let taps = 0;   // a later tap wins over a stop card still waiting for the stop index
     m.on("click", e => {
-      const tap = ++taps;
       if (!loaded) return;   // the style is being replaced: our layers are not there to hit
       if ((e.originalEvent.target as Element | null)?.closest?.(".bus")) return;
       // «Λάθος θέση;»: a tap puts the blue pin there (a tap on the pin itself does nothing); nothing else opens.
@@ -913,16 +934,10 @@
       }
       const stop = m.queryRenderedFeatures(e.point, { layers: ["stops"] })[0];
       if (stop) {
-        // Its card; the stop index loads first when the map was never close enough to show stops.
-        const id = String(stop.properties.id), name = String(stop.properties.name);
-        const ll = (stop.geometry as GeoJSON.Point).coordinates as [number, number];
+        // Its card at once: it shows from the stop's board until the stop index loads (AppState.show, which also
+        // drops a late index answer once another card is on top).
         popup.remove();
-        void (app.stopIx ? Promise.resolve(app.stopIx) : loadStops()).then(ix => {
-          if (tap !== taps || disposed) return;
-          const at = ix ? stopIndex(ix, id) : -1;
-          if (at >= 0) app.open(busStopCard(id, ix!.s[at][0]));
-          else popup.setLngLat(ll).setText(name).addTo(m);
-        });
+        app.open(busStopCard(String(stop.properties.id), String(stop.properties.name)));
         return;
       }
       const bus = nearestBusStop(m, e.point);
@@ -1022,9 +1037,9 @@
       disposed = true;
       cancelAnimationFrame(raf);
       reportSoon.cancel();
-      prefetchSoon.cancel();
       reportFollow.cancel();
       document.removeEventListener("visibilitychange", onVisible);
+      removeEventListener("online", onOnline);
       locator.stop();
       dropMe();
       for (const d of doms.values()) d.marker.remove();
@@ -1063,37 +1078,6 @@
   });
 
   $effect(() => { const f = ageFilter(app.ageMode); if (loaded) map!.setFilter("train-age", f); });
-
-  // The rail cards' data of what is on screen, loaded while the map rests (prefetch.ts), by at most
-  // four requests at a time from one queue that each view replaces; what the cache holds fresh is
-  // not asked again. Also after each trains poll (they move into view), unless the map is moving.
-  const loadAhead = (w: Want) =>
-    w.kind === "stasy" ? fetchStasy(w.id) : w.kind === "suburban-station" ? fetchSuburban(w.id)
-      : fetchTrainRun(w.kind === "metro-run" ? "metro" : "suburban", w.id);
-  let ahead: Want[] = [], workers = 0;
-  const work = async () => {
-    workers++;
-    for (let w = ahead.shift(); w; w = ahead.shift()) await loadAhead(w);
-    workers--;
-  };
-  const prefetchSoon = debounce(() => {
-    const m = map;
-    if (!m || !loaded || document.hidden || m.isMoving() || m.getZoom() < PREFETCH_ZOOM) return;
-    const layers = ["train-dot", "metro-station", "suburban-station"].filter(id => m.getLayer(id) && m.getLayoutProperty(id, "visibility") !== "none");
-    if (!layers.length) return;
-    const c = m.getCanvas();
-    const seen = m.queryRenderedFeatures({ layers }).map(f => {
-      const q = m.project((f.geometry as GeoJSON.Point).coordinates as [number, number]);
-      return { layer: f.layer.id, px: [q.x, q.y] as [number, number], props: f.properties };
-    });
-    ahead = wanted(seen, [c.clientWidth / 2, c.clientHeight / 2], app.metro?.stations ?? []);
-    while (workers < 4 && ahead.length) void work();
-  }, VIEW_SETTLE_MS);
-
-  $effect(() => {
-    void app.stasyTrains; void app.suburbanTrains;
-    prefetchSoon();
-  });
 
   // Each metro/tram line's tracks as [lat, lon] shapes (rails.ts), and the Proastiakos trains snapped
   // onto their corridor, run on along it at their speed between fixes (server time: fixes carry it).
@@ -1399,7 +1383,7 @@
   });
 
   // «Λεπτομέρειες» (a control left of the ⓘ, bottom right) opens the info sheet. The ⓘ stays MapLibre's: it shows the
-  // map's credits (open at first, closed by the first drag), which the licences want visible (#34).
+  // map's credits (open at first, closed after CREDITS_MS or the first drag), which the licences want visible (#34).
   const infoCtl = document.createElement("div");
   infoCtl.className = "maplibregl-ctrl maplibregl-ctrl-group details-ctl";
   const infoBtn = document.createElement("button");

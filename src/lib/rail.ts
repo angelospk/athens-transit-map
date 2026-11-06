@@ -1,6 +1,5 @@
 // Metro and tram departures from the STASY timetable (not live): GET /v1/rail/stasy/departures.
 
-import { API_BASE } from "./config";
 import { distanceM } from "./glide";
 import { TRANSFER_M, type MetroStation } from "./metro";
 import { fold } from "./search";
@@ -9,8 +8,6 @@ export interface StasyDeparture { line: string; route_color: string; headsign: s
 export interface StasyBoard { stop: string; indicative: boolean; departures: StasyDeparture[] }
 export interface BoardRow { line: string; color: string; headsign: string; mins: number[]; times: string[] }
 
-// The same query as the Android app (n=4), so both share one Cloudflare cache entry.
-export const stasyUrl = (name: string) => `${API_BASE}/v1/rail/stasy/departures?stop=${encodeURIComponent(name)}&n=4`;
 
 // The feed names an interchange differently per line (ΣΥΝΤΑΓΜΑ / Σύνταγμα (Κέντρο)): ask every name this close.
 export function stationNames(stations: MetroStation[], name: string): string[] {

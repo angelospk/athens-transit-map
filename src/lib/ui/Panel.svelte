@@ -130,9 +130,10 @@
       <button type="button" aria-pressed={app.favOnly} title="Μόνο οι αγαπημένες γραμμές στον χάρτη" onclick={() => app.setFavOnly(true)}><Icon name="star-filled" size={14} /> Αγαπημένα</button>
       <button type="button" aria-pressed={!app.favOnly} title="Όλα τα λεωφορεία στον χάρτη" onclick={() => app.setFavOnly(false)}>Όλα</button>
     </div>
-  {:else if !app.favHintSeen}
+  {:else if !app.favHintSeen && !app.selected.length && !app.linked}
+    <!-- Not under the chips, nor on a shared link: on a phone that row would cover the map. -->
     <div class="favpill" role="note">
-      <span>Βάλε <Icon name="star" size={13} label="αστέρι" /> για να βλέπεις μόνο τις δικές σου</span>
+      <span>Με <Icon name="star" size={13} label="αστέρι" /> βλέπεις μόνο τις δικές σου</span>
       <button type="button" aria-label="Κλείσιμο υπόδειξης" onclick={() => app.dismissFavHint()}>×</button>
     </div>
   {/if}

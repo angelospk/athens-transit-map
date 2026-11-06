@@ -35,15 +35,17 @@
     err = null;
     const m = min, p = await railTelegram({ ...rail, min: m });
     tgBusy = false;
+    if (closed) return;
     if (p) {
       const url = `https://t.me/${BOT}?start=${p}`;
       tg = { min: m, url };
-      setTimeout(() => { if (tg?.url === url) tg = null; }, 14 * 60_000);   // the bot keeps it 15 minutes
+      clearTimeout(tgTimer);
+      tgTimer = setTimeout(() => { if (tg?.url === url) tg = null; }, 14 * 60_000);   // the bot keeps it 15 minutes
     }
     else err = "Ο server ειδοποιήσεων δεν απάντησε. Δοκίμασε ξανά σε λίγο.";
   }
-  let closed = false;
-  $effect(() => () => { closed = true; });
+  let closed = false, tgTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => () => { closed = true; clearTimeout(tgTimer); });
   let pushing = $state(false);
   async function alertMe() {
     if (pushing) return;
