@@ -55,7 +55,7 @@
     <button type="button" class="find" onclick={onsearch}>
       <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
         <circle cx="8.5" cy="8.5" r="5.5" /><path d="M12.6 12.6L17 17" />
-      </svg>Αναζήτηση γραμμής ή στάσης
+      </svg><span class="lbl">Αναζήτηση γραμμής ή στάσης</span>
     </button>
   {/if}
 
@@ -93,6 +93,8 @@
   .chipped .find { grid-column: 1 / -1; grid-row: 2; }
   .find { display: inline-flex; align-items: center; justify-self: start; gap: 6px; min-height: 36px; padding: 0 12px;
     border: 0; border-radius: 18px; background: var(--control); color: var(--muted); font-size: 13px; cursor: pointer; }
+  .find { max-width: 100%; }
+  .find .lbl { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }   /* one line, even in a wide fallback font */
   .find:hover { background: var(--control-hover); }
   .quick, .tip { grid-column: 1 / -1; }
   .chip { display: inline-flex; align-items: stretch; min-height: 32px; border-radius: 16px; background: var(--c); color: var(--t); }

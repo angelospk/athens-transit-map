@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getJSON, lineStaticUrl, lineUrl } from "../src/lib/api";
+import { fetchLines, fetchLineStatic, getJSON, lineStaticUrl, lineUrl } from "../src/lib/api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -25,5 +25,14 @@ describe("api", () => {
     vi.stubGlobal("fetch", f);
     await getJSON(lineUrl("040"));
     expect(f).toHaveBeenCalledWith("https://transit.haroldpoi.dev/v1/lines/040", { signal: undefined });
+  });
+  it("rejects static files that are JSON of the wrong shape (an error page from a proxy)", async () => {
+    vi.stubGlobal("fetch", async () => new Response('{"error":"rate limited"}', { status: 200 }));
+    await expect(fetchLines()).rejects.toThrow();
+    await expect(fetchLineStatic("QA-BAD-SHAPE")).rejects.toThrow();
+  });
+  it("accepts a well-formed static line file", async () => {
+    vi.stubGlobal("fetch", async () => new Response('{"id":"x","variants":{},"stops":{}}', { status: 200 }));
+    await expect(fetchLineStatic("QA-GOOD-SHAPE")).resolves.toMatchObject({ id: "x" });
   });
 });

@@ -242,7 +242,7 @@ describe("AppState rail and favourites", () => {
 
 describe("AppState line card framing", () => {
   it("frames the whole line when its route card opens from a vehicle's card (variant known)", async () => {
-    vi.stubGlobal("fetch", () => Promise.resolve(new Response(JSON.stringify({ line: "R7", variants: { v1: { stops: [] } } }))));
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response(JSON.stringify({ line: "R7", variants: { v1: { stops: [] } }, stops: {} }))));
     const app = new AppState();
     const fits: string[][] = [];
     app.fit = ids => fits.push(ids);

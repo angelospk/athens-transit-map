@@ -65,19 +65,23 @@ function once<T>(key: string, load: () => Promise<T>): Promise<T> {
   return p;
 }
 
-async function staticJSON<T>(url: string): Promise<T> {
+const isObj = (b: unknown): b is Record<string, unknown> => !!b && typeof b === "object";
+
+// A 200 with JSON of another shape (a proxy's error page, a captive portal) is a failure, not data.
+async function staticJSON<T>(url: string, ok: (b: Record<string, unknown>) => boolean): Promise<T> {
   const r = await getJSON(url);
-  if (r.status !== 200 || !r.body) throw new Error(`HTTP ${r.status}: ${url}`);
+  if (r.status !== 200 || !isObj(r.body)) throw new Error(`HTTP ${r.status}: ${url}`);
+  if (!ok(r.body)) throw new Error(`Unexpected shape: ${url}`);
   return r.body as T;
 }
 
 export const fetchLines = () =>
   once("lines", async (): Promise<LinesIndex> =>
-    import.meta.env.VITE_MOCK === "1" ? (await import("./mock")).mockLines() : staticJSON(`${STATIC_BASE}/lines.json`));
+    import.meta.env.VITE_MOCK === "1" ? (await import("./mock")).mockLines() : staticJSON(`${STATIC_BASE}/lines.json`, b => Array.isArray(b.lines)));
 
 export const fetchLineStatic = (line: string) =>
   once("line:" + line, async (): Promise<LineStatic> =>
-    import.meta.env.VITE_MOCK === "1" ? (await import("./mock")).mockLineStatic(line) : staticJSON(lineStaticUrl(line)));
+    import.meta.env.VITE_MOCK === "1" ? (await import("./mock")).mockLineStatic(line) : staticJSON(lineStaticUrl(line), b => isObj(b.variants) && isObj(b.stops)));
 
 // The rail cards' data goes through one cache: the map loads what is on screen while it rests
 // (prefetch), and a card shows that at once (peek) and asks again only past the server's cache time.
