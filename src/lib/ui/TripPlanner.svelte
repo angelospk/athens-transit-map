@@ -520,7 +520,7 @@
         </ol>
       {/if}
       {#if picked && trips.length}<button type="button" class="link all" onclick={showAll}>Όλες οι γραμμές στον χάρτη</button>{/if}
-      {#if shown}
+      {#if shown && app.cityInfo.alerts}
         <div class="alert">
           {#if app.alert}
             {@const a = app.alert}

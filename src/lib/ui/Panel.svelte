@@ -171,7 +171,7 @@
       <span><i class="none"></i>χωρίς δρομολόγιο</span>
       {#if app.ageMode !== "never"}<span><b class="age">24″</b>πριν από τόσο ήρθε η θέση</span>{/if}
     </div>
-    {#if app.trainsOn}
+    {#if app.trainsOn && app.cityInfo.rail}
       <!-- The marker shapes (B3): the colour of a bus is its delay; a train's is its line's. -->
       <div class="legend shapes">
         <span><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="var(--ontime)" /></svg>λεωφορείο</span>
@@ -285,11 +285,13 @@
             <span><b>Λεωφορεία</b> <small>{#if cityMissing}(όχι ακόμα διαθέσιμο){:else if app.city}· {app.city.vehicles.length} τώρα{/if}</small><br />
               <small>Όλα τα λεωφορεία και τρόλεϊ της πόλης. Οι γραμμές που διάλεξες μένουν πάντα.</small></span>
           </label>
+          {#if app.cityInfo.rail}
           <label class="switch">
             <input type="checkbox" checked={app.trainsOn} onchange={e => app.setTrainsOn(e.currentTarget.checked)} />
             <span><b>Τρένα</b> <small>{#if app.trainsOn && (app.stasyTrains.length || app.suburbanTrains.length)}· {app.stasyTrains.length + app.suburbanTrains.length} τώρα{/if}</small><br />
               <small>Μετρό, τραμ και Προαστιακός, με τους σταθμούς τους. Μετρό και τραμ κατά προσέγγιση από το πρόγραμμα· Προαστιακός με GPS.</small></span>
           </label>
+          {/if}
           {#if app.municipal}
             <label class="switch">
               <input type="checkbox" checked={app.municipalOn} onchange={e => app.setMunicipalOn(e.currentTarget.checked)} />
@@ -343,7 +345,7 @@
           </div>
           <details class="hint">
             <summary>Πώς κινούνται</summary>
-            Ο ΟΑΣΑ στέλνει θέσεις κάθε 20–60″. Όταν η νέα θέση είναι πολύ μπροστά, το όχημα πηγαίνει γρήγορα ως εκεί, πάνω
+            {app.cityInfo.id === "athens" ? "Ο ΟΑΣΑ στέλνει θέσεις κάθε 20–60″." : `Ο ${app.cityInfo.agency} στέλνει θέσεις ανά διαστήματα.`} Όταν η νέα θέση είναι πολύ μπροστά, το όχημα πηγαίνει γρήγορα ως εκεί, πάνω
             στον δρόμο, και αφήνει για λίγο μπλε ίχνος. Όταν είναι πίσω, γυρίζει αχνό πάνω στον δρόμο με γκρι διακεκομμένο
             ίχνος: διόρθωση θέσης, όχι όπισθεν. Αχνό όχημα με πορτοκαλί ηλικία: δεν έστειλε θέση για πάνω από 1½ λεπτό, άρα μπορεί να είναι αλλού.
             {#if oldest != null}<br /><span title="Ώρα δεδομένων {clock(oldest)}">Ενημέρωση γραμμών πριν {duration(Math.max(0, app.serverNow / 1000 - oldest))}.</span>{/if}

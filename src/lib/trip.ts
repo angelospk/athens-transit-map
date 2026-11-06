@@ -4,6 +4,8 @@
 import type { MetroData } from "./metro";
 import { fold, greeklish, greeklishKeys, hasLatin } from "./search";
 import type { AppState } from "./state.svelte";
+import type { CityId } from "./cities";
+import { PAGE_CITY } from "./config";
 
 export type Pt = [number, number];   // [lat, lon]
 
@@ -388,15 +390,21 @@ export function suggest(own: Place[], geo: Place[], max = 7): Place[] {
   return [...areas, ...stops, ...rest].slice(0, max);
 }
 
+// The stop index of each city (scripts/trips.ts): Athens keeps trips.json.
+export const tripsFile = (c: CityId) => (c === "athens" ? "trips.json" : `trips-${c}.json`);
+// Photon bbox (west,south,east,north) of each city's area.
+export const GEOCODE_BOX: Record<CityId, string> = { athens: "23.35,37.65,24.15,38.25", thessaloniki: "22.70,40.45,23.20,40.80" };
+
 let index: Promise<TripIndex> | null = null;
 export function loadTripIndex(): Promise<TripIndex> {
   if (index) return index;
-  const p = fetch(`${import.meta.env.BASE_URL}trips.json`).then(r => {
-    if (!r.ok) throw new Error(`trips.json: HTTP ${r.status}`);
+  const file = tripsFile(PAGE_CITY);
+  const p = fetch(`${import.meta.env.BASE_URL}${file}`).then(r => {
+    if (!r.ok) throw new Error(`${file}: HTTP ${r.status}`);
     return r.json();
   }).then((ix: TripIndex) => {
     // A 200 of another shape would be cached for the session and crash the stop layer: a failure.
-    if (!ix || !Array.isArray(ix.s) || !ix.l || typeof ix.l !== "object") throw new Error("trips.json: unexpected shape");
+    if (!ix || !Array.isArray(ix.s) || !ix.l || typeof ix.l !== "object") throw new Error(`${file}: unexpected shape`);
     return ix;
   });
   p.catch(() => { if (index === p) index = null; });   // the next call tries again
@@ -416,8 +424,8 @@ export async function geocode(query: string, signal?: AbortSignal, near?: Pt): P
   if (hit) return hit;
   const ask = async (qq: string) => {
     const u = new URL(GEOCODE_URL);
-    // Attica only.
-    Object.entries({ q: qq, bbox: "23.35,37.65,24.15,38.25", limit: "8" }).forEach(([k, v]) => u.searchParams.set(k, v));
+    // The page's city only.
+    Object.entries({ q: qq, bbox: GEOCODE_BOX[PAGE_CITY], limit: "8" }).forEach(([k, v]) => u.searchParams.set(k, v));
     if (at) {
       u.searchParams.set("lat", String(at[0]));
       u.searchParams.set("lon", String(at[1]));

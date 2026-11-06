@@ -68,7 +68,7 @@
   let alertFor = $state.raw<{ line?: string; toward?: string; lines: ReturnType<typeof alertLinesAt>; ticked?: string[] } | null>(null);
   // «Όλες οι γραμμές εδώ» of the favourites panel opens the stop with all its lines (ref "all").
   $effect(() => { void i; alertFor = null; const t = untrack(() => app.stack.at(-1)); all = t?.kind === "stop" && t.ref === "all"; });
-  const alertLines = $derived(ix && i != null ? alertLinesAt(ix, i) : []);
+  const alertLines = $derived(app.cityInfo.alerts && ix && i != null ? alertLinesAt(ix, i) : []);   // the bot watches only some cities
   function bell(g: ArrivalGroup) {
     const l = alertLines.find(x => x.line === g.line);
     if (!l) return;

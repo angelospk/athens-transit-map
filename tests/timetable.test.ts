@@ -37,6 +37,23 @@ describe("matchDirection", () => {
     expect(matchDirection(two, "ΠΕΙΡΑΙΑΣ - ΚΗΦΙΣΙΑ")?.headsign).toBe("ΚΗΦΙΣΙΑ");
     expect(matchDirection([dir("Ν. ΚΗΦΙΣΙΑ", []), dir("ΚΑΤΩ ΚΗΦΙΣΙΑ", [], 1)], "ΠΕΙΡΑΙΑΣ - ΚΗΦΙΣΙΑ")).toBeNull();   // two partial: unsure
   });
+  it("a day at the end (OASTH: «-ΣΑΒΒΑΤΟ-ΚΥΡΙΑΚΗ», «- ΔΕΥΤΕΡΑ») is not the place", () => {
+    const two = [dir("ΚΟΡΔΕΛΙΟ-ΑΓ. ΑΝΑΡΓΥΡΟΙ", []), dir("ΑΓ. ΑΝΑΡΓΥΡΟΙ - ΚΟΡΔΕΛΙΟ", [], 1)];
+    expect(matchDirection(two, "ΑΓ. ΑΝΑΡΓΥΡΟΙ - ΚΟΡΔΕΛΙΟ-ΣΑΒΒΑΤΟ-ΚΥΡΙΑΚΗ")).toBe(two[1]);
+    const ikea = [dir("Α.Σ. ΙΚΕΑ - ΤΡΙΑΝΔΡΙΑ", []), dir("ΤΡΙΑΝΔΡΙΑ - Α.Σ.ΙΚΕΑ (ΠΑΡΑΣΚΕΥΗ)", [], 1)];
+    expect(matchDirection(ikea, "Α.Σ.ΙΚΕΑ - ΤΡΙΑΝΔΡΙΑ - ΔΕΥΤΕΡΑ")).toBe(ikea[0]);
+    const both = [dir("ΤΡΙΑΝΔΡΙΑ - ΑΠΟΘΗΚΗ-ΠΑΡΑΣΚΕΥΗ", []), dir("ΑΠΟΘΗΚΗ - ΤΡΙΑΝΔΡΙΑ-ΠΑΡΑΣΚΕΥΗ", [], 1)];
+    expect(matchDirection(both, "ΤΡΙΑΝΔΡΙΑ - ΑΠΟΘΗΚΗ-ΔΕΥΤΕΡΑ")).toBe(both[0]);
+    const kte = [dir("Κ.Τ.Ε.Λ. - ΜΑΛΓΑΡΑ", []), dir("ΜΑΛΓΑΡΑ - Κ.Τ.Ε.Λ.", [], 1)];
+    expect(matchDirection(kte, "ΜΑΛΓΑΡΑ - Κ.Τ.Ε.Λ.-ΣΑΒΒΑΤΟ")).toBe(kte[1]);
+    const ek = [dir("Κ. ΗΛΙΟΥΠΟΛΗ - ΑΡΙΣΤΟΤΕΛΟΥΣ ΜΕΣΩ ΓΥΜΝΑΣΤΗΡΙΟΥ (ΕΚΤΡΟΠΗ)", []), dir("ΑΡΙΣΤΟΤΕΛΟΥΣ - Κ. ΗΛΙΟΥΠΟΛΗ ΜΕΣΩ ΓΥΜΝΑΣΤΗΡΙΟΥ", [], 1)];
+    expect(matchDirection(ek, "Κ. ΗΛΙΟΥΠΟΛΗ - ΑΡΙΣΤΟΤΕΛΟΥΣ ΜΕΣΩ ΓΥΜΝΑΣΤΗΡΙΟΥ-ΣΑΒΒΑΤΟ (ΕΚΤΡΟΠΗ)")).toBe(ek[0]);
+  });
+  it("a place named after a day stays a place", () => {
+    const two = [dir("ΑΓ. ΠΑΡΑΣΚΕΥΗ", []), dir("ΧΑΛΑΝΔΡΙ", [], 1)];
+    expect(matchDirection(two, "ΧΑΛΑΝΔΡΙ - ΑΓ. ΠΑΡΑΣΚΕΥΗ")).toBe(two[0]);
+    expect(matchDirection([dir("ΠΑΡΑΣΚΕΥΗ", []), dir("ΧΑΛΑΝΔΡΙ", [], 1)], "ΧΑΛΑΝΔΡΙ - ΠΑΡΑΣΚΕΥΗ")?.headsign).toBe("ΠΑΡΑΣΚΕΥΗ");
+  });
   it("no match: null", () => {
     expect(matchDirection(dirs, "ΑΘΗΝΑ - ΓΛΥΦΑΔΑ")).toBeNull();
     expect(matchDirection(dirs, "")).toBeNull();

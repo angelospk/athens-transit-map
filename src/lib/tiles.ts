@@ -4,6 +4,8 @@
 import { cleanCity, isCityLive } from "./city";
 import type { FetchResult } from "./poller";
 import type { CityLive, CityVehicle } from "./types";
+import type { CityId } from "./cities";
+import { PAGE_CITY } from "./config";
 
 export interface Tile { z: number; x: number; y: number }
 export interface TileSet { z: number; tiles: Tile[] }
@@ -11,10 +13,16 @@ export interface View { north: number; south: number; east: number; west: number
 export interface TileData { updated_at: number; next_update_at: number; vehicles: CityVehicle[] }
 export type TileGet = (t: Tile, signal?: AbortSignal) => Promise<FetchResult>;
 
-const BOX = { south: 37.5, north: 38.5, west: 22.9, east: 24.5 };   // the only area with tiles
-const RANGE: Record<number, { x: [number, number]; y: [number, number] }> = {
-  9: { x: [288, 290], y: [196, 198] },
-  13: { x: [4617, 4653], y: [3145, 3174] },
+// The only area with tiles, per city: the backend's TileBox (athens-transit-rt internal/server/city.go).
+const BOXES: Record<CityId, { south: number; north: number; west: number; east: number }> = {
+  athens: { south: 37.5, north: 38.5, west: 22.9, east: 24.5 },
+  thessaloniki: { south: 40.3, north: 41.0, west: 22.6, east: 23.4 },
+};
+const BOX = BOXES[PAGE_CITY];
+// The tiles of the box at both zooms, as the backend computes them (tileRange).
+const rangeAt = (z: number) => {
+  const nw = tileOf(BOX.north, BOX.west, z), se = tileOf(BOX.south, BOX.east, z);
+  return { x: [nw.x, se.x] as [number, number], y: [nw.y, se.y] as [number, number] };
 };
 const PAD_M = 300;               // ≈ 30 s of driving: a vehicle about to enter the view is loaded
 const M_PER_DEG = 111_320;
@@ -35,7 +43,7 @@ export function tileOf(lat: number, lon: number, z: number): Tile {
 
 // Every tile from the north-west corner's tile to the south-east corner's, of the view padded and clamped to the box.
 export function viewTiles(v: View, zoom: number): TileSet {
-  const z = zoom >= DETAIL_ZOOM ? 13 : 9, r = RANGE[z];
+  const z = zoom >= DETAIL_ZOOM ? 13 : 9, r = rangeAt(z);
   const lat = (x: number) => clamp(x, BOX.south, BOX.north), lon = (x: number) => clamp(x, BOX.west, BOX.east);
   const perLon = (la: number) => M_PER_DEG * Math.cos(la * Math.PI / 180);
   const nw = tileOf(lat(v.north + PAD_M / M_PER_DEG), lon(v.west - PAD_M / perLon(v.north)), z);
