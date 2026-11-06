@@ -2,6 +2,7 @@
   import { tick } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
   import { directionGroups, focusGroup, otherDirection } from "../directions";
+  import { muniPlaces } from "../finder";
   import { clock, duration, fmtMinutes } from "../format";
     import { STALE_S, type AppState } from "../state.svelte";
   import Bell from "./Bell.svelte";
@@ -294,8 +295,8 @@
           {#if app.municipal}
             <label class="switch">
               <input type="checkbox" checked={app.municipalOn} onchange={e => app.setMunicipalOn(e.currentTarget.checked)} />
-              <span><b>Δημοτικά</b> <small>· {new Set(app.municipal.routes.map(r => r.municipality)).size} δήμοι</small><br />
-                <small>Τα λεωφορεία των δήμων, από το OpenStreetMap. Χωρίς ώρες: πάτα μια γραμμή για το πρόγραμμα του δήμου.</small></span>
+              <span><b>Δημοτικά</b> <small>· {muniPlaces(app.municipal.routes).length} δήμοι</small><br />
+                <small>{muniPlaces(app.municipal.routes).join(", ")}. Ώρες από το πρόγραμμα του δήμου, όχι live. Βρίσκεις γραμμές, στάσεις και δήμους στην αναζήτηση.</small></span>
             </label>
           {/if}
         </section>

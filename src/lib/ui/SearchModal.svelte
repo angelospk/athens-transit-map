@@ -7,7 +7,8 @@
   import { fetchV2Lines, fetchV2Stops } from "../api";
   import { placeSearch, type PlaceAnswer } from "../placeSearch";
   import { geocode, type Place } from "../trip";
-  import { chipOf, findLines, findStops, lineStopPoints, pushRecent, toggleChip, type Chip, type Recent, type StopEntry } from "../finder";
+  import { chipOf, findLines, findMuniLines, findMuniStops, findStops, lineStopPoints, pushRecent, toggleChip, type Chip, type MuniStopHit, type Recent, type StopEntry } from "../finder";
+  import type { MuniCard } from "../muniLine";
   import type { V2Line } from "../v2";
   import type { AppState } from "../state.svelte";
   import Icon from "./Icon.svelte";
@@ -35,6 +36,11 @@
   const stopById = $derived(new Map(stops.map(s => [s[0], s])));
   const foundLines = $derived(kind === "stops" || kind === "places" ? [] : findLines(lines, query, chips));
   const foundStops = $derived(kind === "lines" || kind === "places" ? [] : findStops(stops, query, chips));
+  // «Δημοτικά», while the layer is on: municipal lines (also by municipality, «Χολαργός») and named stops. Buses.
+  const muniOn = $derived(app.municipalOn && !!app.municipal && (!chips.length || chips.includes("bus")));
+  const foundMuniLines = $derived(!muniOn || kind === "stops" || kind === "places" ? [] : findMuniLines(app.muniCards, query));
+  const foundMuniStops = $derived(!muniOn || kind === "lines" || kind === "places" || !app.municipal ? []
+    : findMuniStops(app.municipal.stops, app.municipal.routes, query));
   // Places: no mode, so a mode chip hides them. Near the user when the map knows where they are.
   let geo = $state.raw<PlaceAnswer>({ q: "", places: [], busy: false });
   const places = placeSearch((q, signal) => geocode(q, signal, app.myPos ?? undefined), a => (geo = a));
@@ -107,6 +113,16 @@
     app.open({ kind: "stop", id, title: name });   // the map moves to the stop's pin (MapView)
   }
 
+  function openMuniLine(c: MuniCard) {
+    close();
+    app.open({ kind: "line", id: c.id, title: c.ref ?? c.name });
+  }
+  function openMuniStop(h: MuniStopHit) {
+    close();
+    app.open({ kind: "stop", id: `muni:${h.id.replace(/^osm:/, "")}`, title: h.name });
+  }
+  const town = (m: string) => m.replace(/^Δήμος\s+/, "");
+
   const native = (id: string) => id.slice(id.indexOf(":") + 1);
   function badge(id: string, label?: string | null) {
     const l = byId.get(id);
@@ -130,6 +146,8 @@
       const l = foundLines[0], s = foundStops[0];
       if (l) openLine(l.id, lineLabel(l));
       else if (s) openStop(s[0], s[1]);
+      else if (foundMuniLines[0]) openMuniLine(foundMuniLines[0]);
+      else if (foundMuniStops[0]) openMuniStop(foundMuniStops[0]);
       else if (foundPlaces[0]) planTo(foundPlaces[0]);
     }
   }
@@ -239,6 +257,29 @@
             <ul>{#each foundStops.slice(0, cap) as s (s[0])}{@render stopRow(s)}{/each}</ul>
             {#if foundStops.length > cap}{@render more(foundStops.length, "stops")}{/if}
           {/if}
+          {#if foundMuniLines.length || foundMuniStops.length}
+            <h3>Δημοτικά</h3>
+            <ul>
+              {#each foundMuniLines.slice(0, cap) as c (c.id)}
+                <li class="row">
+                  <button type="button" class="pick" onclick={() => openMuniLine(c)}>
+                    <span class="pill muni">{c.ref ?? "Δ"}</span>
+                    <span class="name">{c.name}<small>{town(c.municipality)} · πρόγραμμα, όχι live</small></span>
+                  </button>
+                </li>
+              {/each}
+              {#each foundMuniStops.slice(0, cap) as h (h.id)}
+                <li class="row">
+                  <button type="button" class="pick" onclick={() => openMuniStop(h)}>
+                    <span class="modes"><Icon name="bus" /></span>
+                    <span class="name">{h.name}<small>Δημοτική στάση{h.municipality ? ` · ${town(h.municipality)}` : ""}</small></span>
+                  </button>
+                </li>
+              {/each}
+            </ul>
+            {#if foundMuniLines.length > cap}{@render more(foundMuniLines.length, "lines")}{/if}
+            {#if foundMuniStops.length > cap}{@render more(foundMuniStops.length, "stops")}{/if}
+          {/if}
           {#if foundPlaces.length}
             <h3>Μέρη</h3>
             <ul>{#each foundPlaces.slice(0, cap) as p (`${p.kind}|${p.label}|${p.pts[0].join()}`)}{@render placeRow(p)}{/each}</ul>
@@ -246,7 +287,7 @@
           {/if}
           {#if placesBusy}
             <p class="muted">Αναζήτηση μερών…</p>
-          {:else if !foundLines.length && !foundStops.length && !foundPlaces.length}
+          {:else if !foundLines.length && !foundStops.length && !foundPlaces.length && !foundMuniLines.length && !foundMuniStops.length}
             {@const short = query.trim().length < (kind === "places" ? 3 : 2)}
             <p class="muted">{short && (kind === "all" || kind === "places") ? "Γράψε λίγο ακόμα." : kind === "places" && chips.length ? "Τα μέρη δεν έχουν μέσο: πάτα «Όλα»." : `Τίποτα για «${query.trim()}».`}</p>
           {/if}
@@ -283,6 +324,7 @@
     background: none; color: inherit; font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
   .pick:hover { background: var(--control); }
   .pill { flex: none; min-width: 40px; padding: 2px 8px; border-radius: 10px; background: var(--c); color: var(--t); font-weight: 700; text-align: center; font-size: 13px; }
+  .pill.muni { --c: #6b5b8f; --t: #fff; }
   .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .name small { display: block; color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
   .go { flex: none; color: var(--accent); font-size: 13px; font-weight: 600; white-space: nowrap; }

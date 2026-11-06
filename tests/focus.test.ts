@@ -7,7 +7,7 @@ import type { TripIndex } from "../src/lib/trip";
 const stopIx: TripIndex = { v: "t", s: [["Α", 37.98, 23.7, "100"], ["Β", 37.99, 23.71, "101"]], l: {} };
 const metro: MetroData = { source: "t", lines: [], stations: [{ name: "Σύνταγμα", lon: 23.735, lat: 37.975, lines: ["M2"] }] };
 const suburban: SuburbanData = { corridors: {}, stations: [{ id: "ATH", name: "Αθήνα", en: "Athens", lat: 37.99, lon: 23.72, corridors: [] }] };
-const none = { busStop: null, stopIx, metroStation: null, metro, railStation: null, suburban };
+const none = { busStop: null, stopIx, metroStation: null, metro, railStation: null, suburban, muniStop: null };
 
 describe("stopPin", () => {
   it("the open bus stop's point, as [lon, lat]", () => {
@@ -18,6 +18,9 @@ describe("stopPin", () => {
   });
   it("the open suburban station's point", () => {
     expect(stopPin({ ...none, railStation: "ATH" })).toEqual([23.72, 37.99]);
+  });
+  it("the open municipal stop's point", () => {
+    expect(stopPin({ ...none, muniStop: [23.78, 38.03] })).toEqual([23.78, 38.03]);
   });
   it("null with no stop open, or one whose data is not in yet or unknown", () => {
     expect(stopPin(none)).toBeNull();

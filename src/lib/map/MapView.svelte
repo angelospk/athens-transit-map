@@ -21,6 +21,7 @@
   import { shapeLength, stopOffsets } from "../predict";
   import { loadSpeed, SPEED_STOPS, type SpeedData } from "../speed";
   import { municipalFC } from "../municipal";
+    import { stitch } from "../muniLine";
   import { resolveDark } from "../theme";
   import type { Variant } from "../types";
   import type { AppState } from "../state.svelte";
@@ -30,6 +31,7 @@
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
   import { STOPS_ZOOM, busStopsFC } from "../stops";
   import { STOP_ZOOM, VEHICLE_ZOOM, focusZoom, sheetReserve, stopPin } from "../focus";
+  import type { Card } from "../cards";
   import { busStopCard, busVehicleCard, railStationCard, routeCard, stationCard } from "../legacy";
   // Rail stations show from these zooms, small like the bus stops (from STOPS_ZOOM); there are fewer of them.
   const RAIL_ZOOM = 13, SUBURBAN_ZOOM = 12;
@@ -353,6 +355,7 @@
   // «Δημοτικά» (municipal.ts): the municipal bus routes, thin, dashed and muted, under every other layer of ours
   // but the speeds; their stops from zoom 14. Hidden while the switch is off; empty until the data loads.
   const MUNI = "#8c7fa6";
+  const MUNI_FOCUS = "#4f3d7a";
   function addMunicipal(m: MlMap) {
     const vis = app.municipalOn ? "visible" : "none";
     m.addSource("municipal", { type: "geojson", data: app.municipal ? municipalFC(app.municipal) : EMPTY });
@@ -365,24 +368,37 @@
     m.addLayer({ id: "municipal-stop", type: "circle", source: "municipal", filter: ["==", ["get", "kind"], "stop"], minzoom: 14,
       layout: { visibility: vis },
       paint: { "circle-radius": 3.5, "circle-color": "#fff", "circle-stroke-color": MUNI, "circle-stroke-width": 1.5 } });
+    // The open municipal card (MuniLineCard): its direction, solid, and its buses as the timetable implies them,
+    // hollow, so they never pass for live ones. Shown with the layer switch off too.
+    // Darker than the dashed lines and on a white casing, as a picked OASA line, so it never blends with them;
+    // the other municipal lines fade while it is open (the effect on app.muniFocus).
+    m.addSource("muni-focus", { type: "geojson", data: muniFocusFC() });
+    m.addLayer({ id: "muni-focus-casing", type: "line", source: "muni-focus", filter: ["==", ["get", "kind"], "line"],
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": "#fff", "line-width": ["interpolate", ["linear"], ["zoom"], 11, 6, 14, 9, 17, 12] } });
+    m.addLayer({ id: "muni-focus-line", type: "line", source: "muni-focus", filter: ["==", ["get", "kind"], "line"],
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": MUNI_FOCUS, "line-width": ["interpolate", ["linear"], ["zoom"], 11, 3.5, 14, 5.5, 17, 7.5] } });
+    m.addLayer({ id: "muni-focus-bus", type: "circle", source: "muni-focus", filter: ["==", ["get", "kind"], "bus"],
+      paint: { "circle-radius": 7, "circle-color": "#fff", "circle-stroke-color": MUNI_FOCUS, "circle-stroke-width": 3 } });
+  }
+  function muniFocusFC(): GeoJSON.FeatureCollection {
+    const f = app.muniFocus;
+    if (!f) return EMPTY as GeoJSON.FeatureCollection;
+    return { type: "FeatureCollection", features: [
+      { type: "Feature", properties: { kind: "line" },
+        geometry: { type: "LineString", coordinates: stitch(f.route.shape).map(([lat, lon]) => [lon, lat]) } },
+      ...f.vehicles.map(v => ({ type: "Feature" as const, properties: { kind: "bus" }, geometry: { type: "Point" as const, coordinates: [v.lon, v.lat] } })),
+    ] };
   }
   const MUNI_LAYERS = ["municipal-line", "municipal-hit", "municipal-stop"];
-  let closePopup = () => {};   // the map's one popup (set on mount): a municipal one must go with the layer
 
-  // A tapped municipal route or stop: its municipality and a link to the municipality's timetable page.
-  function municipalInfo(p: Record<string, unknown>) {
-    const el = document.createElement("div");
-    el.className = "munipop";
-    const add = (text: string, tag = "div") => el.appendChild(Object.assign(document.createElement(tag), { textContent: text }));
-    add("Δημοτική συγκοινωνία", "small");
-    add(String(p.m), "b");
-    if (p.kind === "stop") { add(String(p.name)); if (p.lines) add(`Γραμμές: ${p.lines}`); }
-    else add(String(p.title));
-    if (p.url) Object.assign(el.appendChild(document.createElement("a")),
-      { href: String(p.url), target: "_blank", rel: "noopener", textContent: "Πρόγραμμα στον δήμο ›" });
-    else add("Δεν έχουμε τη σελίδα του προγράμματος.", "small");
-    add("Χωρίς ώρες ή ζωντανές θέσεις · © OpenStreetMap", "small");
-    return el;
+  // The card of a municipal route (MuniLineCard), with the route's direction chosen.
+  function muniCardOf(rid: string): Card | null {
+    const c = app.muniCards.find(x => x.routes.some(r => r.id === rid));
+    if (!c) return null;
+    const d = c.routes.findIndex(r => r.id === rid);
+    return { kind: "line", id: c.id, title: c.ref ? `${c.ref} · ${c.name}` : c.name, ...(d === 1 ? { dir: 1 as const } : {}) };
   }
 
   function addLayers(m: MlMap) {
@@ -831,7 +847,6 @@
     m.on("moveend", e => (ticked(e) ? reportFollow() : reportSoon()));
 
     const popup = new Popup({ closeButton: false, offset: 10, maxWidth: "240px" });
-    closePopup = () => { if (popup.getElement()?.querySelector(".munipop")) popup.remove(); };
     m.on("load", () => {
       addAll(m);
       if (untrack(() => dark) !== styleDark) restyle(m, untrack(() => dark));   // the theme changed while the map loaded
@@ -926,11 +941,11 @@
         const near = (r: number) => m.queryRenderedFeatures([[e.point.x - r, e.point.y - r], [e.point.x + r, e.point.y + r]],
           { layers: ["municipal-stop", "municipal-hit"] });
         const hits = near(10), muni = hits.find(f => f.properties.kind === "stop") ?? hits[0];
-        if (muni) {
-          popup.setLngLat(muni.geometry.type === "Point" ? (muni.geometry.coordinates as [number, number]) : e.lngLat)
-            .setDOMContent(municipalInfo(muni.properties)).addTo(m);
-          return;
-        }
+        // A stop or a line opens its card, as the bus stops and lines do (MuniStopCard, MuniLineCard).
+        const c = muni?.properties.kind === "stop"
+          ? { kind: "stop" as const, id: `muni:${String(muni.properties.sid).replace(/^osm:/, "")}`, title: String(muni.properties.name) }
+          : muni ? muniCardOf(String(muni.properties.rid)) : null;
+        if (c) { popup.remove(); return app.open(c); }
       }
       const box: [[number, number], [number, number]] = [[e.point.x - 8, e.point.y - 8], [e.point.x + 8, e.point.y + 8]];
       const seg = app.speedOn ? m.queryRenderedFeatures(box, { layers: ["speed"] })[0] : undefined;
@@ -1110,13 +1125,19 @@
 
   $effect(() => {
     const vis = app.municipalOn ? "visible" : "none";
-    if (vis === "none") closePopup();
     if (loaded) for (const id of MUNI_LAYERS) map!.setLayoutProperty(id, "visibility", vis);
   });
 
   $effect(() => {
     const d = app.municipal;
     if (loaded) (map!.getSource("municipal") as GeoJSONSource).setData(d ? municipalFC(d) : EMPTY);
+  });
+
+  $effect(() => {
+    const focus = !!app.muniFocus;
+    if (!loaded) return;
+    (map!.getSource("muni-focus") as GeoJSONSource).setData(muniFocusFC());
+    map!.setPaintProperty("municipal-line", "line-opacity", focus ? 0.2 : 0.75);
   });
 
   $effect(() => {
@@ -1400,10 +1421,6 @@
   @media (prefers-reduced-motion: reduce) { :global(.stop-pin.drop svg) { animation: none; } }
   :global(.segpop b) { font-size: 15px; }
   :global(.segpop div) { font-size: 12px; }
-  :global(.munipop) { display: grid; gap: 2px; }
-  :global(.munipop b) { font-size: 14px; }
-  :global(.munipop small) { font-size: 11px; opacity: 0.75; }
-  :global(.munipop a) { display: inline-block; padding: 6px 0; font-weight: 600; color: var(--accent); }
   .nogl { position: absolute; inset: auto 16px 16px; padding: 12px 14px; border-radius: 12px;
     background: var(--warn-bg); box-shadow: var(--shadow); }
 </style>

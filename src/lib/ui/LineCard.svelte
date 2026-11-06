@@ -16,7 +16,7 @@
   let { app }: { app: AppState } = $props();
 
   const top = $derived(app.stack.at(-1));
-  const card = $derived(top?.kind === "line" ? top : null);
+  const card = $derived(top?.kind === "line" && !top.id.startsWith("muni:") ? top : null);   // muni: MuniLineCard
   const native = (id: string) => id.slice(id.indexOf(":") + 1);
 
   let detail = $state.raw<LineDetail | null>(null);

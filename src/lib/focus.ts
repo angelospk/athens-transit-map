@@ -13,6 +13,7 @@ export interface PinSource {
   busStop: number | null; stopIx: TripIndex | null;
   metroStation: string | null; metro: MetroData | null;
   railStation: string | null; suburban: SuburbanData | null;
+  muniStop: LngLat | null;   // a municipal stop's (MuniStopCard)
 }
 
 // The point of the open bus stop, metro/tram station or suburban station; null: none, or its data is not in.
@@ -25,6 +26,7 @@ export function stopPin(p: PinSource): LngLat | null {
     const s = p.metro?.stations.find(s => s.name === p.metroStation);
     return s ? [s.lon, s.lat] : null;
   }
+  if (p.muniStop) return p.muniStop;
   if (p.railStation) {
     const s = p.suburban?.stations.find(s => s.id === p.railStation);
     return s ? [s.lon, s.lat] : null;
