@@ -54,6 +54,10 @@ The positions in a board are real coordinates: on Heraklion stop 1235 the bus of
 - Patras: the page, lines and stops load; no bus (no night service). Live data in Patras is not yet
   seen: check it in daytime (section 6).
 - The page calls only the bridge for transit data (no call to transit.haroldpoi.dev).
+- Daytime coverage, 2026-11-06 08:08 Athens: lines with a trip running by the timetable vs lines with
+  a bus on the map. Heraklion: 12 of 15 lines seen, 34 buses (not seen: 91, 92, 93; line 50 one bus
+  of 3). Patras: 19 of 21 lines seen, 49 buses (not seen: 606, 803). The probes find most buses;
+  the missed lines need a probe check (short routes, or trips in the timetable that do not run).
 
 Timetable: the bridge has every trip of every route per weekday (`trips/route`), so stop cards also
 show the scheduled runs that no live bus covers, `/v1/lines/{id}/schedule` gives the day's
@@ -77,7 +81,7 @@ rounds (section 8).
 | Limit | Why | Way out |
 |---|---|---|
 | Bus positions up to ~2 min old, moved by estimate | no fleet call; 1 req/s for 116 probe stops | e-analysis gives a fleet or per-line call (email, section 7), or a higher rate (their permission) |
-| Not yet known: does a board list every bus of the route, or only the next ones? | at night only line 01 runs | daytime check (section 6); if not, add probes per route |
+| 3 of 15 lines in Heraklion and 2 of 21 in Patras had no bus seen at 08:08 | unknown: probe placement, or timetable trips that do not run | look at those routes' boards; add a probe per route if needed |
 | No fleet numbers; the vehicle card shows a trip key (`#20261106_31018_…`) | citybus `vehicleCode` is a trip key | hide the id for citybus cities (small web change) |
 | No delay («χωρίς δρομολόγιο») | live buses are not matched to timetable runs | match by route and time (bridge work, M) |
 | Timetable per weekday only; no public holidays | the API has days 0-6, no dates | holiday table, as athens-transit-rt has |
@@ -93,10 +97,8 @@ With 1 req/s, 2-3 cities are the useful limit.
 
 ## 6. Waits for Harold (one place)
 
-1. **Check in daytime** (any time after 07:00): open the preview on a device with Tailscale,
-   `?city=patras` and `?city=heraklion`, select 2-3 busy lines, and look at
-   `https://minipc.tail11f3d4.ts.net:10446/` (`buses`, `empty` per city). Expected: buses on most
-   lines, `empty` well under `boards`.
+1. **Look at it yourself**: open the preview on a device with Tailscale, `?city=patras` and
+   `?city=heraklion`, and select 2-3 busy lines. (The coverage numbers in section 3 are measured.)
 2. **Send the email to e-analysis** (draft below), or decide not to ask. Public use without an answer
    is a risk: the API has no published terms (`greek-cities.md` 2.1).
 3. **Decide the production path** after PR #44 is merged:
