@@ -84,7 +84,7 @@ rounds (section 8).
 |---|---|---|
 | Bus positions up to ~2 min old, moved by estimate | no fleet call; 1 req/s for 116 probe stops | e-analysis gives a fleet or per-line call (email, section 7), or a higher rate (their permission) |
 | Heraklion 91, 92, 93: no live buses | citybus.gr itself has no live rows for them (timetable only) | none; the stop card shows their timetable |
-| School runs (Heraklion 50, Patras 606, 803): not seen at 08:08 | not known: no GPS, or the runs did not run | check their boards during a school run (about 13:00) |
+| School runs (Heraklion 50, Patras 606, 803): not seen at 08:08 | not known: no GPS, or the runs did not run | check their boards during a school run (about 13:00). Checked at 13:10 on 2026-11-06: the Patras 606 school return run (route 6063, 13:00-13:26) had no vehicle on the map and only timetable rows (no live row) at the 3 stops still ahead (676, 6075, 484), so that school run sends no position to citybus.gr; Heraklion 50 had no run in progress (next at 13:30), and the Patras 803 run (route 8031) had ended at 13:09, so those two stay unchecked. |
 | No fleet numbers; the vehicle card shows a trip key (`#20261106_31018_…`) | citybus `vehicleCode` is a trip key | hide the id for citybus cities (small web change) |
 | No delay («χωρίς δρομολόγιο») | live buses are not matched to timetable runs | match by route and time (bridge work, M) |
 | Timetable per weekday only; no public holidays | the API has days 0-6, no dates | holiday table, as athens-transit-rt has |
