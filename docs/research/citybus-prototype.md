@@ -138,6 +138,10 @@ staseis.gr · github.com/angelospk
 
 ## 7. Later (not started)
 
+- Before a public deploy: a line with no live bus for 7 days gets the label «μόνο πρόγραμμα, χωρίς
+  θέση λεωφορείου», and its probe stops leave the rotation (fewer requests). Today this would cover
+  91/92/93 (Heraklion) and 606 (Patras). It would not cover 50 (1 of 3 runs live at 08:08, 0 of 2
+  at 13:30) or 803 (live at 14:25). Agreed with Harold 2026-11-06.
 - Match live buses to timetable runs: delays, run cards with live times, `next_stop` from the run.
 - A per-city stop index for the map and «Κοντά σου» (shared with Thessaloniki).
 - Decompile one citybus app (`gr.citybus.urbantransit.irakleio`) to look for a per-line or fleet
