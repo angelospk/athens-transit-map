@@ -55,7 +55,7 @@
     <button type="button" class="find" onclick={onsearch}>
       <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
         <circle cx="8.5" cy="8.5" r="5.5" /><path d="M12.6 12.6L17 17" />
-      </svg><span class="lbl">Αναζήτηση γραμμής ή στάσης</span>
+      </svg><span class="lbl long">Αναζήτηση γραμμής ή στάσης</span><span class="lbl short">Βρες γραμμή ή στάση</span>
     </button>
   {/if}
 
@@ -96,6 +96,10 @@
   .find { max-width: 100%; }
   .find .lbl { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }   /* one line, even in a wide fallback font */
   .find:hover { background: var(--control-hover); }
+  /* On a phone the long label does not fit beside the panel's buttons (about 185 px for 165): a shorter one. Only one
+     shows, so the button's name is the shown text. */
+  .find .short { display: none; }
+  @media (max-width: 440px) { .find .long { display: none; } .find .short { display: inline; } }
   .quick, .tip { grid-column: 1 / -1; }
   .chip { display: inline-flex; align-items: stretch; min-height: 32px; border-radius: 16px; background: var(--c); color: var(--t); }
   .chip button { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; color: inherit; cursor: pointer; }

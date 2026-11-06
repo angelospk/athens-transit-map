@@ -93,7 +93,7 @@
 
   const boardOf = (r: FetchResult | undefined) => {
     const b = r?.body as StopBoard | null | undefined;
-    return r?.status === 200 && b && Array.isArray(b.arrivals) ? b : null;
+    return r?.status === 200 && b && typeof b.stop === "object" && b.stop && Array.isArray(b.arrivals) ? b : null;
   };
 
   $effect(() => {
@@ -271,6 +271,9 @@
   .across { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; text-underline-offset: 3px; }
   .back { font-weight: 500; color: var(--muted); }
   .across:hover { text-decoration: underline; }
+  /* A finger-sized hit area (about 39 px high) around the one-line link, the look unchanged. */
+  .across { position: relative; }
+  .across::after { content: ""; position: absolute; inset: -10px -4px; }
   .seg { display: flex; margin: 0 0 4px; border: 1px solid var(--border); border-radius: 20px; overflow: hidden; }
   .seg button { flex: 1; min-height: 38px; padding: 0 8px; border: 0; background: none; color: var(--fg); font: inherit; font-size: 13px;
     font-weight: 600; cursor: pointer; white-space: nowrap; }
