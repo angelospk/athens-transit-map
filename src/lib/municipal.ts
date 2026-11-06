@@ -39,7 +39,7 @@ export async function loadMunicipal(): Promise<MunicipalData | null> {
 }
 
 // One MultiLineString per route (kind "line") and one Point per stop (kind "stop"), in [lon, lat]. Properties:
-// m (municipality), url (its timetable page, "" when unknown), title and rid (a route's) or name, lines and rids
+// m (municipality), url (its timetable page, "" when unknown), title and rid (a route's) or sid, name, lines and rids
 // (a stop's; rids comma-joined: map properties hold no arrays).
 export function municipalFC(d: MunicipalData): GeoJSON.FeatureCollection {
   const features: GeoJSON.Feature[] = [];
@@ -59,7 +59,7 @@ export function municipalFC(d: MunicipalData): GeoJSON.FeatureCollection {
   for (const [id, s] of at) {
     const stop = d.stops[id];
     if (!stop) continue;
-    features.push({ type: "Feature", properties: { kind: "stop", m: s.m, url: s.url, name: stop.name ?? "Στάση", lines: s.lines.join(", "), rids: s.rids.join(",") },
+    features.push({ type: "Feature", properties: { kind: "stop", sid: id, m: s.m, url: s.url, name: stop.name ?? "Στάση", lines: s.lines.join(", "), rids: s.rids.join(",") },
       geometry: { type: "Point", coordinates: [stop.lon, stop.lat] } });
   }
   return { type: "FeatureCollection", features };

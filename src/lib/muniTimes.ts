@@ -13,7 +13,7 @@ export type Service = {
   first?: string;
   last?: string;
 };
-export type MuniLine = { routes: string[]; ref: string | null; name: string; services: Service[]; note?: string };
+export type MuniLine = { routes: string[]; ref: string | null; name: string; services: Service[]; group?: string; note?: string };
 export type Watch = { url: string; kind: "file" | "times"; sha256: string };
 export type MuniTimetable = {
   municipality: string; checked: string; valid: string | null; source: string; watch: Watch[]; lines: MuniLine[];
@@ -105,6 +105,10 @@ function readLine(v: unknown): MuniLine | null {
     services.push(s);
   }
   const line: MuniLine = { routes, ref: isText(v.ref) ? v.ref : null, name: v.name, services };
+  if (v.group !== undefined) {
+    if (!isText(v.group)) return null;
+    line.group = v.group;
+  }
   if (v.note !== undefined) {
     if (!isText(v.note)) return null;
     line.note = v.note;
