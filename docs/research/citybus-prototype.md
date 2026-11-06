@@ -9,7 +9,7 @@ buses), unless marked otherwise.
 
 | Part | Where | State |
 |---|---|---|
-| `citybus-bridge` (Bun, TypeScript) | `~/citybus-bridge` on the mini PC, local git cc37f5e (not on GitHub) | user service `citybus-bridge`, `127.0.0.1:8102`, tailnet only: `https://minipc.tail11f3d4.ts.net:10448/<city>/...` (was :10446 until 2026-11-06, when another service took that port). Cities on: Heraklion, Patras, Agrinio (`CITIES` in the unit file) |
+| `citybus-bridge` (Bun, TypeScript) | `~/citybus-bridge` on the mini PC, local git c73cc18 (not on GitHub) | user service `citybus-bridge`, `127.0.0.1:8102`, tailnet only: `https://minipc.tail11f3d4.ts.net:10448/<city>/...` (was :10446 until 2026-11-06, when another service took that port). Cities on: Heraklion, Patras, Agrinio, Alexandroupoli (`CITIES` in the unit file) |
 | Web branch | `feat/citybus-cities` (on top of `feat/thessaloniki-live`, PR #44), worktree `~/atm-citybus` | pushed (bb96e98), no PR |
 | Preview | build of that branch, `https://minipc.tail11f3d4.ts.net:10447/?city=heraklion` (or `?city=patras`) | tailnet only; needs Tailscale on the device |
 
@@ -92,6 +92,11 @@ more than 1 req/s in all is accepted). Before that change the whole process made
   index page `citybus.gr` (Trikala and Yper-Xanthi have 0 lines). Each one is one name in `CITIES`.
   Agrinio (first in the index) has run since 15:45: 14 lines, 2 buses live at 15:51 (lines 07, 09),
   61 of 73 boards empty; Agrinio has no timetables on citybus.gr, so coverage cannot be compared.
+  Alexandroupoli (second) has run since 19:48: 18 lines, 39 probes, cycle 36-39 s, 12-14 buses at
+  19:52-20:01, live on 8 of 18 lines (01, 04, 26, 38, A1-A4).
+- A bus that no board lists any more leaves the map after 120 s (`MAX_AGE`, was 300 s when one
+  rotation took ~2 min). So no position on the map is older than 2 min. Measured 19:58-20:01, three
+  samples 30 s apart: oldest position 7-120 s in all four cities.
 - The page token: one page read per city per 6 h (and again on a 401).
 
 ## 5. Limits: what cannot be done (now)
