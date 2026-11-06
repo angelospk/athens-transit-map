@@ -9,7 +9,7 @@ buses), unless marked otherwise.
 
 | Part | Where | State |
 |---|---|---|
-| `citybus-bridge` (Bun, TypeScript) | `~/citybus-bridge` on the mini PC, local git d7cafae (not on GitHub) | user service `citybus-bridge`, `127.0.0.1:8102`, tailnet only: `https://minipc.tail11f3d4.ts.net:10446/<city>/...` |
+| `citybus-bridge` (Bun, TypeScript) | `~/citybus-bridge` on the mini PC, local git cc37f5e (not on GitHub) | user service `citybus-bridge`, `127.0.0.1:8102`, tailnet only: `https://minipc.tail11f3d4.ts.net:10448/<city>/...` (was :10446 until 2026-11-06, when another service took that port). Cities on: Heraklion, Patras, Agrinio (`CITIES` in the unit file) |
 | Web branch | `feat/citybus-cities` (on top of `feat/thessaloniki-live`, PR #44), worktree `~/atm-citybus` | pushed (bb96e98), no PR |
 | Preview | build of that branch, `https://minipc.tail11f3d4.ts.net:10447/?city=heraklion` (or `?city=patras`) | tailnet only; needs Tailscale on the device |
 
@@ -72,10 +72,26 @@ rounds (section 8).
 
 ## 4. Load on citybus.gr
 
+Changed 2026-11-06 15:50 (Harold: positions at most 2 min old in every city, 1 min if possible;
+more than 1 req/s in all is accepted). Before that change the whole process made 1 req/s.
+
 - Static data: about 2 requests per route plus 2 per city, once a day (Heraklion ~220, Patras ~190),
   cached on disk (`~/.local/state/citybus-bridge/<city>/static.json`, 57 and 75 MB of raw rows).
-- Live: 1 request per second in all, about 3,600 per hour, whatever the number of users. More users
-  add at most one request per opened stop per 15 s, inside the same 1 req/s queue.
+- Live: one paced queue per city. Each city sets its gap so one rotation over its probe stops takes
+  about 60 s: gap = 60 s / (probes + timetable-only lines + 1), at least 250 ms (4 req/s), at most
+  1000 ms (1 req/s). Up to 3 stop boards wait for an answer at once, so a slow answer does not
+  stretch the rotation. Measured 15:53: Heraklion 55 probes, 1000 ms, cycle 52 s; Patras 61 probes,
+  967 ms, 56 s; Agrinio 73 probes, 810 ms, 59 s; oldest sighting 45-58 s. So about 1 req/s per city,
+  3 req/s in all for 3 cities, whatever the number of users. More users add at most one request per
+  opened stop per 15 s, inside the city's queue.
+- Line health: per city `health.json` keeps each line's last live sighting and the day it entered
+  the model; `GET /<city>/v1/health` shows it. A line with no live bus for 7 tracked days leaves the
+  rotation (fewer requests) and gets one check board per cycle, so it comes back when it starts
+  sending GPS. Nothing is skipped before 2026-11-13 (tracking started 2026-11-06).
+- More cities: `CONFS` in `src/server.ts` lists all 28 non-empty citybus.gr sites in the order of the
+  index page `citybus.gr` (Trikala and Yper-Xanthi have 0 lines). Each one is one name in `CITIES`.
+  Agrinio (first in the index) has run since 15:45: 14 lines, 2 buses live at 15:51 (lines 07, 09),
+  61 of 73 boards empty; Agrinio has no timetables on citybus.gr, so coverage cannot be compared.
 - The page token: one page read per city per 6 h (and again on a 401).
 
 ## 5. Limits: what cannot be done (now)
@@ -139,7 +155,8 @@ staseis.gr · github.com/angelospk
 ## 7. Later (not started)
 
 - Before a public deploy: a line with no live bus for 7 days gets the label «μόνο πρόγραμμα, χωρίς
-  θέση λεωφορείου», and its probe stops leave the rotation (fewer requests). Today this would cover
+  θέση λεωφορείου» in the web (the bridge part, skipping its probes, runs since 2026-11-06; see 4,
+  `/v1/health`). Today this would cover
   91/92/93 (Heraklion) and 606 (Patras). It would not cover 50 (1 of 3 runs live at 08:08, 0 of 2
   at 13:30) or 803 (live at 14:25). Agreed with Harold 2026-11-06.
 - Match live buses to timetable runs: delays, run cards with live times, `next_stop` from the run.
