@@ -3,7 +3,6 @@
 // live departure board of a station through the backend (railway.gov.gr has no CORS):
 // GET /v1/rail/suburban/stations/{id}/departures.
 
-import { API_BASE } from "./config";
 
 // path: [lat, lon] points, as the app's file has them. stations: in line order.
 export interface Corridor { name: string; color: string; stations: string[]; path: [number, number][] }
@@ -14,7 +13,6 @@ export interface Train { train: string; from: string; to: string; t: string; del
 // observed, the train is under way (0 too: on time); else the time is the timetable's.
 export interface TrainRow { t: string; expected: string; delay: number | null; to: string; platform: string | null; in: number; live: boolean }
 
-export const suburbanUrl = (id: string) => `${API_BASE}/v1/rail/suburban/stations/${encodeURIComponent(id)}/departures?n=10`;
 
 export async function loadSuburban(): Promise<SuburbanData> {
   const r = await fetch(`${import.meta.env.BASE_URL}suburban.json`);

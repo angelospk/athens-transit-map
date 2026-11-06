@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boardNote, suburbanFC, suburbanUrl, trainRows, type SuburbanData, type Train } from "../src/lib/suburban";
+import { boardNote, suburbanFC, trainRows, type SuburbanData, type Train } from "../src/lib/suburban";
 
 const data: SuburbanData = {
   corridors: {
@@ -23,12 +23,6 @@ describe("suburbanFC", () => {
     expect(props(fc, "station").map(p => [p.id, p.name, p.color, p.sel])).toEqual([
       ["p", "Πειραιάς", "#D9822B", false], ["a", "Αγ. Ανάργυροι", "#D9822B", true], ["x", "Αεροδρόμιο", "#7E57C2", false],
     ]);
-  });
-});
-
-describe("suburbanUrl", () => {
-  it("asks the station's next 10 trains", () => {
-    expect(suburbanUrl("6928c3c150ab5bc72b39cee5")).toBe("https://transit.haroldpoi.dev/v1/rail/suburban/stations/6928c3c150ab5bc72b39cee5/departures?n=10");
   });
 });
 

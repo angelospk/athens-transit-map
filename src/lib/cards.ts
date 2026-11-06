@@ -140,6 +140,9 @@ export class CardNav {
     if (this.depth > 0) this.go(-this.depth, null);
   }
 
+  // A move is in flight: the top card is about to change.
+  get busy(): boolean { return this.moving; }
+
   // Call on every popstate with the history state of the entry now showing.
   popped(state: unknown): void {
     const at = parseState(state), land = this.landing;

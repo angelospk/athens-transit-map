@@ -104,6 +104,9 @@
   li .src { margin-top: 4px; color: var(--fg); }
   .code { margin: 12px 0 0; font-size: 13px; }
   a { color: var(--accent); }
+  /* The source links stand alone on their lines: a finger-sized hit area, the look unchanged. */
+  .src a, .code a { position: relative; }
+  .src a::after, .code a::after { content: ""; position: absolute; inset: -8px 0; }
   @media (max-width: 719px) {
     .layers { grid-template-columns: minmax(0, 1fr); gap: 12px; justify-items: center; }
     ol { grid-template-rows: none; gap: 16px; justify-self: stretch; }

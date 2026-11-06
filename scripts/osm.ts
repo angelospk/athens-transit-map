@@ -87,3 +87,25 @@ export function osmPaths(elements: OsmElement[]): Map<string, LngLat[][]> {
   return new Map([...byLine].map(([id, set]) =>
     [id, joinWays([...set].map(w => ways.get(w)!.map((p): LngLat => [round(p.lon), round(p.lat)]))).map(p => simplify(p, SIMPLIFY_M))]));
 }
+
+// GTFS station points sit beside the drawn track, up to tens of metres. A station of one line within maxM of its
+// line's track is moved onto the nearest point of it; an interchange (several lines) stays where it is.
+export function snapStations<S extends { lon: number; lat: number; lines: string[] }>(
+  stations: S[], lines: { id: string; paths: LngLat[][] }[], maxM: number): S[] {
+  return stations.map(s => {
+    const line = s.lines.length === 1 ? lines.find(l => l.id === s.lines[0]) : undefined;
+    if (!line) return s;
+    const kx = 111_320 * Math.cos((s.lat * Math.PI) / 180), ky = 110_540;
+    let best: { d: number; at: LngLat } | null = null;
+    for (const path of line.paths)
+      for (let i = 1; i < path.length; i++) {
+        const ax = (path[i - 1][0] - s.lon) * kx, ay = (path[i - 1][1] - s.lat) * ky;
+        const bx = (path[i][0] - s.lon) * kx, by = (path[i][1] - s.lat) * ky;
+        const dx = bx - ax, dy = by - ay, len = dx * dx + dy * dy;
+        const t = len ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len)) : 0;
+        const x = ax + t * dx, y = ay + t * dy, d = Math.hypot(x, y);
+        if (!best || d < best.d) best = { d, at: [round(s.lon + x / kx), round(s.lat + y / ky)] };
+      }
+    return best && best.d <= maxM ? { ...s, lon: best.at[0], lat: best.at[1] } : s;
+  });
+}
