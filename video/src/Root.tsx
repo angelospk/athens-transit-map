@@ -6,6 +6,7 @@ import { FPS } from "./tokens";
 import { FilmA, DURATION_A } from "./promo/FilmA";
 import { FilmB, DURATION_B } from "./promo/FilmB";
 import { FilmC, DURATION_C } from "./promo/FilmC";
+import { Daily, DURATION_DAILY, DAILY_FPS, dailyDefaults } from "./promo/Daily";
 
 export const Root: React.FC = () => (
   <>
@@ -19,5 +20,6 @@ export const Root: React.FC = () => (
     <Composition id="promo-c" component={FilmC} durationInFrames={DURATION_C} fps={FPS} width={1080} height={1920} defaultProps={{ audio: "promo-c.wav" }} />
     <Composition id="promo-c-silent" component={FilmC} durationInFrames={DURATION_C} fps={FPS} width={1080} height={1920} defaultProps={{}} />
     <Composition id="promo-b-silent" component={FilmB} durationInFrames={DURATION_B} fps={FPS} width={1920} height={1080} defaultProps={{}} />
+    <Composition id="daily" component={Daily} durationInFrames={DURATION_DAILY} fps={DAILY_FPS} width={1080} height={1920} defaultProps={dailyDefaults} />
   </>
 );
