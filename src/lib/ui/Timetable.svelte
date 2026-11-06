@@ -2,12 +2,15 @@
   import { tick } from "svelte";
   import { fetchSchedule } from "../api";
   import { athensClock, matchDirection, timetableView, type Schedule } from "../timetable";
+  import { CITIES } from "../cities";
+  import { PAGE_CITY } from "../config";
 
   // Today's runs of a route's direction (shown only while open): gone ones muted, a missed one (no bus
   // left the start for it) struck through, the next three bold. Asked again every 60 s (the server's cache).
   let { line, headsign, now }: { line: string; headsign: string; now: number } = $props();
 
   const REFRESH_MS = 60_000;
+  const agency = CITIES[PAGE_CITY].agency;
   let sched = $state.raw<Schedule | null>(null);
   let failed = $state(false);
   let list: HTMLElement | undefined = $state();
@@ -41,7 +44,7 @@
 
 {#if view}
   <p class="sum">
-    {sched?.source === "oasa-daily" ? "Πρόγραμμα ημέρας ΟΑΣΑ" : sched?.expired ? "Ενδεικτικά, από παλιό πρόγραμμα" : "Από το πρόγραμμα ΟΑΣΑ"}
+    {sched?.source === "oasa-daily" ? `Πρόγραμμα ημέρας ${agency}` : sched?.expired ? "Ενδεικτικά, από παλιό πρόγραμμα" : `Από το πρόγραμμα ${agency}`}
     {#if view.known}· <span class:bad={view.seen < view.known}>έγιναν {view.seen} από {view.known} ως τώρα</span>{/if}
   </p>
   {#if view.items.length}
@@ -54,7 +57,7 @@
     <p class="sum">Κανένα δρομολόγιο σήμερα.</p>
   {/if}
 {:else if sched}
-  <p class="sum">Δεν βρέθηκε το πρόγραμμα αυτής της κατεύθυνσης.</p>
+  <p class="sum">{sched.directions.length ? "Δεν βρέθηκε το πρόγραμμα αυτής της κατεύθυνσης." : `Ο ${agency} δεν δίνει πρόγραμμα για αυτή τη γραμμή σήμερα.`}</p>
 {:else if failed}
   <p class="sum">Δεν φόρτωσε το πρόγραμμα.</p>
 {:else}

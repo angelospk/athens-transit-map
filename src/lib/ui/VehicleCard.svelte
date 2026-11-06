@@ -132,9 +132,9 @@
           {#each ahead.slice(0, 8) as a, k (a.id + "/" + a.i)}
             <li class:next={k === 0}>
               <span class="t">{busStale && a.at * 1000 <= app.serverNow ? "—" : whenText(a.at, app.serverNow)}</span><button type="button" class="name" title="Η στάση {a.name}" onclick={() => app.push(busStopCard(a.id, a.name))}>{a.name}</button>
-              <button type="button" class="bell" class:on={alertAt?.id === a.id && alertAt.i === a.i} aria-expanded={alertAt?.id === a.id && alertAt.i === a.i}
+              {#if app.cityInfo.alerts}<button type="button" class="bell" class:on={alertAt?.id === a.id && alertAt.i === a.i} aria-expanded={alertAt?.id === a.id && alertAt.i === a.i}
                 title="Ειδοποίηση άφιξης σε αυτή τη στάση" aria-label="Ειδοποίηση άφιξης του {line} στη στάση {a.name}"
-                onclick={() => bellAt(a)}><Bell /></button>
+                onclick={() => bellAt(a)}><Bell /></button>{/if}
             </li>
             {#if alertAt?.id === a.id && alertAt.i === a.i && (alertAt.from == null || alertAt.from < 0)}
               <li class="alert"><p class="muted">{alertAt.from == null ? "Φόρτωση…" : "Αυτή η στάση δεν είναι στα δεδομένα στάσεων."}</p></li>

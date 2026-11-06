@@ -13,9 +13,13 @@ export const scheduleUrl = (line: string) => `${API_BASE}/v1/lines/${encodeURICo
 
 // "ΠΕΙΡΑΙΑΣ - ΣΥΝΤΑΓΜΑ(ΠΡΟΣΩΡΙΝΗ ΛΟΓΩ ΕΡΓΩΝ)" → "συνταγμα": the part after the last dash, no brackets, accents or
 // spaces (the two sources space "Ν. ΣΜΥΡΝΗ" differently).
+// OASTH puts the days of a variant at the end ("ΑΓ. ΑΝΑΡΓΥΡΟΙ - ΚΟΡΔΕΛΙΟ-ΣΑΒΒΑΤΟ-ΚΥΡΙΑΚΗ"): left out, unless the
+// day is the only place after the first one ("ΧΑΛΑΝΔΡΙ - ΠΑΡΑΣΚΕΥΗ").
+const DAY = /\s*-\s*(δευτερα|τριτη|τεταρτη|πεμπτη|παρασκευη|σαββατο|κυριακη)\s*$/;
 const endOf = (headsign: string) => {
-  const s = headsign.replace(/\([^)]*\)/g, "");
-  return fold(s.slice(s.lastIndexOf("-") + 1)).replace(/\s+/g, "");   // "ΣΤ. ΑΤΤΙΚΗ-ΖΩΦΡΙΑ" too
+  let s = fold(headsign.replace(/\([^)]*\)/g, ""));
+  for (let m = DAY.exec(s); m && s.slice(0, m.index).includes("-"); m = DAY.exec(s)) s = s.slice(0, m.index);
+  return s.slice(s.lastIndexOf("-") + 1).replace(/\s+/g, "");   // "ΣΤ. ΑΤΤΙΚΗ-ΖΩΦΡΙΑ" too
 };
 
 // The timetable direction going where the variant goes: the same last place, else the one direction
