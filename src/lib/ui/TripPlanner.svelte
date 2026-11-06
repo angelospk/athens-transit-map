@@ -10,7 +10,7 @@
   import { tick, untrack } from "svelte";
   import { fetchLines, getJSON } from "../api";
   import { API_BASE } from "../config";
-  import { parsePlan, planFC, planStops, planSummary, planUrl, type Itinerary, type PlanResponse } from "../plan";
+  import { PLAN_RETRY_MS, parsePlan, planFC, planRetry, planStops, planSummary, planUrl, type Itinerary, type PlanResponse } from "../plan";
   import { MAX_LINES } from "../selection";
   import type { AppState } from "../state.svelte";
   import AlertForm from "./AlertForm.svelte";
@@ -208,6 +208,7 @@
   // option has left. When the backend fails or is busy, only the lines below show.
   let plan = $state.raw<{ key: string; r: PlanResponse } | null>(null);
   let planGen = $state(0);
+  let planTry = { key: "", n: 0 };   // retries of a failed request for these ends (not reactive)
   // The timed trip on the map (its ends and departure), kept across close and reopen like the ends.
   let planSel = $state.raw(memo.plan);
   $effect(() => { memo.plan = planSel; });
@@ -226,11 +227,16 @@
     if (!key) return;
     const [a, b] = JSON.parse(key) as [Pt, Pt];
     const ctl = new AbortController();
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    if (planTry.key !== key) planTry = { key, n: 0 };
     getJSON(planUrl(API_BASE, a, b), ctl.signal).then(res => {
+      if (ctl.signal.aborted) return;
       const r = res.status === 200 ? parsePlan(res.body) : null;
-      if (!ctl.signal.aborted && r) plan = { key, r };
+      if (r) plan = { key, r };
+      // Opened offline, or the server was busy: asked again a little later (the lines below show meanwhile).
+      else if (planRetry(res.status, planTry.n)) retry = setTimeout(() => { planTry.n++; planGen++; }, PLAN_RETRY_MS);
     }, () => {});
-    return () => ctl.abort();
+    return () => { ctl.abort(); clearTimeout(retry); };
   });
   const nowS = $derived(app.serverNow / 1000);
   // One option per departure, arrival and changes (CONTRACT §9 returns no two alike).

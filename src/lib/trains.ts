@@ -20,14 +20,17 @@ export interface SuburbanTrain {
 }
 export interface SuburbanStop { id: string; name: string; t: string; at: number; platform: string | null; delay_min: number | null }
 export interface SuburbanRun { train: string; from: string; to: string; status: string; delay_min: number | null; stops: SuburbanStop[] }
+// The trains the map can place: a metro train between two stops with positions, a Proastiakos train with its own.
+const at = (p: unknown) => !!p && typeof p === "object" && Number.isFinite((p as { lat: unknown }).lat) && Number.isFinite((p as { lon: unknown }).lon);
+export function validTrains(kind: "metro" | "suburban", list: unknown[]): unknown[] {
+  return list.filter(v => (kind === "metro" ? at((v as StasyVehicle | null)?.from) && at((v as StasyVehicle).to) : at(v)));
+}
 export type TrainSel = { kind: "metro" | "suburban"; id: string };
 export interface RailMotion { track: Track; knots: [number, number][] }   // knots: [metres along track, unix s]
 
 export const stasyVehiclesUrl = `${API_BASE}/v1/rail/stasy/vehicles`;
 export const suburbanVehiclesUrl = `${API_BASE}/v1/rail/suburban/vehicles`;
 export const railMotionUrl = `${API_BASE}/v2/vehicles/rail`;
-export const stasyTripUrl = (id: string) => `${API_BASE}/v1/rail/stasy/trips/${encodeURIComponent(id)}`;
-export const suburbanTrainUrl = (no: string) => `${API_BASE}/v1/rail/suburban/trains/${encodeURIComponent(no)}`;
 
 export const STALE_S = 90;    // an older GPS fix is drawn faded
 export const OLD_S = 600;     // an older one is not drawn

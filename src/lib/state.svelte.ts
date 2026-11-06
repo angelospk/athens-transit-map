@@ -7,7 +7,7 @@ import { cityKey, isCityLive } from "./city";
 import { loadMetro, type MetroData } from "./metro";
 import { loadSuburban, type SuburbanData } from "./suburban";
 import { loadMunicipal, type MunicipalData } from "./municipal";
-import { railMotions, runIds, type RailMotion, type StasyVehicle, type SuburbanTrain, type TrainSel } from "./trains";
+import { railMotions, runIds, validTrains, type RailMotion, type StasyVehicle, type SuburbanTrain, type TrainSel } from "./trains";
 import type { Place, TripIndex } from "./trip";
 import type { FeatureCollection, LineString } from "geojson";
 import { LinePoller, type PollState } from "./poller";
@@ -309,7 +309,7 @@ export class AppState {
     this.nav = new CardNav(history, s => { this.stack = s; this.show(s[s.length - 1] ?? null); },
       s => location.pathname + cardQuery(s[s.length - 1] ?? null, this.selected) + location.hash);
     addEventListener("popstate", e => this.nav?.popped(e.state));
-    addEventListener("online", () => { if (this.linesFailed) this.loadLines(); void this.refreshStatus(); });
+    addEventListener("online", () => this.backOnline());
     this.nav.start(cardFromQuery(location.search));
     for (const id of this.selected) this.startLine(id);
     void Promise.allSettled(this.selected.map(fetchLineStatic)).then(() => { if (!this.stack.length) this.fit(this.selected); });   // a linked card frames its own
@@ -752,8 +752,8 @@ export class AppState {
         const b = r.body as { vehicles?: unknown; trains?: unknown } | null;
         const list = kind === "metro" ? b?.vehicles : b?.trains;
         if (r.status === 200 && Array.isArray(list)) {
-          if (kind === "metro") this.stasyTrains = list as StasyVehicle[];
-          else this.suburbanTrains = list as SuburbanTrain[];
+          if (kind === "metro") this.stasyTrains = validTrains(kind, list) as StasyVehicle[];
+          else this.suburbanTrains = validTrains(kind, list) as SuburbanTrain[];
         }
       }
       setTimeout(() => void poll(kind, every), every);
@@ -980,7 +980,22 @@ export class AppState {
 
   // A failed load is not memoized (api.ts once): a later call asks again; one in flight is shared.
   private loadStatic(id: string) {
-    fetchLineStatic(id).then(s => (this.statics = { ...this.statics, [id]: s }), () => {});
+    fetchLineStatic(id).then(s => {
+      this.statics = { ...this.statics, [id]: s };
+      // It failed before (offline): a route card of the line opened meanwhile drew no direction. Now it does.
+      if (!this.staticFailed.delete(id)) return;
+      const top = this.stack.at(-1), l = top && legacyOf(top);
+      if (l?.kind === "route" && l.line === id) this.showRoute(top!, id, l.variant, l.dir);
+    }, () => this.staticFailed.add(id));
+  }
+  private staticFailed = new Set<string>();
+
+  // The browser is online again: what failed to load is asked again, also the route files of the lines on the
+  // map (the live API may still fail while the static host answers, so no data arrival would retry them).
+  private backOnline() {
+    if (this.linesFailed) this.loadLines();
+    for (const id of new Set([...this.selected, this.tempLine])) if (id && !this.statics[id]) this.loadStatic(id);
+    void this.refreshStatus();
   }
 
   // Data came, or the browser is online again: the server is reached (the status call runs only every

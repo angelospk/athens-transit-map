@@ -322,10 +322,18 @@
 
   // The other theme: the base map's style is swapped. diff: false builds the style anew, so `style.load` fires.
   function restyle(m: MlMap, d: boolean) {
+    // Offline the new style cannot load, and setStyle drops the old one first: the map would stay blank, with no
+    // layers to tap. It keeps its look; the online event (setup) switches it then.
+    if (!navigator.onLine) return;
     styleDark = d;
     loaded = false;
     const gen = ++styleGen;
-    m.once("style.load", () => { if (gen === styleGen) addAll(m); });   // a style replaced before it loaded never fires
+    m.once("style.load", () => {   // a style replaced before it loaded never fires
+      if (gen !== styleGen) return;
+      addAll(m);
+      const want = untrack(() => dark);
+      if (want !== styleDark) restyle(m, want);   // the theme changed meanwhile, offline (restyle skipped it)
+    });
     m.setStyle(STYLE(d), { diff: false });
   }
 
@@ -833,6 +841,8 @@
       me?.mover.snap();
     };
     document.addEventListener("visibilitychange", onVisible);
+    const onOnline = () => { const d = untrack(() => dark); if (loaded && d !== styleDark) restyle(m, d); };   // a theme chosen offline
+    addEventListener("online", onOnline);
     // On open, «Κοντά σου» (nearby.ts onOpen): location allowed → find me and show the stops near me; not decided
     // yet → the browser asks once, later a button in the panel asks; refused or a linked card → nothing. A link with
     // the location turned on last time and still allowed starts it again (no fly-to: the map shows the link).
@@ -988,6 +998,7 @@
       reportSoon.cancel();
       reportFollow.cancel();
       document.removeEventListener("visibilitychange", onVisible);
+      removeEventListener("online", onOnline);
       locator.stop();
       dropMe();
       for (const d of doms.values()) d.marker.remove();

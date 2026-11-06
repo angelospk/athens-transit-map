@@ -680,3 +680,38 @@ describe("AppState unknown card while the history moves", () => {
     expect(back).not.toHaveBeenCalled();
   });
 });
+
+describe("AppState route card opened offline", () => {
+  // Its route file failed, so no direction was drawn; once the file loads (data came back), the route draws and frames.
+  it("draws and frames the route when its file loads after failing", async () => {
+    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("offline")));
+    const app = new AppState();
+    const fits: string[][] = [];
+    app.fit = ids => fits.push(ids);
+    const c = routeCard("QA-R3", "");
+    app.stack = [c];
+    (app as unknown as { show(c: unknown): void }).show(c);
+    await new Promise(r => setTimeout(r, 0));
+    expect(app.selection).toBeNull();
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response(JSON.stringify({ id: "QA-R3", variants: { v1: { stops: [] } }, stops: {} }))));
+    (app as unknown as { onData(id: string, d: unknown): void }).onData("QA-R3", { line: "QA-R3", updated_at: 1, next_update_at: 2, vehicles: [] });
+    for (let i = 0; i < 4; i++) await new Promise(r => setTimeout(r, 0));
+    expect(app.selection).toEqual({ kind: "route", line: "QA-R3", variant: "v1" });
+    expect(fits).toEqual([["QA-R3"]]);
+    vi.stubGlobal("fetch", () => new Promise(() => {}));
+  });
+});
+
+describe("AppState back online", () => {
+  // The live API may still fail while the static host answers: the online event asks for the missing route files itself.
+  it("asks again for the route files of the lines on the map that have none", () => {
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", (u: string) => { urls.push(u); return new Promise(() => {}); });
+    const app = new AppState();
+    app.selected = ["QA-ON1"];
+    (app as unknown as { backOnline(): void }).backOnline();
+    expect(urls.some(u => u.endsWith("/lines/QA-ON1.json"))).toBe(true);
+    expect(urls.some(u => u.endsWith("/v1/status"))).toBe(true);
+    vi.stubGlobal("fetch", () => new Promise(() => {}));
+  });
+});

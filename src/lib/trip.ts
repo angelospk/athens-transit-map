@@ -393,7 +393,11 @@ export function loadTripIndex(): Promise<TripIndex> {
   if (index) return index;
   const p = fetch(`${import.meta.env.BASE_URL}trips.json`).then(r => {
     if (!r.ok) throw new Error(`trips.json: HTTP ${r.status}`);
-    return r.json() as Promise<TripIndex>;
+    return r.json();
+  }).then((ix: TripIndex) => {
+    // A 200 of another shape would be cached for the session and crash the stop layer: a failure.
+    if (!ix || !Array.isArray(ix.s) || !ix.l || typeof ix.l !== "object") throw new Error("trips.json: unexpected shape");
+    return ix;
   });
   p.catch(() => { if (index === p) index = null; });   // the next call tries again
   return (index = p);
