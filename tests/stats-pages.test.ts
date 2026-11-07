@@ -54,7 +54,7 @@ describe("cities and paths", () => {
     expect(csvPath(athens, "2026-11-07", "lines")).toBe("/athens/stats/data/2026-11-07-lines.csv");
   });
   it("links the raw JSON of a day on the stats branch", () => {
-    const base = "https://raw.githubusercontent.com/angelospk/athens-transit-rt/stats/v1";
+    const base = "https://raw.githubusercontent.com/angelospk/staseis-rt/stats/v1";
     expect(rawDayUrl(athens, "2026-11-05")).toBe(`${base}/days/2026-11-05.json`);
     expect(rawDayUrl(thess, "2026-11-07")).toBe(`${base}/thessaloniki/days/2026-11-07.json`);
   });

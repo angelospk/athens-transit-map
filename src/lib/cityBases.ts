@@ -14,7 +14,7 @@ export interface Bases { api: string; static: string }
 const strip = (s: string) => s.replace(/\/+$/, "");
 
 // Athens keeps the app's own backend and the GTFS static files on GitHub Pages.
-const ATHENS: Bases = { api: "https://transit.haroldpoi.dev", static: "https://angelospk.github.io/athens-transit-rt/static/v1" };
+const ATHENS: Bases = { api: "https://transit.haroldpoi.dev", static: "https://angelospk.github.io/staseis-rt/static/v1" };
 // Thessaloniki has its own instance, which also serves its static/v1; VITE_API_BASE is Athens only.
 const THESSALONIKI_API = "https://transit-thess.haroldpoi.dev";
 

@@ -443,7 +443,7 @@ if (isMain) {
   const legacy = process.env.SEO_LEGACY !== "0";
   // The stats pages (web#48) read the stats branch of athens-transit-rt on GitHub.
   const { buildStats } = await import("./stats-pages");
-  const statsBase = (process.env.VITE_STATS_BASE || "https://raw.githubusercontent.com/angelospk/athens-transit-rt/stats/v1").replace(/\/+$/, "");
+  const statsBase = (process.env.VITE_STATS_BASE || "https://raw.githubusercontent.com/angelospk/staseis-rt/stats/v1").replace(/\/+$/, "");
   const getText = async (url: string) => {
     for (let attempt = 0; ; attempt++) {
       try {

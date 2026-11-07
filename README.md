@@ -35,7 +35,7 @@ map where you could see every bus of the city at once and follow your own lines.
 **One measured result.** The motion model between GPS fixes was chosen offline on recorded fixes: on a held-out
 test split, the median position error fell from 225 m to 122 m ([lab/motion/program.md](lab/motion/program.md)).
 
-Try the API ([full reference](https://angelospk.github.io/athens-transit-rt/)): [`/v1/status`](https://transit.haroldpoi.dev/v1/status) ·
+Try the API ([full reference](https://angelospk.github.io/staseis-rt/)): [`/v1/status`](https://transit.haroldpoi.dev/v1/status) ·
 [`/v1/lines/040`](https://transit.haroldpoi.dev/v1/lines/040) (live vehicles of line 040).
 
 ---
@@ -154,7 +154,7 @@ bun run build      # static site in dist/
 | Variable | Default | Meaning |
 |---|---|---|
 | `VITE_API_BASE` | `https://transit.haroldpoi.dev` | Live API (`/v1/lines/{id}`, `/v1/status`) |
-| `VITE_STATIC_BASE` | `https://angelospk.github.io/athens-transit-rt/static/v1` | Static data (`lines.json`, `lines/{id}.json`) |
+| `VITE_STATIC_BASE` | `https://angelospk.github.io/staseis-rt/static/v1` | Static data (`lines.json`, `lines/{id}.json`) |
 | `VITE_GEOCODE_URL` | `https://photon.komoot.io/api/` | Area and street search of the trip planner (Photon API) |
 | `VITE_DEMO_VIDEO_URL` | `DEMO_VIDEO_URL` in `src/lib/config.ts` (this README) | Video linked from the "no connection" banner; empty: no link |
 | `VITE_MOCK` | unset | `1` = answer every request from `src/fixtures/` (moving vehicles, 30 s cycle) |

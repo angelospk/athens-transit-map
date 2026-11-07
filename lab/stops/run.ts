@@ -17,7 +17,7 @@ import { cumulative, dayOf, measure, projectOn, projectStops, type Fix, type Mea
 const [histDir, cacheArg] = process.argv.slice(2);
 if (!histDir) throw new Error("usage: bun lab/stops/run.ts <history dir> [static cache dir]");
 const cache = cacheArg ?? join(histDir, "..", "static");
-const BASE = (process.env.VITE_STATIC_BASE || "https://angelospk.github.io/athens-transit-rt/static/v1").replace(/\/+$/, "");
+const BASE = (process.env.VITE_STATIC_BASE || "https://angelospk.github.io/staseis-rt/static/v1").replace(/\/+$/, "");
 const OUT = new URL(".", import.meta.url).pathname;
 
 // Thresholds of the report (README): a stop is suspect when the measurement is sure (high), its peak

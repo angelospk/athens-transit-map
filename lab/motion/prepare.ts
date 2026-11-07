@@ -10,7 +10,7 @@ import { projectCandidates, shapeLength, stopOffsets } from "../../src/lib/predi
 import type { LngLat } from "../../src/lib/glide";
 import { MODELS, type Fix, type Run, type Ctx } from "./models";
 
-const STATIC = "https://angelospk.github.io/athens-transit-rt/static/v1/lines/";
+const STATIC = "https://angelospk.github.io/staseis-rt/static/v1/lines/";
 const MAX_GAP_S = 300;     // a longer gap between fixes starts a new run
 const BACK_M = 30;         // GPS noise backwards
 const MAX_V = 20;          // m/s

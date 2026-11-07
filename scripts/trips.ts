@@ -17,7 +17,7 @@ import type { TripIndex } from "../src/lib/trip";
 import { applyCorrections, type Correction } from "../src/lib/stopfix";
 import type { LineStatic, LinesIndex } from "../src/lib/types";
 
-const BASE = (process.env.VITE_STATIC_BASE || "https://angelospk.github.io/athens-transit-rt/static/v1").replace(/\/+$/, "");
+const BASE = (process.env.VITE_STATIC_BASE || "https://angelospk.github.io/staseis-rt/static/v1").replace(/\/+$/, "");
 
 async function get<T>(url: string): Promise<T> {
   const r = await fetch(url);

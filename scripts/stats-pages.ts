@@ -14,7 +14,7 @@ import { escape, layout, mapLimit, SITE } from "./seo";
 
 export const LICENSE_URL = "https://creativecommons.org/licenses/by/4.0/";
 // The public stats branch: the links on the pages point here, whatever the build read from.
-export const RAW_BASE = "https://raw.githubusercontent.com/angelospk/athens-transit-rt/stats/v1";
+export const RAW_BASE = "https://raw.githubusercontent.com/angelospk/staseis-rt/stats/v1";
 const BRANCH_URL = "https://github.com/angelospk/athens-transit-rt/tree/stats/v1";
 const METHOD_URL = "https://github.com/angelospk/athens-transit-rt/blob/main/docs/API.md";
 

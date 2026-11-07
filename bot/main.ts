@@ -76,7 +76,7 @@ const strip = (s: string) => s.replace(/\/+$/, "");
 const bot = new Bot({
   urls: {
     trips: process.env.TRIPS_URL || "https://bus.haroldpoi.dev/trips.json",
-    static: strip(process.env.STATIC_BASE || "https://angelospk.github.io/athens-transit-rt/static/v1"),
+    static: strip(process.env.STATIC_BASE || "https://angelospk.github.io/staseis-rt/static/v1"),
     api: strip(process.env.API_BASE || "https://transit.haroldpoi.dev"),
   },
   now: Date.now, sleep, save, tg, get, push,

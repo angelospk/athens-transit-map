@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 
-BASE = "https://angelospk.github.io/athens-transit-rt/static/v1/lines/"
+BASE = "https://angelospk.github.io/staseis-rt/static/v1/lines/"
 CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache")
 ATH = ZoneInfo("Europe/Athens")
 LAT0 = 37.98

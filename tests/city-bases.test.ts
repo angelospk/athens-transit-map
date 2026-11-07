@@ -12,7 +12,7 @@ describe("Thessaloniki live (web#40)", () => {
   it("basesFor: Athens keeps its defaults and VITE_API_BASE / VITE_STATIC_BASE", () => {
     expect(basesFor("athens", {})).toEqual({
       api: "https://transit.haroldpoi.dev",
-      static: "https://angelospk.github.io/athens-transit-rt/static/v1",
+      static: "https://angelospk.github.io/staseis-rt/static/v1",
     });
     expect(basesFor("athens", { VITE_API_BASE: "http://x:1/", VITE_STATIC_BASE: "http://s/v1/" }))
       .toEqual({ api: "http://x:1", static: "http://s/v1" });
