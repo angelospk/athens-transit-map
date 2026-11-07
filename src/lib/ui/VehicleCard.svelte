@@ -133,7 +133,18 @@
   function board() {
     if (!bus) return;
     app.startRide(bus.line, bus.v.id);   // the map stays as it was: 3D follow is the rider's choice (the cube below)
+    if (app.locState === "off") app.locate();   // the rider's place says whether they are on it (busTrust)
   }
+  // Riding a bus or trolley, as on the metro: whether the rider seems to be on it, from their place and the bus's.
+  const busTrust = $derived.by((): "ok" | "checking" | "far" | "nopos" | null => {
+    if (!riding || !bus) return null;
+    const p = app.myPos;
+    if (!p) return "nopos";
+    const d = distanceM([bus.v.lon, bus.v.lat], [p[1], p[0]]);
+    return d <= 150 ? "ok" : d <= 600 ? "checking" : "far";
+  });
+  const BUS_TRUST = { ok: "Σε βλέπω μέσα στο όχημα", checking: "Ψάχνω αν είσαι μέσα…", far: "Δεν φαίνεσαι κοντά στο όχημα",
+    nopos: "Άνοιξε την τοποθεσία, για να δω αν είσαι μέσα" } as const;
   function offAt(a: { id: string; i: number; name: string }) {
     if (app.ride) app.ride = { ...app.ride, stop: { id: a.id, i: a.i, name: a.name }, buzzed: false };
     if (app.rideBuzz && "Notification" in window && Notification.permission === "default") void Notification.requestPermission();
@@ -224,9 +235,12 @@
     return (near?.lines ?? []).filter(id => id !== own).map(id => ({ id, label: id.replace(/^M/, "Μ").replace(/^T/, "Τ"), color: colors.get(id) ?? "#666" }));
   }
   // «Είμαι μέσα» on a metro train: followed on this phone only (metroRide), station by station.
-  const onTrain = $derived(!!card && isMetro && metroRide.card === card.id && !!metroRide.ride);
-  const TRUST: Record<RideTrust, string> = { checking: "Ψάχνω την κίνηση του τρένου…", ok: "Σε βλέπω στο τρένο",
-    clock: "Κατά το πρόγραμμα: χωρίς αισθητήρες κίνησης", still: "Δεν φαίνεται να κινείσαι με τρένο", far: "Δεν φαίνεσαι κοντά στη γραμμή" };
+  // Any train rides so: the metro, the tram, the suburban (the metro mode button stays the metro's own).
+  const onTrain = $derived(!!card && isRail && metroRide.card === card.id && !!metroRide.ride);
+  const isTram = $derived(!!card && /^stasy:T/.test(card.line));
+  const veh = $derived(isTram ? ["τραμ", "του τραμ"] : ["τρένο", "του τρένου"]);
+  const TRUST = $derived<Record<RideTrust, string>>({ checking: `Ψάχνω την κίνηση ${veh[1]}…`, ok: `Σε βλέπω στο ${veh[0]}`,
+    clock: "Κατά το πρόγραμμα: χωρίς αισθητήρες κίνησης", still: `Δεν φαίνεται να κινείσαι με ${veh[0]}`, far: "Δεν φαίνεσαι κοντά στη γραμμή" });
   function boardTrain() {
     if (!card || !rail.ahead.length) return;
     const stops = rail.ahead.map(a => {
@@ -307,6 +321,7 @@
       {/if}
       {#if riding}
         <section class="ride" aria-live="polite" in:open>
+          {#if busTrust}<p class="mst bt {busTrust === "nopos" ? "checking" : busTrust}"><i aria-hidden="true"></i>{BUS_TRUST[busTrust]}</p>{/if}
           {#if getOff && left != null}
             {@const mins = destAt != null ? Math.max(0, Math.round((destAt * 1000 - app.serverNow) / 60_000)) : null}
             <div class="rhead">
@@ -417,7 +432,7 @@
 {:else if card && isRail}
   <CardSheet {app} {key} closeOnEscape={!railAt}>
     {#snippet header()}
-      <span class="pill rpill" class:logo={isMetro} style:--c={lineBg} style:--t={lineFg}>{#if isMetro}<img src="{import.meta.env.BASE_URL}icons/metro-logo.svg" alt="" />{/if}{railLabel.replace(/^M(?=\d)/, "Μ")}</span>
+      <span class="pill rpill" class:logo={isMetro || isTram} style:--c={lineBg} style:--t={lineFg}>{#if isMetro}<img src="{import.meta.env.BASE_URL}icons/metro-logo.svg" alt="" />{:else if isTram}<img class="tl" src="{import.meta.env.BASE_URL}icons/tram-logo.svg" alt="" />{/if}{railLabel.replace(/^M(?=\d)/, "Μ")}</span>
       <h2 class="rto">{#if railHead}<small>Προς</small><span>{railHead}</span>{/if}</h2>
       {#if railFresh && !sched}<span class="fresh" class:warn={railFresh.warn}>{railFresh.text}</span>{/if}
     {/snippet}
@@ -443,8 +458,8 @@
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.5v11M12 3.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM12 17.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z" /></svg>
           <span>Όλη η {railLabel.replace(/^M(?=\d)/, "Μ")}</span></button>
       </div>
-      {#if isMetro && rail.ahead.length && !onTrain}
-        <button type="button" class="act quiet board" onclick={boardTrain}><Icon name="check" size={17} /><span>Είμαι μέσα σε αυτό το τρένο</span></button>
+      {#if rail.ahead.length && !onTrain}
+        <button type="button" class="act quiet board" onclick={boardTrain}><Icon name="check" size={17} /><span>Είμαι μέσα σε αυτό το {veh[0]}</span></button>
       {/if}
       {#if onTrain && metroRide.ride}
         {@const r = metroRide.ride}
@@ -695,6 +710,7 @@
   /* ---- A metro or rail train (mockup 45) */
   :global(header .rpill.logo) { gap: 6px; padding: 0 12px 0 6px; }
   :global(header .rpill img) { width: 24px; height: 24px; display: block; }
+  :global(header .rpill img.tl) { width: 18px; object-fit: contain; }
   :global(header h2.rto) { display: flex; flex-direction: column; gap: 5px; }
   :global(header h2.rto small) { font-size: 12px; font-weight: 500; color: var(--muted); line-height: 1; }
   :global(header h2.rto span) { font-size: 18px; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -753,6 +769,7 @@
     font: inherit; font-size: 14px; font-weight: 600; line-height: 1; cursor: pointer; }
   /* «Είμαι μέσα» on a metro train */
   .board { width: 100%; margin-top: 8px; border-radius: 16px; }
+  p.mst.bt { margin: 0 0 12px; }
   .mride { margin-top: 12px; padding: 12px 14px 14px; border-radius: 18px; background: var(--card); display: flex; flex-direction: column; gap: 12px; }
   .mtop { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 32px; }
   .mst { min-width: 0; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--muted); line-height: 1.2; }

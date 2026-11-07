@@ -1409,7 +1409,7 @@
       scene3d.hoverStop(f ? ((f.geometry as GeoJSON.Point).coordinates as LngLat) : null);
       if (!!f !== hovered) { hovered = !!f; m.getCanvas().style.cursor = f ? "pointer" : ""; }
     });
-    m.on("dragstart", () => { follow = false; if (dive) dive.follow = false; if (focus) focus.follow = false; });   // only user gestures fire them
+    m.on("dragstart", () => { follow = false; if (dive) dive.follow = false; if (focus) focus.follow = false; following = false; });   // only user gestures fire them
     // Untracked: setup runs inside the attachment's effect, and reading streetZoom there would make the whole map
     // depend on it (crossing zoom 15 would then tear the map down and build it again at the city's starting view).
     const zoomed = () => untrack(() => { const z = m.getZoom() >= STREET3D_ZOOM; if (z !== streetZoom) streetZoom = z; });
@@ -1904,10 +1904,18 @@
   // a metro train under the street is followed by the dive below instead, and a chase rides behind its bus.
   type Focus = { key: string; follow: boolean; started: boolean };
   let focus: Focus | null = null, focusAt: LngLat | null = null;
+  // Whether the camera follows the picked vehicle now (the recenter button lights up); a drag lets it go.
+  let following = $state(false);
+  function recenter() {
+    if (dive) { dive.follow = true; dive.started = false; }
+    else if (focus) { focus.follow = true; focus.started = false; }
+    following = true;
+    nextDue = 0;
+  }
   const followKey = $derived(app.selection?.kind === "vehicle" ? `${app.selection.line}/${app.selection.id}` : app.train ? `train/${app.train.id}` : null);
   $effect(() => {
     const k = followKey;
-    untrack(() => { if (k !== focus?.key) { focus = k ? { key: k, follow: true, started: false } : null; focusAt = null; nextDue = 0; } });   // to it at the next frame
+    untrack(() => { if (k !== focus?.key) { focus = k ? { key: k, follow: true, started: false } : null; focusAt = null; nextDue = 0; following = !!k; } });   // to it at the next frame
   });
   // In 2D the map stays north-up: no turning by drag, two fingers or keyboard, followed or not (a turn only
   // happens in 3D). Back from 3D it eases back to north.
@@ -1986,12 +1994,16 @@
   }
   // The camera to an elevation (0: back on the street, where MapLibre keeps it again, and tilts as before).
   function surface(m: MlMap, elevation: number, pitch: number) {
-    m.easeTo({ elevation, pitch, duration: 900 });
-    if (!elevation) m.once("moveend", () => {
-      if (dive || (app.threeD && app.under)) return;
+    const ground = () => {
+      if (Math.abs(m.getCenterElevation()) > 0.5) m.jumpTo({ elevation: 0 });
       m.setCenterClampedToGround(true);
       if (maxPitchUp != null) { m.setMaxPitch(maxPitchUp); maxPitchUp = null; }
-    });
+    };
+    // 3D off: up at once. Easing up there met the 3D's own ease back to a flat map, which cut it short and left the
+    // camera under the ground (the map blank but for the clouds).
+    if (!elevation && !app.threeD) { ground(); return; }
+    m.easeTo({ elevation, pitch, duration: 900 });
+    if (!elevation) m.once("moveend", () => { if (!dive && !(app.threeD && app.under)) ground(); });
   }
   // «Υπόγεια» with no train picked: the camera a little under the street and tilted, to see along the tunnels.
   $effect(() => {
@@ -2703,6 +2715,16 @@
 
 <div class="map ages-{app.ageMode}" {@attach setup}></div>
 {#if app.bus3d && app.threeD && !app.load3d}<Route3D {app} key={app.bus3d} />{/if}
+{#if followKey && !app.start && !app.chase}
+  <!-- The picked bus, train or tram back in the middle, followed again (a drag on the map lets it go). -->
+  <button type="button" class="recenter" class:on={following} aria-pressed={following} onclick={recenter}
+    aria-label={following ? "Ακολουθείς το όχημα" : "Ξανά στο όχημα"} title={following ? "Ακολουθείς το όχημα" : "Ξανά στο όχημα"}>
+    <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M3 7V4.5A1.5 1.5 0 0 1 4.5 3H7M13 3h2.5A1.5 1.5 0 0 1 17 4.5V7M17 13v2.5a1.5 1.5 0 0 1-1.5 1.5H13M7 17H4.5A1.5 1.5 0 0 1 3 15.5V13" />
+      <circle cx="10" cy="10" r="2.6" fill="currentColor" stroke="none" />
+    </svg>
+  </button>
+{/if}
 {#if app.speedOn}<SpeedLegend meta={speedData?.meta ?? null} onclose={() => app.setSpeedOn(false)} />{/if}
 {#if Info}<Info bind:open={infoOpen} bind:tab={infoTab} motion={app.motion} {ended} />{/if}
 {#if failed}
@@ -2714,6 +2736,18 @@
 
 <style>
   .map { position: absolute; inset: 0; }
+  /* Recenter on the picked vehicle: round, as the map's own buttons; top right beside the tools on a computer, under
+     the compass and locate on a phone, and in the tools' place while a card covers the foot. */
+  .recenter { position: fixed; z-index: 6; right: 68px; top: calc(16px + env(safe-area-inset-top)); width: 44px; height: 44px; padding: 0; border: 0;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--fg); cursor: pointer;
+    background: var(--glass); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); }
+  .recenter.on { color: var(--accent); }
+  .recenter:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (max-width: 719px) {
+    .recenter { right: 16px; top: calc(env(safe-area-inset-top) + 308px); }
+    :global(:root:has(.rail .utool)) .recenter { top: calc(env(safe-area-inset-top) + 352px); }
+    :global(:root[data-sheet]) .recenter { top: calc(16px + env(safe-area-inset-top)); }
+  }
   :global(.applemap) { position: absolute; inset: 0; pointer-events: none; }
   :global(.applemap[hidden]) { display: none; }
   :global(.fix-pin) { cursor: grab; touch-action: none; filter: drop-shadow(0 3px 4px rgb(0 0 0 / 0.4)); }
