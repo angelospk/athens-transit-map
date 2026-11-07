@@ -35,7 +35,9 @@ function arrow(votes: number[]): number | null {
   const near = votes.filter(x => circ(x, votes[at]) <= 45);
   const s = near.reduce((t, x) => t + Math.sin(x * rad), 0);
   const c = near.reduce((t, x) => t + Math.cos(x * rad), 0);
-  return Math.round((Math.atan2(s, c) / rad + 360) % 360) % 360;
+  const mean = Math.round((Math.atan2(s, c) / rad + 360) % 360) % 360;
+  // A wide group (0° to 90°) can average to a bearing most lines do not take: check the mean too.
+  return votes.filter(x => circ(x, mean) <= 45).length * 3 < votes.length * 2 ? null : mean;
 }
 
 // Bearing and terminus names for every stop of the index, from the order of each line's variants.

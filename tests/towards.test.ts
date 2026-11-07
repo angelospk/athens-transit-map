@@ -99,6 +99,20 @@ describe("stopDirections", () => {
     expect(towardsOf(split, 0).bearing).toBeNull();
   });
 
+  it("no arrow when the averaged bearing itself lacks the two-thirds support", () => {
+    // From stop 0, lines leave at about 0°, 44°, 44°, 316°, 180°, 180°: 0° gathers 4 of 6 (0, 44, 44, 316),
+    // but their mean (~12°) has only 3 of 6 within 45°.
+    const at = (deg: number, k: number): [string, number, number, string] =>
+      [`Σ${k}`, 37.98 + 0.002 * Math.cos(deg * Math.PI / 180), 23.75 + 0.002 * Math.sin(deg * Math.PI / 180) / Math.cos(37.98 * Math.PI / 180), `${k}`];
+    const t: TripIndex = {
+      v: "t",
+      s: [["Κ", 37.98, 23.75, "0"], at(0, 1), at(44, 2), at(44.5, 3), at(316, 4), at(180, 5), at(180.5, 6)],
+      l: { a: { v: [0, 1] }, b: { v: [0, 2] }, c: { v: [0, 3] }, d: { v: [0, 4] }, e: { v: [0, 5] }, f: { v: [0, 6] } },
+    };
+    t.d = stopDirections(t);
+    expect(towardsOf(t, 0).bearing).toBeNull();
+  });
+
   it("on a loop: towards the turn before it, back to the start after it", () => {
     const t: TripIndex = {
       v: "t",
