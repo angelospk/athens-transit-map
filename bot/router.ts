@@ -9,8 +9,10 @@
 //   picked from /city. Default: Athens.
 // - /list, /stop and «Απεγγραφή από όλα» ("all") see every city: one message, one answer.
 //
-// The offset is the router's, saved with the chats' cities. An update goes on only when its city saved what
-// it changed (Bot.handle); else the offset stays before it and Telegram sends it again.
+// The offset is the router's, saved with the chats' cities after each update. An update goes on only when
+// its city saved what it changed (Bot.handle) and the router saved its offset; else the offset stays before
+// it and Telegram sends it again. The router's own answers go out only after that save. A crash between a
+// city's save and the router's replays that one update.
 
 import type { Bot, Button } from "./bot";
 
@@ -22,10 +24,12 @@ interface Msg { chat: { id: number; type: string }; text?: string }
 interface Callback { id: string; from: { id: number }; data?: string; message?: { chat: { id: number }; message_id: number } }
 interface Update { update_id: number; message?: Msg; callback_query?: Callback }
 
-const MAX_LIST = 50;   // lines and buttons of the joint /list (Telegram: 100 buttons, 4096 characters)
+// One /list message: Telegram takes 4096 characters and 100 buttons; the rest goes in the next message.
+const LIST_CHARS = 4000, LIST_BUTTONS = 90;
 
 export class Router {
   private state: RouterState;
+  private pending: [string, Record<string, unknown>][] = [];   // this update's answers, sent once it is saved
 
   // offset0: where to start without a saved state (the Athens bot's offset, from before the router).
   constructor(private d: RouterDeps, saved?: RouterState, offset0 = 0) {
@@ -41,16 +45,22 @@ export class Router {
 
   async handle(updates: Update[]) {
     for (const u of updates) {
+      const before = { offset: this.state.offset, city: { ...this.state.city } };
+      this.pending = [];
       let ok = true;
       try {
         ok = await this.one(u);
       } catch (e) {
         console.error("route failed:", (e as Error).message);
       }
-      if (!ok) break;
-      this.state.offset = Math.max(this.state.offset, u.update_id + 1);
+      if (ok) {
+        this.state.offset = Math.max(this.state.offset, u.update_id + 1);
+        try { this.d.save(this.state); } catch (e) { console.error("router save failed:", (e as Error).message); ok = false; }
+      }
+      if (!ok) { this.state = before; this.pending = []; break; }
+      for (const [method, body] of this.pending) this.athens.bot.out(method, body);
+      this.pending = [];
     }
-    try { this.d.save(this.state); } catch (e) { console.error("router save failed:", (e as Error).message); }
   }
 
   // True when the update is done (its city saved it, or the router answered it).
@@ -60,7 +70,7 @@ export class Router {
       if (m.chat.type !== "private") return this.athens.bot.handle([u]);
       const [cmd, arg] = (m.text ?? "").trim().split(/\s+/);
       if (cmd === "/list") return this.list(chat), true;
-      if (cmd === "/stop") return this.stop(chat), true;
+      if (cmd === "/stop") return this.stop(chat);
       if (cmd === "/city") return this.menu(chat), true;
       if (cmd === "/start" && arg) {
         const p = /^([a-z]{3})_(.+)$/.exec(arg);
@@ -74,7 +84,7 @@ export class Router {
     const q = u.callback_query;
     if (!q) return true;
     const data = q.data ?? "";
-    if (data === "all") return this.stopAll(q), true;
+    if (data === "all") return this.stopAll(q);
     const pick = /^city:([a-z]{3})$/.exec(data);
     if (pick) return this.pick(q, pick[1]), true;
     const p = /^([a-z]{3}):(.+)$/.exec(data);
@@ -83,33 +93,50 @@ export class Router {
     return this.athens.bot.handle([u]);
   }
 
+  private out(method: string, body: Record<string, unknown>) { this.pending.push([method, body]); }
+
   private say(chat: number, text: string, inline_keyboard?: Button[][]) {
-    this.athens.bot.out("sendMessage", { chat_id: chat, text, disable_web_page_preview: true, ...(inline_keyboard && { reply_markup: { inline_keyboard } }) });
+    this.out("sendMessage", { chat_id: chat, text, disable_web_page_preview: true, ...(inline_keyboard && { reply_markup: { inline_keyboard } }) });
   }
 
   private list(chat: number) {
     const parts = this.d.cities.map(c => ({ c, ...c.bot.chatAlerts(chat) })).filter(p => p.lines.length);
     if (!parts.length) return this.say(chat, "Δεν έχεις ειδοποιήσεις.");
     const many = parts.length > 1;
-    const lines = parts.flatMap(p => p.lines.map(l => (many ? `${p.c.name} · ${l}` : l))).slice(0, MAX_LIST);
-    const buttons = parts.flatMap(p => p.buttons).slice(0, MAX_LIST);
-    this.say(chat, lines.join("\n"), [...buttons, [{ text: "Απεγγραφή από όλα", callback_data: "all" }]]);
+    // chatAlerts gives one button row per line, in the same order.
+    const rows = parts.flatMap(p => p.lines.map((l, i) => ({ line: many ? `${p.c.name} · ${l}` : l, buttons: p.buttons[i] ?? [] })));
+    let text: string[] = [], keys: Button[][] = [], size = 0;
+    for (const r of rows) {
+      if (text.length && (size + r.line.length + 1 > LIST_CHARS || keys.length >= LIST_BUTTONS)) {
+        this.say(chat, text.join("\n"), keys);
+        text = []; keys = []; size = 0;
+      }
+      text.push(r.line); keys.push(r.buttons); size += r.line.length + 1;
+    }
+    this.say(chat, text.join("\n"), [...keys, [{ text: "Απεγγραφή από όλα", callback_data: "all" }]]);
   }
 
-  // Every city, none skipped: each one saves its own.
-  private stopEverywhere(chat: number): boolean {
-    return this.d.cities.map(c => c.bot.stopChat(chat)).some(Boolean);
+  // Every city, none skipped: each one saves its own. "failed" if any could not.
+  private stopEverywhere(chat: number): "none" | "stopped" | "failed" {
+    const all = this.d.cities.map(c => c.bot.stopChat(chat));
+    return all.includes("failed") ? "failed" : all.includes("stopped") ? "stopped" : "none";
   }
 
-  private stop(chat: number) {
-    this.say(chat, this.stopEverywhere(chat) ? "Σταμάτησαν όλες οι ειδοποιήσεις." : "Δεν είχες ειδοποιήσεις.");
+  // False when a city could not save: no answer, and the update comes again.
+  private stop(chat: number): boolean {
+    const r = this.stopEverywhere(chat);
+    if (r === "failed") return false;
+    this.say(chat, r === "stopped" ? "Σταμάτησαν όλες οι ειδοποιήσεις." : "Δεν είχες ειδοποιήσεις.");
+    return true;
   }
 
-  private stopAll(q: Callback) {
-    const user = q.from.id, had = this.stopEverywhere(user);
-    if (had && q.message && q.message.chat.id === user)
-      this.athens.bot.out("editMessageReplyMarkup", { chat_id: user, message_id: q.message.message_id, reply_markup: { inline_keyboard: [] } });
-    this.athens.bot.out("answerCallbackQuery", { callback_query_id: q.id, text: had ? "Σταμάτησαν όλες." : "Τίποτα για σταμάτημα." });
+  private stopAll(q: Callback): boolean {
+    const user = q.from.id, r = this.stopEverywhere(user);
+    if (r === "failed") return false;
+    if (r === "stopped" && q.message && q.message.chat.id === user)
+      this.out("editMessageReplyMarkup", { chat_id: user, message_id: q.message.message_id, reply_markup: { inline_keyboard: [] } });
+    this.out("answerCallbackQuery", { callback_query_id: q.id, text: r === "stopped" ? "Σταμάτησαν όλες." : "Τίποτα για σταμάτημα." });
+    return true;
   }
 
   private menu(chat: number) {
@@ -121,9 +148,9 @@ export class Router {
 
   private pick(q: Callback, code: string) {
     const c = this.byCode(code);
-    if (!c) return this.athens.bot.out("answerCallbackQuery", { callback_query_id: q.id, text: "Δεν βρήκα αυτή την πόλη." });
+    if (!c) return this.out("answerCallbackQuery", { callback_query_id: q.id, text: "Δεν βρήκα αυτή την πόλη." });
     this.setCity(q.from.id, c);
-    this.athens.bot.out("answerCallbackQuery", { callback_query_id: q.id, text: `Πόλη: ${c.name}` });
+    this.out("answerCallbackQuery", { callback_query_id: q.id, text: `Πόλη: ${c.name}` });
     this.say(q.from.id, `Πόλη: ${c.name}. Γράψε όνομα στάσης ή πάτα 📍 Κοντά μου.`);
   }
 }

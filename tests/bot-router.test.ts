@@ -38,7 +38,7 @@ function city(name: string, sent: Sent[], gets: string[], clock: () => number, p
   return { bot: new Bot(deps), saved: () => state };
 }
 
-function setup(o: { saved?: RouterState; offset0?: number; failPat?: () => boolean } = {}) {
+function setup(o: { saved?: RouterState; offset0?: number; failPat?: () => boolean; failRouter?: () => boolean } = {}) {
   let now = T0;
   const sent: Sent[] = [], gets: string[] = [];
   const clock = () => now;
@@ -47,7 +47,7 @@ function setup(o: { saved?: RouterState; offset0?: number; failPat?: () => boole
   let rstate: RouterState | undefined = o.saved;
   const router = new Router({
     cities: [{ code: "ath", name: "Αθήνα", bot: ath.bot }, { code: "pat", name: "Πάτρα", bot: pat.bot }],
-    save: s => void (rstate = JSON.parse(JSON.stringify(s))),
+    save: s => { if (o.failRouter?.()) throw new Error("ENOSPC"); rstate = JSON.parse(JSON.stringify(s)); },
   }, o.saved, o.offset0);
   let id = 100;
   const run = async (...u: object[]) => {
@@ -205,6 +205,59 @@ describe("Router: update offset", () => {
     const t = setup({ failPat: () => true });
     await t.run(msg("ΣΥΝΤΑΓΜΑ"), msg(`/start pat_${payload}`), msg("ΒΟΥΛΗ"));
     expect(t.router.offset).toBe(101);
+  });
+});
+
+describe("Router: failed saves", () => {
+  it("saves the offset after each update, so a crash replays at most the one in flight", async () => {
+    const t = setup();
+    const saves: number[] = [];
+    const r = new Router({ cities: [{ code: "ath", name: "Αθήνα", bot: t.ath.bot }], save: s => void saves.push(s.offset) });
+    await r.handle([{ update_id: 5, ...msg("ΣΥΝΤΑΓΜΑ") }, { update_id: 6, ...msg("ΒΟΥΛΗ") }] as never);
+    expect(saves).toEqual([6, 7]);
+  });
+
+  it("a /city choice it could not save is not confirmed, and its update comes again", async () => {
+    const t = setup({ failRouter: () => true });
+    await t.run(cb("city:pat"));
+    expect(t.sent).toEqual([]);
+    expect(t.router.offset).toBe(0);
+    await t.run(msg("ΣΥΝΤΑΓΜΑ", 1));
+    expect(t.router.offset).toBe(0);
+  });
+
+  it("/stop that a city could not save is not reported done, and its update comes again", async () => {
+    let fail = false;
+    const t = setup({ failPat: () => fail });
+    await t.run(msg(`/start pat_${payload}`));
+    const before = t.texts().length, offset = t.router.offset;
+    fail = true;
+    await t.run(msg("/stop"));
+    expect(t.texts().slice(before)).toEqual([]);
+    expect(t.router.offset).toBe(offset);
+    expect(t.pat.saved()?.alerts).toHaveLength(1);
+  });
+
+  it("a long /list is split into messages within Telegram's limits, none left out", async () => {
+    const t = setup();
+    const many = new Router({
+      cities: Array.from({ length: 30 }, (_, k) => ({ code: `c${String(k).padStart(2, "0")}`.replace(/\d/g, d => "abcdefghij"[+d]), name: `Πόλη ${k}`, bot: {
+        chatAlerts: () => ({ lines: Array.from({ length: 15 }, (_, j) => `🔔 έως 12:00 · ${"Χ".repeat(40)} · ${k}-${j}`),
+          buttons: Array.from({ length: 15 }, (_, j) => [{ text: `Σταμάτα ${k}-${j}`, callback_data: `x:stop:${k}-${j}` }]) }),
+        out: (method: string, body: Record<string, unknown>) => void t.sent.push({ method, body }),
+      } as never })),
+      save: () => {},
+    });
+    await many.handle([{ update_id: 1, ...msg("/list") }] as never);
+    const out = t.sent.filter(s => s.method === "sendMessage");
+    expect(out.length).toBeGreaterThan(1);
+    for (const m of out) {
+      expect((m.body.text as string).length).toBeLessThanOrEqual(4096);
+      expect(datas(m).length).toBeLessThanOrEqual(100);
+    }
+    expect(out.flatMap(m => (m.body.text as string).split("\n"))).toHaveLength(450);
+    expect(out.flatMap(datas).filter(d => d.includes(":stop:"))).toHaveLength(450);
+    expect(datas(out.at(-1)!).at(-1)).toBe("all");
   });
 });
 

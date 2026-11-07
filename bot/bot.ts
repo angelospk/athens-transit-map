@@ -232,16 +232,16 @@ export class Bot {
     this.queue.push({ method, body });
   }
 
-  // /stop for the router: ends the chat's alerts here, saved now. False if it had none (or the save failed).
-  stopChat(chat: number): boolean {
+  // /stop for the router: ends the chat's alerts here, saved now. "failed": the save failed, all is as before.
+  stopChat(chat: number): "none" | "stopped" | "failed" {
     const had = this.state.alerts.some(a => a.chat === chat) || this.rails.some(a => a.chat === chat);
-    if (!had) return false;
+    if (!had) return "none";
     const alerts = this.state.alerts, rails = this.state.rails, watches = new Map(this.watches);
     this.remove(a => a.chat === chat);
     this.state.rails = this.rails.filter(a => a.chat !== chat);
-    if (this.save()) return true;
+    if (this.save()) return "stopped";
     this.state.alerts = alerts; this.state.rails = rails; this.watches = watches;
-    return false;
+    return "failed";
   }
 
   // The chat's alerts as /list shows them: one text line and one "Σταμάτα" button row each.
