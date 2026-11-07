@@ -14,7 +14,7 @@ describe("cities", () => {
     }
   });
 
-  it("each city names its operator; stats are Athens only, stop alerts everywhere, Telegram Athens only", () => {
+  it("each city names its operator; stats are Athens only, stop alerts and Telegram everywhere", () => {
     expect(CITIES.athens.agency).toBe("ΟΑΣΑ");
     expect(CITIES.thessaloniki.agency).toBe("ΟΣΕΘ");   // OSETH is the authority; never «ΟΑΣΘ»
     expect(Object.values(CITIES).some(c => c.hint.includes("ΟΑΣΘ") || c.agency.includes("ΟΑΣΘ"))).toBe(false);
@@ -22,7 +22,7 @@ describe("cities", () => {
     expect(CITIES.thessaloniki.gtfsPage).toBe("https://data.gov.gr/dataset/42c9a7da-c86c-48b1-914c-f340e8bef00d");
     expect([CITIES.athens.stats, CITIES.athens.alerts]).toEqual([true, true]);
     expect([CITIES.thessaloniki.stats, CITIES.thessaloniki.alerts]).toEqual([false, true]);
-    expect([CITIES.athens.telegram, CITIES.thessaloniki.telegram]).toEqual([true, false]);
+    expect([CITIES.athens.telegram, CITIES.thessaloniki.telegram]).toEqual([true, true]);
   });
 
   it("isCityId accepts only known ids", () => {
@@ -58,10 +58,11 @@ describe("cities", () => {
     expect(nearestCity([27.43, 37.03])).toBeNull(); // Kos
   });
 
-  it("a citybus.gr city: buses only, its code as id namespace, no planner, web push alerts, no Telegram", () => {
+  it("a citybus.gr city: buses only, its code as id namespace, no planner, web push and Telegram alerts", () => {
     const p = CITIES.patras;
     expect([p.id, p.name, p.ns, p.ready, p.rail, p.plan, p.stats, p.alerts, p.telegram])
-      .toEqual(["patras", "Πάτρα", "pat", true, false, false, false, true, false]);
+      .toEqual(["patras", "Πάτρα", "pat", true, false, false, false, true, true]);
+    for (const c of Object.values(CITIES)) expect([c.id, c.telegram]).toEqual([c.id, true]);   // the bot routes every city (web#56)
     expect(p.inName).toBe("στην Πάτρα");
     expect(CITIES.volos.inName).toBe("στον Βόλο");
     expect(p.agencyThe).toBe("Το ΚΤΕΛ");

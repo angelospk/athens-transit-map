@@ -22,17 +22,17 @@ export interface City {
   box: { south: number; west: number; north: number; east: number };   // the area its vehicle tiles cover
   stats: boolean;             // the daily network stats (stats branch) are of this city
   alerts: boolean;            // stop alerts: the bot and web push watch this city
-  telegram: boolean;          // and in Telegram (@oasa_bus_bot reads only Athens links and stops)
+  telegram: boolean;          // and in Telegram (@oasa_bus_bot routes a link by its city prefix, web#56)
   hint: string;
 }
 
-// The citybus.gr cities: buses only, no trip planner yet, stop alerts by web push only (the bot watches
-// all 28; its Telegram knows only Athens, web#56).
+// The citybus.gr cities: buses only, no trip planner yet, stop alerts by web push and Telegram (the bot
+// watches all 28, web#55 and web#56).
 const citybus = Object.fromEntries(CITYBUS.map(c => [c.slug, {
   id: c.slug, name: c.name, center: c.center, zoom: c.zoom, radiusKm: c.radiusKm, ready: true, rail: false,
   agency: "ΚΤΕΛ", agencyThe: "Το ΚΤΕΛ", gtfsPage: "https://citybus.gr/", gtfsHost: "citybus.gr", ns: c.code, plan: false,
   inName: c.inName, box: { south: c.box[0], west: c.box[1], north: c.box[2], east: c.box[3] },
-  stats: false, alerts: true, telegram: false, hint: "Αστικό ΚΤΕΛ",
+  stats: false, alerts: true, telegram: true, hint: "Αστικό ΚΤΕΛ",
 } satisfies City])) as Record<CitybusSlug, City>;
 
 export const CITIES: Record<CityId, City> = {
@@ -43,7 +43,7 @@ export const CITIES: Record<CityId, City> = {
   thessaloniki: { id: "thessaloniki", name: "Θεσσαλονίκη", center: [22.94, 40.63], zoom: 12, radiusKm: 40, ready: true, rail: false,
     agency: "ΟΣΕΘ", agencyThe: "Ο ΟΣΕΘ", gtfsPage: "https://data.gov.gr/dataset/42c9a7da-c86c-48b1-914c-f340e8bef00d", gtfsHost: "data.gov.gr",
     ns: "oasa", plan: true, inName: "στη Θεσσαλονίκη", box: { south: 40.3, west: 22.6, north: 41.0, east: 23.4 },
-    stats: false, alerts: true, telegram: false, hint: "ΟΣΕΘ · λεωφορεία" },
+    stats: false, alerts: true, telegram: true, hint: "ΟΣΕΘ · λεωφορεία" },
   ...citybus,
 };
 
