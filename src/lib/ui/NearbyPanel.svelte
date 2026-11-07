@@ -121,7 +121,7 @@
     {/snippet}
     {#if away === "go" && fixCity}
       <p class="muted">Η θέση σου είναι στην {CITIES[fixCity].name}.</p>
-      <button type="button" class="use" onclick={() => pickCity(fixCity)}>Πήγαινε στην {CITIES[fixCity].name}</button>
+      <button type="button" class="use" onclick={() => app.setCity(fixCity, false)}>Πήγαινε στην {CITIES[fixCity].name}</button>
     {:else if away === "pick"}
       <p class="muted">{#if fixCity}Η θέση σου είναι στην {CITIES[fixCity].name}· δείχνεις {app.cityInfo.name}.{:else}Η θέση σου δεν είναι σε πόλη που ξέρω.{/if} Διάλεξε πόλη:</p>
       {@render cities()}
