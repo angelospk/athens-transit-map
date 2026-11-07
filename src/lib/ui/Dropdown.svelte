@@ -38,16 +38,22 @@
     const y = up ? `bottom: ${Math.round(innerHeight - r.top + 6)}px` : `top: ${Math.round(r.bottom + 6)}px`;
     place = `${x}; ${y}; min-width: ${Math.round(r.width)}px`;
   }
-  // Scrolled or resized under it: it closes (it would no longer sit by its button).
+  // Scrolled under it: it closes. Otherwise it keeps to its button every frame: on a phone the keyboard going down
+  // moves the panel (no resize event on iOS), and a list placed once stayed at the foot of the screen.
   $effect(() => {
     if (!open) return;
     const off = (e: Event) => { if (!list?.contains(e.target as Node)) open = false; };
     addEventListener("scroll", off, true);
-    addEventListener("resize", off);
-    return () => { removeEventListener("scroll", off, true); removeEventListener("resize", off); };
+    let raf = 0;
+    const follow = () => { measure(); raf = requestAnimationFrame(follow); };
+    raf = requestAnimationFrame(follow);
+    return () => { removeEventListener("scroll", off, true); cancelAnimationFrame(raf); };
   });
   const reveal = async () => { await tick(); document.getElementById(`${id}-${active}`)?.scrollIntoView({ block: "nearest" }); };
   async function show() {
+    // A field still holding the keyboard: let it go first, so the list is placed on the page as it will stay.
+    const typing = document.activeElement;
+    if (typing instanceof HTMLInputElement || typing instanceof HTMLTextAreaElement) { typing.blur(); await new Promise(r => setTimeout(r, 120)); }
     active = Math.max(0, options.findIndex(o => o.value === value));
     const r = button?.getBoundingClientRect();
     up = !!r && innerHeight - r.bottom < Math.min(270, options.length * 40 + 20) && r.top > innerHeight - r.bottom;

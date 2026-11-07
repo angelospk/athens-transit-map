@@ -899,7 +899,8 @@
               value={e.text} class:set={!!e.place}
               role="combobox" aria-expanded={openField === f} aria-controls="trip-{f}-list" aria-autocomplete="list"
               aria-activedescendant={openField === f && opts[active] ? `trip-${f}-${active}` : undefined}
-              onfocus={() => { openField = f; }} oninput={ev => edit(f, ev.currentTarget.value)} onkeydown={ev => onkeydown(f, ev)} />
+              onfocus={() => { openField = f; }} onclick={() => { openField = f; }}
+              oninput={ev => edit(f, ev.currentTarget.value)} onkeydown={ev => onkeydown(f, ev)} />
           </div>
         {/each}
         <button type="button" class="swap" class:turned aria-label="Αντιστροφή αφετηρίας και προορισμού" title="Αντιστροφή" onclick={swap}><Icon name="swap" size={17} /></button>

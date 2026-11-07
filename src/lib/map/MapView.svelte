@@ -1912,7 +1912,10 @@
     following = true;
     nextDue = 0;
   }
-  const followKey = $derived(app.selection?.kind === "vehicle" ? `${app.selection.line}/${app.selection.id}` : app.train ? `train/${app.train.id}` : null);
+  // The picked vehicle: a card's, a train's, or the one whose route is open across in 3D (Route3D: "line/id" or
+  // "metro/<trip>"), so its panel keeps the camera on it too.
+  const followKey = $derived(app.selection?.kind === "vehicle" ? `${app.selection.line}/${app.selection.id}` : app.train ? `train/${app.train.id}`
+    : app.bus3d ? (app.bus3d.startsWith("metro/") ? `train/${app.bus3d.slice(6)}` : app.bus3d) : null);
   $effect(() => {
     const k = followKey;
     untrack(() => { if (k !== focus?.key) { focus = k ? { key: k, follow: true, started: false } : null; focusAt = null; nextDue = 0; following = !!k; } });   // to it at the next frame
