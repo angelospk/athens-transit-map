@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrivalGroups, timeText, toward, headTo, linesAt, busStopsFC, stopIndex, twins, alertLinesAt, arrivalNote, stopBack, mineFirst, boardLines, linesToWarm, usualRows, signCode, type StopArrival, type Usual, type ArrivalGroup } from "../src/lib/stops";
+import { arrivalGroups, timeText, toward, headTo, linesAt, busStopsFC, stopIndex, twins, alertLinesAt, arrivalNote, stopBack, mineFirst, boardLines, linesToWarm, usualRows, scheduleRows, signCode, type StopArrival, type Usual, type ArrivalGroup } from "../src/lib/stops";
 import type { TripIndex } from "../src/lib/trip";
 
 // 0 and 1: one stop on both sides of a street (~44 m), 2: the same name 1 km away, 3: another name close by.
@@ -270,5 +270,31 @@ describe("signCode", () => {
     expect(signCode(undefined, "40054", true)).toBeNull();   // an older server: the id is not the sign's code
     expect(signCode(undefined, "1011", false)).toBe("1011"); // Thessaloniki: stop_code is the stop id
     expect(signCode("", null, false)).toBeNull();
+  });
+});
+
+describe("scheduleRows (citybus.gr cities: timetable runs with no bus)", () => {
+  const now = Date.UTC(2026, 10, 7, 20, 54) // 22:54 in Athens
+  const s = (line: string, hhmm: [number, number], o: Partial<StopArrival> = {}): StopArrival => ({
+    line, headsign: "ΚΟΥΤΣΕΛΙΟ", variant: "0302", vehicle: "", eta_s: 0, at: Date.UTC(2026, 10, 7, hhmm[0] - 2, hhmm[1]) / 1000,
+    delay_s: 0, position_at: 0, source: "schedule", trip_id: "10", ...o });
+  const live = (line: string): ArrivalGroup => ({ line, headsign: "x", variant: "v", times: [{ min: 3, vehicle: "1", late: 0 }] });
+
+  it("a line with no bus: its next two timetable times, in Athens time", () => {
+    expect(scheduleRows([s("03", [23, 29]), s("03", [22, 59]), s("03", [23, 59])], [], now)).toEqual([
+      { line: "03", headsign: "ΚΟΥΤΣΕΛΙΟ", variant: "0302", text: "Κατά πρόγραμμα 22:59, 23:29 · όχι live" }]);
+  });
+  it("nothing for a line with a live bus, for live rows, or for a time already past", () => {
+    expect(scheduleRows([s("03", [22, 59]), s("05", [23, 5])], [live("03")], now).map(r => r.line)).toEqual(["05"]);
+    expect(scheduleRows([s("03", [22, 59], { source: "live" })], [], now)).toEqual([]);
+    expect(scheduleRows([s("03", [22, 50])], [], now)).toEqual([]);
+  });
+  it("one row per line and headsign", () => {
+    expect(scheduleRows([s("03", [22, 59]), s("03", [23, 1], { headsign: "ΠΛΑΤΕΙΑ" })], [], now).map(r => r.headsign))
+      .toEqual(["ΚΟΥΤΣΕΛΙΟ", "ΠΛΑΤΕΙΑ"]);
+  });
+  it("one time once: the same run twice (two variants) does not hide the next one", () => {
+    expect(scheduleRows([s("03", [22, 59]), s("03", [22, 59], { variant: "0303" }), s("03", [23, 9])], [], now)[0].text)
+      .toBe("Κατά πρόγραμμα 22:59, 23:09 · όχι live");
   });
 });

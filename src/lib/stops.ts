@@ -240,6 +240,22 @@ export function usualRows(usual: Usual[] | undefined, groups: ArrivalGroup[], no
   return out;
 }
 
+// The timetable runs of the lines with no bus on its way (groups: the live ones), one row per line and
+// headsign with its next two times and its first variant (for headTo on a loop): citybus.gr cities, where no "usual" comes from the server and a
+// board row with no GPS is a timetable run (rt#124). A time already past is left out.
+export function scheduleRows(arrivals: StopArrival[], groups: ArrivalGroup[], nowMs: number): { line: string; headsign: string; variant: string; text: string }[] {
+  const rows = new Map<string, { line: string; headsign: string; variant: string; times: number[] }>();
+  for (const a of [...arrivals].sort((x, y) => x.at - y.at)) {
+    if (a.source !== "schedule" || a.at * 1000 < nowMs || groups.some(g => g.line === a.line)) continue;
+    const key = `${a.line}|${a.headsign}`;
+    let r = rows.get(key);
+    if (!r) rows.set(key, (r = { line: a.line, headsign: a.headsign, variant: a.variant, times: [] }));
+    if (r.times.length < 2 && !r.times.includes(a.at)) r.times.push(a.at);   // one run on two variants: once
+  }
+  return [...rows.values()].map(r => ({ line: r.line, headsign: r.headsign, variant: r.variant,
+    text: `Κατά πρόγραμμα ${r.times.map(t => clock.format(new Date(t * 1000))).join(", ")} · όχι live` }));
+}
+
 // The code on the stop sign, so a rider can find the stop: OASA's stop_code from the server (rev 21;
 // it differs from the stop id for a third of the stops, «040054» for 40054), elsewhere the stop id.
 export function signCode(code: string | undefined, id: string | null | undefined, athens: boolean): string | null {

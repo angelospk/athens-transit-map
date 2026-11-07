@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { fetchLineStatic, fetchStop, peekStop } from "../api";
-  import { alertLinesAt, arrivalGroups, arrivalNote, boardLines, headTo, linesAt, linesToWarm, mineFirst, timeText, toward, twins, usualRows, signCode, type ArrivalGroup, type ArrivalTime, type StopBoard } from "../stops";
+  import { alertLinesAt, arrivalGroups, arrivalNote, boardLines, headTo, linesAt, linesToWarm, mineFirst, timeText, toward, twins, usualRows, scheduleRows, signCode, type ArrivalGroup, type ArrivalTime, type StopBoard } from "../stops";
   import Bell from "./Bell.svelte";
   import type { AppState } from "../state.svelte";
   import type { FetchResult } from "../poller";
@@ -89,12 +89,14 @@
   const shown = $derived(showAll ? groups : split.mine);
   const also = $derived(showAll ? [] : split.also.slice(0, 4));
   // The lines shown with no bus on its way: how often they usually pass now (backend rev 18, map#24), grey,
-  // never mixed with the live rows; the rest as chips.
-  const usual = $derived(board ? usualRows(board.usual, groups, now).filter(u => showAll || mine.includes(u.line)) : []);
+  // never mixed with the live rows; the rest as chips. citybus.gr cities have no "usual": their timetable times.
+  const usual = $derived(board ? (app.cityInfo.gtfsHost === "citybus.gr" ? scheduleRows(board.arrivals, groups, now) : usualRows(board.usual, groups, now))
+    .filter(u => showAll || mine.includes(u.line)) : []);
   const quiet = $derived(lines.filter(l => (showAll || mine.includes(l.line)) && !groups.some(g => g.line === l.line) && !usual.some(u => u.line === l.line)));
   const big = (t: ArrivalTime) => (t.here ? "τώρα" : timeText(t));
   // Where a row's bus runs to; on a loop, after the turn, back to the start (headTo).
-  const dest = (g: ArrivalGroup) => (ix && i != null ? headTo(ix, g.line, g.variant, i, g.headsign) : { to: toward(g.headsign), back: false });
+  const dest = (g: { line: string; headsign: string; variant?: string }) =>
+    (ix && i != null && g.variant ? headTo(ix, g.line, g.variant, i, g.headsign) : { to: toward(g.headsign), back: false });
   const variantsOf = (line: string) => lines.find(l => l.line === line)?.variants ?? [];
 
   const boardOf = (r: FetchResult | undefined) => {
@@ -225,11 +227,12 @@
         </ul>
       {/if}
       {#if usual.length}
-        <ul class="usual" aria-label="Συνήθως, χωρίς λεωφορείο κοντά τώρα">
+        <ul class="usual" aria-label="Χωρίς λεωφορείο κοντά τώρα">
           {#each usual as u (u.line + u.headsign)}
+            {@const d = dest(u)}
             <li><button type="button" class="row" onclick={() => app.openLineAt(u.line, variantsOf(u.line))}>
               {@render chip(u.line)}
-              <span class="mid"><span class="to" title={u.headsign}>→ {toward(u.headsign)}</span><small>{u.text}</small></span>
+              <span class="mid"><span class="to" title={u.headsign}>→ {d.to}{#if d.back}{" (επιστροφή)"}{/if}</span><small>{u.text}</small></span>
             </button></li>
           {/each}
         </ul>
