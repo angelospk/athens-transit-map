@@ -178,9 +178,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .maplibregl-ctrl-bottom-right > .details-ctl { grid-area: details; border-radius: 14px; }
 .maplibregl-ctrl-bottom-right > .maplibregl-ctrl-attrib { grid-area: attrib; }
 /* The credits and «Λεπτομέρειες» sit above the floating tab bar while it shows (TabBar.svelte), where they would meet
-   it: a phone, and a desktop window under 1400 px (the bar at the bottom centre, the credits at the right). */
+   it: a desktop window under 1400 px (the bar at the bottom centre, the credits at the right). A phone has no tab bar
+   (its nav is hidden there): they sit at the bottom, clear of the home indicator. */
 @media (max-width: 719px) {
-  :root:has(nav.tabs) .maplibregl-ctrl-bottom-left, :root:has(nav.tabs) .maplibregl-ctrl-bottom-right { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 64px); }
+  .maplibregl-ctrl-bottom-right { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
 }
 @media (min-width: 720px) and (max-width: 1399px) {
   :root:has(nav.tabs) .maplibregl-ctrl-bottom-right { bottom: calc(16px + env(safe-area-inset-bottom) + 68px); }

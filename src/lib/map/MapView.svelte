@@ -168,7 +168,6 @@
     d.dir.style.transform = `translate(${Math.sin(a) * rx}px, ${-Math.cos(a) * ry}px) rotate(${h}deg)`;
   }
 
-  const CREDITS_MS = 5000;   // the map's credits show this long, then fold to the ⓘ
   const LANE_PX = 3;   // each direction drawn to the right of its travel direction (two lanes)
   const key = (line: string, id: string) => `${line}/${id}`;
 
@@ -1467,14 +1466,9 @@
       e.preventDefault(); e.stopPropagation();
       chaseZoom = Math.min(19.5, Math.max(17, (chaseZoom ?? m.getZoom()) - e.deltaY * 0.0025));
     }, { capture: true, passive: false });
-    // MapLibre shows the credits (ⓘ) open until the first drag: on a phone they cover the map. They fold after a few
-    // seconds instead; a tap on the ⓘ opens them again (#34: they must be seen first).
-    // A tap on the ⓘ before then is the user's choice: the timer stops.
-    m.once("load", () => {
-      const t = setTimeout(() =>
-        node.querySelector(".maplibregl-ctrl-attrib.maplibregl-compact-show")?.classList.remove("maplibregl-compact-show"), CREDITS_MS);
-      node.querySelector(".maplibregl-ctrl-attrib-button")?.addEventListener("click", () => clearTimeout(t), { once: true });
-    });
+    // MapLibre shows the credits (ⓘ) open until the first drag: on a phone they cover the map. They start folded to
+    // the ⓘ instead; a tap on it opens them.
+    m.once("load", () => node.querySelector(".maplibregl-ctrl-attrib.maplibregl-compact-show")?.classList.remove("maplibregl-compact-show"));
     // The city layer loads the tiles of the view: at first, and 300 ms after the map stops moving (never during a move).
     const reportView = () => {
       if (m.getZoom() >= STOPS_ZOOM - 0.5 && !app.stopIx) loadStops();
@@ -2681,7 +2675,7 @@
   };
 
   // «Λεπτομέρειες» (a control left of the ⓘ, bottom right) opens the info sheet. The ⓘ stays MapLibre's: it shows the
-  // map's credits (open at first, closed after CREDITS_MS or the first drag), which the licences want visible (#34).
+  // map's credits (folded to the ⓘ; a tap opens them).
   const infoCtl = document.createElement("div");
   infoCtl.className = "maplibregl-ctrl maplibregl-ctrl-group details-ctl";
   const infoBtn = document.createElement("button");
