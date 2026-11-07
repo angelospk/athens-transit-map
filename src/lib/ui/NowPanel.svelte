@@ -5,7 +5,7 @@
   // On a phone a sheet over the map, above the tab bar; on a desktop a card in the map's left column.
   import { untrack } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
-  import { safeInsets, settleSnap, sheetDrag, type SheetDrag } from "../sheetDrag";
+  import { safeInsets, sheetDrag, type SheetDrag } from "../sheetDrag";
   import { fetchV2Stop } from "../api";
   import { forLine, strikes } from "../disruptions";
   import { busStopCard } from "../legacy";
@@ -296,18 +296,10 @@
     ignore: narrow.current ? undefined : "*",
     start: () => { top0 = nowEl?.getBoundingClientRect().top ?? 0; dragging = true; },
     move: dy => { const t = tops(); nowTop = Math.max(t.full, Math.min(t.peek + 40, top0 + dy)); },
-    end: (dy, v) => {
+    end: dy => {
       dragging = false;
       const t = tops(), at = Math.max(t.full, Math.min(t.peek, top0 + dy));
-      if (Math.abs(v) > 0.6) {
-        // A flick: a place its way.
-        const next = settleSnap<NSnap>(["peek", "half", "full"], nsnap, at, t, v, "up", dy);
-        if (next === nsnap) nowTop = next === "half" ? null : t[next];
-        nsnap = next;
-        if (next === "half") nowTop = null;
-        return;
-      }
-      // Slow: it rests where it was let go.
+      // It rests where it was let go, however fast (no snapping).
       const near = (["peek", "half", "full"] as NSnap[]).reduce((a, b) => (Math.abs(t[b] - at) < Math.abs(t[a] - at) ? b : a));
       nowTop = at;
       if (near !== nsnap) { freeAt = at; nsnap = near; }

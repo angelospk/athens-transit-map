@@ -94,17 +94,14 @@ export function safeInsets(): { top: number; bottom: number } {
   return insets;
 }
 
-/** Where a sheet rests when let go (mockup-free, the owner's ask): a flick goes all the way its way (to `lo` or `hi`),
- *  otherwise it stays where the finger left it, within [lo, hi]. `v`: px per ms, down +. */
-export function restAt(at: number, lo: number, hi: number, v: number): number {
-  if (v > FLICK) return hi;
-  if (v < -FLICK) return lo;
+/** Where a sheet rests when let go: where the finger left it, within [lo, hi]. No snapping, however fast the finger
+ *  moved (a quick drag landed at a place the user had not chosen). `_v` (px per ms) is kept for the callers. */
+export function restAt(at: number, lo: number, hi: number, _v = 0): number {
   return Math.max(lo, Math.min(hi, at));
 }
-const FLICK = 0.6;
 
 /** A bottom sheet moved by its handles with a translateY (its height its own): it rests where it is let go, from
- *  open (0) down to `keep` px still showing; a flick goes all the way; a tap opens it, or lowers it when open. Only on
+ *  open (0) down to `keep` px still showing; a tap opens it, or lowers it when open. Only on
  *  a phone (`on`). The handles alone take the touch, so the sheet's content still scrolls. */
 export function freeSheet(node: HTMLElement, o: { handles: string; keep?: number; on?: () => boolean }) {
   let rest = 0, start = 0;

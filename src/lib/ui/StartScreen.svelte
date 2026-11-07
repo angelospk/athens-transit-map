@@ -818,7 +818,17 @@
   const answer = $derived(!wide && ready && !asking && !app.savingPlace && !app.finding);
   // Typing on a phone: the field goes to the top of the screen (the heading and the other field step aside), its
   // list under it and no lower than the keyboard; «‹» or a choice brings the screen back.
-  const typing = $derived(!wide && open !== null && !answer);
+  // The screen changes only once the tap is over (its click): changed at the focus, the field moved under the finger
+  // and the click landed elsewhere, which closed it again (the field seemed not to take the tap).
+  let typingOn = $state(false);
+  let typingT: ReturnType<typeof setTimeout> | undefined;
+  const typing = $derived(!wide && open !== null && !answer && typingOn);
+  $effect(() => { if (open === null) { clearTimeout(typingT); typingOn = false; } });
+  function startTyping(now = false) {
+    clearTimeout(typingT);
+    if (now) typingOn = true;
+    else typingT = setTimeout(() => (typingOn = true), 350);   // a focus with no tap (from the code): a moment later
+  }
   function stopTyping() {
     const f = open;
     open = null;
@@ -826,11 +836,9 @@
   }
   $effect(() => {
     if (!typing) return;
-    // iOS scrolls the page to the field as the keyboard rises: the field is at the top now, so back to the top.
-    const top = () => { boxEl?.closest(".start")?.scrollTo(0, 0); if (scrollY) scrollTo(0, 0); };
-    void tick().then(top);
-    const t = setTimeout(top, 320);
-    return () => clearTimeout(t);
+    // The screen's own scroll back to the top (the field is there now). Not the page's: moving it while the keyboard
+    // is up shifts what a tap hits on iOS.
+    void tick().then(() => boxEl?.closest(".start")?.scrollTo(0, 0));
   });
   // The list's height: down to the top of the keyboard (the visual viewport), scrolling inside.
   function aboveKeys(node: HTMLElement) {
@@ -928,7 +936,7 @@
      button is released, and the click lands on something else (a chip such as «Σύνταγμα» did nothing). -->
 <svelte:document onclick={e => {
   const t = e.target as Element;
-  if (open && t.isConnected && !t.closest?.(".field, .opts, .typeback")) stopTyping();
+  if (open && t.isConnected && !t.closest?.(".field, .opts, .typeback, input")) stopTyping();
 }} onpointerdown={e => {
   const t = e.target as Element;
   if (menu && !t.closest?.(".pickf, .opts")) menu = null;
@@ -1062,7 +1070,7 @@
             {:else}<label class="sr" for="start-{f}">{f === "from" ? "Από πού ξεκινάς" : "Πού θέλεις να πας"}</label>{#if ends[f].place?.kind === "me"}<span class="mearr" aria-hidden="true"><svg class="arr" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5 3.8 10.6a.6.6 0 0 0 .05 1.12l6.6 2.03 2.03 6.6a.6.6 0 0 0 1.12.05z" fill="currentColor" /></svg></span>{:else if !ends[f].place}<span class="fs2" aria-hidden="true"><Icon name="search" size={19} /></span>{/if}{/if}
             <input id="start-{f}" bind:this={inputs[f]} value={ends[f].text} autocomplete="off" spellcheck="false"
               placeholder={find ? "Γραμμή, στάση ή μέρος" : f === "from" ? (wide ? "Από πού ξεκινάς;" : "Γράψε από πού ξεκινάς") : intro ? "Πού πας; Διεύθυνση, στάση ή γραμμή" : wide ? "Στάση, περιοχή, οδός" : "Γράψε μέρος, στάση ή γραμμή"} role="combobox" aria-expanded={open === f} aria-controls="start-{f}-list"
-              onfocus={e => { open = f; menu = null; if (ends[f].place) e.currentTarget.select(); }} oninput={e => edit(f, e.currentTarget.value)}
+              onfocus={e => { open = f; menu = null; if (ends[f].place) e.currentTarget.select(); startTyping(); }} onclick={() => startTyping(true)} oninput={e => edit(f, e.currentTarget.value)}
               aria-activedescendant={open === f && active >= 0 ? `start-opt-${active}` : undefined} onkeydown={e => key(f, e)} />
             {#if ends[f].text && locating !== f && !ends[f].place}
               <button type="button" class="clear" aria-label="Καθάρισμα" title="Καθάρισμα" onclick={() => { ends[f] = { text: "", place: null }; inputs[f]?.focus(); }}><Icon name="close" size={13} /></button>

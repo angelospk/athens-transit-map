@@ -9,7 +9,7 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
-  import { settleSnap, sheetDrag, type SheetDrag } from "../sheetDrag";
+  import { sheetDrag, type SheetDrag } from "../sheetDrag";
   import { slide } from "svelte/transition";
   import { fetchLines, fetchLineStatic, getJSON } from "../api";
   import { bestSlice, matchRoads, sensibleWalk, sliceShape, stationsAlong, stopsBetween, type Mid } from "../planShape";
@@ -327,20 +327,14 @@
       root.style.setProperty("--trip-drag", `${clampH(dragH0 - dy)}px`);
       root.dataset.tripdrag = "";
     },
-    end: (dy, v) => {
+    end: dy => {
       const root = document.documentElement;
       delete root.dataset.tripdrag;
       root.style.removeProperty("--trip-drag");
-      const h = clampH(dragH0 - dy);
-      if (Math.abs(v) <= 0.6) {
-        // Slow: it stays as tall as it was let go, named after the nearest place.
-        const s = snapsPx();
-        freeH = h;
-        snap = (["peek", "half", "full"] as Snap[]).reduce((a, b) => (Math.abs(s[b] - h) < Math.abs(s[a] - h) ? b : a));
-        return;
-      }
-      freeH = null;
-      snap = settleSnap<Snap>(["peek", "half", "full"], snap, h, snapsPx(), v, "up", dy);
+      // It stays as tall as it was let go, however fast, named after the nearest place.
+      const h = clampH(dragH0 - dy), s = snapsPx();
+      freeH = h;
+      snap = (["peek", "half", "full"] as Snap[]).reduce((a, b) => (Math.abs(s[b] - h) < Math.abs(s[a] - h) ? b : a));
     },
     tap: stepSnap,
   });

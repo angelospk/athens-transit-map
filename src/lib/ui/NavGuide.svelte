@@ -21,7 +21,7 @@
   import Icon from "./Icon.svelte";
   import { durText } from "../format";
   import { rise } from "../anim";
-  import { settleSnap, sheetDrag, type SheetDrag } from "../sheetDrag";
+  import { sheetDrag, type SheetDrag } from "../sheetDrag";
   import { euro, fareOf, priceOf } from "../fares";
 
   let { app }: { app: AppState } = $props();
@@ -701,31 +701,29 @@
   });
 
   // ---- The sheet by its handle (a phone): half, all of it, or down to the bar.
-  type NSnap = "mini" | "half" | "full";
   let nsnap = $state<"half" | "full">("half");
   let sheetEl = $state<HTMLElement>();
   let dragH = $state<number | null>(null);
-  let freeH = $state<number | null>(null);   // let go after a slow drag: it stays that tall
+  let freeH = $state<number | null>(null);   // let go after a drag: it stays that tall
   let sheetH = $state(0);
   let h0 = 0;
   const clampH = (h: number) => Math.max(80, Math.min(innerHeight * 0.9, h));
-  const tops = (): Record<NSnap, number> => ({ mini: innerHeight - 90, half: innerHeight * 0.54, full: innerHeight * 0.12 });
   const navDrag = $derived<SheetDrag>({
     ignore: "button",
     start: () => { h0 = sheetEl?.getBoundingClientRect().height ?? 0; },
     move: dy => { dragH = clampH(h0 - dy); },
-    end: (dy, v) => {
-      const h = clampH(h0 - dy), at = innerHeight - h;
+    end: dy => {
+      const h = clampH(h0 - dy);
       dragH = null;
-      if (Math.abs(v) <= 0.6 && h > 140) {
-        // Slow: it stays as tall as it was let go (the map above it, as much as the rider wants).
+      if (h > 140) {
+        // It stays as tall as it was let go, however fast (the map above it, as much as the rider wants); only
+        // dragged right down it folds to its bar.
         freeH = h;
         nsnap = h > innerHeight * 0.6 ? "full" : "half";
         return;
       }
       freeH = null;
-      const next = settleSnap<NSnap>(["mini", "half", "full"], nsnap, at, tops(), v, "up", dy);
-      if (next === "mini") setMini(true); else nsnap = next;
+      setMini(true);
     },
     tap: () => { freeH = null; nsnap = nsnap === "half" ? "full" : "half"; },
   });
