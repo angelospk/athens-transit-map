@@ -519,6 +519,17 @@
     @keyframes sheetUp { from { transform: translateY(40px); opacity: 0; } }
   }
   @media (max-width: 719px) and (prefers-reduced-motion: reduce) { .popwrap.tabbed:has(:global(.rv)) { animation: none; } }
+  /* The trip's sheet with its handle (TripPlanner sets data-tripsheet: peek, half or full; data-tripdrag while a
+     finger moves it): the search bar and the tab bar step away so the map gets the room, the sheet goes to the foot. */
+  @media (max-width: 719px) {
+    :global(:root[data-tripsheet]) .panel { display: none; }
+    :global(:root[data-tripsheet]) .popwrap.tabbed:has(:global(.rv)) { bottom: calc(8px + env(safe-area-inset-bottom)); height: var(--trip-h, 52dvh);
+      max-height: none !important; transition: height .26s cubic-bezier(.2, .8, .2, 1); }
+    :global(:root[data-tripsheet="peek"]) { --trip-h: var(--trip-peek, 200px); }
+    :global(:root[data-tripsheet="half"]) { --trip-h: 52dvh; }
+    :global(:root[data-tripsheet="full"]) { --trip-h: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+    :global(:root[data-tripdrag]) .popwrap.tabbed:has(:global(.rv)) { height: var(--trip-drag) !important; transition: none; }
+  }
   @media (max-width: 719px) {
     :global(:root[data-sheet]) .popwrap { left: 8px !important; right: 8px !important; width: auto; max-width: none; }
     :global(:root[data-sheet]) .rail { opacity: 0; pointer-events: none; transform: translateX(12px); }

@@ -8,6 +8,7 @@
 
 <script lang="ts">
   import { tick, untrack } from "svelte";
+  import { MediaQuery } from "svelte/reactivity";
   import { slide } from "svelte/transition";
   import { fetchLines, fetchLineStatic, getJSON } from "../api";
   import { bestSlice, matchRoads, sensibleWalk, sliceShape, stationsAlong, stopsBetween, type Mid } from "../planShape";
@@ -275,6 +276,76 @@
   }
   // «Οδηγίες»: the picked option on its own, step by step (the mockup «Η διαδρομή στον χάρτη»); off: the list.
   let review = $state(false);
+  // A phone, a trip's details open: a sheet at the foot with a handle (Panel.svelte draws it from the page's root):
+  // «peek» shows the options and «Ξεκίνα» over a big map, «half» the details too, «full» all of it. Dragged by the
+  // handle (or the header), it follows the finger and settles at the nearest; a tap on the handle steps it.
+  const narrow = new MediaQuery("(max-width: 719px)");
+  type Snap = "peek" | "half" | "full";
+  let snap = $state<Snap>("half");
+  let rvTopEl = $state<HTMLElement>(), rvFootEl = $state<HTMLElement>();
+  let topH = $state(0), footH = $state(0);
+  const sheetOn = $derived(narrow.current && review);
+  $effect(() => {
+    const root = document.documentElement;
+    if (!sheetOn) return;
+    root.dataset.tripsheet = snap;
+    root.style.setProperty("--trip-peek", `${Math.round(topH + footH + 18)}px`);
+    return () => { delete root.dataset.tripsheet; root.style.removeProperty("--trip-peek"); };
+  });
+  $effect(() => { if (!review) snap = "half"; });
+  // Each new height frames the trip again, above the sheet, once it has settled.
+  let snapped = "";
+  $effect(() => {
+    const k = sheetOn ? snap : "";
+    if (!k || k === snapped) { snapped = k; return; }
+    snapped = k;
+    const t = setTimeout(() => untrack(() => { if (fitPts.length) app.fitPoints(fitPts); }), 280);
+    return () => clearTimeout(t);
+  });
+  let drag: { id: number; y: number; h: number; moved: boolean; t: number } | null = null;
+  const sheetEl = () => rvTopEl?.closest<HTMLElement>(".popwrap");
+  function snapsPx(): Record<Snap, number> {
+    const cs = getComputedStyle(document.documentElement);
+    const peek = parseFloat(cs.getPropertyValue("--trip-peek")) || 200;
+    return { peek, half: innerHeight * 0.52, full: innerHeight - 24 };
+  }
+  function gripDown(e: PointerEvent) {
+    if (!sheetOn || e.button !== 0 || (e.target as Element).closest("button:not(.grip)")) return;
+    const el = sheetEl();
+    if (!el) return;
+    drag = { id: e.pointerId, y: e.clientY, h: el.offsetHeight, moved: false, t: performance.now() };
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+  }
+  function gripMove(e: PointerEvent) {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dy = e.clientY - drag.y;
+    if (!drag.moved && Math.abs(dy) < 6) return;
+    drag.moved = true;
+    const s = snapsPx();
+    const h = Math.max(s.peek * 0.8, Math.min(s.full, drag.h - dy));
+    document.documentElement.style.setProperty("--trip-drag", `${h}px`);
+    document.documentElement.dataset.tripdrag = "";
+  }
+  function gripUp(e: PointerEvent) {
+    if (!drag || e.pointerId !== drag.id) return;
+    const d = drag;
+    drag = null;
+    const root = document.documentElement;
+    if (!d.moved) {
+      if (e.type === "pointerup") snap = snap === "peek" ? "half" : snap === "half" ? "full" : "peek";
+      return;
+    }
+    const h = parseFloat(root.style.getPropertyValue("--trip-drag")) || d.h;
+    delete root.dataset.tripdrag;
+    root.style.removeProperty("--trip-drag");
+    // A flick goes one step its way; a slow drag settles at the nearest height.
+    const s = snapsPx(), v = (d.h - h) / Math.max(1, performance.now() - d.t);   // px per ms, up is +
+    const order: Snap[] = ["peek", "half", "full"];
+    if (Math.abs(v) > 0.6) {
+      const i = order.indexOf(snap) + (v > 0 ? 1 : -1);
+      snap = order[Math.max(0, Math.min(2, i))];
+    } else snap = order.reduce((a, b) => (Math.abs(s[b] - h) < Math.abs(s[a] - h) ? b : a));
+  }
   let fareOpen = $state(false), mapOpen = $state(false);   // the ticket and the map rows: closed until a change
   let bodyEl: HTMLElement | undefined = $state();
   $effect(() => { void review; bodyEl?.scrollTo({ top: 0 }); });
@@ -632,8 +703,14 @@
     {@const rideLive = liveSum(rideIds)}
     {@const fare = tripFare(p.it, plan!.r)}
     <!-- The picked option on its own: the options as tabs, its times, its parts in proportion, its steps, «Ξεκίνα». -->
-    <div class="rv">
-      <div class="rvtop">
+    <div class="rv" class:peek={sheetOn && snap === "peek"}>
+      <!-- svelte-ignore a11y_no_static_element_interactions (the keyboard goes through the grip button) -->
+      <div class="rvtop" bind:this={rvTopEl} bind:offsetHeight={topH} onpointerdown={gripDown} onpointermove={gripMove} onpointerup={gripUp}
+        onpointercancel={gripUp} onlostpointercapture={gripUp}>
+      {#if sheetOn}
+        <button type="button" class="grip" aria-label={snap === "full" ? "Μικρότερο" : "Μεγαλύτερο"}
+          onclick={e => { if (e.detail === 0) snap = snap === "peek" ? "half" : snap === "half" ? "full" : "peek"; }}><span></span></button>
+      {/if}
       <div class="row rvhead">
         <button type="button" class="icon back" aria-label="Πίσω στις επιλογές" title="Πίσω στις επιλογές" onclick={() => (review = false)}><Icon name="back" size={18} /></button>
         <h3 id="trip-h" class="rvends"><i class="rdot from" aria-hidden="true"></i>{titleCase(from?.label ?? "")}<span aria-hidden="true">→</span><i class="rdot to" aria-hidden="true"></i>{titleCase(to?.label ?? "")}</h3>
@@ -790,7 +867,7 @@
                 {/each}
               </ol>
       </div>
-      <div class="rvfoot"><button type="button" class="startbtn" onclick={() => startPlan(p.at)}><Icon name="route" size={18} /><span>Ξεκίνα</span></button></div>
+      <div class="rvfoot" bind:this={rvFootEl} bind:offsetHeight={footH}><button type="button" class="startbtn" onclick={() => startPlan(p.at)}><Icon name="route" size={18} /><span>Ξεκίνα</span></button></div>
     </div>
   {:else if folded && from && to && (trips || planRows.length)}
     <span id="trip-h" class="sr">Διαδρομή</span>
@@ -1133,6 +1210,12 @@
     font: inherit; font-size: 13px; font-weight: 700; line-height: 1; cursor: pointer; }
   .xgate { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; line-height: 1.3; }
   .rvfoot { flex: none; padding: 12px 14px 14px; box-shadow: 0 -1px 0 var(--border); }
+  /* The sheet's handle (a phone): the header drags it too; at «peek» only the options and «Ξεκίνα» show. */
+  .grip { display: block; width: 100%; height: 18px; margin: -8px 0 -4px; padding: 0; border: 0; background: none; cursor: grab; touch-action: none; }
+  .grip span { display: block; width: 40px; height: 5px; margin: 0 auto; border-radius: 3px; background: var(--border); }
+  .grip:focus-visible { outline: 2px solid var(--accent); border-radius: 6px; }
+  @media (max-width: 719px) { .rvtop { touch-action: none; } }
+  .rv.peek > .tbody { display: none; }
   .rvfoot .startbtn { margin-top: 0; }
   /* The picked option: «Οδηγίες» and «Ξεκίνα». */
   .pickacts { display: flex; gap: 8px; margin-top: 8px; }

@@ -6,11 +6,12 @@
   // and the geocoder). Shown at every plain visit (not a shared link), and again from «Πού πας;» on Τώρα. The same
   // box, one field only, sets «Σπίτι» and «Δουλειά» (app.savingPlace).
   import { untrack } from "svelte";
-  import { centre, distM, geocode, loadTripIndex, places, savedPlaces, suggest, type Place, type TripIndex } from "../trip";
+  import { centre, distM, geocode, loadTripIndex, metroPlaces, places, savedPlaces, suggest, type Place, type TripIndex } from "../trip";
   import { titleCase } from "../nearby";
   import type { AppState, TripMode, TripPrefs } from "../state.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
   import MoreHint from "./MoreHint.svelte";
+  import { loadMetro } from "../metro";
   import { CITIES, type CityId } from "../cities";
   import { item, open as reveal, pop, rise, soft } from "../anim";
   import { fetchV2Lines, fetchV2Stop, fetchV2Stops, getJSON } from "../api";
@@ -172,12 +173,30 @@
   const muniLines = $derived(muniQ.length >= 2 ? findMuniLines(app.muniCards, muniQ).slice(0, 4) : []);
   const muniStops = $derived(muniQ.length >= 2 && app.municipal ? findMuniStops(app.municipal.stops, app.municipal.routes, muniQ).slice(0, 3) : []);
   const town = (m: string) => m.replace(/^Δήμος\s+/, "");
+  // The stations (metro, tram, Προαστιακός) a walk from where the user is (or the map's middle), offered in an empty
+  // field: a trip often starts, or ends, best at one.
+  let stationPlaces = $state.raw<Place[]>([]);
+  $effect(() => {
+    if (!app.start || stationPlaces.length) return;
+    loadMetro().then(d => { stationPlaces = metroPlaces(d); }, () => {});
+  });
+  const nearStations = $derived.by((): Place[] => {
+    const at = app.myPos ?? app.mapCenter;
+    if (!at || app.savingPlace) return [];
+    // One per name: the metro's «Συνταγμα» and the tram's «Σύνταγμα (Κέντρο)» are one place to walk to.
+    const seen = new Set<string>();
+    return stationPlaces.map(p => ({ p, d: distM(at, centre(p.pts)) })).filter(x => x.d < 1500).sort((a, b) => a.d - b.d)
+      .filter(({ p }) => { const k = fold(p.label.replace(/\s*\(.*\)\s*/, "")); return !seen.has(k) && !!seen.add(k); }).slice(0, 3)
+      .map(({ p, d }) => ({ ...p, hint: `${d < 1000 ? `${Math.round(d / 10) * 10} μ` : `${(d / 1000).toFixed(1).replace(".", ",")} χλμ`}${p.lines.length ? ` · ${p.lines.slice(0, 3).join(", ")}` : ""}` }));
+  });
   type Row = { key: string; me?: true; map?: true; place?: Place; line?: V2Line; ask?: Ask; head?: string; muniLine?: MuniCard; muniStop?: MuniStopHit };
   const lineRow = (l: V2Line, head?: string): Row => ({ key: `line|${l.id}`, line: l, head });
   const rows = $derived.by((): Row[] => {
     if (!open) return [];
-    if (!ends[open].text.trim())
-      return [{ key: "me", me: true }, ...(app.savingPlace ? [] : savedPlaces(app.places).map(p => ({ key: p.kind!, place: p }))), { key: "map", map: true }];
+    if (!ends[open].text.trim()) {
+      const near = nearStations.map((p, k): Row => ({ key: `near|${p.label}`, place: p, head: k === 0 ? "Σταθμοί κοντά" : undefined }));
+      return [{ key: "me", me: true }, ...(app.savingPlace ? [] : savedPlaces(app.places).map(p => ({ key: p.kind!, place: p }))), ...near, { key: "map", map: true }];
+    }
     const { first, last } = lineHits;
     const places = opts.map((p, k): Row => ({ key: `${p.kind}|${p.label}|${p.pts[0].join()}`, place: p, head: k === 0 && (first.length || last.length) ? "Μέρη" : undefined }));
     const quick = asks.map((a, k): Row => ({ key: `ask|${a.kind}`, ask: a, head: k === 0 ? "Γρήγορα" : undefined }));

@@ -55,6 +55,8 @@
   }
   /* The active tab's highlight slides between tabs; the icon gives a small hop. */
   .tabs { isolation: isolate; }
+  /* A phone with a trip's sheet open (TripPlanner): the sheet takes the foot, its own × and Back lead out. */
+  @media (max-width: 719px) { :global(:root[data-tripsheet]) .tabs { display: none; } }
   .ind { position: absolute; z-index: -1; top: 6px; bottom: 6px; left: 6px; width: calc((100% - 12px) / 3); border-radius: 26px;
     background: var(--accent-bg); transform: translateX(calc(var(--i) * 100%)); transition: transform .35s cubic-bezier(.34, 1.3, .64, 1); }
   .tab { transition: color .2s, background-color .15s; }

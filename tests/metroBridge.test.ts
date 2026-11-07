@@ -19,7 +19,12 @@ describe("a metro option the server left out", () => {
   it("gets off near the end, on near the start", async () => {
     const { stations } = { stations: (await import("../src/lib/metro")).loadMetro };
     const p = bridgeStations((await stations()).stations, home, syn)!;
-    expect(p.off.name).toBe("ΣΥΝΤΑΓΜΑ");
+    expect(p.off?.name).toBe("ΣΥΝΤΑΓΜΑ");
+    expect(p.on.map(s => s.name)).toContain("ΔΟΥΚ. ΠΛΑΚΕΝΤΙΑΣ");
+  });
+  it("gets on near the start even when the end is far from any station", async () => {
+    const { stations } = { stations: (await import("../src/lib/metro")).loadMetro };
+    const p = bridgeStations((await stations()).stations, home, [37.93, 23.70])!;   // Νέα Σμύρνη: no station within 1.2 km here
     expect(p.on.map(s => s.name)).toContain("ΔΟΥΚ. ΠΛΑΚΕΝΤΙΑΣ");
   });
   it("joins two parts, the change counted", () => {

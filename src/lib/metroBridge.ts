@@ -1,8 +1,9 @@
 // A metro option the planner server leaves out. /v2/plan returns its five best by arrival, and from a suburb by an
 // Express line (Γλυκά Νερά, Παλλήνη → Σύνταγμα) these are all the same bus at five times, with the metro, a station
 // a bus ride away, never among them. So when no option rides the metro, the app asks for one in two parts with the
-// same /v2/plan: to a metro station near the start (by bus or on foot), then from it on by metro; the two make one
-// option, added when it arrives within METRO_SLACK of the best.
+// same /v2/plan: to a metro station near the start (by bus or on foot), then from it on by metro (and on from the
+// station at the far end by bus or on foot, as the server plans it); the two make one option, added when it arrives
+// within METRO_SLACK of the best. The end need not be near a station: the second part rides the metro and goes on.
 import { loadMetro, type MetroStation } from "./metro";
 import type { Itinerary, PlanLeg, PlanResponse } from "./plan";
 
@@ -10,7 +11,6 @@ type Pt = [number, number];   // [lat, lon]
 export type Ask = (from: Pt, to: Pt, afterS?: number) => Promise<PlanResponse | null>;
 
 const METRO_SLACK = 20 * 60;   // s: a metro option this much later than the best is still worth showing
-const END_KM = 1.2;            // the metro station at the end: this close to it
 const MIN_TRIP_KM = 3;         // shorter trips: the bus or the feet, no detour by metro
 const CHANGE_S = 120;          // from the bus or the street to the platform
 const NEAR_KM = 4.5;           // a station to get on at: a short bus ride or a walk from the start
@@ -25,15 +25,14 @@ export function km(a: Pt, b: Pt): number {
 export const ridesMetro = (it: Itinerary, r: PlanResponse) =>
   it.legs.some(l => l.kind === "ride" && (l.mode === "metro" || r.lines[l.line ?? ""]?.mode === "metro" || /^stasy:/.test(l.line ?? "")));
 
-/** Where to get on and off: the station nearest the end, and up to two nearest the start. */
-export function bridgeStations(all: MetroStation[], from: Pt, to: Pt): { on: MetroStation[]; off: MetroStation } | null {
+/** Where to get on: up to two stations nearest the start; off: the station nearest the end (not one to get on at). */
+export function bridgeStations(all: MetroStation[], from: Pt, to: Pt): { on: MetroStation[]; off: MetroStation | null } | null {
   if (km(from, to) < MIN_TRIP_KM) return null;
   const at = (s: MetroStation): Pt => [s.lat, s.lon];
-  const off = [...all].sort((a, b) => km(at(a), to) - km(at(b), to))[0];
-  if (!off || km(at(off), to) > END_KM) return null;
+  const off = [...all].sort((a, b) => km(at(a), to) - km(at(b), to))[0] ?? null;
   // Near the start: within NEAR_KM, and nearer it than the end is (the line may well go round, away from the end).
   const reach = Math.min(NEAR_KM, km(from, to) * 0.5);
-  const on = all.filter(s => s.name !== off.name && km(from, at(s)) < reach)
+  const on = all.filter(s => s.name !== off?.name && km(from, at(s)) < reach)
     .sort((a, b) => km(from, at(a)) - km(from, at(b))).slice(0, 2);
   return on.length ? { on, off } : null;
 }
