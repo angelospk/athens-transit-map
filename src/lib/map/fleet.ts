@@ -55,7 +55,7 @@ const ll = (path: [number, number][]) => path.map(([lat, lon]) => [lon, lat] as 
 function ahead(shown: LngLat, v: CityVehicle | Vehicle, pos: LngLat, nowSec: number) {
   const geom = v.path && v.path_beyond ? [...v.path, ...v.path_beyond.slice(1)] : v.path ?? v.path_beyond;
   return geom
-    ? pathPlan(shown, ll(geom), v.speed ?? NO_SPEED, v.position_at, nowSec, v.path_stops ?? [], v.path_speeds)
+    ? pathPlan(shown, ll(geom), v.speed ?? NO_SPEED, v.position_at, nowSec, v.path_stops ?? [], v.path_speeds, v.speed)
     : linePlan(shown, pos, v.bearing);
 }
 

@@ -132,7 +132,7 @@ describe("the stop board", () => {
     const m = t.last();
     expect(m.body.chat_id).toBe(1);
     expect(m.body.text).toMatch(/🚏 ΣΥΝΤΑΓΜΑ/);
-    expect(m.body.text).toMatch(/022 → ΚΗΦΙΣΙΑ: 3′/);
+    expect(m.body.text).toMatch(/022 → ΚΗΦΙΣΙΑ: 3–4′/);
     expect(m.body.text).toMatch(/10:00/);
     expect(data(m)).toEqual(expect.arrayContaining(["r:100", "f:100", `a:${alert022}`, "b:101"]));
     expect(buttons(m).find(b => b.callback_data === `a:${alert022}`)!.text).toBe("🔔 022");

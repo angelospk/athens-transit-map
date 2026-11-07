@@ -7,6 +7,30 @@ export interface DrawnLine { id: string; color: string; data: LineStatic; visibl
 
 const flip = ([lat, lon]: [number, number]): [number, number] => [lon, lat];
 
+/** A route drawn smooth: each corner becomes a short curve that starts and ends at most `cut` metres from it (and
+ *  never past the middle of a segment), so a line stays on its street while its sharp elbows round off. The first
+ *  and last points stay. For drawing only: vehicles still move along the shape itself. [lon, lat] in and out. */
+export function smoothLine(pts: [number, number][], cut = 14, steps = 6): [number, number][] {
+  if (pts.length < 3) return pts;
+  const kx = 111320 * Math.cos((pts[0][1] * Math.PI) / 180), ky = 110540;
+  const out: [number, number][] = [pts[0]];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [a, b, c] = [pts[i - 1], pts[i], pts[i + 1]];
+    const l1 = Math.hypot((b[0] - a[0]) * kx, (b[1] - a[1]) * ky), l2 = Math.hypot((c[0] - b[0]) * kx, (c[1] - b[1]) * ky);
+    if (!l1 || !l2) continue;
+    const d = Math.min(cut, l1 / 2, l2 / 2);
+    const p: [number, number] = [b[0] + ((a[0] - b[0]) * d) / l1, b[1] + ((a[1] - b[1]) * d) / l1];
+    const q: [number, number] = [b[0] + ((c[0] - b[0]) * d) / l2, b[1] + ((c[1] - b[1]) * d) / l2];
+    // A quadratic curve from p to q with the corner as its control point.
+    for (let s = 0; s <= steps; s++) {
+      const t = s / steps, u = 1 - t;
+      out.push([u * u * p[0] + 2 * u * t * b[0] + t * t * q[0], u * u * p[1] + 2 * u * t * b[1] + t * t * q[1]]);
+    }
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+
 export function routesFC(lines: DrawnLine[]): FeatureCollection<LineString> {
   return {
     type: "FeatureCollection",
@@ -14,7 +38,7 @@ export function routesFC(lines: DrawnLine[]): FeatureCollection<LineString> {
       Object.entries(data.variants).filter(([variant]) => !visible || visible.has(variant)).map(([variant, v]) => ({
         type: "Feature" as const,
         properties: { line: id, variant, color },
-        geometry: { type: "LineString" as const, coordinates: v.shape.map(flip) },
+        geometry: { type: "LineString" as const, coordinates: smoothLine(v.shape.map(flip)) },
       }))),
   };
 }
@@ -24,7 +48,7 @@ export function variantFC(line: DrawnLine | undefined, variant: string | null | 
   if (!line || !v) return { type: "FeatureCollection", features: [] };
   return {
     type: "FeatureCollection",
-    features: [{ type: "Feature", properties: { color: line.color }, geometry: { type: "LineString", coordinates: v.shape.map(flip) } }],
+    features: [{ type: "Feature", properties: { color: line.color }, geometry: { type: "LineString", coordinates: smoothLine(v.shape.map(flip)) } }],
   };
 }
 

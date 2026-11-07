@@ -1,25 +1,21 @@
 <script lang="ts">
-  // «‹ <the card below>» in a card's header, while there is a card below; Back in the browser does the same.
+  // The round ‹ at the start of a card's header (as in the mockup): back to the card below, or, with none, closed
+  // (the map, or the tab the card was opened from). Back in the browser does the same.
   import { cardTitle } from "../legacy";
   import type { AppState } from "../state.svelte";
+  import Icon from "./Icon.svelte";
 
-  let { app }: { app: AppState } = $props();
+  let { app, onclose }: { app: AppState; onclose?: () => void } = $props();
   const below = $derived(app.stack.length > 1 ? app.stack[app.stack.length - 2] : null);
+  const label = $derived(below ? `Πίσω στο ${cardTitle(below)}` : "Πίσω");
 </script>
 
-{#if below}
-  <button type="button" class="back" title="Πίσω: {cardTitle(below)}" aria-label="Πίσω στο {cardTitle(below)}"
-    onclick={() => app.back()}><span aria-hidden="true">‹</span><span class="t">{cardTitle(below)}</span></button>
-{/if}
+<button type="button" class="back" title={label} aria-label={label}
+  onclick={() => (below ? app.back() : (onclose ?? (() => app.closeCards()))())}><Icon name="back" size={20} /></button>
 
 <style>
-  .back {
-    flex: none; display: inline-flex; align-items: center; gap: 2px; max-width: 60%; min-height: 32px; padding: 0 8px 0 4px;
-    border: 0; border-radius: 8px; background: var(--control); color: var(--fg); font: inherit; font-size: 13px; cursor: pointer;
-  }
-  .back span[aria-hidden] { font-size: 20px; line-height: 1; }
-  .back .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .back { flex: none; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0;
+    border-radius: 50%; background: var(--card); color: var(--fg); cursor: pointer; }
   .back:hover { background: var(--control-hover); }
-  /* Back has a row of its own with the card's buttons (CardSheet, StopCard), so the label fits on a phone too. */
-  @media (max-width: 480px) { .back { min-height: 44px; } }
+  .back:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 </style>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { distanceM, type LngLat } from "../src/lib/glide";
 import { Fleet, GAP_M, routeGeom } from "../src/lib/map/fleet";
-import { cumulativeLL, project } from "../src/lib/motion";
+import { cumulativeLL, project, GLIDE_MAX_S } from "../src/lib/motion";
 import { shapeLength } from "../src/lib/predict";
 import type { CityVehicle, Vehicle } from "../src/lib/types";
 
@@ -151,7 +151,7 @@ describe("Fleet", () => {
     f.city([city(600, T + 150, { path: null })], new Set(), T + 150);   // the bus was not that far
     const geom: LngLat[] = bent.map(([lat, lon]) => [lon, lat]), cum = cumulativeLL(geom);
     let worst = 0, back = false;
-    for (let t = T + 150.05; t < T + 153; t += 0.05) {
+    for (let t = T + 150.05; t < T + 150 + GLIDE_MAX_S + 0.2; t += 0.05) {   // a long way back: the longest glide
       const r = mv.step(t);
       back ||= r.back;
       worst = Math.max(worst, project(geom, cum, r.pos).off);

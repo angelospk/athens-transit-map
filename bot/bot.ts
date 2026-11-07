@@ -1,8 +1,8 @@
 // @oasa_bus_bot: stop alerts in Telegram or as web push, no account. The page's 🔔 gives a link with the lines, variants
 // and boarding stops (src/lib/tglink.ts); the bot watches those lines' live data and writes when a bus
 // is within n stops (src/lib/alerts.ts, the page's rule). One-off: an alert ends after 2 hours.
-// Recurring (Telegram only, a "2" link): on the chosen weekdays and times (Athens) it watches for the length of
-// the window and sleeps otherwise; it never expires. A new OASA data version carries it over when its stops
+// Recurring (a "2" link; in Telegram, and as web push for the page's «Κάθε μέρα»): on the chosen weekdays and times
+// (Athens) it watches for the length of the window and sleeps otherwise; it never expires (the page stops it). A new OASA data version carries it over when its stops
 // are still there (same line, variant and stop name), else ends it.
 // Web push: the page sends the same link with its push subscription (POST /alerts, see web()).
 // Rail alerts (metro, tram, suburban, src/lib/railAlerts.ts): the same endpoint with {rail, sub}; they watch a
@@ -615,7 +615,6 @@ export class Bot {
       d = decodeAlert(this.ix, payload);
     }
     if (!d.ok) return { ok: false, why: d.why };
-    if (d.rep && "push" in to) return { ok: false, why: "bad" };   // recurring is for Telegram only
     const ix = this.ix;
     if (this.staticVer !== ix.v) return { ok: false, why: "updating" };
     const now = this.d.now();

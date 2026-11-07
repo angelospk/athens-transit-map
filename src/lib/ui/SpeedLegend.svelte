@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from "./Icon.svelte";
   import { SPEED_STOPS, speedNote, type SpeedMeta } from "../speed";
 
   // The speed layer's legend: colours, where the numbers come from, and a × that turns the layer off.
@@ -12,7 +13,7 @@
     <span class="scale" aria-label="από αργά (κόκκινο) σε γρήγορα (μπλε), km/h">
       {#each SPEED_STOPS as [v, c] (v)}<i style:background={c}>{v}</i>{/each}<small>km/h</small>
     </span>
-    <button type="button" class="close" aria-label="Κλείσιμο ταχυτήτων" title="Κλείσιμο ταχυτήτων" onclick={onclose}>×</button>
+    <button type="button" class="close" aria-label="Κλείσιμο ταχυτήτων" title="Κλείσιμο ταχυτήτων" onclick={onclose}><Icon name="close" size={14} /></button>
   </header>
   <details>
     <summary>{#if note}{note.period} · {note.samples} μετρήσεις · μαζί με τις στάσεις{:else}Φόρτωση…{/if}</summary>
@@ -33,7 +34,7 @@
   .scale i { min-width: 22px; padding: 1px 0; border-radius: 3px; color: #fff; font: 600 11px/14px system-ui, sans-serif;
     font-style: normal; text-align: center; text-shadow: 0 0 2px #000, 0 0 2px #000; }
   .scale small { margin-left: 3px; color: var(--muted); }
-  .close { width: 32px; height: 32px; margin: -6px -8px -6px auto; border: 0; border-radius: 8px; background: none; color: var(--muted);
+  .close { display: flex; align-items: center; justify-content: center; padding: 0; width: 32px; height: 32px; margin: -6px -8px -6px auto; border: 0; border-radius: 8px; background: none; color: var(--muted);
     font-size: 20px; cursor: pointer; }
   .close:hover { background: var(--control); color: var(--fg); }
   summary { margin-top: 2px; color: var(--muted); font-size: 11px; cursor: pointer; }

@@ -13,7 +13,15 @@ export interface TripIndex { v: string; s: [string, number, number, string?][]; 
 
 // A place to start or end at: stops of one name close together, an area or street (geocoder), or the
 // user's location.
-export interface Place { label: string; hint?: string; pts: Pt[]; lines: string[]; kind?: "stop" | "area" | "street" | "poi" | "me" | "metro" | "metro-any" }
+export interface Place { label: string; hint?: string; pts: Pt[]; lines: string[]; kind?: "stop" | "area" | "street" | "poi" | "me" | "metro" | "metro-any" | "home" | "work" }
+
+// «Σπίτι» and «Δουλειά» (the home screen's, kept on the device) as places to start or end at.
+export function savedPlaces(saved: { home?: { label: string; at: Pt }; work?: { label: string; at: Pt } }): Place[] {
+  return (["home", "work"] as const).flatMap(k => {
+    const p = saved[k];
+    return p ? [{ label: k === "home" ? "Σπίτι" : "Δουλειά", hint: p.label, pts: [p.at], lines: [], kind: k }] : [];
+  });
+}
 
 export interface TripVariant {
   id: string;
@@ -413,7 +421,8 @@ export async function geocode(query: string, signal?: AbortSignal, near?: Pt): P
   const ask = async (qq: string) => {
     const u = new URL(GEOCODE_URL);
     // Attica only.
-    Object.entries({ q: qq, bbox: "23.35,37.65,24.15,38.25", limit: "8" }).forEach(([k, v]) => u.searchParams.set(k, v));
+    // lang "default": the names as mapped here (Greek), not in the browser's language.
+    Object.entries({ q: qq, bbox: "23.35,37.65,24.15,38.25", limit: "8", lang: "default" }).forEach(([k, v]) => u.searchParams.set(k, v));
     if (at) {
       u.searchParams.set("lat", String(at[0]));
       u.searchParams.set("lon", String(at[1]));

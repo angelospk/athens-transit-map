@@ -58,7 +58,7 @@
   .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 18px; overflow: hidden; }
   .seg button { min-height: 32px; padding: 0 12px; border: 0; background: var(--control); color: inherit; font-size: 13px; cursor: pointer; }
   .seg button + button { border-left: 1px solid var(--border); }
-  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); font-weight: 600; }
   .muted { color: var(--muted); }
   .small { margin: 0; font-size: 13px; }
   .read { margin: 6px 0; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }

@@ -163,7 +163,7 @@
   .name { flex: 1; min-width: 0; min-height: 36px; padding: 0; border: 0; background: none; color: var(--fg); font: inherit; font-size: 14px;
     font-weight: 700; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .name:hover { text-decoration: underline; text-underline-offset: 3px; }
-  .unstar { flex: none; width: 36px; height: 36px; border: 0; border-radius: 8px; background: none; color: #f59f00; font-size: 18px; cursor: pointer; }
+  .unstar { flex: none; width: 36px; height: 36px; border: 0; border-radius: 8px; background: none; color: var(--star); font-size: 18px; cursor: pointer; }
   .unstar:hover { background: var(--control); }
   .row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 0 4px; margin: 0 -4px; border: 0; border-radius: 8px;
     background: none; color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }

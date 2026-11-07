@@ -28,6 +28,13 @@ jobs:
         env:
           VITE_FEEDBACK_URL: ${{ vars.VITE_FEEDBACK_URL }} # the Apps Script of docs/feedback; unset = text-only form
           VITE_TURNSTILE_SITE_KEY: ${{ vars.VITE_TURNSTILE_SITE_KEY }} # Cloudflare Turnstile bot check; unset = no widget
+          VITE_MAPKIT_TOKEN: ${{ secrets.VITE_MAPKIT_TOKEN }} # Apple Maps under ours in 2D (scripts/mapkit-token.mjs); unset = our own base map
+          # The site's own repository builds for its domain's root; any other copy for <user>.github.io/<repo>/
+          # (or the VITE_BASE repository variable, when set).
+          VITE_BASE: ${{ vars.VITE_BASE || (github.repository != 'angelospk/athens-transit-map' && format('/{0}/', github.event.repository.name) || '') }}
+      # A copy under a sub-path is not the site at staseis.gr: it must not claim that domain.
+      - if: github.repository != 'angelospk/athens-transit-map'
+        run: rm -f dist/CNAME
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist

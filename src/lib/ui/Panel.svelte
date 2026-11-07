@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import MapSettings from "./MapSettings.svelte";
+  import { tick, untrack } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
   import { directionGroups, focusGroup, otherDirection } from "../directions";
   import { clock, duration, fmtMinutes } from "../format";
+  import { LOOKS } from "../map/look3d";
     import { STALE_S, type AppState } from "../state.svelte";
   import Bell from "./Bell.svelte";
   import HelpPop from "./HelpPop.svelte";
@@ -10,16 +12,30 @@
   import LinePicker from "./LinePicker.svelte";
   import StatusBanner from "./StatusBanner.svelte";
   import { strikes } from "../disruptions";
+  import { preloadThree } from "../map/scene3d";
 
   let { app }: { app: AppState } = $props();
 
   // The panel starts compact, on a phone and a desktop alike (B10): the map matters more; the stats are a tap away.
   let collapsed = $state(true);
+  let panelH = $state(0);   // the planner sits under the panel on a computer
   // One popover at a time, opened from the buttons on the right: the map menu, what the symbols mean, or the
   // trip planner (loaded on first open). The idea box is in the ⓘ sheet (B10).
   let pop = $state<"layers" | "help" | "trip" | null>(null);
   // On a phone a popover covers the panel: what it covers cannot be reached by the keyboard either.
   const narrow = new MediaQuery("(max-width: 719px)");
+  // A phone with the planner or a card open: the map's buttons step aside (the rail here, the zoom and locate ones
+  // of the map), and the open panel takes the width, a margin each side. The page's root carries it (app.css).
+  $effect(() => {
+    const on = narrow.current && (pop === "trip" || app.stack.length > 0);
+    document.documentElement.toggleAttribute("data-sheet", on);
+    return () => document.documentElement.removeAttribute("data-sheet");
+  });
+  // A computer with the planner open: a card opens beside it, not over it (CardSheet reads this).
+  $effect(() => {
+    document.documentElement.toggleAttribute("data-planner", !narrow.current && pop === "trip");
+    return () => document.documentElement.removeAttribute("data-planner");
+  });
   let tripButton: HTMLButtonElement | undefined = $state();
   let layersButton: HTMLButtonElement | undefined = $state();
   let helpButton: HTMLButtonElement | undefined = $state();
@@ -33,9 +49,13 @@
     await tick();
     ({ layers: layersButton, help: helpButton, trip: tripButton })[p]?.focus();
   }
-  const closeTrip = () => { pop = null; void refocus("trip"); };   // its A and B stay on the map until its own ×
+  // its A and B stay on the map until its own ×; closed, the «Ταξίδι» tab gives way to the map
+  const closeTrip = () => { pop = null; if (app.tab === "trip") app.tab = "now"; void refocus("trip"); };
   const toggle = (p: "layers" | "help" | "trip") => {
     pop = pop === p ? null : p;
+    // Another popover in the planner's place takes the tab back to the map, so «Ταξίδι» can open it again.
+    if (pop === "trip") app.tab = "trip";
+    else if (app.tab === "trip") app.tab = "map";
     if (pop === "help") void tick().then(() => document.getElementById("pop-help")?.focus());
     if (pop !== "layers") return;
     app.loadMetro();   // again, if the first load failed
@@ -43,7 +63,12 @@
   };
 
   // «Οδηγίες εδώ» in the search modal: the trip planner opens and takes the place as its end.
-  $effect(() => { if (app.tripTo) pop = "trip"; });
+  $effect(() => { if (app.tripTo || app.tripFrom) { pop = "trip"; app.tab = "trip"; } });
+  // The «Ταξίδι» tab is the planner: picked, it opens; another tab picked, it closes.
+  $effect(() => {
+    const t = app.tab;
+    untrack(() => { if (t === "trip") pop = "trip"; else if (pop === "trip") pop = null; });
+  });
 
   // The chevron: opens and closes the dropdown.
   function fold() {
@@ -93,8 +118,11 @@
   $effect(() => { if (focused.length < 2) focusOpen = false; });
 
 
+  // «Τώρα» and «Ειδοποιήσεις» with no card open: the bar is a search field (as in the mockup), not the line picker.
+  const home = $derived((app.tab === "now" || app.tab === "alerts") && !app.stack.length);
+
   // A strike today (/v2/alerts, urgent): one line under the bar until the user closes it.
-  const strike = $derived(strikes(app.disruptions, app.serverNow, app.closedStrikes)[0]);
+  const strike = $derived(app.notifyPrefs.strikes ? strikes(app.disruptions, app.serverNow, app.closedStrikes)[0] : undefined);
 
   const oldest = $derived.by(() => {
     const ts = app.selected.flatMap(l => (app.live[l] ? [app.live[l].updated_at] : []));
@@ -108,15 +136,28 @@
 <svelte:window onclick={e => { if (pop && pop !== "trip" && !(e.target as Element).closest?.(".pop, .tool")) pop = null; }}
   onkeydowncapture={onEscape} />
 
-<section class="panel" class:compact inert={!!pop && narrow.current} aria-label="Πίνακας ελέγχου">
+<section class="panel" class:compact class:home inert={!!pop && narrow.current} aria-label="Πίνακας ελέγχου" bind:offsetHeight={panelH}>
   <h1 class="sr">Στάσεις: συγκοινωνίες live</h1>
 
   <!-- Always shown: the picked lines, the search, and the chevron. The map buttons are on the right (.rail). -->
+  {#if home}
+    <!-- «Τώρα» and «Ειδοποιήσεις»: the search, at the left with the rest of the column (the map's settings are on the
+         rail at the right). -->
+    <div class="homebar">
+      {#if app.tab === "now"}
+        <!-- «Πού πας;» is in the home sheet: here only the search for a line or a stop. -->
+        <button type="button" class="round" aria-haspopup="dialog" aria-label="Πού πας; Διεύθυνση, στάση ή γραμμή" onclick={() => (app.start = true)}><Icon name="search" size={20} /></button>
+      {:else}
+        <button type="button" class="where" aria-haspopup="dialog" onclick={() => (app.start = true)}><Icon name="search" size={18} /><span>Πού πας;</span></button>
+      {/if}
+    </div>
+  {:else}
   <div class="bar">
-    <LinePicker {app} expanded={!collapsed} onsearch={() => (app.finder = "all")} {tail} />
+    <LinePicker {app} expanded={!collapsed} onsearch={() => (app.start = true)} {tail} />
   </div>
+  {/if}
 
-  {#if strike}
+  {#if strike && app.tab !== "now" && app.tab !== "alerts"}
     <div class="strike" role="note">
       <a href={strike.url} target="_blank" rel="noopener" title={strike.title} aria-label="{strike.title}. Ανοίγει σε νέα καρτέλα"><span
         aria-hidden="true">⚠</span> {strike.title} <span aria-hidden="true">›</span></a>
@@ -125,20 +166,18 @@
   {/if}
 
   <!-- Favourites only (B7): what the map shows, as a two-way switch. -->
-  {#if app.favorites.length}
-    <div class="favseg" role="group" aria-label="Τι δείχνει ο χάρτης">
-      <button type="button" aria-pressed={app.favOnly} title="Μόνο οι αγαπημένες γραμμές στον χάρτη" onclick={() => app.setFavOnly(true)}><Icon name="star-filled" size={14} /> Αγαπημένα</button>
-      <button type="button" aria-pressed={!app.favOnly} title="Όλα τα λεωφορεία στον χάρτη" onclick={() => app.setFavOnly(false)}>Όλα</button>
-    </div>
-  {:else if !app.favHintSeen}
-    <div class="favpill" role="note">
-      <span>Βάλε <Icon name="star" size={13} label="αστέρι" /> για να βλέπεις μόνο τις δικές σου</span>
-      <button type="button" aria-label="Κλείσιμο υπόδειξης" onclick={() => app.dismissFavHint()}>×</button>
+  {#if app.tab === "now" || app.tab === "alerts"}
+    <!-- «Τώρα» holds the favourites and the notices itself: the bar stays a search bar. -->
+  {:else if !app.favorites.length && !app.favHintSeen}
+    <div class="favtip" role="note">
+      <span class="ftic"><Icon name="star-filled" size={15} /></span>
+      <span class="ftx"><b>Μόνο τα δικά σου.</b> Πάτα το αστέρι σε στάση ή γραμμή, και μετά εδώ, για να βλέπεις μόνο αυτά.</span>
+      <button type="button" onclick={() => app.dismissFavHint()}>Εντάξει</button>
     </div>
   {/if}
 
   <!-- The dropdown: the tools, then what the picked lines are doing. -->
-  <div id="panel-body" hidden={collapsed}>
+  <div id="panel-body" hidden={collapsed || home}>
     <div class="tools">
       {#if badge}
         <span class="badge {badge.cls}" title="Ανανέωση μόλις ο διακομιστής έχει νέα δεδομένα (περίπου κάθε 30 δευτερόλεπτα)">
@@ -172,9 +211,11 @@
     {#if app.trainsOn}
       <!-- The marker shapes (B3): the colour of a bus is its delay; a train's is its line's. -->
       <div class="legend shapes">
-        <span><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="var(--ontime)" /></svg>λεωφορείο</span>
-        <span><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><rect x="1" y="1" width="10" height="10" rx="2.5" fill="#7E57C2" /></svg>προαστιακός (GPS)</span>
-        <span><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="2.5" fill="#fff" stroke="#e30613" stroke-width="3" /></svg>μετρό, τραμ (από πρόγραμμα)</span>
+        <span><img class="ico" src="{import.meta.env.BASE_URL}icons/bus.png" alt="" />λεωφορείο</span>
+        <span><img class="ico" src="{import.meta.env.BASE_URL}icons/trolley.png" alt="" />τρόλεϊ</span>
+        <span><i class="disc" style:background="#7E57C2"><img src="{import.meta.env.BASE_URL}icons/glyph-metro.png" alt="" /></i>προαστιακός (GPS)</span>
+        <span><i class="disc" style:background="#e30613"><img src="{import.meta.env.BASE_URL}icons/glyph-metro.png" alt="" /></i>μετρό</span>
+        <span><i class="disc" style:background="#dc137a"><img src="{import.meta.env.BASE_URL}icons/glyph-tram.png" alt="" /></i>τραμ (μετρό, τραμ: από πρόγραμμα)</span>
       </div>
     {/if}
 
@@ -184,7 +225,7 @@
         <div class="focus">
           <span>{focused.map(f => f.line).join(", ")}: μία κατεύθυνση</span>
           <button type="button" title="Όλες οι κατευθύνσεις" aria-label="Δείξε όλες τις κατευθύνσεις όλων των γραμμών"
-            onclick={() => { for (const f of focused) app.setFocus(f.line, null); }}>×</button>
+            onclick={() => { for (const f of focused) app.setFocus(f.line, null); }}><Icon name="close" size={13} /></button>
           <button type="button" aria-expanded={focusOpen} aria-controls="focus-rows" aria-label="Κατευθύνσεις ανά γραμμή"
             onclick={() => (focusOpen = !focusOpen)}>
             <svg viewBox="0 0 12 8" width="12" height="8" aria-hidden="true" class={{ up: focusOpen }}><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
@@ -201,7 +242,7 @@
               onclick={() => app.setFocus(f.line, other.variants)}>⇄</button>
           {/if}
           <button type="button" title="Όλες οι κατευθύνσεις" aria-label="Δείξε όλες τις κατευθύνσεις της {f.line}"
-            onclick={() => app.setFocus(f.line, null)}>×</button>
+            onclick={() => app.setFocus(f.line, null)}><Icon name="close" size={13} /></button>
         </div>
       {/each}
       </div>
@@ -210,14 +251,14 @@
       {@const a = app.alert}
       <div class="focus">
         <span><Bell /> {a.lines.map(l => l.line).join(", ")} · {a.n === 1 ? "στην προηγούμενη στάση" : `${a.n} στάσεις πριν`} · έως {clock(a.until).slice(0, 5)}</span>
-        <button type="button" title="Τέλος ειδοποίησης" aria-label="Σταμάτα την ειδοποίηση" onclick={() => app.setAlert(null)}>×</button>
+        <button type="button" title="Τέλος ειδοποίησης" aria-label="Σταμάτα την ειδοποίηση" onclick={() => app.setAlert(null)}><Icon name="close" size={13} /></button>
       </div>
     {/if}
     {#if app.railAlert}
       {@const a = app.railAlert}
       <div class="focus">
         <span><Bell /> {a.label} · {a.name} · {a.min}′ πριν · έως {clock(a.until).slice(0, 5)}</span>
-        <button type="button" title="Τέλος ειδοποίησης" aria-label="Σταμάτα την ειδοποίηση για {a.label}" onclick={() => app.setRailAlert(null)}>×</button>
+        <button type="button" title="Τέλος ειδοποίησης" aria-label="Σταμάτα την ειδοποίηση για {a.label}" onclick={() => app.setRailAlert(null)}><Icon name="close" size={13} /></button>
       </div>
     {/if}
   </div>
@@ -225,26 +266,26 @@
   {#each app.hits as h (h.id)}
     <div class="hit" role="alert">
       <span><Icon name="bus" /> {h.text}</span>
-      <button type="button" aria-label="Κλείσιμο" onclick={() => app.dismissHit(h.id)}>×</button>
+      <button type="button" aria-label="Κλείσιμο" onclick={() => app.dismissHit(h.id)}><Icon name="close" size={13} /></button>
     </div>
   {/each}
   <StatusBanner {app} />
 
   {#snippet tail()}
-    {#if collapsed && app.selected.length}
-      <button type="button" class="tool" aria-haspopup="dialog"
-        aria-label="Αναζήτηση γραμμής ή στάσης" title="Αναζήτηση" onclick={() => (app.finder = "all")}>
-        <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-          <circle cx="8.5" cy="8.5" r="5.5" /><path d="M12.6 12.6L17 17" />
-        </svg>
-      </button>
+    {#if app.selected.length}
+      <button type="button" class="tool add" aria-haspopup="dialog"
+        aria-label="Πού πας; Διεύθυνση, στάση ή γραμμή" title="Πού πας;" onclick={() => (app.start = true)}><Icon name="search" size={18} /></button>
     {/if}
-    <button type="button" class="tool favbtn" class:on={app.favsOpen} aria-pressed={app.favsOpen} aria-label="Αγαπημένα" title="Αγαπημένα"
-      onclick={() => app.toggleFavs()}>
-      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill={app.favsOpen ? "currentColor" : "none"} stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
-        <path d="M10 2.6l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L2.8 7.9l5-.7z" />
-      </svg>
-    </button>
+    <span class="sep" aria-hidden="true"></span>
+    {#if app.favorites.length}
+      <!-- The star filters the map (mockup 33): only the favourites, and the bar says so. -->
+      <button type="button" class="tool favbtn" class:on={app.favOnly} role="switch" aria-checked={app.favOnly}
+        title={app.favOnly ? "Όλα τα λεωφορεία στον χάρτη" : "Μόνο τα αγαπημένα στον χάρτη"} onclick={() => app.setFavOnly(!app.favOnly)}>
+        <Icon name={app.favOnly ? "star-filled" : "star"} size={17} />{#if app.favOnly}<span>Δικά μου · {app.favorites.length}</span>{/if}
+      </button>
+    {:else}
+      <button type="button" class="tool favbtn" aria-label="Αγαπημένα" title="Αγαπημένα" onclick={() => app.toggleFavs()}><Icon name="star" size={17} /></button>
+    {/if}
     <button type="button" class="fold" aria-expanded={!collapsed} aria-controls="panel-body" bind:this={foldButton}
       aria-label={collapsed ? "Εμφάνιση λεπτομερειών" : "Απόκρυψη λεπτομερειών"} onclick={fold}>
       <svg viewBox="0 0 12 8" width="14" height="10" aria-hidden="true" class={{ up: !collapsed }}>
@@ -257,7 +298,7 @@
 
 <!-- The popover of a map button opens on the right, beside the buttons (on a phone over the panel). -->
 {#if pop}
-  <div class="popwrap" class:raised={pop === "layers" || pop === "help"}>
+  <div class="popwrap" class:raised={pop === "layers" || pop === "help"} class:tabbed={pop === "trip"} style:--ph="{panelH}px">
     {#if pop === "trip"}
       {#await import("./TripPlanner.svelte")}
         <div class="pop"><p class="hint">Φόρτωση…</p></div>
@@ -275,94 +316,29 @@
         <HelpPop />
       </div>
     {:else if pop === "layers"}
-      <div class="pop" id="pop-layers" role="dialog" aria-label="Τι δείχνει ο χάρτης">
-        <h3>Τι δείχνει ο χάρτης</h3>
-        <section>
-          <label class="switch">
-            <input type="checkbox" checked={app.cityOn} disabled={cityMissing} onchange={e => app.setCityOn(e.currentTarget.checked)} />
-            <span><b>Λεωφορεία</b> <small>{#if cityMissing}(όχι ακόμα διαθέσιμο){:else if app.city}· {app.city.vehicles.length} τώρα{/if}</small><br />
-              <small>Όλα τα λεωφορεία και τρόλεϊ της πόλης. Οι γραμμές που διάλεξες μένουν πάντα.</small></span>
-          </label>
-          <label class="switch">
-            <input type="checkbox" checked={app.trainsOn} onchange={e => app.setTrainsOn(e.currentTarget.checked)} />
-            <span><b>Τρένα</b> <small>{#if app.trainsOn && (app.stasyTrains.length || app.suburbanTrains.length)}· {app.stasyTrains.length + app.suburbanTrains.length} τώρα{/if}</small><br />
-              <small>Μετρό, τραμ και Προαστιακός, με τους σταθμούς τους. Μετρό και τραμ κατά προσέγγιση από το πρόγραμμα· Προαστιακός με GPS.</small></span>
-          </label>
-          {#if app.municipal}
-            <label class="switch">
-              <input type="checkbox" checked={app.municipalOn} onchange={e => app.setMunicipalOn(e.currentTarget.checked)} />
-              <span><b>Δημοτικά</b> <small>· {new Set(app.municipal.routes.map(r => r.municipality)).size} δήμοι</small><br />
-                <small>Τα λεωφορεία των δήμων, από το OpenStreetMap. Χωρίς ώρες: πάτα μια γραμμή για το πρόγραμμα του δήμου.</small></span>
-            </label>
-          {/if}
-        </section>
-        <section>
-          <h4>Θέμα χάρτη</h4>
-          <div class="seg" role="radiogroup" aria-label="Θέμα">
-            {#each [["system", "Συσκευής"], ["light", "Φωτεινό"], ["dark", "Σκοτεινό"]] as const as [v, label] (v)}
-              <button type="button" role="radio" aria-checked={app.theme === v} onclick={() => app.setTheme(v)}>{label}</button>
-            {/each}
-          </div>
-        </section>
-        <section>
-          <div class="field" role="radiogroup" aria-label="Τα άλλα λεωφορεία όταν πατάς ένα">
-            <span>Όταν πατάς ένα λεωφορείο, τα άλλα:</span>
-            <div class="seg">
-              {#each [["normal", "Κανονικά"], ["dim", "Αχνά"], ["hide", "Κρυφά"]] as const as [v, label] (v)}
-                <button type="button" role="radio" aria-checked={app.others === v} onclick={() => app.setOthers(v)}>{label}</button>
-              {/each}
-            </div>
-          </div>
-        </section>
-        <section>
-          <h4>Φίλτρα λεωφορείων <small>· κρύβουν όσα δεν ταιριάζουν</small></h4>
-          <label class="switch">
-            <input type="checkbox" checked={app.only.fresh} onchange={e => app.setOnly({ fresh: e.currentTarget.checked })} />
-            <span>Μόνο με πρόσφατη θέση<br /><small>Έστειλαν θέση τα τελευταία 1½ λεπτά.</small></span>
-          </label>
-          <label class="switch">
-            <input type="checkbox" checked={app.only.onTime} onchange={e => app.setOnly({ onTime: e.currentTarget.checked })} />
-            <span>Μόνο στην ώρα τους<br /><small>Έως 5 λεπτά καθυστέρηση.</small></span>
-          </label>
-        </section>
-        <section>
-          <h4>Κίνηση λεωφορείων</h4>
-          <label class="switch">
-            <input type="checkbox" checked={app.motion} onchange={e => app.setMotion(e.currentTarget.checked)} />
-            <span>Κίνηση ανάμεσα στις θέσεις<br /><small>Κλειστό: το όχημα μένει εκεί που έστειλε θέση.</small></span>
-          </label>
-          <div class="agemode">
-            <span>Ηλικία θέσης <b class="age">24″</b><br /><small>Πριν πόσο έστειλε θέση (λεωφορεία, προαστιακός). Μετρό και τραμ: θέση από το πρόγραμμα, όχι GPS.</small></span>
-            <div class="seg" role="radiogroup" aria-label="Ηλικία θέσης">
-              {#each [["never", "Ποτέ"], ["old", "Μόνο παλιές"], ["always", "Πάντα"]] as const as [m, t] (m)}
-                <button type="button" role="radio" aria-checked={app.ageMode === m} onclick={() => app.setAgeMode(m)}>{t}</button>
-              {/each}
-            </div>
-          </div>
-          <details class="hint">
-            <summary>Πώς κινούνται</summary>
-            Ο ΟΑΣΑ στέλνει θέσεις κάθε 20–60″. Όταν η νέα θέση είναι πολύ μπροστά, το όχημα πηγαίνει γρήγορα ως εκεί, πάνω
-            στον δρόμο, και αφήνει για λίγο μπλε ίχνος. Όταν είναι πίσω, γυρίζει αχνό πάνω στον δρόμο με γκρι διακεκομμένο
-            ίχνος: διόρθωση θέσης, όχι όπισθεν. Αχνό όχημα με πορτοκαλί ηλικία: δεν έστειλε θέση για πάνω από 1½ λεπτό, άρα μπορεί να είναι αλλού.
-            {#if oldest != null}<br /><span title="Ώρα δεδομένων {clock(oldest)}">Ενημέρωση γραμμών πριν {duration(Math.max(0, app.serverNow / 1000 - oldest))}.</span>{/if}
-            {#if cityAge != null && app.cityOn}<br /><span title="Ώρα δεδομένων {clock(app.city!.updated_at)}">Ενημέρωση πόλης πριν {duration(cityAge)}.</span>{/if}
-          </details>
-        </section>
-        <section>
-          <h4>Ταχύτητα λεωφορείων</h4>
-          <label class="switch">
-            <input type="checkbox" checked={app.speedOn} onchange={e => app.setSpeedOn(e.currentTarget.checked)} />
-            <span>Τυπική ταχύτητα ανά δρόμο<br /><small>Από στάση σε στάση, από τις θέσεις GPS. Πάτα ένα κομμάτι για km/h.</small></span>
-          </label>
-        </section>
+      <div class="pop" id="pop-layers" role="dialog" aria-label="Ρυθμίσεις χάρτη">
+        <MapSettings {app} {cityMissing} {cityAge} {oldest} onclose={() => (pop = null)} />
       </div>
     {/if}
   </div>
 {/if}
 
 <div class="rail" role="toolbar" aria-label="Εργαλεία χάρτη">
+  <button type="button" class="tool three" class:on={app.threeD} aria-pressed={app.threeD}
+    aria-label="Τρισδιάστατη προβολή (beta)" data-tip="3D (beta, σε δοκιμή): κτίρια, δέντρα και τα λεωφορεία σε μοντέλο, με κλίση του χάρτη (δύο δάχτυλα ή δεξί κλικ για περιστροφή)"
+    onpointerenter={() => void preloadThree()} onfocus={() => void preloadThree()}
+    onclick={() => app.setThreeD(!app.threeD)}>3D<span class="beta" aria-hidden="true">β</span></button>
+  {#if app.threeD}
+    <!-- The metro under the street: the street dims and the buildings turn see-through, the tunnels show. -->
+    <button type="button" class="tool" class:on={app.under} aria-pressed={app.under} aria-label="Λειτουργία μετρό: μόνο το υπόγειο"
+      data-tip="Λειτουργία μετρό: μόνο τα τούνελ και τα τρένα, κάτω από τον δρόμο. Πάτα ξανά για να βγεις" onclick={() => (app.under = !app.under)}>
+      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 6.5h16" /><path d="M4 17v-4.5a6 6 0 0 1 12 0V17" /><path d="M7.5 17v-3.2h5V17" />
+      </svg>
+    </button>
+  {/if}
   <button type="button" class="tool" class:on={pop === "layers"} class:filtering={app.only.fresh || app.only.onTime} aria-expanded={pop === "layers"} aria-controls="pop-layers"
-    bind:this={layersButton} aria-label="Τι δείχνει ο χάρτης" data-tip="Τι δείχνει ο χάρτης: λεωφορεία, τρένα, θέμα, φίλτρα, ταχύτητα" onclick={() => toggle("layers")}>
+    bind:this={layersButton} aria-label="Ρυθμίσεις χάρτη" data-tip="Ρυθμίσεις χάρτη: τι δείχνει, θέμα, 3D, φίλτρα" onclick={() => toggle("layers")}>
     <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
       <path d="M2 10S5 4.8 10 4.8 18 10 18 10 15 15.2 10 15.2 2 10 2 10z" /><circle cx="10" cy="10" r="2.5" />
     </svg>
@@ -382,134 +358,174 @@
 </div>
 
 <style>
-  .panel { position: absolute; z-index: 5; top: calc(12px + env(safe-area-inset-top)); left: 12px; width: 344px;
-    max-width: calc(100% - 64px); padding: 12px 14px; background: var(--panel); border: 1px solid var(--border);
-    border-radius: 14px; box-shadow: var(--shadow); backdrop-filter: blur(8px); }
-  .panel.compact { width: fit-content; max-width: min(344px, calc(100% - 64px)); }
+  /* One floating glass card over the map (the glass recipe: app.css): top left, 16 px in from the edges. */
+  .panel { position: absolute; z-index: 5; top: calc(16px + env(safe-area-inset-top)); left: 16px; width: 400px;
+    max-width: calc(100% - 76px); padding: 12px 14px; border: 0; border-radius: var(--radius); background: var(--glass-strong); --card: var(--glass-fill); --card-border: var(--glass-line); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); text-shadow: var(--glass-text); }
+  .panel.compact { width: 400px; max-width: calc(100% - 76px); }   /* as wide as the cards below it */
+  /* The home bar: a search pill and a round layers button, floating on the map with no panel behind them. */
+  .panel.home, .panel.home.compact { width: 400px; max-width: calc(100% - 32px); padding: 0; background: none; border: 0; box-shadow: none;
+    -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: none; }
+  .homebar { display: flex; gap: 10px; }
+  .where { flex: 1; min-width: 0; height: 52px; display: flex; align-items: center; gap: 10px; padding: 0 18px; border: 0;
+    border-radius: 26px; color: color-mix(in srgb, var(--fg) 82%, transparent); font: inherit; font-size: 16px; font-weight: 600; line-height: 1;
+    cursor: pointer; background: var(--glass); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); text-shadow: var(--glass-text); }
+  .homebar .round { flex: none; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; padding: 0;
+    border: 0; border-radius: 50%; color: var(--fg); cursor: pointer; background: var(--glass); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); text-shadow: var(--glass-text); }
+  .where:focus-visible, .homebar .round:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .sr { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  #panel-body { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+  #panel-body { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
   .tools { display: flex; align-items: center; gap: 2px; }
-  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted);
-    white-space: nowrap; }
+  .badge { display: inline-flex; align-items: center; gap: 8px; height: 26px; padding: 0 10px; border-radius: 13px; background: var(--control);
+    font-size: 12px; font-weight: 600; line-height: 1; color: var(--muted); white-space: nowrap; }
   .badge i { width: 8px; height: 8px; border-radius: 50%; background: var(--none); }
+  .badge.stale { background: var(--bad-bg); color: var(--late3); }
   .badge.stale i { background: var(--late3); }
-  .tool { display: grid; place-items: center; flex: none; width: 40px; height: 40px; margin: 0; border: 0; border-radius: 8px;
+  .tool { display: grid; place-items: center; flex: none; width: 40px; height: 40px; margin: 0; padding: 0; border: 0; border-radius: 12px;
     background: none; color: var(--muted); cursor: pointer; }
   .tool:hover, .tool.on { background: var(--control); color: var(--fg); }
-  .favbtn.on { color: #f59f00; }
-  @media (pointer: coarse) { .favbtn { width: 44px; height: 44px; } }
-  .favpill { display: flex; align-items: center; gap: 2px; width: fit-content; max-width: 100%; min-height: 32px; margin-top: 8px;
-    padding: 0 2px 0 10px; border: 1px solid #f59f00; border-radius: 16px; font-size: 12px; box-sizing: border-box; }
-  .favpill span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .favpill button { flex: none; min-width: 30px; min-height: 28px; padding: 0 8px; border: 0; border-radius: 14px; background: none;
-    color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
-  .favpill button:hover { background: var(--control); }
-  @media (pointer: coarse) { .favpill { min-height: 44px; } .favpill button { min-height: 40px; min-width: 44px; } }
-  .shapes svg { flex: none; margin-right: 4px; vertical-align: -1px; }
-  .agemode { margin: 6px 0; font-size: 13px; }
-  .agemode small { color: var(--muted); font-size: 11px; }
-  .agemode .seg { margin-top: 6px; }
-  .favseg { display: flex; gap: 2px; margin-top: 8px; padding: 2px; border-radius: 10px; background: var(--control); }
-  .favseg button { flex: 1; min-height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: inherit;
-    font: inherit; font-size: 13px; cursor: pointer; }
-  .favseg button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
-  @media (pointer: coarse) { .favseg button { min-height: 40px; } }
+  /* The star: a filter for the map; on, it says what the map shows. */
+  .sep { flex: none; width: 1px; height: 24px; margin: 0 4px; background: var(--border); }
+  .favbtn { width: auto; min-width: 40px; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 0 10px; font: inherit; font-size: 13px; font-weight: 800; line-height: 1; }
+  .favbtn.on { background: color-mix(in srgb, var(--star) 18%, transparent); color: var(--star); }
+  .favbtn.on:hover { background: color-mix(in srgb, var(--star) 26%, transparent); color: var(--star); }
+  @media (pointer: coarse) { .favbtn { height: 44px; min-width: 44px; } }
+  /* The first time: what the star does, once. */
+  .favtip { display: flex; align-items: center; gap: 12px; margin-top: 10px; padding: 10px 10px 10px 12px; border-radius: 16px;
+    background: color-mix(in srgb, var(--star) 11%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--star) 30%, transparent); }
+  .ftic { flex: none; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 50%;
+    background: color-mix(in srgb, var(--star) 18%, transparent); color: var(--star); }
+  .ftx { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.35; color: var(--muted); }
+  .ftx b { color: var(--fg); }
+  .favtip button { flex: none; height: 32px; padding: 0 10px; border: 0; border-radius: 10px; background: none; color: var(--star); font: inherit;
+    font-size: 12.5px; font-weight: 800; line-height: 1; cursor: pointer; }
+  .favtip button:hover { background: color-mix(in srgb, var(--star) 14%, transparent); }
+  .shapes .ico { flex: none; width: 16px; height: 16px; margin-right: 6px; }
+  .shapes .disc { display: inline-grid; place-items: center; flex: none; width: 16px; height: 16px; margin-right: 6px; border-radius: 50%;
+    border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .15); box-sizing: border-box; }
+  .shapes .disc img { display: block; width: 19px; height: 19px; }
   /* A map filter is on: some vehicles are hidden. */
   .tool { position: relative; }
   .tool.filtering::after, .tool.pinned::after { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px;
     border-radius: 50%; background: var(--accent); }
-  /* The map buttons (right, under the zoom and locate buttons) and the popover that opens beside them. */
-  /* The same look and size as MapLibre's zoom and locate buttons above it (white in dark too). */
-  .rail { position: absolute; z-index: 5; top: calc(116px + env(safe-area-inset-top)); right: 10px; width: 29px; display: flex;
-    flex-direction: column; background: #fff; border-radius: 4px; box-shadow: 0 0 0 2px rgba(0, 0, 0, .1); }
-  .rail .tool { width: 29px; height: 29px; border-radius: 0; color: #333; }
-  .rail .tool + .tool { border-top: 1px solid #ddd; }
-  .rail .tool:first-child { border-radius: 4px 4px 0 0; }
-  .rail .tool:last-child { border-radius: 0 0 4px 4px; }
-  .rail .tool:hover, .rail .tool.on { background: rgba(0, 0, 0, .08); color: #333; }
-  .rail .tool.on { color: var(--accent); }
-  .rail .tool.filtering::after, .rail .tool.pinned::after { top: 3px; right: 3px; }
+  /* The map buttons (right, under the zoom and locate buttons) and the popover that opens beside them: one themed
+     column with the same corners and size as the zoom and locate group above it (app.css). */
+  /* The map's buttons, top right: 3D, underground, settings, route, help; the locate and zoom buttons are at the
+     bottom right (MapView), the zoom last. */
+  .rail { position: absolute; z-index: 5; top: calc(16px + env(safe-area-inset-top)); right: 16px; width: 40px; display: flex;
+    flex-direction: column; border-radius: 20px; background: var(--glass); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); text-shadow: var(--glass-text); }
+  .rail .tool { width: 40px; height: 40px; border-radius: 0; color: var(--fg); }
+  .rail .tool + .tool { border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+  .rail .tool:first-child { border-radius: 20px 20px 0 0; }
+  .rail .tool:last-child { border-radius: 0 0 20px 20px; }
+  .rail .tool:hover { background: color-mix(in srgb, var(--control) 60%, transparent); }
+  .rail .tool.on { background: var(--accent-bg); color: var(--accent); }
+  .rail .tool.filtering::after, .rail .tool.pinned::after { top: 5px; right: 5px; }
+  .rail .tool.three { position: relative; font: 700 12px/1 var(--font); letter-spacing: .02em; }
+  /* 3D is in beta: a small amber tag on its button. */
+  .beta { position: absolute; top: 3px; right: 3px; width: 13px; height: 13px; display: flex; align-items: center; justify-content: center; border-radius: 50%;
+    background: var(--late1); color: #1a1200; font: 800 9px/1 var(--font); letter-spacing: 0; }
   /* What a button does: beside it, on hover or keyboard focus (no tooltip on a touch screen; the popover itself opens). */
   .rail .tool::before { content: attr(data-tip); position: absolute; right: calc(100% + 10px); top: 50%; translate: 0 -50%; width: max-content;
-    max-width: 220px; padding: 6px 9px; border-radius: 8px; background: var(--panel); color: var(--fg); border: 1px solid var(--border);
-    box-shadow: var(--shadow); font-size: 12px; line-height: 1.35; white-space: normal; text-align: left; pointer-events: none;
+    max-width: 220px; padding: 7px 10px; border-radius: 10px; background: var(--surface); color: var(--fg);
+    box-shadow: var(--shadow-sm); font-size: 12px; font-weight: 500; line-height: 1.35; white-space: normal; text-align: left; pointer-events: none;
     opacity: 0; transition: opacity .12s; }
   @media (hover: hover) { .rail .tool:not(.on):hover::before { opacity: 1; transition-delay: .35s; } }
   .rail .tool:not(.on):focus-visible::before { opacity: 1; }
-  .popwrap { position: absolute; z-index: 5; top: calc(116px + env(safe-area-inset-top)); right: 52px; width: 344px; max-width: calc(100% - 64px);
-    max-height: calc(100dvh - 128px - env(safe-area-inset-top)); display: flex; flex-direction: column; }
+  .popwrap { position: absolute; z-index: 5; top: calc(16px + env(safe-area-inset-top)); right: 68px; width: 360px; max-width: calc(100% - 76px);
+    max-height: calc(100dvh - 32px - env(safe-area-inset-top)); display: flex; flex-direction: column; }
   .popwrap.raised { z-index: 8; }   /* the map menu over the info card */
-  .pop { min-height: 0; padding: 12px 14px; font-size: 13px; background: var(--bg); border: 1px solid var(--border);
-    border-radius: 14px; box-shadow: var(--shadow); box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; }
+  .pop { min-height: 0; padding: 16px; font-size: 13px; border: 0;
+    border-radius: var(--radius); background: var(--glass-strong); --card: var(--glass-fill); --card-border: var(--glass-line); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); text-shadow: var(--glass-text); box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; }
   .pop p { margin: 0 0 8px; }
   .pop .feedback { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px;
-    margin: 0 0 12px; border: 0; border-radius: 10px; background: var(--accent); color: #fff; font: inherit; font-size: 14px;
-    font-weight: 600; cursor: pointer; }
-  .pop h3 { margin: 0 0 10px; font-size: 15px; }
-  .pop h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
-  .pop section + section { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--border); }
-  .pop .age { margin-right: 4px; padding: 0 4px; border-radius: 6px; background: var(--control); font-size: 11px;
-    font-variant-numeric: tabular-nums; }
+    margin: 0 0 12px; border: 0; border-radius: var(--radius-sm); background: var(--accent); color: var(--on-accent); font: inherit; font-size: 14px;
+    font-weight: 600; line-height: 1; cursor: pointer; }
   .hint { color: var(--muted); font-size: 12px; }
-  .field > span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
-  .seg { display: flex; padding: 2px; border-radius: 9px; background: var(--control); margin-bottom: 10px; }
-  .seg button { flex: 1; min-height: 30px; border: 0; border-radius: 7px; background: none; cursor: pointer; font-size: 12px; }
-  .seg button[aria-checked="true"] { background: var(--panel); box-shadow: 0 1px 3px rgba(0, 0, 0, .2); font-weight: 600; }
-  .fold { flex: none; width: 40px; height: 40px; margin: 0; border: 0; background: none; color: var(--muted);
-    cursor: pointer; border-radius: 8px; }
-  .fold:hover { background: var(--control); }
+  .field > span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+  .seg { display: flex; gap: 4px; padding: 4px; border-radius: var(--radius-sm); background: var(--control); margin-bottom: 10px; }
+  .fold { flex: none; display: grid; place-items: center; width: 40px; height: 40px; margin: 0; padding: 0; border: 0; background: none;
+    color: var(--muted); cursor: pointer; border-radius: 12px; }
+  .fold:hover { background: var(--control); color: var(--fg); }
   .fold svg { transition: transform .15s; }
   .fold svg.up { transform: rotate(180deg); }
-  .muted { color: var(--muted); font-size: 12px; margin-top: 2px; }
-  .stats { display: grid; grid-template-columns: repeat(3, auto); justify-content: space-between; gap: 6px; margin: 10px 0 4px; }
-  .stats b { display: block; font-size: 18px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .stats small { font-size: 13px; }
-  .stats span { color: var(--muted); font-size: 11px; }
+  .muted { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 10px 0 4px; }
+  .stats > div { padding: 10px 12px; border-radius: var(--radius-sm); background: var(--control); }
+  .stats b { display: block; font-size: 18px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .stats small { font-size: 12px; font-weight: 600; color: var(--muted); }
+  .stats span { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; font-weight: 500; line-height: 1.25; }
   .legend .age { margin-right: 4px; font-size: 10px; font-variant-numeric: tabular-nums; }
-  .focus { display: flex; align-items: center; gap: 2px; min-height: 32px; margin: 6px 0 0; padding: 0 2px 0 10px;
-    border: 1px solid var(--accent); border-radius: 16px; color: var(--accent); font-size: 12px; }
-  .focus span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .focus button { flex: none; width: 30px; height: 28px; border: 0; border-radius: 14px; background: none; color: inherit;
-    font-size: 14px; cursor: pointer; }
+  .focus { display: flex; align-items: center; gap: 2px; min-height: 34px; margin: 8px 0 0; padding: 0 2px 0 12px;
+    border: 0; border-radius: 17px; background: var(--accent-bg); color: var(--accent); font-size: 12px; font-weight: 600; }
+  .focus span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.2; }
+  .focus button { flex: none; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 15px;
+    background: none; color: inherit; font-size: 14px; cursor: pointer; }
   .focus button:hover { background: var(--control); }
   .focus svg { transition: transform .15s; }
   .focus svg.up { transform: rotate(180deg); }
-  .strike { display: flex; align-items: center; gap: 2px; min-height: 32px; margin-top: 8px; padding: 0 2px 0 10px; border-radius: 10px;
-    background: var(--late3); color: #fff; font-size: 13px; font-weight: 600; }
-  .strike a { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: none; }
+  .strike { display: flex; align-items: center; gap: 2px; min-height: 36px; margin-top: 10px; padding: 0 2px 0 12px; border-radius: var(--radius-sm);
+    background: var(--late3); color: var(--on-accent); font-size: 13px; font-weight: 600; }
+  .strike a { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: none; line-height: 1.2; }
   .strike a:hover { text-decoration: underline; text-underline-offset: 3px; }
-  .strike button { flex: none; width: 32px; height: 30px; border: 0; border-radius: 8px; background: none; color: inherit; font-size: 14px; cursor: pointer; }
+  .strike button { flex: none; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 9px;
+    background: none; color: inherit; font-size: 14px; cursor: pointer; }
   @media (pointer: coarse) { .strike { min-height: 44px; } .strike button { width: 44px; height: 44px; } }
-  .hit { display: flex; align-items: flex-start; gap: 6px; margin-top: 8px; padding: 8px 4px 8px 10px; border-radius: 10px;
-    background: var(--accent); color: #fff; font-size: 14px; font-weight: 600; }
-  .hit span { flex: 1; }
-  .hit button { width: 30px; height: 28px; border: 0; border-radius: 8px; background: none; color: inherit; font-size: 18px; cursor: pointer; }
-  .pop h4 small { text-transform: none; letter-spacing: 0; font-weight: 400; }
-  .pop details summary { cursor: pointer; margin-bottom: 4px; }
-  .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 8px 0 0; font-size: 12px; }
-  .legend .lead { color: var(--muted); }
-  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+  .hit { display: flex; align-items: center; gap: 6px; margin-top: 10px; padding: 8px 4px 8px 12px; border-radius: var(--radius-sm);
+    background: var(--accent); color: var(--on-accent); font-size: 14px; font-weight: 600; }
+  .hit span { flex: 1; line-height: 1.3; }
+  .hit button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 9px; background: none;
+    color: inherit; font-size: 18px; cursor: pointer; }
+  .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 12px 0 0; font-size: 12px; font-weight: 500; }
+  .legend > span { display: inline-flex; align-items: center; line-height: 1.2; }
+  .legend .lead { color: var(--fg); font-weight: 600; }
+  .legend i { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
   [hidden] { display: none !important; }
   @media (max-width: 719px) {
-    .panel { left: 8px; right: 60px; width: auto; max-width: none; padding: 10px 12px; }
-    .panel.compact { right: auto; max-width: calc(100% - 68px); }
-    .rail { top: calc(50px + env(safe-area-inset-top)); }   /* no zoom buttons above it */
-    .popwrap { top: calc(12px + env(safe-area-inset-top)); left: 8px; right: 60px; width: auto; max-width: none;
+    .panel { left: 16px; right: 68px; width: auto; max-width: none; padding: 10px 12px; }
+    .panel.home, .panel.home.compact { left: 16px; right: 16px; width: auto; max-width: none; }
+    .panel.compact { right: auto; max-width: calc(100% - 84px); }
+    .rail { top: calc(16px + env(safe-area-inset-top)); right: 16px; }
+    .popwrap { top: calc(16px + env(safe-area-inset-top)); left: 16px; right: 68px; width: auto; max-width: none;
       max-height: calc(100dvh - 24px - env(safe-area-inset-top)); }
     .stats b { font-size: 16px; }
   }
   /* Touch: 44 px buttons (B10), as the map's own (app.css). Above the rail: the zoom pair and the locate button. */
   @media (pointer: coarse) {
-    .rail { width: 44px; top: calc(162px + env(safe-area-inset-top)); }
+    .rail { width: 44px; top: calc(16px + env(safe-area-inset-top)); }
     .rail .tool { width: 44px; height: 44px; }
-    .popwrap { top: calc(162px + env(safe-area-inset-top)); right: 64px; max-width: calc(100% - 76px);
-      max-height: calc(100dvh - 174px - env(safe-area-inset-top)); }
-    .panel { max-width: calc(100% - 78px); }
+    .popwrap { top: calc(16px + env(safe-area-inset-top)); right: 68px; max-width: calc(100% - 80px);
+      max-height: calc(100dvh - 32px - env(safe-area-inset-top)); }
+    .panel { max-width: calc(100% - 80px); }
+  }
+  /* The planner is the «Ταξίδι» tab: on a phone it stops above the tab bar. */
+  /* On a computer the planner is the left column, under the panel and over the tab bar, as the cards are: the map
+     and its buttons stay free on the right. */
+  @media (min-width: 720px) {
+    .popwrap.tabbed { top: calc(28px + var(--ph, 60px) + env(safe-area-inset-top)); left: 16px; right: auto; width: 420px; max-width: calc(100% - 84px);
+      max-height: calc(100dvh - 36px - var(--ph, 60px) - 92px - env(safe-area-inset-top)); }
+  }
+  /* Wide enough that the tab bar (in the middle) is clear of the column: the planner goes down to the window's foot. */
+  @media (min-width: 1180px) {
+    .popwrap.tabbed { max-height: calc(100dvh - 44px - var(--ph, 60px) - env(safe-area-inset-top)); }
+  }
+  /* A phone: above the tab bar and the map's credits line over it. */
+  @media (max-width: 719px) { .popwrap.tabbed { max-height: calc(100dvh - 134px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important; } }
+  /* A phone, a trip's details open: a sheet at the foot, over the tab bar, so the route shows on the map above it. */
+  @media (max-width: 719px) {
+    .popwrap.tabbed:has(:global(.rv)) { top: auto !important; bottom: calc(96px + env(safe-area-inset-bottom)); left: 8px; right: 8px; height: 46dvh;
+      max-height: 46dvh !important; animation: sheetUp .32s cubic-bezier(.2, .8, .2, 1); }
+    @keyframes sheetUp { from { transform: translateY(40px); opacity: 0; } }
+  }
+  @media (max-width: 719px) and (prefers-reduced-motion: reduce) { .popwrap.tabbed:has(:global(.rv)) { animation: none; } }
+  @media (max-width: 719px) {
+    :global(:root[data-sheet]) .popwrap { left: 8px !important; right: 8px !important; width: auto; max-width: none; }
+    :global(:root[data-sheet]) .rail { opacity: 0; pointer-events: none; transform: translateX(12px); }
+    .rail { transition: opacity .2s, transform .25s cubic-bezier(.2, .8, .2, 1); }
   }
   @media (pointer: coarse) and (max-width: 719px) {
-    .rail { top: calc(64px + env(safe-area-inset-top)); }   /* the locate button only */
-    .panel, .popwrap { right: 64px; }
-    .popwrap { top: calc(12px + env(safe-area-inset-top)); max-width: none; max-height: calc(100dvh - 24px - env(safe-area-inset-top)); }
-    .panel.compact { max-width: calc(100% - 72px); }
+    .rail { top: calc(16px + env(safe-area-inset-top)); right: 16px; }
+    .panel, .popwrap { right: 72px; }
+    .popwrap { top: calc(16px + env(safe-area-inset-top)); max-width: none; max-height: calc(100dvh - 32px - env(safe-area-inset-top)); }
+    .panel.compact { max-width: calc(100% - 88px); }
   }
 </style>

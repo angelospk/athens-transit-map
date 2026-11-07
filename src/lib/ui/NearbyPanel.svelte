@@ -172,7 +172,7 @@
   .title { color: var(--fg); font-size: 15px; font-weight: 700; }
   .muted { margin: 4px 0; color: var(--muted); font-size: 12px; }
   .muted.pad { margin: 6px 0 8px; }
-  .use { min-height: 40px; margin: 4px 0 6px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--accent); color: #fff;
+  .use { min-height: 40px; margin: 4px 0 6px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--accent); color: var(--on-accent);
     font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
   .cities { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 6px 0 4px; }
   .city { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 52px; padding: 8px 12px;
@@ -180,7 +180,7 @@
   .city b { font-size: 15px; font-weight: 700; }
   .city small { color: var(--muted); font-size: 11.5px; }
   .city[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-  .stop { margin: 0 0 10px; padding: 10px 12px 2px; border: 1px solid var(--border); border-radius: 14px; }
+  .stop { margin: 0 0 10px; padding: 10px 12px 2px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
   .stop:last-child { margin-bottom: 2px; }
   .shead { display: flex; align-items: flex-start; gap: 10px; padding-bottom: 6px; }
   .who { flex: 1; min-width: 0; }

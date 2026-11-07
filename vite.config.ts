@@ -31,6 +31,9 @@ function maplibreWorker(): Plugin {
 }
 
 export default defineConfig({
+  // "/" for the site at a domain's root; a copy on GitHub Pages at <user>.github.io/<repo>/ builds with
+  // VITE_BASE=/<repo>/ (deploy.yml, from the repository variable of the same name).
+  base: process.env.VITE_BASE || "/",
   plugins: [svelte(), maplibreWorker()],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),

@@ -19,7 +19,7 @@
   import Back from "./Back.svelte";
   import Icon from "./Icon.svelte";
 
-  let { app, key, header, children, starred, onstar, starLabel, closeOnEscape = true, onclose }: {
+  let { app, key, header, children, starred, onstar, starLabel, pinColor, onpin, closeOnEscape = true, onclose }: {
     app: AppState;
     key: string;                       // a new key opens the sheet again
     header: Snippet;
@@ -27,6 +27,8 @@
     starred?: boolean;                 // with onstar: the star button
     onstar?: () => void;
     starLabel?: string;
+    pinColor?: string | null;          // with onpin: the pin button, in the pin's colour once pinned
+    onpin?: () => void;
     closeOnEscape?: boolean;
     onclose?: () => void;              // × and Escape; default: close the cards
   } = $props();
@@ -55,6 +57,10 @@
   });
 
   const flip = (s: SheetState): SheetState => (s === "open" ? "peek" : "open");
+
+  // Riding behind a vehicle (3D chase): on a phone the sheet steps down to its header, so the street shows.
+  // Riding it («Είμαι μέσα») keeps the sheet open under the 3D view: the stops left are what the rider needs.
+  $effect(() => { if (app.chase && narrow.current && !app.ride) untrack(() => { sheet = "peek"; drag = 0; }); });
 
   function down(e: PointerEvent) {
     if (!narrow.current || e.button !== 0 || grab || (e.target as Element).closest("button:not(.grab)")) return;
@@ -91,12 +97,16 @@
     <button type="button" class="grab" aria-expanded={sheet === "open"} aria-controls="card-body"
       aria-label={sheet === "open" ? "Σύμπτυξη λεπτομερειών" : "Ανάπτυξη λεπτομερειών"} onclick={e => { if (e.detail === 0) sheet = flip(sheet); }}><span></span></button>
     <header>
-      <Back {app} />
+      <Back {app} onclose={close} />
       <div class="hd">{@render header()}</div>
+      {#if onpin}
+        <button type="button" class="star pin" class:on={!!pinColor} style:--pc={pinColor} aria-pressed={!!pinColor}
+          title={pinColor ? "Καρφιτσωμένη στον χάρτη" : "Καρφίτσωμα στον χάρτη"} aria-label={pinColor ? "Ρυθμίσεις καρφιτσώματος" : "Καρφίτσωμα στον χάρτη"} onclick={onpin}><Icon name="pushpin" size={19} /></button>
+      {/if}
       {#if onstar}
         <button type="button" class="star" class:on={starred} aria-pressed={starred} title={starLabel} aria-label={starLabel} onclick={onstar}><Icon name={starred ? "star-filled" : "star"} size={20} /></button>
       {/if}
-      <button type="button" class="close" aria-label="Κλείσιμο" onclick={close}>×</button>
+      <button type="button" class="close" aria-label="Κλείσιμο" onclick={close}><Icon name="close" size={18} /></button>
     </header>
   </div>
 
@@ -106,37 +116,51 @@
 </section>
 
 <style>
-  .card { position: absolute; z-index: 6; left: 12px; bottom: 28px; width: 360px; padding: 12px 14px;
-    background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
-    backdrop-filter: blur(8px); }
+  .card { position: absolute; z-index: 6; left: 16px; bottom: 28px; width: 400px; padding: 14px 16px 16px;
+    border: 0; border-radius: var(--radius); background: var(--glass-strong); --card: var(--glass-fill); --card-border: var(--glass-line); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); text-shadow: var(--glass-text); }
   .top { touch-action: none; }
-  .grab { display: none; width: 100%; height: 14px; margin: -8px 0 2px; padding: 0; border: 0; background: none; cursor: grab; }
+  .grab { display: none; width: 100%; height: 16px; margin: -8px 0 4px; padding: 0; border: 0; background: none; cursor: grab; }
   .grab span { display: block; width: 40px; height: 5px; margin: 0 auto; border-radius: 3px; background: var(--border); }
   .grab:focus-visible { outline: 2px solid var(--accent); border-radius: 6px; }
-  .body { max-height: min(55dvh, 420px); overflow-y: auto; overscroll-behavior: contain; transition: opacity .15s; }
-  .card.peek .body { opacity: 0; }   /* no sliver of it under the header */
-  header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
-  .hd { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
-  /* Under Back, the badge and title get a row of their own: Back and the buttons above. */
-  header:has(> :global(.back)) > :global(.back) { margin-right: auto; }
-  header:has(> :global(.back)) .hd { order: 1; flex-basis: 100%; }
-  header :global(.pill) { flex: none; padding: 2px 8px; border-radius: 10px; background: var(--c); color: var(--t); font-weight: 700; }
-  header :global(h2) { flex: 1; min-width: 0; margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); overflow: hidden;
-    text-overflow: ellipsis; white-space: nowrap; }
-  header :global(.fresh) { flex: none; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
-  header :global(.fresh.warn) { color: #e03131; }
-  .close { flex: none; width: 36px; height: 36px; margin: -8px -10px -8px 0; border: 0; background: none; font-size: 22px;
-    color: var(--muted); cursor: pointer; border-radius: 8px; }
-  .close:hover { background: var(--control); }
-  .star { flex: none; width: 36px; height: 36px; margin: -8px -4px -8px 0; border: 0; background: none; color: var(--muted); font-size: 20px;
-    cursor: pointer; border-radius: 8px; }
-  .star:hover { background: var(--control); }
-  .star.on { color: #f59f00; }
+  .body { max-height: min(62dvh, 580px); overflow-y: auto; overscroll-behavior: contain; transition: opacity .15s; }
+  .card.peek .body { opacity: 0; }
+  /* A card with a long list (the vehicle's stops): the list alone scrolls, the facts and buttons stay put. */
+  .body:has(> :global(.listscroll)) { display: flex; flex-direction: column; overflow: hidden; }
+  .body:has(> :global(.listscroll)) > :global(*) { flex: none; }
+  .body:has(> :global(.listscroll)) > :global(.listscroll) { flex: 0 1 auto; }   /* no sliver of it under the header */
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .hd { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; }
+
+  /* The line badge: a solid tile in the line's colour, like the markers and chips. */
+  header :global(.pill) { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 48px; height: 36px;
+    padding: 0 14px; border-radius: 18px; background: var(--c); color: var(--t); font-size: 18px; font-weight: 800; line-height: 1; }
+  header :global(h2) { flex: 1; min-width: 0; margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -.01em; color: var(--fg);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* A title that must be read whole (where a bus goes): up to two lines. */
+  header :global(h2.wrap) { white-space: normal; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
+  header :global(.fresh) { flex: none; display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 12px;
+    background: var(--control); font-size: 11px; font-weight: 600; line-height: 1; color: var(--muted); font-variant-numeric: tabular-nums; }
+  header :global(.fresh.warn) { background: var(--bad-bg); color: var(--late3); }
+  .close, .star { flex: none; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border: 0;
+    border-radius: 50%; background: var(--card); color: var(--fg); cursor: pointer; }
+  .close { margin: -4px -4px -4px 0; }
+  .star { margin: -4px 0; }
+  .close:hover, .star:hover { background: var(--control-hover); color: var(--fg); }
+  .star.on { background: color-mix(in srgb, var(--star) 16%, var(--card)); color: var(--star); }
+  .star.pin.on { background: color-mix(in srgb, var(--pc) 18%, var(--card)); color: var(--pc); }
   @media (prefers-reduced-motion: reduce) { .card { transition: none !important; } }
   @media (max-width: 719px) {
-    .card { left: 0; right: 0; bottom: 0; width: auto; border-radius: 16px 16px 0 0; border-width: 1px 0 0;
-      padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); transition: transform .22s ease; }
+    .card { left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); width: auto; border-radius: 28px;
+      padding: 14px 16px 16px; transition: transform .22s ease; }
     .card.dragging { transition: none; }
     .grab { display: block; }
   }
+  /* A phone has Back for closing (the mockup's header); × stays on a desktop. */
+  @media (max-width: 719px) { .close { display: none; } }
+  /* A card comes up from below; under a press its round buttons give a little. */
+  .card { animation: cardIn .32s cubic-bezier(.2, .8, .2, 1); }
+  @keyframes cardIn { from { transform: translateY(28px); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .card { animation: none; } }
+  /* Beside the trip planner, not over it (Panel sets data-planner on a computer while it is open). */
+  @media (min-width: 900px) { :global(:root[data-planner]) .card { left: 432px; } }
 </style>

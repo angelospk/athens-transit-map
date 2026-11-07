@@ -11,9 +11,13 @@ import { bearingDeg } from "./heading";
 export const TAU_S = 10;       // a gap closes with this time constant...
 export const CATCH_MAX = 6;    // ...at most this much faster than the target (m/s): no burst after new data
 export const FAR_M = 600;      // farther ahead: correction, not a race
-export const GLIDE_S = 1.2;    // correction glide length: back, and the shortest ahead
-export const GLIDE_MAX_S = 2.4;   // the longest ahead
-const GLIDE_M_PER_S = 1200;    // ahead: GLIDE_S plus a second per this many metres
+export const GLIDE_S = 1.2;    // correction glide length: the shortest, either way
+export const GLIDE_MAX_S = 8;  // the longest
+const GLIDE_M_PER_S = 40;      // GLIDE_S plus a second per this many metres: a correction slides, it does not blink
+//                                (replay of a recorded feed, 2026-11-06: 200 m back in 1.2 s read as a jump) ...
+export const LEAP_M = 600;     // ... but farther than this it is a new place, not a correction: the dot leaps there
+//                                at once (a sweep across the city for seconds is worse than one blink)
+export const OWN_M = 500;      // the measured speed counts over this far from the fix, fading into the step speeds
 export const TRAIL_S = 0.8;    // its trail fades out over this, after the glide
 const OFF_S = 1.2;             // sideways offsets fade out over at least this...
 const OFF_V = 5;               // ...and at most this fast (m/s at the steepest point)
@@ -90,15 +94,28 @@ export function drive(v: number, stops: number[], end: number, horizon = HORIZON
 // `fallback`. Stands for good at a speed <= 0, never past `end`. The backend's typical speeds per
 // 200 m (history, day type, hour; chosen in lab/motion round 2026-10-21) replace the stop waits of
 // drive().
-export function walk(steps: (number | null)[], fallback: number, end: number, horizon = HORIZON_S): (dt: number) => number {
+// With `own`, the bus's own measured speed, the first OWN_M run at it, fading into the steps: a bus
+// in a queue now is not at the road's usual speed, and a dot that races ahead of it is thrown back
+// at the next fix. A standing bus (own under 1 m/s) stands for OWN_STAND_S, then goes.
+export const OWN_STAND_S = 20;
+export function walk(steps: (number | null)[], fallback: number, end: number, horizon = HORIZON_S, own?: number | null): (dt: number) => number {
   if (!(end > 0)) return () => 0;
   const ph: Phase[] = [];
   let t = 0, s = 0;
   const add = (v: number, d: number) => { ph.push({ t, s, v, a: 0 }); t += d / v; s += d; };
+  if (own != null && own < 1) { ph.push({ t, s, v: 0, a: 0 }); t += OWN_STAND_S; own = null; }
   for (let i = 0; s < end; i++) {
     const v = (i < steps.length ? steps[i] : null) ?? fallback;
     if (!(v > 0)) break;
-    add(v, Math.min(STEP_M, end - s));
+    const stepEnd = Math.min(s + STEP_M, end);
+    if (own != null && s < OWN_M) {
+      // In 50 m pieces: the share of its own speed falls with the distance from the fix.
+      while (s < stepEnd && s < OWN_M) {
+        const d = Math.min(50, stepEnd - s, OWN_M - s), w = 1 - (s + d / 2) / OWN_M;
+        add(w * own + (1 - w) * v, d);
+      }
+      if (s < stepEnd) add(v, stepEnd - s);
+    } else add(v, stepEnd - s);
   }
   if (!ph.length) return () => 0;   // standing from the start
   const limit = s;
@@ -187,7 +204,7 @@ export function project(geom: LngLat[], cum: number[], p: LngLat, hint?: number)
 
 export interface Handoff { plan: Plan; s0: number; off?: LngLat; fix: boolean; back?: boolean }
 
-export const glideS = (m: number, back: boolean) => (back ? GLIDE_S : Math.min(GLIDE_MAX_S, GLIDE_S + Math.max(0, m) / GLIDE_M_PER_S));
+export const glideS = (m: number, _back: boolean) => Math.min(GLIDE_MAX_S, GLIDE_S + Math.max(0, m) / GLIDE_M_PER_S);
 
 // The shown point joined to the polyline at s = at: [shown, point(at), ...rest]; target shifted.
 function joinAt(shown: LngLat, p: Plan, at: number): Handoff {
@@ -221,9 +238,9 @@ const angle = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
 // A backend `path` ([lon, lat] here) driven at `speed` from position_at `at`, waiting at `stops`
 // (metres along it, contract rev 4). With `steps` (path_speeds, rev 6) it walks those typical speeds
 // instead: no stop waits. Without stops it brakes into the path's end only.
-export function pathPlan(shown: LngLat, path: LngLat[], speed: number, at: number, nowSec: number, stops: number[] = [], steps?: (number | null)[] | null): Handoff {
+export function pathPlan(shown: LngLat, path: LngLat[], speed: number, at: number, nowSec: number, stops: number[] = [], steps?: (number | null)[] | null, own?: number | null): Handoff {
   const cum = cumulativeLL(path), end = cum[cum.length - 1];
-  const f = steps && steps.length ? walk(steps, speed, end) : drive(speed, stops, end);
+  const f = steps && steps.length ? walk(steps, speed, end, HORIZON_S, own) : drive(speed, stops, end);
   return planOnto(shown, { geom: path, cum, target: t => f(t - at) }, nowSec);
 }
 
@@ -310,6 +327,7 @@ export class Mover {
   // A running fading offset goes on fading: the dot does not jump when the glide starts.
   private startFix(nowSec: number, back: boolean, face: number | null) {
     const p = this.plan!, m = Math.abs(p.target(nowSec) - this.s);
+    if (m > LEAP_M) { this.s = p.target(nowSec); this.glide = this.trail = null; return; }
     this.glide = { t0: nowSec, from: this.s, tail: this.s, dur: glideS(m, back), back, face };
     this.trail = null;
   }
@@ -345,7 +363,7 @@ export class Mover {
       // Ahead of a target that stands: wait a little, then correct (it is not coming).
       const waiting = r !== "fix" && v < 0.1 && this.s - target > WAIT_M;
       this.aheadSince = waiting ? this.aheadSince ?? nowSec : null;
-      if (r === "fix" || (waiting && nowSec - this.aheadSince! > WAIT_S)) { this.startFix(nowSec, target < this.s, this.heading()); fx = 0; }
+      if (r === "fix" || (waiting && nowSec - this.aheadSince! > WAIT_S)) { this.startFix(nowSec, target < this.s, this.heading()); fx = this.glide ? 0 : null; }
       else this.s = r;
     }
     this.s = held(this.s);

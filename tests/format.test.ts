@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ageLabel, ageModeOf, ago, isGonePos, isStalePos, delayClass, delayText, duration, fmtDelay, passes } from "../src/lib/format";
+import { ageLabel, ageModeOf, ago, isGonePos, isStalePos, delayClass, delayText, duration, fmtDelay, passes, durText } from "../src/lib/format";
 
 describe("duration", () => {
   it("is short: seconds, then minutes and two-digit seconds (B10)", () => {
@@ -109,5 +109,14 @@ describe("position age setting", () => {
     expect(ageModeOf(null, true)).toBe("always");
     expect(ageModeOf(null, false)).toBe("old");
     expect(ageModeOf("bogus", null)).toBe("old");
+  });
+});
+
+describe("durText", () => {
+  it("says minutes under an hour, hours and two-digit minutes from an hour on", () => {
+    expect(durText(23)).toBe("23′");
+    expect(durText(61)).toBe("1ω 01′");
+    expect(durText(60)).toBe("1ω");
+    expect(durText(125)).toBe("2ω 05′");
   });
 });

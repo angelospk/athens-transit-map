@@ -103,8 +103,8 @@ describe("arrivalGroups", () => {
       a("040", "ΣΥΝΤΑΓΜΑ", 900, "4")], now + 30_000);
     expect(g).toEqual([
       { line: "10", headsign: "ΧΑΛΑΝΔΡΙ", variant: "10ΧΑΛΑΝΔΡΙ", times: [{ min: 0, vehicle: "2", late: 7 }] },
-      { line: "040", headsign: "ΠΕΙΡΑΙΑΣ", variant: "040ΠΕΙΡΑΙΑΣ", times: [{ min: 1, vehicle: "1", late: 0 }, { min: 10, vehicle: "3", late: 0 }] },
-      { line: "040", headsign: "ΣΥΝΤΑΓΜΑ", variant: "040ΣΥΝΤΑΓΜΑ", times: [{ min: 15, vehicle: "4", late: 0 }] },
+      { line: "040", headsign: "ΠΕΙΡΑΙΑΣ", variant: "040ΠΕΙΡΑΙΑΣ", times: [{ min: 1, vehicle: "1", late: 0 }, { min: 10, vehicle: "3", late: 0, max: 12 }] },
+      { line: "040", headsign: "ΣΥΝΤΑΓΜΑ", variant: "040ΣΥΝΤΑΓΜΑ", times: [{ min: 15, vehicle: "4", late: 0, max: 19 }] },
     ]);
   });
   it("a bus more than a minute past its time is gone (an old answer after failed refreshes)", () => {
@@ -127,15 +127,15 @@ describe("arrivalGroups", () => {
     ], now);
     expect(g[0].times).toEqual([
       { min: 0, vehicle: "1", late: 0, here: true },
-      { min: 3, vehicle: "2", late: 0 },
-      { min: 7, vehicle: "3", late: 0, away: 4 },
+      { min: 3, vehicle: "2", late: 0, max: 5 },
+      { min: 7, vehicle: "3", late: 0, away: 4, max: 9 },
     ]);
     const est = arrivalGroups([live(420, "9", { trip_id: null, scheduled: null, stops_away: 2, distance_m: 900 }, 300)], now);
-    expect(est[0].times).toEqual([{ min: 7, vehicle: "9", late: 0, away: 2, est: true }]);
+    expect(est[0].times).toEqual([{ min: 7, vehicle: "9", late: 0, away: 2, est: true, max: 9 }]);
   });
   it("an old server without the rev 8 fields: no hint, no estimate mark", () => {
     expect(arrivalGroups([a("040", "Π", 0, "1"), a("040", "Π", 300, "2", 180)], now)[0].times)
-      .toStrictEqual([{ min: 0, vehicle: "1", late: 0 }, { min: 5, vehicle: "2", late: 3 }]);
+      .toStrictEqual([{ min: 0, vehicle: "1", late: 0 }, { min: 5, vehicle: "2", late: 3, max: 7 }]);
   });
   it("at most 3 times a group", () => {
     const many = [1, 2, 3, 4].map(k => a("040", "Π", k * 120, String(k)));
@@ -242,7 +242,13 @@ describe("usualRows (contract rev 18, map#24)", () => {
 
   it("a line with no live bus: the headway as text", () => {
     expect(usualRows([u("040")], [], now)).toEqual([
-      { line: "040", headsign: "ΠΕΙΡΑΙΑΣ - ΣΥΝΤΑΓΜΑ", text: "Συνήθως περνά κάθε ~15′ τέτοια ώρα" }]);
+      { line: "040", headsign: "ΠΕΙΡΑΙΑΣ - ΣΥΝΤΑΓΜΑ", text: "Συνήθως περνά κάθε ~15′ τέτοια ώρα", big: "15′", every: true,
+        note: "Συνήθως περνά τόσο συχνά τέτοια ώρα" }]);
+  });
+  it("splits a time for a narrow column", () => {
+    const at = Date.UTC(2026, 10, 4, 19, 40) / 1000;
+    const r = usualRows([u("040", { next_at: at })], [], now)[0];
+    expect([r.big, r.every]).toEqual(["~21:40", false]);
   });
   it("a time when the server has one, in Athens time", () => {
     const at = Date.UTC(2026, 10, 4, 19, 40) / 1000;
@@ -257,5 +263,35 @@ describe("usualRows (contract rev 18, map#24)", () => {
   it("nothing for a line with a live bus, and nothing from an older server", () => {
     expect(usualRows([u("040"), u("608")], [live("040")], now).map(r => r.line)).toEqual(["608"]);
     expect(usualRows(undefined, [], now)).toEqual([]);
+  });
+});
+
+import { placeNote } from "../src/lib/stops";
+describe("placeNote", () => {
+  it("splits the note in brackets off the place", () => {
+    expect(placeNote("ΣΥΝΤΑΓΜΑ(ΠΡΟΣΩΡΙΝΗ ΛΟΓΩ ΕΡΓΩΝ)")).toEqual({ place: "ΣΥΝΤΑΓΜΑ", note: "ΠΡΟΣΩΡΙΝΗ ΛΟΓΩ ΕΡΓΩΝ" });
+    expect(placeNote("Ν. ΚΥΨΕΛΗ (ΚΥΚΛΙΚΗ)")).toEqual({ place: "Ν. ΚΥΨΕΛΗ", note: "ΚΥΚΛΙΚΗ" });
+    expect(placeNote("ΠΕΙΡΑΙΑΣ")).toEqual({ place: "ΠΕΙΡΑΙΑΣ", note: "" });
+    expect(placeNote("(ΚΥΚΛΙΚΗ)")).toEqual({ place: "(ΚΥΚΛΙΚΗ)", note: "" });
+  });
+});
+
+describe("arrival times: a range when loose, and an old position", () => {
+  const now = 1_000_000_000_000;
+  const a = (inS: number, posAgoS = 10): StopArrival =>
+    ({ line: "040", headsign: "Π", variant: "v", vehicle: "1", eta_s: inS, at: now / 1000 + inS, delay_s: 0, position_at: now / 1000 - posAgoS });
+  it("shows a range from a few minutes out, never on «τώρα» or the next minute", () => {
+    expect(timeText(arrivalGroups([a(20)], now)[0].times[0])).toBe("τώρα");
+    expect(timeText(arrivalGroups([a(70)], now)[0].times[0])).toBe("1′");
+    expect(timeText(arrivalGroups([a(600)], now)[0].times[0])).toBe("10–13′");
+    expect(timeText({ ...arrivalGroups([a(600)], now)[0].times[0], est: true })).toBe("~10–13′");
+  });
+  it("says how old the position is once it passes a minute, instead of judging the bus on it", () => {
+    const fresh = arrivalGroups([a(300, 20)], now)[0].times[0], old = arrivalGroups([a(300, 150)], now)[0].times[0];
+    expect(fresh.age).toBeUndefined();
+    expect(arrivalNote(fresh)).toEqual({ text: "στην ώρα του", tone: "ok" });
+    expect(old.age).toBe(150);
+    expect(arrivalNote(old)).toEqual({ text: "θέση πριν 3′", tone: "muted" });
+    expect(arrivalNote({ ...old, away: 4 })).toEqual({ text: "4 στάσεις πριν · θέση πριν 3′", tone: "muted" });
   });
 });
