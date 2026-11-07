@@ -425,6 +425,10 @@ export function suggest(own: Place[], geo: Place[], max = 7): Place[] {
   return [...rail, ...areas, ...stops.filter(o => !rail.includes(o)), ...rest].slice(0, max);
 }
 
+// Whether a stop index (its v) is older than the line list (its gtfs_version). A line list with no
+// version (a GTFS without feed_info) cannot tell: not stale.
+export const staleIndex = (indexV: string, linesV: string) => !!linesV && indexV !== linesV;
+
 // The stop index of each city (scripts/trips.ts): Athens keeps trips.json.
 export const tripsFile = (c: CityId) => (c === "athens" ? "trips.json" : `trips-${c}.json`);
 // Photon bbox (west,south,east,north) of each city's area.

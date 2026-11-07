@@ -24,7 +24,7 @@ import { hitText, type AlertHit, type AlertSpec } from "./alerts";
 import { assignSlots, colorOf, type LineColor } from "./lineColors";
 import { retryStops, stopPush } from "./push";
 import type { CityLive, CityVehicle, LineInfo, LineLive, LineStatic, Status, Vehicle } from "./types";
-import { CardNav, cardFromQuery, cardQuery, sameCard, type Card } from "./cards";
+import { CardNav, sameCard, type Card } from "./cards";
 import { busVehicleCard, cardTitle, legacyOf, routeCard, trainCard } from "./legacy";
 import { stopIndex } from "./stops";
 import { dropPin, inkOn, isPins, setPin, type Pin } from "./pins";
@@ -37,8 +37,9 @@ import { parseAlerts, type Disruption } from "./disruptions";
 import { focusLines, nearbyGroups, titleCase } from "./nearby";
 import type { LocState } from "./locate";
 import type { Guide } from "./guide";
-import { CITIES, initialCity, type CityId } from "./cities";
-import { autoCityOnFix, cityUrl, favKey } from "./cityBases";
+import { CITIES, type CityId } from "./cities";
+import { cityUrl, favKey } from "./cityBases";
+import { cardFromUrl, cityInUrl, pageCityOf, pageUrl } from "./paths";
 
 export type TripMode = "bus" | "trolley" | "metro" | "tram";
 export interface TripPrefs { modes: TripMode[]; order: "time" | "changes" | "walk"; later: number; radius: number; pick?: [number, number] }
@@ -79,10 +80,10 @@ function store(key: string, v: unknown) {
 }
 const isBool = (v: unknown) => typeof v === "boolean";
 
-// The city of this page load (config.ts computes the same): ?city=, else the last choice, else Athens.
+// The city of this page load (config.ts computes the same): the path, else ?city=, else the last choice, else Athens.
 // Known before the fields below, because the favourites key and the rail features depend on it.
 function pageCity(): CityId {
-  return typeof location === "undefined" ? "athens" : initialCity(location.search, stored<unknown>("city", null, () => true));
+  return typeof location === "undefined" ? "athens" : pageCityOf(location.pathname, location.search, stored<unknown>("city", null, () => true));
 }
 
 // A stop alert from the trip planner; label: the boarding stop's name; push: the bot's id for the same
@@ -126,7 +127,7 @@ export class AppState {
   // City layer (/v1/vehicles/tiles): the live vehicles of the map view; null before data or when the server lacks it.
   city = $state.raw<CityLive | null>(null);
   cityState = $state<PollState | null>(null);
-  // The city the map shows (cities.ts): ?city=, else the last one chosen, else Athens. A location fix inside another
+  // The city the map shows (cities.ts): the path (/{city}/), else ?city=, else the last one chosen, else Athens. A location fix inside another
   // city's area switches to it (MapView); «Κοντά σου» lets the user pick one by hand. A switch reloads the page.
   cityId = $state<CityId>(pageCity());
   // Favourite stops and lines of every mode (favs.ts), one list per city; the old `favorites` (bus line ids) move
@@ -145,8 +146,8 @@ export class AppState {
   locState = $state<LocState>("off");
   // The page opened on a link to a card or to lines: it shows that, not «Κοντά σου».
   linked = false;
-  // The URL named the city (a hand pick or a shared link): kept in the URL, and a location fix does not
-  // switch away from it until the user taps locate.
+  // The URL named the city (a hand pick or a shared link): a location fix does not switch away from it until the
+  // user taps locate. The URL always carries the city in its path (paths.ts).
   cityLocked = false;
   // The search modal (B8): closed, or open on a kind filter.
   // A place from the search modal to plan a trip to: the panel opens the trip planner, which takes it as its end.
@@ -561,21 +562,23 @@ export class AppState {
 
   init() {
     const ids = selectionIds(location.search);
-    this.linked = ids.length > 0 || !!cardFromQuery(location.search);
+    const linkedCard = cardFromUrl(location.pathname, location.search);
+    this.linked = ids.length > 0 || !!linkedCard;
     if (this.linked) this.tab = "map";
     else this.start = true;   // a plain visit opens on «Πού πας;» (StartScreen)
-    this.cityLocked = !autoCityOnFix(location.search);
-    this.cityId = initialCity(location.search, stored<unknown>("city", null, () => true));
+    this.cityLocked = cityInUrl(location.pathname, location.search);
+    this.cityId = pageCityOf(location.pathname, location.search, stored<unknown>("city", null, () => true));
     store("city", this.cityId);
     this.selected = ids.slice(0, MAX_LINES);
     this.wakePins();
     if (ids.length > MAX_LINES) this.say(`Ο σύνδεσμος είχε ${ids.length} γραμμές. Κράτησα τις πρώτες ${MAX_LINES}.`);
-    this.baseTitle = document.title;
+    // Not document.title: a prerendered stop or line page (scripts/seo.ts) has the card in its title already.
+    this.baseTitle = `Στάσεις · ${CITIES[this.cityId].name}`;
     this.nav = new CardNav(history, s => { this.stack = s; this.show(s[s.length - 1] ?? null); },
-      s => location.pathname + this.withCity(cardQuery(s[s.length - 1] ?? null, this.selected)) + location.hash);
+      s => pageUrl(this.cityId, s[s.length - 1] ?? null, this.selected) + location.hash);
     addEventListener("popstate", e => this.nav?.popped(e.state));
     addEventListener("online", () => this.backOnline());
-    this.nav.start(cardFromQuery(location.search));
+    this.nav.start(linkedCard);
     for (const id of this.selected) this.startLine(id);
     void Promise.allSettled(this.selected.map(fetchLineStatic)).then(() => { if (!this.stack.length) this.fit(this.selected); });   // a linked card frames its own
     this.loadLines();
@@ -833,7 +836,7 @@ export class AppState {
   setCity(c: CityId, fly = true) {
     if (c !== this.cityId) {
       store("city", c);
-      if (typeof location !== "undefined") location.replace(cityUrl(location.pathname + location.search, c));
+      if (typeof location !== "undefined") location.replace(cityUrl(c));
       return;
     }
     if (fly) this.showCity(c);
@@ -1262,13 +1265,7 @@ export class AppState {
 
   private writeUrl() {
     const top = this.stack[this.stack.length - 1] ?? null;
-    history.replaceState(history.state, "", location.pathname + this.withCity(cardQuery(top, this.selected)) + location.hash);
-  }
-
-  // A city named in the URL at load stays in it, so a reload or a shared link opens the same city.
-  private withCity(q: string): string {
-    if (!this.cityLocked) return q;
-    return `${q ? `${q}&` : "?"}city=${this.cityId}`;
+    history.replaceState(history.state, "", pageUrl(this.cityId, top, this.selected) + location.hash);
   }
 
   private startLine(id: string) {

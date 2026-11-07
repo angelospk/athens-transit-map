@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CITIES } from "../src/lib/cities";
-import { basesFor, cityUrl, favKey, autoCityOnFix } from "../src/lib/cityBases";
+import { basesFor, cityUrl, favKey } from "../src/lib/cityBases";
 
 describe("Thessaloniki live (web#40)", () => {
   it("Thessaloniki is ready; only Athens has rail (metro, tram, Proastiakos, municipal, OASA alerts)", () => {
@@ -12,7 +12,7 @@ describe("Thessaloniki live (web#40)", () => {
   it("basesFor: Athens keeps its defaults and VITE_API_BASE / VITE_STATIC_BASE", () => {
     expect(basesFor("athens", {})).toEqual({
       api: "https://transit.haroldpoi.dev",
-      static: "https://angelospk.github.io/athens-transit-rt/static/v1",
+      static: "https://angelospk.github.io/staseis-rt/static/v1",
     });
     expect(basesFor("athens", { VITE_API_BASE: "http://x:1/", VITE_STATIC_BASE: "http://s/v1/" }))
       .toEqual({ api: "http://x:1", static: "http://s/v1" });
@@ -29,21 +29,14 @@ describe("Thessaloniki live (web#40)", () => {
     });
   });
 
-  it("cityUrl: a city switch keeps only ?city= (the old city's lines and cards mean nothing there) and the path", () => {
-    expect(cityUrl("/?lines=040,550&card=stop:1#x", "thessaloniki")).toBe("/?city=thessaloniki");
-    expect(cityUrl("/thessaloniki/?city=athens", "athens")).toBe("/thessaloniki/?city=athens");
+  it("cityUrl: a city switch opens the city's home (web#47); the old city's lines and cards mean nothing there", () => {
+    expect(cityUrl("thessaloniki")).toBe("/thessaloniki/");
+    expect(cityUrl("athens")).toBe("/athens/");
   });
 
   it("favKey: Athens keeps fav.v2 (no migration); other cities get their own key", () => {
     expect(favKey("athens")).toBe("fav.v2");
     expect(favKey("thessaloniki")).toBe("fav.v2.thessaloniki");
-  });
-
-  it("autoCityOnFix: a ?city= in the URL (a hand pick or a shared link) wins over the first location fix", () => {
-    expect(autoCityOnFix("")).toBe(true);
-    expect(autoCityOnFix("?lines=040")).toBe(true);
-    expect(autoCityOnFix("?city=thessaloniki")).toBe(false);
-    expect(autoCityOnFix("?city=patra")).toBe(true);   // unknown city: ignored
   });
 });
 

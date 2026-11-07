@@ -14,10 +14,20 @@ Source of truth: `athens-transit-rt/docs/CONTRACT.md`. The frontend keeps a copy
   frontend repo by whoever made it (backend thread opens the copy as a commit or
   issue on the frontend repo).
 
-Revision: 16 (2026-11-03): the daily statistics files (`/v1/stats/days/{date}`, the `stats`
+Revision: 20 (2026-11-07): vehicles of `/v1/lines/{line_id}`, `/v1/vehicles` and its `z` 13 tiles
+get `along_m`, their metres along the static shape of their `variant`, and each variant of
+`static/v1/lines/{line_id}.json` gets `length_m`, so a client can move a marker along the whole
+shape instead of stopping at the end of `path_beyond`
+([client rule](#along-the-static-shape-rev-20))
+(rev 19: `/v2/stops/{id}` and `/v1/stops/{stop_id}` get `usual`, the usual
+service of each OASA line and headsign at the stop, learnt from the past weeks;
+rev 18: `GET /v2/municipal`, the municipal bus routes and stops of OpenStreetMap;
+rev 17: the daily statistics files (`/v1/stats/days/{date}`, the `stats`
 branch) get `start_delay`, how late each line's runs of OASA's daily schedule left their first
-stop ([API.md](API.md#start-delays-start_delay)); days without it are as before
-(rev 15: OASA Patterns and bus Vehicles get both directions, 0 and 1 (the
+stop ([API.md](API.md#start-delays-start_delay)); days without it are as before;
+rev 16: `GET /v2/plan`, trips from a point to a point with walks and transfers
+([§9](#9-trip-planner-v2plan-rev-16));
+rev 15: OASA Patterns and bus Vehicles get both directions, 0 and 1 (the
 GTFS has no `direction_id`, so all were 0); metro M2 `headsign` is where the train goes, not
 where it starts; rev 14: on an expired GTFS, `delay_s` (and a stop board's `scheduled`) of a
 bus seen leaving on a clear run of OASA's daily schedule is against that run; rev 13: `GET /v2/alerts`, service disruptions (OASA notices and strikes); rev 12: `direction` on `/v2` Vehicles; STASY Pattern directions follow branches (M3 airport);
@@ -71,7 +81,8 @@ The frontend combines lines in the browser. Max 5 lines per client (enforced in 
       "path": [[37.9755, 23.7348], [37.97601, 23.73502], [37.9781, 23.7356]],
       "path_beyond": [[37.9781, 23.7356], [37.98145, 23.73668], [37.98466, 23.73771]],
       "path_stops": [298, 682, 1050],
-      "path_speeds": [6.2, 3.1, 4.8, 5.5, null, 7.0, 6.1, 5.9]
+      "path_speeds": [6.2, 3.1, 4.8, 5.5, null, 7.0, 6.1, 5.9],
+      "along_m": 4210
     }
   ]
 }
@@ -127,6 +138,14 @@ The frontend combines lines in the browser. Max 5 lines per client (enforced in 
   the step speeds (a `null` step at `speed`, or 1.5 m/s without one), instead of the stop
   waits; stop at the end of the points, as before. Metres are along the shape; the 5 m
   simplified points are a few metres shorter, so a client may simply walk them.
+- `along_m` (rev 20): whole metres along the shape of `variant` (its static `shape`) at
+  `position_at`: where `path` starts. `null` when the vehicle is not placed on that shape: no
+  `variant`, no shape, more than 150 m from it, the position is ambiguous (a loop or
+  out-and-back passes there twice and history cannot tell which), or the vehicle is waiting at its
+  first stop (`at_terminus`: it stands, so keep the rev 4 rule). It is set at the next stop and
+  at the shape's end, where `path` is `null`. On a loop or out-and-back shape it says which pass
+  the vehicle is on: do not project the GPS point onto the shape yourself. Use: see
+  [Along the static shape](#along-the-static-shape-rev-20).
 - Headers: `Cache-Control: public, max-age=<seconds until next_update_at, min 5, max 300>`.
   The frontend refetches a line at `next_update_at + 1..3 s` (random jitter), never faster
   than every 5 s, and at most every 60 s while the tab is hidden.
@@ -160,13 +179,14 @@ to ~2.5 min staler than `/v1/lines/{id}` for lines nobody watches.
       "path": [[37.9755, 23.7348], [37.9781, 23.7356]],
       "path_beyond": [[37.9781, 23.7356], [37.98466, 23.73771]],
       "path_stops": [297, 1049],
-      "path_speeds": [6.2, 3.1, 4.8, null]
+      "path_speeds": [6.2, 3.1, 4.8, null],
+      "along_m": 4210
     }
   ]
 }
 ```
 
-- Same field meanings as `/v1/lines/{id}`; `line` is the line id. Coordinates are rounded
+- Same field meanings as `/v1/lines/{id}` (`along_m` too); `line` is the line id. Coordinates are rounded
   to 5 decimals. No `route_code`, `trip_id`, `trip_label`, `next_stop_id`: fetch
   `/v1/lines/{line}` when the user selects a vehicle.
 - Vehicles with a GPS fix older than 5 min are left out. A vehicle seen on two lines
@@ -188,7 +208,7 @@ Example: `/v1/vehicles/tiles/13/4636/3160` (around Syntagma).
 
 | `z` | tile size (Athens) | content | use at MapLibre zoom |
 |---|---|---|---|
-| `9` | ~62 km | vehicles without `path`, `path_beyond`, `path_stops`, `path_speeds` (the keys are absent) | < 13 |
+| `9` | ~62 km | vehicles without `path`, `path_beyond`, `path_stops`, `path_speeds`, `along_m` (the keys are absent) | < 13 |
 | `13` | ~3.9 km | the same vehicle entries as `/v1/vehicles` | ≥ 13 |
 
 ```json
@@ -300,6 +320,10 @@ the others keep their usual rate. `stop_id` is the GTFS `stop_id`, as in
   OASA's any more. A client that shows only buses filters on `source`.
 - Up to 60 min ahead, sorted by `at`, at most 3 rows per `line` and `variant`. `arrivals` may
   be `[]`.
+- `usual` (rev 19): the usual service of each line and headsign at the stop, as
+  [`/v2` Usual](#usual-rev-19-v2stopsid) but with `line` as in `arrivals` (`"608"`). The guard
+  of `next_at` uses today's timetable (OASA's daily schedule while the GTFS is expired) even
+  when `arrivals` has no `schedule` rows. `[]` while the server has no history.
 - Headers: `Cache-Control: public, max-age=15`. Refetch every 15-30 s while shown.
 - `404` `{"error":"unknown_stop"}` (`max-age=60`) for an id not in the current GTFS. `503`
   `{"error":"warming_up"}` before the static GTFS is loaded.
@@ -359,7 +383,31 @@ Published by GitHub Actions in the backend repo when OASA publishes a new GTFS.
 }
 ```
 
-`shape` is `[lat, lon]` pairs, rounded to 5 decimals. `variants[*].stops` is ordered.
+`shape` is `[lat, lon]` pairs, rounded to 5 decimals (not simplified). `variants[*].stops` is ordered.
+`length_m` (rev 20): the length of `shape` in the server's metres, the unit of a vehicle's
+`along_m`, whole metres. Files built before rev 20 lack it.
+
+#### Along the static shape (rev 20)
+
+How a client moves a vehicle with `along_m` (rev 20). It replaces the rev 4/6 rule (drive `path`
+then `path_beyond`) when the client has the vehicle's variant shape; else keep that rule.
+
+1. Load `lines/{line}.json` for the lines of the vehicles in view only, once per
+   `gtfs_version` of `lines.json` (one line is 2-3 KB gzipped; the files change only with the
+   GTFS). A vehicle whose `variant` is not in the file: use the rev 4/6 rule.
+2. Scale: the server measures metres on its own projection, a client on its own (haversine, an
+   ellipsoid), so lengths differ by up to ~0.1 % (≈ 70 m on a 50 km shape). Use
+   `s = along_m × L / length_m`, where `L` is the shape's length as the client measures it
+   (factor 1 when `length_m` is missing or not above 0). Then a point is within ~15 m of the server's
+   (measured on all 515 Athens shapes, 2026-11-07). Scale `path_stops` and the 200 m steps of
+   `path_speeds` by the same factor.
+3. Move from `s` at `position_at` along the shape at `path_speeds` (step `i` covers
+   `s + 200·i` to `s + 200·(i+1)`; a `null` step and everything after the last step at `speed`,
+   or 1.5 m/s without one), or without `path_speeds` at `speed` slowing down and waiting at
+   `path_stops` (and the variant's later stops); stop at the shape's end. No 1.5 km limit.
+4. A new fix with the same `variant`: glide from the shown point to the new `s`; never jump
+   backwards for a small step back (GPS noise, a few metres). A new `variant` or trip (or
+   `along_m` far behind): treat it as a new plan, as for a new `path`.
 
 ## Unified API `/v2` (rev 8)
 
@@ -548,6 +596,7 @@ and compare them; they never parse them.
   move along (standing with no Run, no geometry).
   - `path`, `path_beyond`, `path_stops`, `speed`, `path_speeds`: the rev 3-7 meanings, unchanged
     for buses (1.5 km caps included); for suburban they run along the rail geometry of §2.
+    `/v2` Vehicles have no `along_m` (rev 20): they name no shape (no `variant`) to measure it on.
   - For **estimates** (metro/tram) the 1.5 km caps do not apply: `path` runs to the next Stop
     and `path_beyond` to the third Stop ahead, whatever the distance.
   - `knots` (new, estimates only; `null` for GPS vehicles): `[metres along path + path_beyond,
@@ -607,6 +656,39 @@ and compare them; they never parse them.
 - `platform`: `null` unless the Source gives one (only railway.gov.gr today).
 - `status`: `scheduled` | `running` | `delayed`. Cancelled Runs are left out, as today.
 
+#### Usual (rev 19, `/v2/stops/{id}`)
+
+(`/v1/stops/{stop_id}` has the same rows, `line` without `oasa:`.)
+
+The usual service of an OASA Line and headsign at the Stop, learnt from the bus passes of the
+past weeks ([athens-transit-map#24](https://github.com/angelospk/athens-transit-map/issues/24),
+study: `docs/superpowers/specs/2026-11-03-usual-headway.md`). It is for a line with no `live`
+Arrival: it says how often a bus usually comes, never that one is coming.
+
+```json
+"usual": [
+  {"line": "oasa:309Β", "headsign": "ΑΥΛΑΚΙ", "day_type": "weekday", "days": 9,
+   "headway_min": 15, "next_hour_headway_min": 25,
+   "next_at": 1793742000, "spread_s": 120}
+]
+```
+
+- One row per Line and headsign that has a `headway_min` or a `next_at`, by line then headsign;
+  also for a line with a `live` Arrival. `[]` for metro, tram and suburban Stops, and while the
+  server has no history yet. A row may name a headsign no Arrival has (a run that is not on
+  the board now).
+- Learnt from the days of the same `day_type` (`weekday` | `saturday` | `sunday`; Greek public
+  holidays count as `sunday`) of the last 28 days, at the same local time of day. Service days
+  run 04:00-04:00. Minutes when the server saw no bus at all (an outage) are left out.
+- `headway_min`: median gap between buses in this local hour (whole minutes, ≥ 1), from at
+  least 6 gaps; `next_hour_headway_min`: the same for the next hour. `null` when unknown.
+- `next_at`: the usual time of the next pass, now + the median wait of the past days. Set only
+  when at least 3 days had a bus within 3 h, more than half of the days that could be read did,
+  their waits differ by at most 3 min (`spread_s`, the IQR, seconds), and an Arrival of the same
+  line and headsign (today's timetable, or a bus) is within 15 min of it. Else `null`, and
+  `spread_s` too. It is an estimate: show it as one, and not when the line has a `live` Arrival.
+- `days`: the past days with a bus within 3 h of now.
+
 #### Source state (in every list response)
 
 ```json
@@ -644,13 +726,15 @@ All: UTF-8 JSON, `Access-Control-Allow-Origin: *`, gzip, times in Unix seconds, 
 | `GET /v2/lines/{id}` | `{line: Line, patterns: [Pattern], stops: {id: Stop}, sources}` | 3600 | none |
 | `GET /v2/lines/{id}/vehicles` | `{line, updated_at, next_update_at, vehicles: [Vehicle], sources}` | until `next_update_at`, 5-300 | `oasa`: marks the line watched (as `/v1/lines/{id}`); `proastiakos`: opens the stream |
 | `GET /v2/stops` | `{stops: [StopIndexEntry], sources}` every Stop of every mode | 3600 | none |
-| `GET /v2/stops/{id}` | `{stop: Stop, lines: [Line], arrivals: [Arrival], updated_at, sources}` | 15 | `oasa`: raises its lines' priority; `proastiakos`: opens the stream |
+| `GET /v2/stops/{id}` | `{stop: Stop, lines: [Line], arrivals: [Arrival], usual: [Usual] (rev 19), updated_at, sources}` | 15 | `oasa`: raises its lines' priority; `proastiakos`: opens the stream |
 | `GET /v2/vehicles` | `{updated_at, next_update_at, vehicles: [Vehicle], sources}` bus + trolley | until `next_update_at`, 5-30 | none |
 | `GET /v2/vehicles/tiles/{z}/{x}/{y}` | as `/v2/vehicles`, tile-cut as rev 5 | as above | none |
 | `GET /v2/vehicles/rail` | as `/v2/vehicles`, metro + tram (~60 vehicles, one body) | until `next_update_at`, 5-30 | none |
 | `GET /v2/vehicles/suburban` | as `/v2/vehicles`, suburban trains (~10, one body) | until `next_update_at`, 5-30 | `proastiakos`: opens the stream |
 | `GET /v2/runs/{id}` | `{run: Run, sources}` | 15 | none |
 | `GET /v2/alerts` (rev 13) | `{alerts: [Alert], updated_at}` | 300 | none (polled in the background) |
+| `GET /v2/plan?from=&to=&after=&last=&n=` (rev 16) | `{service_day, …, itineraries: [Itinerary], walk_only, lines, stops, sources}` ([§9](#9-trip-planner-v2plan-rev-16)) | 60 | none (reads only what is already loaded) |
+| `GET /v2/municipal` (rev 18) | `{routes: [MunicipalRoute], stops: {id: MunicipalStop}, updated_at, attribution}` | 86400 | none (OpenStreetMap, polled weekly) |
 
 Shapes not shown above:
 
@@ -679,8 +763,38 @@ Shapes not shown above:
  "modes": ["bus"], "lines": ["oasa:112"], "stops": ["oasa:40054"], "urgent": false}
 ```
 
+```json
+// MunicipalRoute (rev 18): one route relation of OpenStreetMap, one direction or a loop
+{"id": "osm:r20462642", "ref": "Β1", "name": "Δημοτικό Λεωφορείο Β1: Πολύδροσο → Κοιμητήριο",
+ "municipality": "Δήμος Χαλανδρίου",
+ "timetable_url": "https://www.chalandri.gr/yphresies/ypodomes-erga/dimotiki-sygkoinonia/",
+ "shape": [[[38.02, 23.80], [38.03, 23.81]]], "stops": ["osm:n201", "osm:n203"]}
+// MunicipalStop
+{"name": "Πολύδροσο", "lat": 38.02, "lon": 23.80}
+```
+
 Rules:
 
+- `/v2/municipal` (rev 18): the bus routes that municipalities run (δημοτική συγκοινωνία), from
+  OpenStreetMap through the Overpass API: at start, then every 7 days (every hour after a
+  failure). No OASA request. About 37 routes of 12 municipalities, ~50 KB gzip. **No timetable,
+  no live data**: clients show the route, its stops and a link to `timetable_url`.
+  - A route is an OSM bus or minibus route relation in Attica whose `operator` starts with
+    «Δήμος» or whose `network` says «Δημοτική». `shape`: its ways as lines of `[lat, lon]`
+    (5 decimals); a way that continues the last line is joined to it, so a route has one line or
+    a few. A route with no way is left out.
+  - `ref`: the line's short name, `null` when OSM has none. `municipality`: the operator with
+    its spaces normalised («Δήμος Παπάγου-Χολαργού»). `timetable_url`: that municipality's page
+    (timetable, PDF or notices), `null` for a municipality the backend does not know.
+  - `stops`: Stop ids (`osm:n<node id>`) in route order (a stop visited twice, such as the
+    start and end of a loop, is listed twice), the members with a `stop` role, or the
+    platforms when the route has none; `[]` when OSM has neither (10 routes today). `stops`
+    (the map) holds every listed Stop; `name` is `null` when OSM has none.
+  - Order: by `municipality`, then `ref`, then `name`. A failed poll keeps the last data.
+    Before the first good poll: `routes: []`, `stops: {}`, `updated_at: null`, `max-age=5`,
+    no `ETag`; clients then show nothing. After it: `max-age=86400` with an `ETag`.
+  - Licence: ODbL. Clients show `attribution` («© OpenStreetMap contributors (ODbL)») wherever
+    they show the layer.
 - `/v2/alerts` (rev 13): service disruptions from two sources, polled every 10 min.
   - `source: "oasa"`: the OASA news feed (`oasa.gr/feed`), every item except tenders
     (category «Διαγωνισμοί»). Buses and trolleys only. `lines`: the line codes that follow
@@ -691,7 +805,9 @@ Rules:
     earliest and latest date (Athens, `YYYY-MM-DD`) in the opening paragraph of the notice
     (up to «ως εξής»); `null` when it names none. `modes`: `bus`, plus `trolley` when one of
     the lines is a trolley line; both when `lines` is empty (a network-wide notice).
-    `urgent: false`. Each notice page is read once.
+    `urgent: false`. Each notice page is read once. `url`: the notice page; when oasa.gr
+    serves another notice there (its permalink redirects to a similar one), the text comes from
+    the WordPress API and `url` is the news list `https://www.oasa.gr/blog/`.
   - `source: "athenstransport"`: strikes only (category «Απεργία») from the athenstransport.com
     news site, which also covers metro, tram and trains. We show its title and link, never its
     text. `modes` from its categories; none of them means every mode. `lines`, `stops` `[]`,
@@ -730,7 +846,11 @@ Rules:
 - `/v2/runs/{id}` replaces `/v1/rail/stasy/trips/{id}` and `/v1/rail/suburban/trains/{no}` for
   the line card. It answers for any Run of the service day, started or not (`vehicle: null`
   before it starts). OASA: the matched trip's stops, timetable time plus observed delay.
-  `404 {"error":"unknown_run"}` outside the service day.
+  `404 {"error":"unknown_run"}` outside the service day (rev 16: a Run that `/v2/plan` returned
+  answers until 03:00 after its service day, §9). Proastiakos: the service day of a Run, and the
+  date in its id, runs 03:00 to 03:00 Athens time, so at 00:30 a train that left at 23:13 is still
+  the Run of the evening before (#84). From 00:00 to 03:00 the Runs of the day to come answer too,
+  and a Stop's arrivals list both days.
 - Unknown ids: `404` `unknown_line` / `unknown_stop` / `unknown_run`. A Source still loading:
   `200` with the Source `warming_up` in `sources`, empty lists, and `null` for a single object
   that Source should fill (e.g. `line: null` in `/v2/lines/{id}` for a suburban Line before the
@@ -802,6 +922,141 @@ Rules:
 - Server-side arrival alerts or push: arrival alerts stay client-side and poll `/v2/stops/{id}`.
   (Service disruptions are `/v2/alerts`, rev 13; a different thing.)
 - MCP tools keep their names; they may switch to the `/v2` model inside without a contract change.
+
+### 9. Trip planner `/v2/plan` (rev 16)
+
+Implemented 2026-11-03 for issue #44 (PR #64; live once deployed), for the app's evening section «Τελευταία για σπίτι». Trips from a point to
+a point: a walk to a Stop, one to four rides of any Mode with walks between them, and a walk to
+the end. Design and limits: [superpowers/specs/2026-11-03-trip-planner.md](superpowers/specs/2026-11-03-trip-planner.md).
+
+```
+GET /v2/plan?from=37.97527,23.73552&to=37.87390,23.75400&after=1793227800&last=true&n=3
+```
+
+| Parameter | Required | Meaning |
+|---|---|---|
+| `from`, `to` | yes | `lat,lon`, decimal degrees. Outside Attica (lat 37.6-38.4, lon 23.2-24.2): `400 outside_area`. |
+| `after` | no | Unix seconds; default now. No option leaves `from` before it. It must lie before the end of the current service day (below), and in that day or at most 1 h before now: else `400 bad_after`. |
+| `last` | no | `true`: the last `n` options of the service day that leave at or after `after`. Default `false`: the first `n` options that leave at or after `after`. |
+| `n` | no | 1-5, default 3. |
+
+```json
+{
+  "service_day": "2026-11-03",
+  "from": {"lat": 37.97527, "lon": 23.73552},
+  "to": {"lat": 37.8739, "lon": 23.754},
+  "after": 1793227800,
+  "last": true,
+  "itineraries": [
+    {
+      "depart_at": 1793230200, "arrive_at": 1793233329, "duration_s": 3129,
+      "transfers": 1, "walk_m": 610, "modes": ["metro", "bus"],
+      "legs": [
+        {"kind": "walk", "from": {"stop": null, "lat": 37.97527, "lon": 23.73552},
+         "to": {"stop": "stasy:συνταγμα-metro", "lat": 37.97527, "lon": 23.73552},
+         "depart_at": 1793230200, "arrive_at": 1793230320, "distance_m": 0,
+         "shape": [[37.97527, 23.73552], [37.97527, 23.73552]]},
+        {"kind": "ride", "line": "stasy:M2", "mode": "metro", "headsign": "Ελληνικό",
+         "run": "stasy:run:1012345:2026-11-03",
+         "from": {"stop": "stasy:συνταγμα-metro", "lat": 37.97527, "lon": 23.73552},
+         "to": {"stop": "stasy:ελληνικο-metro", "lat": 37.89260, "lon": 23.74710},
+         "depart_at": 1793230320, "arrive_at": 1793231340, "hops": 10, "source": "timetable",
+         "shape": [[37.97527, 23.73552], [37.9681, 23.7290], [37.8926, 23.7471]]},
+        {"kind": "walk", "from": {"stop": "stasy:ελληνικο-metro", "lat": 37.8926, "lon": 23.7471},
+         "to": {"stop": "oasa:330032", "lat": 37.8921, "lon": 23.7480},
+         "depart_at": 1793231340, "arrive_at": 1793231539, "distance_m": 95,
+         "shape": [[37.8926, 23.7471], [37.8921, 23.748]]},
+        {"kind": "ride", "line": "oasa:122", "mode": "bus", "headsign": "Σαρωνίδα",
+         "run": "oasa:run:13180045-ΕΣ-...@2340:2026-11-03",
+         "from": {"stop": "oasa:330032", "lat": 37.8921, "lon": 23.748},
+         "to": {"stop": "oasa:330140", "lat": 37.8752, "lon": 23.7531},
+         "depart_at": 1793231700, "arrive_at": 1793232900, "hops": 9, "source": "timetable",
+         "shape": [[37.8921, 23.748], [37.8840, 23.7502], [37.8752, 23.7531]]},
+        {"kind": "walk", "from": {"stop": "oasa:330140", "lat": 37.8752, "lon": 23.7531},
+         "to": {"stop": null, "lat": 37.8739, "lon": 23.754},
+         "depart_at": 1793232900, "arrive_at": 1793233329, "distance_m": 515,
+         "shape": [[37.8752, 23.7531], [37.8739, 23.754]]}
+      ]
+    }
+  ],
+  "walk_only": null,
+  "lines": {"stasy:M2": {"id": "stasy:M2", "mode": "metro", "...": "a Line"}},
+  "stops": {"stasy:συνταγμα-metro": {"id": "stasy:συνταγμα-metro", "...": "a Stop"}},
+  "sources": [{"id": "oasa", "state": "indicative", "updated_at": 1793205590}]
+}
+```
+
+Rules:
+
+- **Service day**: 03:00 to 03:00 Athens time, as OASA's daily schedule counts it. `service_day`
+  is its date. At 01:30 the service day is yesterday's, and its runs after midnight (bus times
+  "24:15", the night lines) are in it. The planner holds one service day at a time; it changes
+  to the next one after 03:00, once that day's timetables are loaded. A ride's `run` keeps the
+  date its Source gives it (§3), so a run that leaves after midnight may carry the next
+  calendar date. `/v2/runs/{id}` answers for every Run a plan returns until 03:00 after its
+  service day, also when the date in the id is yesterday's.
+- **Itinerary**: `legs` alternate walk and ride, and always start and end with a walk (a walk
+  of 0 m when a point is on a Stop). `depart_at` is the start of the first walk, `arrive_at` the
+  end of the last one. `transfers` = rides − 1. `walk_m` is the sum of the walks. `modes`: the
+  Modes of the rides, in ride order, without repeats.
+- **Ride leg**: `line`, `mode`, `headsign` as in the Line and Run; `run` is the Run id
+  (§3), so the client can open `/v2/runs/{id}` for its live state; `hops` is the number of
+  stops the ride moves past, the last one included. `source` is always `timetable` in rev 16:
+  times are the timetable's, never live. A bus on an expired GTFS has the times of OASA's
+  daily schedule (departure from the first stop plus the stop's offset in the GTFS trip that
+  stands for it, as `/v2/stops/{id}` timetable Arrivals have).
+- **Walk leg**: `distance_m` is the straight line × 1.3, whole metres; the walk takes
+  `distance_m` / 1.2 m/s (about 4.3 km/h), rounded up to whole seconds. A metro or suburban
+  Stop adds 120 s to a walk that starts or ends there (the way through the station). Walks from
+  `from` and to `to`: every Stop up to 1000 m away (straight line). Walks between two rides:
+  Stops up to 500 m apart. A change at the same Stop is a walk of 0 m that takes 0 s, or 120 s
+  at a metro or suburban Stop (to another platform; the 120 s is counted once).
+- **Leg times**: a walk's `arrive_at` is its `depart_at` plus its time. A ride's `depart_at`
+  and `arrive_at` are the timetable's. A walk after a ride starts at the ride's `arrive_at`.
+  The gap between a walk's `arrive_at` and the next ride's `depart_at` is waiting: at least
+  60 s at a transfer (the transfer buffer), and 0 s before the first ride (the first walk
+  starts as late as it can).
+- **Which options**: at most 3 transfers (4 rides). An option is left out when another leaves
+  `from` at the same time or later, arrives at `to` at the same time or earlier, and has no
+  more transfers. At equal times and transfers only one is returned; which one is not fixed.
+  `last=true` gives the `n` options that leave latest (some may arrive after 03:00);
+  `last=false` the `n` options that leave first, looking at most 3 h past `after`. The `n` are
+  picked first (ties: earlier arrival, then fewer transfers); the list is then sorted by
+  `depart_at`, then `arrive_at`, then `transfers`. Fewer than `n` (or none) when
+  fewer exist: `200` with `itineraries: []` after the last run of the day.
+- **`shape`** (every leg, for the route map): `[[lat, lon], …]`, 5 decimals, at least 2 points.
+  A ride: its Pattern `shape` cut from the board Stop to the alight Stop (the stops' nearest
+  points on it, in ride order); when the Pattern has no shape, the stops' own points in order.
+  A walk: in rev 16 the straight line from its start to its end (clients draw it dotted); a
+  later rev may give the path along streets with the same key. The first and last point of a
+  leg are its `from` and `to` points.
+- **Live state and Plan B (client rules)**: the plan is timetable only. For the first ride the
+  client reads `/v2/stops/{from.stop}` and takes the Arrival with the ride's `run` (else the
+  first one of the same `line` and `headsign` at or after the ride's `depart_at`); "leave in X"
+  is that Arrival's `at` − the first walk's time − now. When the user would miss it, the next
+  itinerary of the list is Plan B; for a fresh list the client asks again with `after` = now.
+  Local notifications ("leave now") are the app's own; the backend sends no push.
+- **`walk_only`**: `{"distance_m": …, "duration_s": …}` when `from` and `to` are at most
+  1000 m apart (straight line), else `null`. It is never one of the `itineraries`.
+- **`lines`, `stops`**: every Line and Stop that a leg names, so the client needs no other call.
+- **Data** (only what the backend already holds; a plan request never asks an upstream):
+  - `oasa`: the GTFS trips while the GTFS is current; on an expired GTFS, the runs of OASA's
+    daily schedule as the prefetch cached them. A line with no cached daily schedule has no
+    rides until it is cached.
+  - `stasy`: the STASY timetable (a typical day of the same weekday stands in when it has
+    expired, never a holiday of the feed: `indicative`).
+  - `proastiakos`: the schedule boards `/v2` already holds. No board: no suburban rides.
+  - `sources` lists all three with the §4 states. `oasa` is `warming_up` when its GTFS is
+    expired and no daily schedule of the service day is cached yet.
+- **Errors**: `400` `bad_from`, `bad_to`, `bad_after`, `bad_n`, `outside_area`; `429 busy` with
+  `Retry-After: 2` when too many plans run at once (a plan costs CPU; the other endpoints are
+  not slowed). Never `503`.
+- **Cache**: `max-age=60` when complete; `max-age=5` when a Source is `warming_up` or `down`
+  (§5). No `ETag`. Clients round `from` and `to` to 4 decimals (about 10 m) and `after` to the
+  minute, so equal questions hit the same cache entry.
+- **Not in rev 16**: live delays in a plan; the "risky" mark of a ride whose line often drops
+  its last runs (needs the seen/missed stats, about 2-3 weeks from 2026-10-30); a Mode filter;
+  `arrive_by`; fares; accessibility; any day but the current service day.
 
 ## Fixtures
 

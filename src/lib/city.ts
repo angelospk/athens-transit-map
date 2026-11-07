@@ -27,6 +27,10 @@ export function cleanCity(rows: unknown[]): CityVehicle[] {
       delay_s: finite(r.delay_s) ? r.delay_s : null,
       speed: finite(r.speed) && r.speed >= 0 ? r.speed : null,
       path: Array.isArray(r.path) && r.path.length >= 2 && r.path.every(isPair) ? r.path : null,
+      path_beyond: Array.isArray(r.path_beyond) && r.path_beyond.length >= 2 && r.path_beyond.every(isPair) ? r.path_beyond : null,
+      path_stops: Array.isArray(r.path_stops) && r.path_stops.every(finite) ? r.path_stops : null,
+      path_speeds: Array.isArray(r.path_speeds) && r.path_speeds.every(x => x === null || (finite(x) && x > 0)) ? r.path_speeds : null,
+      along_m: finite(r.along_m) && r.along_m >= 0 ? r.along_m : null,
     });
   }
   return out;

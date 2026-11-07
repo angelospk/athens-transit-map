@@ -16,11 +16,13 @@ const MAX_SPEED = 20;        // m/s (72 km/h)
 const MAX_GAP_S = 180;       // samples farther apart in time give no speed
 const MAX_LATE_S = 120;      // samples this old on arrival give no speed
 
-export interface Route { shape: [number, number][]; stopIds: string[]; stopS: number[]; endS: number }
+// lengthM (rev 20): the shape's length in the server's metres, to scale along_m to endS.
+export interface Route { shape: [number, number][]; stopIds: string[]; stopS: number[]; endS: number; lengthM?: number }
 // key: variant + trip. speed: the backend's smoothed speed (contract rev 3), if any.
 export interface Sample {
   pos: LngLat; at: number; key: string; speed?: number | null;
   steps?: (number | null)[] | null;   // rev 6: typical m/s per step ahead
+  along?: number | null;               // rev 20: the server's s (along_m, scaled): no projection
 }
 export interface Track {
   s: number; at: number; key: string;
@@ -147,7 +149,8 @@ export function updateTrack(prev: Track | null, sample: Sample, route: Route, no
     if (sample.at === prev.at && !prev.alts && !late && !prev.steps?.length && sample.steps?.length) return { ...prev, steps: sample.steps };
     return prev;
   }
-  const cands = projectCandidates(route.shape, sample.pos).map(c => c.s);
+  // The server's place on the shape names the pass of a loop; else every leg near the fix.
+  const cands = sample.along != null ? [sample.along] : projectCandidates(route.shape, sample.pos).map(c => c.s);
   if (!cands.length) return null;
   const given = typeof sample.speed === "number" && sample.speed >= 0 && !late ? Math.min(sample.speed, MAX_SPEED) : null;
   const steps = (alts?: number[]) => (alts ? null : late ? null : (sample.steps ?? null));

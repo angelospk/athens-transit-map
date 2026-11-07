@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { LngLatBounds, Map as MlMap, Marker, NavigationControl, Popup, setWorkerUrl, type ExpressionSpecification, type FilterSpecification, type GeoJSONSource,
+  import { LngLatBounds, Map as MlMap, type LngLatLike, Marker, NavigationControl, Popup, setWorkerUrl, type ExpressionSpecification, type FilterSpecification, type GeoJSONSource,
     type MapGeoJSONFeature, type PaddingOptions } from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
   import workerUrl from "virtual:maplibre-worker";
@@ -34,7 +34,8 @@
   import { municipalFC } from "../municipal";
     import { stitch } from "../muniLine";
   import { resolveDark } from "../theme";
-  import type { Variant } from "../types";
+  import { fetchLineStatic } from "../api";
+  import type { LineStatic, Variant } from "../types";
   import type { AppState } from "../state.svelte";
   import SpeedLegend from "../ui/SpeedLegend.svelte";
   import { paintBase } from "./basemap";
@@ -125,16 +126,32 @@
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
   const STILL_TRAIL_S = 1;   // motion off: the trail of a move to a new fix fades over this
 
+  // City layer (contract rev 20): the static files of the lines of vehicles in view with along_m,
+  // loaded once each (the HTTP cache keeps them across loads), so those vehicles drive on along
+  // their whole shape. A failed file is asked again after a minute.
+  const cityStatics = new Map<string, LineStatic | number>();   // the file, or when its load started
+  const CITY_RETRY_MS = 60_000;
+  function cityRoute(line: string, variant: string | null): RouteGeom | null {
+    if (!variant) return null;
+    const got = cityStatics.get(line);
+    if (!app.statics[line] && (got === undefined || (typeof got === "number" && Date.now() - got > CITY_RETRY_MS))) {
+      cityStatics.set(line, Date.now());
+      fetchLineStatic(line).then(st => cityStatics.set(line, st), () => {});
+    }
+    return routeFor(line, variant);
+  }
+
   // Route geometry per variant, built once per static file.
   const routes = new WeakMap<Variant, RouteGeom>();
   function routeFor(line: string, variant: string | null): RouteGeom | null {
-    const st = variant ? app.statics[line] : undefined;
+    const file = cityStatics.get(line);
+    const st = variant ? app.statics[line] ?? (typeof file === "object" ? file : undefined) : undefined;
     const v = variant ? st?.variants[variant] : undefined;
     if (!st || !v || v.shape.length < 2) return null;
     let r = routes.get(v);
     if (!r) {
       const known = v.stops.filter(id => st.stops[id]);
-      r = routeGeom({ shape: v.shape, stopIds: known, endS: shapeLength(v.shape),
+      r = routeGeom({ shape: v.shape, stopIds: known, endS: shapeLength(v.shape), lengthM: v.length_m,
         stopS: stopOffsets(v.shape, known.map(id => [st.stops[id].lon, st.stops[id].lat] as LngLat)) });
       routes.set(v, r);
     }
@@ -796,10 +813,21 @@
     if (t - frameAt < 2500) return;
     frameAt = t;
     const b = pts.reduce((b, p) => b.extend(p), new LngLatBounds(at, at));
+    // Its own padding, from the guide's own parts (the banner on top, the sheet or bar at the foot, the round buttons
+    // at the right): the map's general padding changes with other panels and notices, and the view swung with it.
+    const rectOf = (sel: string) => { const el = document.querySelector<HTMLElement>(sel); return el && el.offsetParent !== null ? el.getBoundingClientRect() : null; };
+    const topEnd = Math.max(rectOf(".guide .then")?.bottom ?? 0, rectOf(".guide .banner")?.bottom ?? 0, 60);
+    const footTop = rectOf(".guide .minibar")?.top ?? rectOf(".guide .sheet")?.top ?? innerHeight;
+    const pad = { top: topEnd + 24, bottom: Math.max(24, innerHeight - footTop + 24), left: 32, right: 72 };
+    if (pad.top + pad.bottom > innerHeight - 120) pad.bottom = Math.max(24, innerHeight - 120 - pad.top);
     m.setPadding({ top: 0, bottom: 0, left: 0, right: 0 });
-    const pad = padNow();
-    m.fitBounds(b, { padding: { top: (pad.top ?? 0) + 40, bottom: (pad.bottom ?? 0) + 40, left: (pad.left ?? 0) + 40, right: (pad.right ?? 0) + 40 },
-      maxZoom: 17.5, bearing: app.headingUp && app.compass != null ? app.compass : m.getBearing(), duration: framedGuide && !reducedMotion.matches ? 1200 : 0, absolutePadding: true });
+    const bearing = m.getBearing();
+    const cam = m.cameraForBounds(b, { padding: pad, maxZoom: 17.5, bearing });
+    if (!cam || cam.zoom == null || !cam.center) return;
+    // Close to where it already is: left still (no small swings every few seconds).
+    const c0 = m.project(m.getCenter()), c1 = m.project(cam.center as LngLatLike);
+    if (framedGuide && Math.abs(cam.zoom - m.getZoom()) < 0.3 && Math.hypot(c1.x - c0.x, c1.y - c0.y) < 48) return;
+    m.easeTo({ center: cam.center, zoom: cam.zoom, bearing, duration: framedGuide && !reducedMotion.matches ? 1000 : 0 });
     framedGuide = true;
   }
   // The phone's compass turns the map (heading-up); off again, north is up.
@@ -2332,7 +2360,7 @@
     const city = app.city, on = app.cityOn, own = app.cityExclude;
     untrack(() => {
       owned = own;
-      fleet.city(on && city ? city.vehicles : [], own, app.serverMs() / 1000);
+      fleet.city(on && city ? city.vehicles : [], own, app.serverMs() / 1000, cityRoute);
       nextDue = 0;   // draw new fixes (and their trails) now
       if (loaded && !on) (map!.getSource("city") as GeoJSONSource).setData(EMPTY);
     });

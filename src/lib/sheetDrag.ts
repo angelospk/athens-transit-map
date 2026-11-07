@@ -63,14 +63,23 @@ export function sheetDrag(node: HTMLElement, h: SheetDrag) {
 }
 
 /** The snap a sheet settles at: a flick goes one step its way, a slow drag to the nearest. */
-export function settleSnap<T extends string>(order: T[], current: T, at: number, places: Record<T, number>, v: number, grows: "up" | "down"): T {
+export function settleSnap<T extends string>(order: T[], current: T, at: number, places: Record<T, number>, v: number, grows: "up" | "down", dy = 0): T {
   if (Math.abs(v) > 0.5) {
     const toBigger = grows === "up" ? v < 0 : v > 0;   // order runs from smallest to biggest
     const i = order.indexOf(current) + (toBigger ? 1 : -1);
     return order[Math.max(0, Math.min(order.length - 1, i))];
   }
-  return order.reduce((a, b) => (Math.abs(places[b] - at) < Math.abs(places[a] - at) ? b : a));
+  const near = order.reduce((a, b) => (Math.abs(places[b] - at) < Math.abs(places[a] - at) ? b : a));
+  // A drag of a thumb's length (STEP_PX, `dy`: the finger's way, down +) is meant: it goes at least one step its way,
+  // even if the sheet's own place is still the nearest (a tall sheet's places are far apart; a short drag sprang back).
+  if (near === current && Math.abs(dy) > STEP_PX) {
+    const toBigger = grows === "up" ? dy < 0 : dy > 0;
+    const i = order.indexOf(current) + (toBigger ? 1 : -1);
+    return order[Math.max(0, Math.min(order.length - 1, i))];
+  }
+  return near;
 }
+const STEP_PX = 56;
 
 /** The screen's safe-area insets in px (the notch, the home bar), read once from CSS. */
 let insets: { top: number; bottom: number } | null = null;

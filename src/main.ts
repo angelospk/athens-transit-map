@@ -6,4 +6,7 @@ import "./app.css";
 
 installDiag();
 reloadOnStaleChunk();
-mount(App, { target: document.getElementById("app")! });
+// A prerendered page (scripts/seo.ts) holds its text in #app for search engines and no-script readers: the map replaces it.
+const target = document.getElementById("app")!;
+target.replaceChildren();
+mount(App, { target });

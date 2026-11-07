@@ -4,7 +4,7 @@
 
 import { delayClass, type DelayClass } from "../format";
 import { distanceM, JUMP_M, type LngLat } from "../glide";
-import { bridge, linePlan, Mover, project, NO_SPEED, pathPlan, planOnto, type Handoff, type Plan, cumulativeLL } from "../motion";
+import { bridge, drive, linePlan, Mover, project, NO_SPEED, pathPlan, planOnto, pointAtLL, walk, type Handoff, type Plan, cumulativeLL } from "../motion";
 import { predictS, updateTrack, type Route, type Track } from "../predict";
 import type { CityVehicle, Vehicle } from "../types";
 
@@ -49,10 +49,39 @@ const hasPath = (v: CityVehicle | Vehicle) => !!(v.path || v.path_beyond);
 
 const ll = (path: [number, number][]) => path.map(([lat, lon]) => [lon, lat] as LngLat);
 
+// The variant shapes the city layer may drive on (rev 20), by line and variant; null when not loaded.
+export type RouteOf = (line: string, variant: string | null) => RouteGeom | null;
+
+export const ALONG_FIX_M = 200;   // the server's point is at most 150 m from the fix; farther: another shape
+const ALONG_END_M = 50;           // along_m past the shape's end by more than this: another shape
+
+// A vehicle's s on its route from the server's along_m (contract rev 20): scaled to the client's
+// metres by endS / length_m. null when it does not fit (a static file of another GTFS).
+export function alongS(r: RouteGeom, along: number, pos: LngLat): number | null {
+  const L = r.route.endS, k = r.route.lengthM ? L / r.route.lengthM : 1, s = along * k;
+  if (!(s >= 0) || s > L + ALONG_END_M) return null;
+  const at = Math.min(s, L);
+  return distanceM(pointAtLL(r.geom, r.cum, at), pos) <= ALONG_FIX_M ? at : null;
+}
+
+// Along the variant's whole shape from s0 (rev 20): its step speeds when given, else with stop waits
+// at path_stops (the server's, scaled), then at the route's stops after them; it stands at the
+// shape's end.
+function alongPlan(shown: LngLat, r: RouteGeom, s0: number, v: CityVehicle | Vehicle, nowSec: number): Handoff {
+  const end = r.route.endS - s0, speed = v.speed ?? NO_SPEED;
+  const k = r.route.lengthM ? r.route.endS / r.route.lengthM : 1;
+  const near = (v.path_stops ?? []).map(x => x * k), after = near.length ? near[near.length - 1] + 15 : 1;
+  const stops = [...near, ...r.route.stopS.map(x => x - s0).filter(x => x > after)];
+  const f = v.path_speeds?.length ? walk(v.path_speeds, speed, end) : drive(speed, stops, end);
+  return planOnto(shown, { geom: r.geom, cum: r.cum, target: t => s0 + f(t - v.position_at) }, nowSec);
+}
+
 // Along the backend `path` and its continuation `path_beyond` (rev 4; it starts at path's end, or
 // at the vehicle when path is null) when there is one: its typical step speeds (`path_speeds`, rev 6)
 // when given, else without a speed slowly; else straight to the fix.
-function ahead(shown: LngLat, v: CityVehicle | Vehicle, pos: LngLat, nowSec: number) {
+function ahead(shown: LngLat, v: CityVehicle | Vehicle, pos: LngLat, nowSec: number, r: RouteGeom | null = null) {
+  const s0 = r && v.along_m != null ? alongS(r, v.along_m, pos) : null;
+  if (r && s0 != null) return alongPlan(shown, r, s0, v, nowSec);
   const geom = v.path && v.path_beyond ? [...v.path, ...v.path_beyond.slice(1)] : v.path ?? v.path_beyond;
   return geom
     ? pathPlan(shown, ll(geom), v.speed ?? NO_SPEED, v.position_at, nowSec, v.path_stops ?? [], v.path_speeds, v.speed)
@@ -63,7 +92,8 @@ export class Fleet {
   entries = new Map<string, FleetEntry>();
 
   // The city snapshot. Lines in `owned` are driven by their own data (and keep their vehicles).
-  city(vehicles: CityVehicle[], owned: Set<string>, nowSec: number) {
+  // routeOf: the loaded variant shapes, for vehicles with along_m (rev 20).
+  city(vehicles: CityVehicle[], owned: Set<string>, nowSec: number, routeOf?: RouteOf) {
     const seen = new Set<string>();
     for (const v of vehicles) {
       if (owned.has(v.line)) continue;
@@ -71,11 +101,17 @@ export class Fleet {
       seen.add(k);
       const old = this.entries.get(k);
       if (old) old.track = old.route = null;   // a closed detailed line: its order no longer applies
-      const late = !!old && !old.guess && hasPath(v) && old.at === v.position_at;
-      const e = this.fix(k, v.line, v.id, v, nowSec, late);
+      const r = v.along_m != null ? routeOf?.(v.line, v.variant) ?? null : null;
+      const onShape = !!r && alongS(r, v.along_m!, [v.lon, v.lat]) != null;
+      const moves = hasPath(v) || onShape;
+      const late = !!old && !old.guess && moves && old.at === v.position_at;
+      // The shape came in after this fix (its line file loaded): take it now, not at the next fix.
+      const plan = old?.mover.plan;
+      const promote = !!old && onShape && old.at === v.position_at && !!plan && plan.geom !== r!.geom && plan.base?.geom !== r!.geom;
+      const e = this.fix(k, v.line, v.id, v, nowSec, late || promote);
       if (!e) continue;
       const pos: LngLat = [v.lon, v.lat];
-      this.apply(e, bridge(e.mover, ahead(e.mover.pos, v, pos, nowSec)), nowSec, hasPath(v), late);
+      this.apply(e, bridge(e.mover, ahead(e.mover.pos, v, pos, nowSec, r)), nowSec, moves, late);
     }
     for (const [k, e] of this.entries) if (!owned.has(e.line) && !seen.has(k)) this.entries.delete(k);
   }
@@ -94,7 +130,8 @@ export class Fleet {
       const before = e.track;
       e.track = route
         ? updateTrack(e.route === route ? e.track : null,
-          { pos, at: v.position_at, key: `${v.variant}/${v.trip_id}`, speed: v.speed, steps: v.path_speeds }, route.route, nowSec)
+          { pos, at: v.position_at, key: `${v.variant}/${v.trip_id}`, speed: v.speed, steps: v.path_speeds,
+            along: v.along_m != null ? alongS(route, v.along_m, pos) : null }, route.route, nowSec)
         : null;
       const keepRoute = e.route === route && !!before && before.key === e.track?.key;
       e.route = e.track ? route : null;

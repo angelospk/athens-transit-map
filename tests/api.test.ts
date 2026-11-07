@@ -6,7 +6,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("api", () => {
   it("percent-encodes Greek line ids", () => {
     expect(lineUrl("Α1")).toBe("https://transit.haroldpoi.dev/v1/lines/%CE%911");
-    expect(lineStaticUrl("Α1")).toBe("https://angelospk.github.io/athens-transit-rt/static/v1/lines/%CE%911.json");
+    expect(lineStaticUrl("Α1")).toBe("https://angelospk.github.io/staseis-rt/static/v1/lines/%CE%911.json");
   });
   it("keeps the HTTP status when the body is not JSON", async () => {
     vi.stubGlobal("fetch", async () => new Response("<html>rate limited</html>", { status: 429 }));

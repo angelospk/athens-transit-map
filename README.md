@@ -35,7 +35,7 @@ map where you could see every bus of the city at once and follow your own lines.
 **One measured result.** The motion model between GPS fixes was chosen offline on recorded fixes: on a held-out
 test split, the median position error fell from 225 m to 122 m ([lab/motion/program.md](lab/motion/program.md)).
 
-Try the API ([full reference](https://angelospk.github.io/athens-transit-rt/)): [`/v1/status`](https://transit.haroldpoi.dev/v1/status) ·
+Try the API ([full reference](https://angelospk.github.io/staseis-rt/)): [`/v1/status`](https://transit.haroldpoi.dev/v1/status) ·
 [`/v1/lines/040`](https://transit.haroldpoi.dev/v1/lines/040) (live vehicles of line 040).
 
 ---
@@ -154,7 +154,7 @@ bun run build      # static site in dist/
 | Variable | Default | Meaning |
 |---|---|---|
 | `VITE_API_BASE` | `https://transit.haroldpoi.dev` | Live API (`/v1/lines/{id}`, `/v1/status`) |
-| `VITE_STATIC_BASE` | `https://angelospk.github.io/athens-transit-rt/static/v1` | Static data (`lines.json`, `lines/{id}.json`) |
+| `VITE_STATIC_BASE` | `https://angelospk.github.io/staseis-rt/static/v1` | Static data (`lines.json`, `lines/{id}.json`) |
 | `VITE_GEOCODE_URL` | `https://photon.komoot.io/api/` | Area and street search of the trip planner (Photon API) |
 | `VITE_DEMO_VIDEO_URL` | `DEMO_VIDEO_URL` in `src/lib/config.ts` (this README) | Video linked from the "no connection" banner; empty: no link |
 | `VITE_MOCK` | unset | `1` = answer every request from `src/fixtures/` (moving vehicles, 30 s cycle) |
@@ -186,6 +186,22 @@ wrong clock cannot stop polling. Known gaps: without `Date`, if the feed has sto
 too-small age for about 30 s; a fast device clock and a stopped feed together cannot be told apart.
 
 Static files (`lines.json`, `lines/{id}.json`) are fetched once per page load.
+
+## Arrival accuracy
+
+How close the arrival times are, measured against the real passes (GPS) for 31/10 to 6/11/2026, 5 stops in
+Athens, about 236,000 predictions with the bus up to 20 min away. "Typical" is the median error: half the
+predictions were closer. For 12% of predictions we saw no pass (mostly a gap in the GPS); they are left out.
+
+| Bus due in | Typical error | Within 2 min |
+|---|---|---|
+| up to 5 min | 37 s | 87% |
+| 5 to 10 min | 65 s | 74% |
+| 10 to 20 min | 1.7 min | 57% |
+
+Further out the time is rougher, because the bus has often not left its start yet. The ⓘ sheet (Στατιστικά →
+Μακροχρόνια) shows the latest week: `lab/eta/publish.sh` scores it each Monday and pushes it to the `eta`
+branch. Method and caveats: `lab/eta/README.md`.
 
 ## Known limits
 

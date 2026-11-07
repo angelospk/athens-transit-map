@@ -289,7 +289,7 @@
     end: (dy, v) => {
       dragging = false;
       const t = tops(), at = Math.max(t.full, Math.min(t.peek + 40, top0 + dy));
-      const next = settleSnap<NSnap>(["peek", "half", "full"], nsnap, at, t, v, "up");
+      const next = settleSnap<NSnap>(["peek", "half", "full"], nsnap, at, t, v, "up", dy);
       if (next === nsnap) nowTop = next === "half" ? null : t[next];
       nsnap = next;
       if (next === "half") nowTop = null;

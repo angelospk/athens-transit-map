@@ -41,7 +41,19 @@ export function passTime(fixes: Fix[], stop: { lat: number; lon: number }, after
   for (let i = 0; i < fx.length; i++) {
     const b = fx[i];
     const dB = metres(b.lat, b.lon, stop.lat, stop.lon);
-    if (b.t >= after && dB <= 40) return b.t;
+    if (b.t >= after && dB <= 40) {
+      // A bus that waits here (a terminus, a layover) passes when it leaves: that is what
+      // the prediction there means. A short stop stays the arrival. The wait runs over
+      // every fix inside, also across a gap in the fixes and from before `after`, and ends
+      // only at a fix outside.
+      const inside = (k: number) => metres(fx[k].lat, fx[k].lon, stop.lat, stop.lon) <= 40;
+      let first = i, last = i;
+      while (first > 0 && inside(first - 1)) first--;
+      while (last + 1 < fx.length && inside(last + 1)) last++;
+      if (fx[last].t - fx[first].t < 120) return b.t;
+      if (last + 1 >= fx.length) return null;   // still waiting when the data ends
+      return fx[last].t;
+    }
     const a = fx[i - 1];
     if (!a) continue;
     const dA = metres(a.lat, a.lon, stop.lat, stop.lon);
@@ -79,16 +91,31 @@ function bucket(label: string, errs: number[]): Bucket {
   };
 }
 
-// One row per pred. The actual pass is the first one from 60 s before the question to 90 min
-// after it; without one, a pred still inside the last 20 min of data is unresolved, not phantom.
-export function score(preds: Pred[], passes: Record<string, number[]>, end: number): Score {
+// One row per pred. A bus stays listed at the stop until it passes, so a trip is one run of
+// preds for the same stop|vehicle with no gap over 15 min, and its pass must come between
+// 60 s before the question and 5 min after the run's last listing. A pass later than that
+// is the next lap. Without one, a run that ends within 15 min of the data's end is
+// unresolved, not phantom: it may still go on.
+// `keep` picks the rows that count; the others still extend the runs (a run across midnight).
+export function score(preds: Pred[], passes: Record<string, number[]>, end: number, keep: (p: Pred) => boolean = () => true): Score {
   const errs: number[][] = LABELS.map(() => []);
   const all: number[] = [];
   let matched = 0, phantom = 0, unresolved = 0;
+  const runEnd = new Map<Pred, number>(), byKey: Record<string, Pred[]> = {};
+  for (const p of preds) (byKey[`${p.stop}|${p.vehicle}`] ??= []).push(p);
+  for (const ps of Object.values(byKey)) {
+    ps.sort((a, b) => a.q - b.q);
+    for (let i = ps.length - 1, last = Infinity; i >= 0; i--) {
+      if (i === ps.length - 1 || ps[i + 1].q - ps[i].q > 900) last = ps[i].q;
+      runEnd.set(ps[i], last);
+    }
+  }
   for (const p of preds) {
-    const actual = (passes[`${p.stop}|${p.vehicle}`] ?? []).find(x => x >= p.q - 60 && x <= p.q + 5400);
+    if (!keep(p)) continue;
+    const until = runEnd.get(p)! + 300;
+    const actual = (passes[`${p.stop}|${p.vehicle}`] ?? []).find(x => x >= p.q - 60 && x <= until);
     if (actual === undefined) {
-      if (p.at + 1200 > end) unresolved++;
+      if (runEnd.get(p)! + 900 > end) unresolved++;   // the run may still go on
       else phantom++;
       continue;
     }
@@ -123,4 +150,28 @@ export function passesFor(
     out[key] = times.sort((a, b) => a - b);
   }
   return out;
+}
+
+// What the ⓘ sheet shows (web#27): the three buckets under 20′ only, because past 20′ the bus
+// is often still before its start and the time comes from the timetable. Read by
+// src/lib/eta-accuracy.ts; bump `v` on any change of shape.
+export interface Published {
+  v: 1;
+  from: string;
+  to: string;
+  stops: number;
+  preds: number;             // matched + phantom
+  buckets: { label: string; n: number; median_s: number; within_120: number }[];
+  phantom_share: number;
+}
+
+export function summary(s: Score, at: { from: string; to: string; stops: number }): Published {
+  const preds = s.matched + s.phantom;
+  return {
+    v: 1, ...at, preds,
+    buckets: s.buckets.slice(0, 3).filter(b => b.n > 0).map(b => ({
+      label: b.label, n: b.n, median_s: Math.round(b.median_abs_s!), within_120: Math.round(100 * b.within_120!) / 100,
+    })),
+    phantom_share: preds ? Math.round(100 * s.phantom / preds) / 100 : 0,
+  };
 }

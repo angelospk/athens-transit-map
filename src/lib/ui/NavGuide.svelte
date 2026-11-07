@@ -511,7 +511,7 @@
     move: dy => { dragH = clampH(h0 - dy); },
     end: (dy, v) => {
       const at = innerHeight - clampH(h0 - dy);
-      const next = settleSnap<NSnap>(["mini", "half", "full"], nsnap, at, tops(), v, "up");
+      const next = settleSnap<NSnap>(["mini", "half", "full"], nsnap, at, tops(), v, "up", dy);
       dragH = null;
       if (next === "mini") setMini(true); else nsnap = next;
     },

@@ -253,8 +253,11 @@ Requirements 15-16. One component replaces `LinePicker` and the search part of `
 
 Requirement 11.
 - Decided (Harold, 2026-10-29): query params now; prerendered pages later (own Backlog issue).
-- The top card is in the URL: `?stop=<StopId>`, `?line=<LineId>` (+ `&dir=0|1`),
-  `?vehicle=<VehicleId>`. Ids are `/v2` ids, percent-encoded (`?stop=oasa%3A400012`).
+- Since web#47 (2026-11-07) every city has its own path and a stop or line card is a path:
+  `/{city}/stop/<id>`, `/{city}/line/<id>` (+ `?dir=0|1`), with the id's `:` as `-`
+  (`/athens/stop/oasa-400012`); that path is also the card's prerendered page. A vehicle stays in the
+  query: `/{city}/?line=<LineId>&vehicle=<VehicleId>`. Old links (`?stop=`, `?line=`, `?city=`,
+  `/stop/*.html`) still open and move to the new path (`src/lib/paths.ts`, `scripts/seo.ts`).
 - `?l=040,Α1` keeps working (today's multi-line link); it maps to «these Lines on the map».
 - A `?vehicle=` that is gone (Run ended) opens its Line card with a note «Το όχημα δεν είναι
   πια σε δρομολόγιο».

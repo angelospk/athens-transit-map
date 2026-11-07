@@ -1,0 +1,45 @@
+name: Thessaloniki stop index
+
+# Daily: rebuild public/trips-thessaloniki.json (scripts/trips.ts) from the Thessaloniki instance, which
+# loads each new OSETH GTFS slice (every 2 to 3 weeks). Only the instance is read, never OASTH/OSETH.
+# A changed file is committed to main and deployed: a push by GITHUB_TOKEN starts no workflow, so the
+# deploy is dispatched.
+on:
+  schedule:
+    - cron: "30 3 * * *" # 05:30/06:30 Athens; a new slice reaches the map within a day
+  workflow_dispatch:
+
+concurrency:
+  group: thess-stops
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main # a run dispatched on another branch must not push that branch's commits to main
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun scripts/trips.ts
+        env:
+          VITE_STATIC_BASE: https://transit-thess.haroldpoi.dev/static/v1
+          TRIPS_OUT: public/trips-thessaloniki.json
+      - name: Commit and deploy a changed index
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- public/trips-thessaloniki.json; then echo "no change"; exit 0; fi
+          v=$(jq -r .v public/trips-thessaloniki.json)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/trips-thessaloniki.json
+          git commit -m "Thessaloniki stop index: GTFS $v"
+          git pull --rebase origin main
+          git push origin HEAD:main
+          gh workflow run deploy.yml --ref main

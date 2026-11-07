@@ -8,7 +8,7 @@ describe("data sources", () => {
   });
 
   it("links to the public API reference (also behind the short link /api)", () => {
-    expect(API_DOCS).toBe("https://angelospk.github.io/athens-transit-rt/");
+    expect(API_DOCS).toBe("https://angelospk.github.io/staseis-rt/");
   });
 
   it("keeps the three credits of the tile style, with their links", () => {
