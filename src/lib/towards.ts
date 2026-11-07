@@ -21,7 +21,7 @@ const greek = (w: string) => (/\p{Script=Greek}/u.test(w) ? w.replace(/[ABEZHIKM
 // OASTH also marks a terminus «Τ.Σ.», ends it with a platform letter («ΙΚΕΑ B») and slips Latin capitals
 // into Greek words («ΑΚΡΟΠΟΤΑΜΟY»).
 export function cleanTerminus(name: string): string {
-  const s = name.replace(/(^|[\s\-\/])Τ\.Σ\.\s*/g, "$1").replace(/\s*\/\s*/g, " - ").replace(/\s+/g, " ").trim();
+  const s = name.replace(/(^|[\s\-\/])Τ\.Σ\.\s*/g, "$1").replace(/\s+\/\s*|\/\s+/g, " - ").replace(/\s+/g, " ").trim();
   return s.split(" - ").flatMap(seg => {
     const words = seg.split(" ").map(greek)   // "122-", "543-543Α", "Χ96" go; a leading "40" (40 ΕΚΚΛΗΣΙΩΝ) stays
       .filter((w, i) => !/\d/.test(w) || (i === 0 && /^\d+$/.test(w)));

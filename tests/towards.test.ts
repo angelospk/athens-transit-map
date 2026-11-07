@@ -58,6 +58,8 @@ describe("cleanTerminus", () => {
     ["Τ.Σ. ΑΚΡΟΠΟΤΑΜΟY", "ΑΚΡΟΠΟΤΑΜΟΥ"],             // a Latin Y inside a Greek word
     ["Τ.Σ. ΚΑΤΩ ΗΛΙΟΥΠΟΛΗΣ-ΕΥΟΣΜΟΥ", "ΚΑΤΩ ΗΛΙΟΥΠΟΛΗΣ-ΕΥΟΣΜΟΥ"],
     ["MEDITERRANEAN COSMOS", "MEDITERRANEAN COSMOS"],
+    ["ΑΜ/ΣΙΟ ΘΡΙΑΣΙΟΥ", "ΑΜ/ΣΙΟ ΘΡΙΑΣΙΟΥ"],          // a slash inside an abbreviation stays
+    ["ΠΑΝ/ΠΟΛΗ", "ΠΑΝ/ΠΟΛΗ"],
   ])("%s → %s", (raw, out) => expect(cleanTerminus(raw)).toBe(out));
 });
 
