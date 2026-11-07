@@ -24,7 +24,7 @@
   import Route3D from "../ui/Route3D.svelte";
   import { busRoute, lateness, minsTo } from "../bus3d";
   import { smoothPath, snapTram } from "./tramRails";
-  import { metroGlyph, oasaLogo, stopSign, tramGlyph } from "./mapIcons";
+  import { metroGlyph, metroLogo, oasaLogo, stopSign, tramGlyph, tramLogo } from "./mapIcons";
   import { Clouds } from "./clouds";
   import { bearingOf, depthAt, liveryOf, metroStops, nearestIndex, rightOf, straighten, trackBehind } from "./metroDepth";
   import { snapLine } from "../roadSnap";
@@ -238,6 +238,8 @@
     if (!m.hasImage("mode-disc")) m.addImage("mode-disc", discImage(), { pixelRatio: 2, sdf: true });
     // Drawn crisp (mapIcons.ts), at the sizes the layers expect: the glyphs 24 px, the stop sign 48 px.
     if (!m.hasImage("mode-glyph-metro")) m.addImage("mode-glyph-metro", metroGlyph(), { pixelRatio: 128 / 24 });
+    if (!m.hasImage("mode-glyph-logo")) m.addImage("mode-glyph-logo", metroLogo(), { pixelRatio: 128 / 24 });
+    if (!m.hasImage("mode-glyph-tramlogo")) m.addImage("mode-glyph-tramlogo", tramLogo(), { pixelRatio: 128 / 24 });
     if (!m.hasImage("mode-glyph-tram")) m.addImage("mode-glyph-tram", tramGlyph(), { pixelRatio: 128 / 24 });
     if (!m.hasImage("mode-stop")) m.addImage("mode-stop", stopSign(), { pixelRatio: 128 / 48 });
     void oasaLogo().then(img => { if (img && m.hasImage("mode-stop")) m.updateImage("mode-stop", stopSign()); });

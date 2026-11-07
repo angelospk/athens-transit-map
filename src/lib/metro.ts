@@ -45,7 +45,7 @@ export function metroFC(data: MetroData, shown: string[], station: string | null
       ...data.lines.filter(l => shown.includes(l.id)).map((l): GeoJSON.Feature => ({ type: "Feature",
         geometry: { type: "MultiLineString", coordinates: l.paths }, properties: { kind: "line", id: l.id, color: l.color } })),
       ...data.stations.map((s): GeoJSON.Feature => ({ type: "Feature", geometry: { type: "Point", coordinates: [s.lon, s.lat] },
-        properties: { kind: "station", glyph: s.lines.every(l => l.startsWith("T")) ? "tram" : "metro", name: s.name, lines: s.lines.join(" "), color: color.get(s.lines[0]) ?? "#666666",
+        properties: { kind: "station", glyph: s.lines[0]?.startsWith("T") ? "tramlogo" : "logo", name: s.name, lines: s.lines.join(" "), color: color.get(s.lines[0]) ?? "#666666",
           hub: s.lines.length > 1, sel: s.name === station } })),
     ],
   };

@@ -146,5 +146,5 @@
   .pill.inline .pic { width: 24px; height: 24px; }
   .pill.inline .go { width: 28px; height: 28px; }
   .up.inline { width: 36px; height: 36px; box-shadow: none; }
-  @media (prefers-reduced-motion: reduce) { .fade i, .sheen, .ch, .pill, .up { animation: none; } .ch.two { display: none; } .ch { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .pill, .up { animation: none; } }
 </style>

@@ -21,9 +21,11 @@
   {:else if name === "trolley"}
     <rect x="4" y="6" width="12" height="10" rx="2" /><path d="M4 12h12M7 16v2M13 16v2M8.5 6 6.5 2M11.5 6l2-4" />
   {:else if name === "metro"}
-    <circle cx="10" cy="10" r="7" /><path d="M6.5 13.5V7l3.5 4 3.5-4v6.5" />
+    <!-- The Athens metro's mark: its ring, the three slanted strokes and the dot -->
+    <circle cx="10" cy="10" r="8" /><g fill="currentColor" stroke="none"><path d="M4.32 6.87h1.91l3.72 6.49H8.11L5.33 8.53H4.32zM7.18 6.87H9.1l3.72 6.49h-1.85L8.19 8.53H7.18zM10.07 6.87h1.91l3.72 6.49h-1.84l-2.78-4.83h-1.01z" /><circle cx="5.27" cy="10.94" r=".97" /></g>
   {:else if name === "tram"}
-    <rect x="5" y="5" width="10" height="10" rx="2" /><path d="M8 2.5h4M10 2.5V5M7 15l-2 2.5M13 15l2 2.5M5 10h10" />
+    <!-- The Athens tram's mark: its disc, the two branches that cross into two trunks below -->
+    <circle cx="10" cy="7.5" r="6.5" /><path d="M5 10.3Q8.3 10.3 8.3 13V19M15 10.3Q11.7 10.3 11.7 13V19M5 7.8C8.5 7.8 11.7 10 11.7 13M15 7.8C11.5 7.8 8.3 10 8.3 13" />
   {:else if name === "suburban"}
     <rect x="5" y="3" width="10" height="11" rx="3" /><path d="M5 9h10M7.5 14 5.5 17.5M12.5 14l2 3.5" />
   {:else if name === "locate"}

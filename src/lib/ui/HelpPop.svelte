@@ -27,8 +27,8 @@
     <span>Στάση της γραμμής που διάλεξες. Πάτα την για το όνομά της.</span></li>
   <li><span class="s"><span class="ico"><img src="{import.meta.env.BASE_URL}icons/stop.png" alt="" /></span></span>
     <span>Στάση λεωφορείου ή τρόλεϊ (όταν μεγεθύνεις). Πάτα την για τις αφίξεις.</span></li>
-  <li><span class="s"><span class="disc" style:background="#e30613"><img src="{import.meta.env.BASE_URL}icons/glyph-metro.png" alt="" /></span><span class="disc" style:background="#dc137a"><img src="{import.meta.env.BASE_URL}icons/glyph-tram.png" alt="" /></span></span>
-    <span>Σταθμός ή συρμός μετρό, ΗΣΑΠ ή τραμ, στο χρώμα της γραμμής του. Πάτα τον για τις γραμμές του.</span></li>
+  <li><span class="s"><img class="logo" src="{import.meta.env.BASE_URL}icons/metro-logo.svg" alt="" /><span class="disc" style:background="#e30613"><img src="{import.meta.env.BASE_URL}icons/glyph-metro.png" alt="" /></span><img class="logo tram" src="{import.meta.env.BASE_URL}icons/tram-logo.svg" alt="" /></span>
+    <span>Σταθμός μετρό ή ΗΣΑΠ, συρμός στο χρώμα της γραμμής του, στάση τραμ, με τα σήματά τους. Πάτα τον για τις γραμμές του.</span></li>
   <li><span class="s"><span class="me"><b></b></span></span>
     <span>Η θέση σου, από το κουμπί του στόχου στον χάρτη.</span></li>
   <li><span class="s"><span class="three">3D</span></span>
@@ -46,7 +46,10 @@
     background: var(--d); box-sizing: border-box; }
   .disc { display: inline-grid; place-items: center; flex: none; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff;
     box-shadow: 0 0 0 1px rgba(0, 0, 0, .15); box-sizing: border-box; }
-  .disc + .disc { margin-left: 4px; }
+  .logo + .disc { margin-left: 4px; }
+  .logo { display: block; flex: none; width: 24px; height: 24px; }
+  .disc + .logo { margin-left: 4px; }
+  .logo.tram { width: 18px; height: 26px; object-fit: contain; }
   .disc img { display: block; width: 26px; height: 26px; }
   .three { display: inline-flex; align-items: center; justify-content: center; height: 22px; padding: 0 6px; border-radius: 7px;
     background: var(--accent-bg); color: var(--accent); font-size: 11px; font-weight: 700; line-height: 1; }
