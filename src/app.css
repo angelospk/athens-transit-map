@@ -255,6 +255,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
   :root[data-chase] .popwrap, :root[data-chase] .under { display: none; }
 }
 
+/* A phone with «Πού πας;» open: the screen covers the map whole. The map steps out of the picture once the screen
+   is in (not before: it fades in over it), so typing and scrolling do not composite a full-screen map under it every
+   frame; back at once when the screen closes. */
+@media (max-width: 719px) {
+  .maplibregl-map { transition: visibility 0s; }
+  :root[data-start] .maplibregl-map { visibility: hidden; transition: visibility 0s linear .45s; }
+}
+
 /* Picking a trip's end on the map («Πού πας;»): only the map, the crosshair and its two buttons. */
 :root[data-pick] .panel, :root[data-pick] .rail, :root[data-pick] .maplibregl-ctrl-group, :root[data-pick] .tabs,
 :root[data-pick] .now, :root[data-pick] .ridebar, :root[data-pick] .mapnote, :root[data-pick] .under { display: none; }

@@ -44,6 +44,19 @@
   const MAP = "Σημείο στον χάρτη";
   let ends = $state<Record<Field, { text: string; place: Place | null }>>({ from: { text: "", place: null }, to: { text: "", place: null } });
   let open = $state<Field | null>(null);
+  // The suggestions list: on a phone a short fade (a sliding height fights the keyboard rising in the same moment),
+  // on a computer the slide.
+  const listIn = (node: Element) => (wide ? reveal(node) : soft(node, { duration: 120 }));
+  // What the local search looks for: the text as typed, a moment after each key (a phone types faster than it can
+  // search thousands of stops and lines on every key); cleared or set at once.
+  let typed = $state<Record<Field, string>>({ from: "", to: "" });
+  let typedT: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    const t = { from: ends.from.text, to: ends.to.text };
+    clearTimeout(typedT);
+    if ((t.from === "" || t.from.trim().length < 2) && (t.to === "" || t.to.trim().length < 2)) { typed = t; return; }
+    typedT = setTimeout(() => (typed = t), 90);
+  });
   let geo = $state.raw<{ text: string; places: Place[] } | null>(null);
   let busy = $state(false);
   let locating = $state<Field | null>(null);
@@ -144,7 +157,7 @@
   // The suggestions of the open field: the two ways to choose without typing, then what the typed text finds.
   const opts = $derived.by(() => {
     if (!open) return [] as Place[];
-    const q = ends[open].text.trim();
+    const q = typed[open].trim();
     if (q.length < 2 || ends[open].place) return [];
     // Our engine (searchEngine.ts): words in any order, short forms, a slip, «αεροδρόμιο»; a station before a pole,
     // a stop with more lines before one with fewer, the nearer first.
@@ -185,7 +198,7 @@
     return hit ? { label: titleCase(hit.label), place: hit } : null;
   }
   const asks = $derived.by((): Ask[] => {
-    const q = ends.to.text;
+    const q = typed.to;
     if (open !== "to" || app.savingPlace || ends.to.place || !q.trim().includes(" ")) return [];
     const t = parseTrip(q);
     if (t) {
@@ -195,7 +208,7 @@
     return allLines.length && allStops.length ? intents(allLines, allStops, q, ctx).filter(x => x.kind === "lineAt") : [];
   });
   const lineHits = $derived.by((): { first: V2Line[]; last: V2Line[] } => {
-    const q = open === "to" && !app.savingPlace ? ends.to.text.trim() : "";
+    const q = open === "to" && !app.savingPlace ? typed.to.trim() : "";
     if (!q || ends.to.place || !allLines.length) return { first: [], last: [] };
     const fq = fold(q);
     const found = searchLines(allLines, q, [], ctx).map(x => x.item);
@@ -213,7 +226,7 @@
   });
   const liveOf = (id: string) => { void liveTick; return liveCount(id); };
   // «Δημοτικά», while that layer is on: municipal lines (also by municipality, «Χολαργός») and named stops.
-  const muniQ = $derived(open === "to" && !app.savingPlace && !ends.to.place && app.municipalOn && app.municipal ? ends.to.text.trim() : "");
+  const muniQ = $derived(open === "to" && !app.savingPlace && !ends.to.place && app.municipalOn && app.municipal ? typed.to.trim() : "");
   const muniLines = $derived(muniQ.length >= 2 ? findMuniLines(app.muniCards, muniQ).slice(0, 4) : []);
   const muniStops = $derived(muniQ.length >= 2 && app.municipal ? findMuniStops(app.municipal.stops, app.municipal.routes, muniQ).slice(0, 3) : []);
   const town = (m: string) => m.replace(/^Δήμος\s+/, "");
@@ -605,8 +618,10 @@
   const favStops = $derived(app.favs.stops.slice(0, 3));
   const favKey = $derived(favStops.map(s => s.id).join("|"));
   let favBoards = $state.raw<Record<string, V2Arrival[]>>({});
+  // The phone's first screen (no destination yet, nothing being typed) shows them too.
+  const phoneHome = $derived(!wide && !app.savingPlace && !find && !ends.to.place && open === null);
   $effect(() => {
-    if (!(intro && app.start) || !favKey) return;
+    if (!((intro || phoneHome) && app.start) || !favKey) return;
     const ids = favKey.split("|");
     let dead = false, t: ReturnType<typeof setTimeout> | undefined;
     const load = async () => {
@@ -630,6 +645,10 @@
       deps: (rows ?? []).slice(0, 3).map(r => ({ line: native(r.line), to: titleCase(placeNote(toward(r.headsign)).place), min: r.times[0] ? minOf(r.times[0].at) : null })) };
   }));
   const favLines = $derived(app.favs.lines.slice(0, 6));
+  // A favourite stop as the trip's end (its own label, the stop's place).
+  function goFav(st: { id: string; name: string; lat: number; lon: number }) {
+    choose("to", { label: app.stopLabel(st.id, titleCase(st.name)), pts: [[st.lat, st.lon]], lines: [], kind: "stop" });
+  }
   function openFav(st: { id: string; name: string }) {
     app.savingPlace = null; app.start = false; app.pickFor = null;
     app.setTab("map");
@@ -1049,12 +1068,33 @@
               </button>
             {/each}
           </div>
+          {#if favCards.length}
+            <!-- The favourite stops (mockup-free polish): what leaves each now; a tap opens its board, the arrow plans the trip there. -->
+            <div class="qhrow"><p class="qh">Αγαπημένες στάσεις</p>{#if app.favs.stops.length > favCards.length}<button type="button" class="slink" onclick={() => { app.start = false; app.setTab("now"); app.toggleFavs(); }}>Όλες</button>{/if}</div>
+            <div class="pfavs" data-peek="Αγαπημένα" data-peek-icon="star" in:item={{ i: 5, y: 12 }}>
+              {#each favCards as f (f.s.id)}
+                <div class="pfav">
+                  <button type="button" class="pfm" onclick={() => openFav(f.s)}>
+                    <span class="pft"><b>{app.stopLabel(f.s.id, titleCase(f.s.name))}</b>
+                      {#if f.first}{@const m = minOf(f.first.t.at)}<span class="pfn" class:late={f.late > 0}><i></i>{m === 0 ? "τώρα" : `${m}′`}</span>{/if}</span>
+                    <span class="pfd">
+                      {#each f.deps as d, k (k)}{@const c = app.lineColor(d.line)}
+                        <span class="pfr"><i style:background={c.bg} style:color={c.fg}>{d.line}</i><span class="pto">{d.to}</span>{#if d.min != null}<small>{d.min === 0 ? "τώρα" : `${d.min}′`}</small>{/if}</span>
+                      {/each}
+                      {#if f.loading}<span class="pfr dim"><span class="sk1"></span></span>{:else if !f.deps.length}<span class="pfr dim">Κανένα λεωφορείο τώρα</span>{/if}
+                    </span>
+                  </button>
+                  <button type="button" class="pfgo" aria-label="Διαδρομή ως {app.stopLabel(f.s.id, titleCase(f.s.name))}" title="Πήγαινε εκεί" onclick={() => goFav(f.s)}><Icon name="route" size={18} /></button>
+                </div>
+              {/each}
+            </div>
+          {/if}
           {#if recent.length}
             <p class="qh" data-peek="Πρόσφατα" data-peek-icon="clock">Πήγες πρόσφατα</p>
             <div class="rlist" in:item={{ i: 5, y: 12 }}>
               {#each recent as x (x.at)}
                 <button type="button" class="rr" onclick={() => again(x)}>
-                  <span class="ric"><Icon name="clock" size={17} /></span><span class="rtx">{x.to.label}{#if x.from.label !== ME}<small>από {x.from.label}</small>{/if}</span>
+                  <span class="ric"><Icon name="clock" size={17} /></span><span class="rtx">{titleCase(x.to.label)}{#if x.from.label !== ME}<small>από {titleCase(x.from.label)}</small>{/if}</span>
                   <span class="rch" aria-hidden="true"><Icon name="chevron" size={15} /></span>
                 </button>
               {/each}
@@ -1299,7 +1339,7 @@
 {/if}
 
 {#snippet list(f: Field)}
-  <ul class="opts" id="start-{f}-list" role="listbox" aria-label={f === "from" ? "Από" : "Πού"} transition:reveal>
+  <ul class="opts" id="start-{f}-list" role="listbox" aria-label={f === "from" ? "Από" : "Πού"} transition:listIn>
     {#if ends[f].text.trim() && !ends[f].place && !opts.length && !lineHits.first.length && !lineHits.last.length && !asks.length && !muniLines.length && !muniStops.length}
       <li class="nothing" role="status">
         {#if busy}<span class="spin small" aria-hidden="true"></span>Αναζήτηση…
@@ -1749,6 +1789,30 @@
   .ptx { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
   .ptx b { font-size: 17px; font-weight: 700; line-height: 1; }
   .ptx small { font-size: 13px; color: var(--muted); line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .qhrow { display: flex; align-items: center; justify-content: space-between; margin-top: 22px; }
+  .qhrow .qh { margin: 0; }
+  .qhrow + .pfavs { margin-top: 8px; }
+  .pfavs { display: flex; flex-direction: column; gap: 8px; }
+  .pfav { display: flex; align-items: stretch; border-radius: 18px; border: 1px solid var(--pc-edge, var(--glass-line)); background: var(--pc-surf, var(--glass-fill)); overflow: hidden; }
+  .pfm { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9px; padding: 12px 6px 12px 14px; border: 0; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+  .pfm:active { background: color-mix(in srgb, var(--fg) 5%, transparent); }
+  .pft { min-height: 20px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .pft b { min-width: 0; font-size: 15.5px; font-weight: 700; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pfn { flex: none; height: 22px; display: flex; align-items: center; gap: 5px; padding: 0 8px; border-radius: 11px; font-size: 13px; font-weight: 800; line-height: 1;
+    background: color-mix(in srgb, var(--ontime) 15%, transparent); color: var(--ontime); }
+  .pfn.late { background: color-mix(in srgb, var(--late1) 16%, transparent); color: var(--late1); }
+  .pfn i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .pfd { display: flex; flex-direction: column; gap: 6px; }
+  .pfr { min-height: 22px; display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 1.2; color: var(--fg); }
+  .pfr.dim { color: var(--muted); }
+  .pfr i { flex: none; height: 22px; min-width: 36px; padding: 0 6px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border-radius: 7px;
+    font-style: normal; font-size: 12px; font-weight: 800; line-height: 1; }
+  .pto { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pfr small { flex: none; font-size: 12.5px; font-weight: 700; color: var(--muted); }
+  .sk1 { width: 60%; height: 12px; border-radius: 6px; background: color-mix(in srgb, var(--fg) 10%, transparent); }
+  .pfgo { flex: none; width: 52px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-left: 1px solid var(--pc-edge, var(--glass-line));
+    background: none; color: var(--accent); cursor: pointer; }
+  .pfgo:active { background: color-mix(in srgb, var(--accent) 12%, transparent); }
   .qh { margin: 22px 0 8px; font-size: 15px; font-weight: 600; color: var(--muted); line-height: 1; }
   .rlist { border-radius: 16px; border: 1px solid var(--pc-edge, var(--glass-line)); background: var(--pc-surf, var(--glass-fill)); overflow: hidden; }
   .rr { width: 100%; min-height: 56px; display: flex; align-items: center; gap: 12px; padding: 8px 14px 8px 16px; box-sizing: border-box; border: 0; background: none; color: var(--fg);

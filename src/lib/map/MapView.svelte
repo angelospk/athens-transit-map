@@ -850,11 +850,17 @@
   // the tab is hidden. Off-screen city vehicles are not stepped: they snap when they come back.
   // With motion off, every vehicle is drawn at its last fix; a move to a new fix leaves a trail.
   let raf = 0, nextDue = 0, cityWasEmpty = true, trailsWereEmpty = true;
+  // A phone with «Πού πας;» open: the screen covers the map whole, so nothing on it is stepped (the screen scrolls and
+  // types smoothly); the vehicles snap to where they are when it closes.
+  const phoneMQ = typeof matchMedia === "function" ? matchMedia("(max-width: 719px)") : null;
+  let covered = false;
   function frame() {
     raf = requestAnimationFrame(frame);
     const m = map;
     const t = performance.now();
-    if (!m || !loaded || document.hidden || t < nextDue) return;
+    const hide = !!phoneMQ?.matches && app.start && !app.pickFor && !app.guide;
+    if (hide !== covered) { covered = hide; if (!hide) { for (const e of fleet.entries.values()) e.mover.snap(); me?.mover.snap(); } }
+    if (!m || !loaded || document.hidden || covered || t < nextDue) return;
     const now = app.serverMs() / 1000, z = m.getZoom(), mpp = M_PER_PX_Z0 / 2 ** z;
     const reduced = reducedMotion.matches;
     let cull: ((p: LngLat) => boolean) | null = null;
