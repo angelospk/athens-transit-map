@@ -25,6 +25,7 @@
   import { parsePlan, planUrl, scaledLegs, type PlanResponse } from "../plan";
   import { API_BASE } from "../config";
   import { guideFromPlan } from "../guide";
+  import { fallbackPlan } from "../fallbackPlan";
 
   let { app }: { app: AppState } = $props();
 
@@ -139,8 +140,13 @@
     const [a, b] = JSON.parse(k) as [[number, number], [number, number]];
     const c = new AbortController();
     let t: ReturnType<typeof setTimeout> | undefined;
-    const load = () => getJSON(planUrl(API_BASE, a, b, undefined, 3), c.signal).then(res => {
-      const r = res.status === 200 ? parsePlan(res.body) : null;
+    const load = () => getJSON(planUrl(API_BASE, a, b, undefined, 3), c.signal).then(async res => {
+      let r = res.status === 200 ? parsePlan(res.body) : null;
+      // No route from the server: the app's own, from the stop index and the live boards (fallbackPlan.ts).
+      if ((!r || !r.itineraries.length) && app.stopIx) r = (await fallbackPlan(app.stopIx, a, b, app.serverNow / 1000, line => {
+        const co = app.lineColor(line);
+        return { label: line, color: co.bg, text: co.fg, mode: app.lineInfo.get(line)?.kind === "trolley" ? "trolley" : "bus" };
+      }, c.signal).catch(() => null)) ?? r;
       if (!c.signal.aborted && r) wayPlan = { key: k, r };
       if (!c.signal.aborted) t = setTimeout(load, 60_000);
     }, () => {});

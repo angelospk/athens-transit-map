@@ -15,6 +15,7 @@
   import RemindSheet from "./RemindSheet.svelte";
   import Sheet from "./Sheet.svelte";
   import { guideFromPlan } from "../guide";
+  import { fallbackPlan, type LineLook } from "../fallbackPlan";
   import { loadMetro } from "../metro";
   import { loadSuburban } from "../suburban";
   import { CITIES, type CityId } from "../cities";
@@ -616,11 +617,17 @@
     const [a, b, off] = JSON.parse(k) as [[number, number], [number, number], number];
     const c = new AbortController();
     const t = setTimeout(() => getJSON(planUrl(API_BASE, a, b, off ? untrack(() => app.serverNow) / 1000 + off * 60 : undefined, 5), c.signal).then(
-      res => {
+      async res => {
         if (c.signal.aborted) return;
-        const r = res.status === 200 ? parsePlan(res.body) : null;
+        const r0 = res.status === 200 ? parsePlan(res.body) : null;
+        // No route from the server: the app finds some itself (fallbackPlan.ts), timed from the live boards.
+        if (!r0 || !r0.itineraries.length) {
+          const fb = await fallback(a, b, c.signal);
+          if (!c.signal.aborted) plan = { key: k, r: fb ?? r0 };
+          return;
+        }
+        const r = r0;
         plan = { key: k, r };
-        if (!r) return;
         // Each later answer joins the list (the options it adds, its lines and stops), if the ends are still the same.
         const add = (m: PlanResponse | null) => {
           const cur = plan?.key === k ? plan.r : null;
@@ -638,10 +645,16 @@
         void withMetro(r, a, b, off ? untrack(() => app.serverNow) / 1000 + off * 60 : undefined, untrack(() => app.serverNow) / 1000, ask)
           .then(m => { if (m !== r) add(m); }, () => {});
       },
-      () => { if (!c.signal.aborted) plan = { key: k, r: null }; }), 120);
+      async () => { const fb = c.signal.aborted ? null : await fallback(a, b, c.signal); if (!c.signal.aborted) plan = { key: k, r: fb }; }), 120);
     return () => { clearTimeout(t); c.abort(); };
   });
   const nowS = $derived(app.serverNow / 1000);
+  const lineLook = (line: string): LineLook => { const c = app.lineColor(line); return { label: line, color: c.bg, text: c.fg, mode: app.lineInfo.get(line)?.kind === "trolley" ? "trolley" : "bus" }; };
+  async function fallback(a: [number, number], b: [number, number], signal: AbortSignal) {
+    const i = ix ?? (await loadTripIndex().catch(() => null));
+    if (!i || signal.aborted) return null;
+    return fallbackPlan(i, a, b, untrack(() => app.serverNow) / 1000, lineLook, signal).catch(() => null);
+  }
   // A leg's length from its shape ([lat, lon]), when the server gives none.
   const lineM = (sh: [number, number][]) => {
     let m = 0;
@@ -1045,6 +1058,7 @@
         {/if}
       {:else if !app.savingPlace && (wide || answer)}
         {#if routes?.length && top && planR}
+          {#if planR.estimate}<p class="est"><Icon name="warn" size={15} /><span>Ο server των διαδρομών δεν απαντά τώρα: αυτές τις βρήκε η εφαρμογή από τις στάσεις και τις ζωντανές αφίξεις. Οι ώρες είναι κατά προσέγγιση.</span></p>{/if}
           {#if top.ignored}<p class="pvn solo">Με {meansOn.length === 1 ? meansOn[0].label.toLowerCase() : "αυτά τα μέσα"} δεν βγαίνει τώρα: αυτές είναι οι καλύτερες με όλα.</p>{/if}
           <!-- Every route as a compact card: when to leave, how long, the means, where its bus is now; a tap opens it
                step by step and makes it the one «Ξεκίνα» follows. -->
@@ -1593,6 +1607,9 @@
   .stx.line :global(svg) { flex: none; }
   .stx.line b { font-size: inherit; font-weight: 600; color: var(--fg); }
   .cards { display: flex; flex-direction: column; gap: 10px; }
+  .est { margin: 0; display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 16px; font-size: 13px; line-height: 1.4; color: var(--muted);
+    background: color-mix(in srgb, var(--warn-fg) 10%, transparent); }
+  .est :global(svg) { flex: none; margin-top: 1px; color: var(--warn-fg); }
   .pvn.solo { margin: -4px 4px 0; }
   .morer { align-self: center; height: 44px; padding: 0 16px; border: 0; border-radius: 22px; background: none; color: var(--muted); font: inherit; font-size: 15px; font-weight: 600; line-height: 1; cursor: pointer; }
   .duo { display: flex; gap: 10px; }

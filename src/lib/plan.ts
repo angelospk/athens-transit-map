@@ -48,6 +48,7 @@ export interface PlanResponse {
   lines: Record<string, V2Line>;
   stops: Record<string, V2Stop>;
   sources: { id: string; state: string; updated_at: number | null }[];
+  estimate?: boolean;   // made by the app from its stop index (fallbackPlan.ts), not the server's planner
 }
 
 interface PlanRide {
