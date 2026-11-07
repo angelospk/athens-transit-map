@@ -199,7 +199,10 @@ export class Bot {
 
   // Telegram updates (getUpdates), in order; the new offset is saved with what they changed.
   // False when that save failed: nothing of them stayed, and they must come again.
-  async handle(updates: Update[]): Promise<boolean> {
+  // once (the router): skip the updates this bot saved already, which a crash before the router's save sends again.
+  async handle(updates: Update[], once = false): Promise<boolean> {
+    if (once) updates = updates.filter(u => u.update_id >= this.state.offset);
+    if (!updates.length) return true;
     // What the batch starts from, moved on by every save inside it: a failed save at the end puts it back, so
     // nothing the batch changed or queued unsaved is left behind.
     this.mark = this.snap();

@@ -67,7 +67,7 @@ export class Router {
   private async one(u: Update): Promise<boolean> {
     if (u.message) {
       const m = u.message, chat = m.chat.id;
-      if (m.chat.type !== "private") return this.athens.bot.handle([u]);
+      if (m.chat.type !== "private") return this.athens.bot.handle([u], true);
       const [cmd, arg] = (m.text ?? "").trim().split(/\s+/);
       if (cmd === "/list") return this.list(chat), true;
       if (cmd === "/stop") return this.stop(chat);
@@ -75,11 +75,11 @@ export class Router {
       if (cmd === "/start" && arg) {
         const p = /^([a-z]{3})_(.+)$/.exec(arg);
         const c = p ? this.byCode(p[1]) : this.athens;
-        if (!c) return this.athens.bot.handle([u]);   // an unknown prefix: Athens says the link is bad
+        if (!c) return this.athens.bot.handle([u], true);   // an unknown prefix: Athens says the link is bad
         this.setCity(chat, c);
-        return c.bot.handle([p ? { ...u, message: { ...m, text: `/start ${p[2]}` } } : u]);
+        return c.bot.handle([p ? { ...u, message: { ...m, text: `/start ${p[2]}` } } : u], true);
       }
-      return this.cityOf(chat).bot.handle([u]);
+      return this.cityOf(chat).bot.handle([u], true);
     }
     const q = u.callback_query;
     if (!q) return true;
@@ -89,8 +89,8 @@ export class Router {
     if (pick) return this.pick(q, pick[1]), true;
     const p = /^([a-z]{3}):(.+)$/.exec(data);
     const c = p ? this.byCode(p[1]) : undefined;
-    if (c && p) return c.bot.handle([{ ...u, callback_query: { ...q, data: p[2] } }]);
-    return this.athens.bot.handle([u]);
+    if (c && p) return c.bot.handle([{ ...u, callback_query: { ...q, data: p[2] } }], true);
+    return this.athens.bot.handle([u], true);
   }
 
   private out(method: string, body: Record<string, unknown>) { this.pending.push([method, body]); }

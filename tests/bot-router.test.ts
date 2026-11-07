@@ -217,6 +217,20 @@ describe("Router: failed saves", () => {
     expect(saves).toEqual([6, 7]);
   });
 
+  it("an update a city saved before a crash, but the router did not, is not done twice", async () => {
+    const t = setup();
+    await t.run(msg(`/start pat_${payload}`));
+    const sent = t.texts().length, offset = t.router.offset;
+    t.advance(3000);
+    // A restart before the router's save: the router is back at the update, the city bot already has it.
+    const again = new Router({ cities: [{ code: "ath", name: "Αθήνα", bot: t.ath.bot }, { code: "pat", name: "Πάτρα", bot: t.pat.bot }], save: () => {} }, { offset: offset - 1 });
+    await again.handle([{ update_id: offset - 1, ...msg(`/start pat_${payload}`) }] as never);
+    await t.pat.bot.flush();
+    expect(t.pat.saved()?.alerts).toHaveLength(1);
+    expect(t.texts()).toHaveLength(sent);
+    expect(again.offset).toBe(offset);
+  });
+
   it("a /city choice it could not save is not confirmed, and its update comes again", async () => {
     const t = setup({ failRouter: () => true });
     await t.run(cb("city:pat"));
