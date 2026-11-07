@@ -6,6 +6,8 @@
   import { isBusId } from "../busNs";
   import { fetchV2Line, fetchV2LineVehicles, fetchV2Run } from "../api";
   import { upcomingStops } from "../eta";
+  import { CITYBUS } from "../citybus";
+  import { PAGE_CITY } from "../config";
   import { ageLabel, delayText, fmtDelay } from "../format";
   import { busStopCard, routeCard } from "../legacy";
   import { stopIndex, toward } from "../stops";
@@ -33,7 +35,9 @@
     const variant = sv.v.variant ? st?.variants[sv.v.variant] : undefined;
     return { line: sv.line, v: sv.v, variant, st };
   });
-  const ahead = $derived(bus?.st && bus.variant ? upcomingStops(bus.variant, bus.st.stops, bus.v) : []);
+  // A citybus.gr city sends no path_speeds; its vehicle speed comes from citybus.gr's own time to the next stop.
+  const ownSpeed = CITYBUS.some(c => c.slug === PAGE_CITY);
+  const ahead = $derived(bus?.st && bus.variant ? upcomingStops(bus.variant, bus.st.stops, bus.v, ownSpeed) : []);
   const busHead = $derived(bus?.variant?.headsign ? toward(bus.variant.headsign) : "");
   const busAge = $derived(bus ? app.serverNow / 1000 - bus.v.position_at : 0);
   // An old position (the server got nothing new for 2 min): a time it puts in the past is not «τώρα» but unknown.
