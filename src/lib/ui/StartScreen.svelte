@@ -995,7 +995,7 @@
         {#if app.savingPlace}
           <button type="button" class="link" onclick={() => { app.savingPlace = null; app.start = false; }}><span>Άκυρο</span><kbd class="pc">Esc</kbd></button>
         {:else}
-          <button type="button" class="primary big" class:ready disabled={!ready} onclick={go} in:item={{ i: 8 }}><span>Πάμε</span><span class="fwd"><Icon name="chevron" size={18} /></span></button>
+          <button type="button" class="primary big" class:ready disabled={!ready} onclick={go} in:item={{ i: 8 }}><span>Πάμε</span></button>
           <div class="actrow">
             <button type="button" class="link" onclick={explore} in:item={{ i: 9 }}><span>Μόνο ο χάρτης</span><kbd class="pc">Esc</kbd></button>
             <MoreHint box={boxEl} inline />
@@ -1280,8 +1280,8 @@
   /* Picked: green, as the best one is while it is the one «Πάμε» opens. */
   .alt.sel { opacity: 1; border-color: color-mix(in srgb, var(--ontime) 55%, transparent); background: color-mix(in srgb, var(--ontime) 9%, var(--glass-fill)); }
   .alt.sel .am b { color: var(--ontime); }
-  .seltag { align-self: flex-start; height: 22px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; border-radius: 11px;
-    background: var(--ontime); color: #fff; font-size: 11px; font-weight: 800; line-height: 1; }
+  .seltag { align-self: flex-start; height: 16px; display: inline-flex; align-items: center; gap: 4px;
+    color: var(--ontime); font-size: 12px; font-weight: 600; line-height: 1; }
   .am { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
   .am b { font-size: 18px; font-weight: 800; letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; }
   .am .dur { font-size: 16px; }
@@ -1310,12 +1310,9 @@
   .primary { height: 48px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 20px; border: 0; border-radius: 18px;
     background: var(--accent); color: var(--on-accent); font: inherit; font-size: 15px; font-weight: 700; line-height: 1; cursor: pointer;
     transition: background-color .25s, color .25s, transform .12s, box-shadow .25s; }
-  .primary.big { height: 58px; font-size: 17px; font-weight: 800; }
-  .primary.ready { box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 35%, transparent); animation: breathe 2.4s ease-in-out infinite; }
-  @keyframes breathe { 50% { box-shadow: 0 10px 30px color-mix(in srgb, var(--accent) 55%, transparent); } }
+  .primary.big { height: 52px; border-radius: 16px; font-size: 16px; font-weight: 700; }
   .primary:disabled { background: var(--glass-fill); color: var(--muted); cursor: default; box-shadow: none; }
-  .primary:not(:disabled):active { transform: scale(.97); }
-  .fwd { display: flex; rotate: -90deg; }
+  .primary:not(:disabled):active { transform: scale(.98); filter: brightness(.92); }
   .link { align-self: center; height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px; border: 0; border-radius: 22px;
     background: none; color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; line-height: 1; cursor: pointer; transition: background-color .15s, color .15s; }
   .link:hover { background: var(--control); color: var(--fg); }
@@ -1346,7 +1343,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .field, .fi, .swap, .opt, .primary, .link, .pv { transition: none; }
-    .pop, .field.swapped input, .drop, .shadow, .primary.ready, .leave i, .sk i { animation: none; }
+    .pop, .field.swapped input, .drop, .shadow, .leave i, .sk i { animation: none; }
     .swap.turned, .field.pick.open .fi { transform: none; }
   }
 
@@ -1445,7 +1442,7 @@
   .lwi { display: flex; margin-right: 3px; }   /* a walk: the walking figure left of its minutes */
 
   /* ---- A phone: the same screen in quieter colours. Neutral surfaces with a fine neutral edge instead of blue-tinted
-     boxes, the values in the text colour, one blue for «Πάμε» (no glow), the means and the best route without loud
+     boxes, the values in the text colour, one flat blue for «Πάμε», the means and the best route without loud
      fills; colour stays where it means something: the lines, and «Φύγε…» in green. */
   @media (max-width: 719px) {
     .box { --pc-surf: color-mix(in srgb, var(--fg) 6%, var(--bg)); --pc-edge: color-mix(in srgb, var(--fg) 10%, var(--bg)); --pc-acc: #3d7bea; }
@@ -1468,9 +1465,8 @@
     .alt { border-color: var(--pc-edge); background: var(--pc-surf); box-shadow: none; }
     .alt.sel { border-color: color-mix(in srgb, var(--pc-acc) 60%, transparent); background: var(--pc-surf); }
     .alt.sel .am b { color: var(--fg); }
-    .seltag { background: var(--pc-acc); }
+    .seltag { color: var(--pc-acc); }
     .primary { background: var(--pc-acc); color: #fff; }
-    .primary.ready { box-shadow: none; animation: none; }
     .primary:disabled { background: var(--pc-surf); color: var(--muted); }
   }
 </style>

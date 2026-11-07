@@ -98,13 +98,12 @@
 </script>
 
 <div class="hint" class:inline style:transform={padB ? `translateY(${padB}px)` : undefined}>
-  {#if more}<span class="fade"><i class="line"></i><i class="glow"></i></span>{/if}
+  {#if more}<span class="fade"></span>{/if}
   {#if more && !scrolled && peek.length}
     <button type="button" class="pill" class:inline onclick={down} aria-label="Πιο κάτω: {label}">
-      <i class="sheen" aria-hidden="true"></i>
       <span class="pics" aria-hidden="true">{#each peek.slice(0, 3) as p, k (p.label)}<span class="pic {p.icon}" style:z-index={3 - k}><Icon name={p.icon} size={13} /></span>{/each}</span>
       <span class="pt">{label}</span>
-      <span class="go" aria-hidden="true"><span class="ch"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg></span><span class="ch two"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg></span></span>
+      <span class="go" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg></span>
     </button>
   {:else if scrolled}
     <button type="button" class="up" class:inline onclick={up} aria-label="Πάνω" title="Πάνω"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 15 6-6 6 6" /></svg></button>
@@ -116,45 +115,32 @@
   .hint > * { pointer-events: auto; }
   .fade { position: absolute; left: -20px; right: -20px; bottom: 0; height: 130px; pointer-events: none;
     background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--acts-bg, var(--surface)) 85%, transparent) 60%, var(--acts-bg, var(--surface))); }
-  .fade i { position: absolute; display: block; animation: breathe 2.6s ease-in-out infinite; }
-  .line { left: 26%; right: 26%; bottom: 2px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent); }
-  .glow { left: 32%; right: 32%; bottom: -24px; height: 52px; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 26%, transparent), transparent); }
-  @keyframes breathe { 0%, 100% { opacity: .45; transform: scaleX(.82); } 50% { opacity: .9; transform: scaleX(1); } }
 
   .pill { position: absolute; bottom: 16px; left: 50%; translate: -50% 0; height: 44px; max-width: calc(100% - 8px); display: flex; align-items: center; gap: 10px;
-    padding: 0 6px 0 8px; border-radius: 22px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+    padding: 0 6px 0 8px; border-radius: 22px; overflow: hidden; border: 1px solid var(--border);
     background: color-mix(in srgb, var(--surface) 92%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
     color: var(--fg); font: inherit; font-size: 13px; font-weight: 700; line-height: 1; white-space: nowrap; cursor: pointer;
-    box-shadow: 0 12px 30px rgba(0, 0, 0, .4), 0 0 0 4px color-mix(in srgb, var(--accent) 6%, transparent); animation: rise .5s cubic-bezier(.2, .8, .2, 1) both; }
-  .pill:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+    box-shadow: 0 8px 22px rgba(0, 0, 0, .28); animation: rise .5s cubic-bezier(.2, .8, .2, 1) both; }
+  .pill:hover { border-color: color-mix(in srgb, var(--fg) 24%, var(--border)); }
   .pill:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   @keyframes rise { from { opacity: 0; transform: translateY(10px) scale(.96); } }
-  .sheen { position: absolute; top: 0; bottom: 0; left: 0; width: 40%; pointer-events: none;
-    background: linear-gradient(100deg, transparent, color-mix(in srgb, var(--accent) 16%, transparent), transparent); animation: sheen 3.4s ease-in-out infinite; }
-  @keyframes sheen { 0%, 62% { transform: translateX(-120%); } 100% { transform: translateX(260%); } }
   .pics { display: flex; padding-left: 7px; }
   .pic { position: relative; width: 28px; height: 28px; margin-left: -7px; box-sizing: border-box; display: flex; align-items: center; justify-content: center;
     border-radius: 50%; border: 2px solid var(--surface); background: var(--control); color: var(--muted); }
-  .pic.home, .pic.route { background: color-mix(in srgb, var(--accent) 24%, var(--surface)); color: var(--accent); }
+  .pic.home, .pic.route { color: var(--fg); }
   .pic.star { background: color-mix(in srgb, var(--star, #f0ae45) 24%, var(--surface)); color: var(--star, #f0ae45); }
   .pt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .go { position: relative; flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: var(--on-accent);
-    display: flex; align-items: center; justify-content: center; }
-  .ch { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; animation: drop 1.6s linear infinite; }
-  .ch.two { animation-delay: .8s; }
-  @keyframes drop { 0% { transform: translateY(-6px); opacity: 0; } 25%, 70% { opacity: 1; } 100% { transform: translateY(6px); opacity: 0; } }
+  .go { flex: none; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; color: var(--muted); }
 
   .up { position: absolute; bottom: 16px; right: 0; width: 44px; height: 44px; padding: 0; display: flex; align-items: center; justify-content: center;
     border-radius: 50%; border: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 92%, transparent);
-    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); color: var(--accent); cursor: pointer; box-shadow: 0 10px 26px rgba(0, 0, 0, .4);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); color: var(--fg); cursor: pointer; box-shadow: 0 8px 22px rgba(0, 0, 0, .28);
     animation: rise .35s cubic-bezier(.2, .8, .2, 1) both; }
   .up:hover { background: var(--control); }
   .up:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* Inline: no fade (the bar has its own), the line on the bar's top edge, the pill and «Πάνω» in the row. */
   .hint.inline { display: contents; }
   .inline .fade { left: 20%; right: 20%; top: 0; bottom: auto; height: 0; background: none; }
-  .inline .fade .line { top: 0; bottom: auto; }
-  .inline .fade .glow { top: -26px; bottom: auto; }
   .pill.inline, .up.inline { position: relative; bottom: auto; left: auto; right: auto; translate: none; flex: none; }
   .pill.inline { height: 36px; max-width: 62%; gap: 8px; padding: 0 4px 0 6px; border-radius: 18px; font-size: 12.5px; box-shadow: none; }
   .pill.inline .pic { width: 24px; height: 24px; }
