@@ -7,6 +7,7 @@
   import { clock, duration } from "../format";
   import { muniPlaces } from "../finder";
   import { LOOKS } from "../map/look3d";
+  import { lastSaved, markSaved, ownLines, saveLines } from "../offline";
 
   let { app, cityMissing, cityAge, oldest, onclose }:
     { app: AppState; cityMissing: boolean; cityAge: number | null; oldest: number | null; onclose: () => void } = $props();
@@ -37,6 +38,27 @@
   const THEMES = [["system", "Συσκευής"], ["light", "Φωτεινό"], ["dark", "Σκοτεινό"]] as const;
   const OTHERS = [["normal", "Κανονικά"], ["dim", "Αχνά"], ["hide", "Κρυφά"]] as const;
   const AGES = [["never", "Ποτέ"], ["old", "Παλιές"], ["always", "Πάντα"]] as const;
+
+  // «Χωρίς σύνδεση»: the rider's own timetables kept ahead of time (offline.ts); what they open is kept anyway.
+  let saving = $state<{ done: number; total: number } | null>(null);
+  let saved = $state(lastSaved());
+  let saveNote = $state("");
+  const savedDay = $derived(saved ? new Date(saved.at).toLocaleDateString("el-GR", { day: "numeric", month: "long" }) : "");
+  async function saveOffline() {
+    if (saving) return;
+    saveNote = "";
+    if (!app.online) { saveNote = "Χρειάζεται σύνδεση για να τα κατεβάσω."; return; }
+    const ix = await app.loadStops();
+    if (!ix) { saveNote = "Δεν φόρτωσαν οι στάσεις. Δοκίμασε ξανά σε λίγο."; return; }
+    const places = [app.places.home, app.places.work].flatMap(p => (p ? [p.at] : []));
+    const lines = ownLines(ix, app.favs.lines.map(l => l.id), app.favs.stops.map(f => [f.lat, f.lon] as [number, number]), places);
+    if (!lines.length) { saveNote = "Βάλε πρώτα αγαπημένες γραμμές ή στάσεις, ή Σπίτι και Δουλειά."; return; }
+    saving = { done: 0, total: lines.length };
+    const ok = await saveLines(lines, (done, total) => (saving = { done, total }));
+    saving = null;
+    if (ok) { saved = { at: Date.now(), lines: ok }; markSaved(saved); }
+    saveNote = ok === lines.length ? "" : ok ? `Κατέβηκαν ${ok} από ${lines.length}. Οι άλλες: ξανά σε λίγο.` : "Δεν κατέβηκε τίποτα. Δοκίμασε ξανά σε λίγο.";
+  }
 </script>
 
 {#snippet row(r: Row)}
@@ -124,6 +146,20 @@
         όπισθεν. Αχνό όχημα με πορτοκαλί ηλικία: δεν έστειλε θέση για πάνω από 1½ λεπτό, άρα μπορεί να είναι αλλού.
       </p>
     {/if}
+  </div>
+
+  <h4>Χωρίς σύνδεση</h4>
+  <div class="card">
+    <div class="row">
+      <span class="tile" style:--t="#475569" aria-hidden="true"><Icon name="down" size={17} /></span>
+      <span class="txt">
+        <span class="name">Τα δρομολόγιά σου</span>
+        <span class="sub">{saving ? `Κατεβάζω ${saving.done} από ${saving.total} γραμμές…` : saved ? `${saved.lines} γραμμές · ${savedDay}` : "Οι αγαπημένες σου και όσες περνούν κοντά από Σπίτι και Δουλειά, για να βλέπεις το πρόγραμμα χωρίς σύνδεση."}</span>
+      </span>
+      <button type="button" class="dl" disabled={!!saving} onclick={saveOffline}>{saving ? "…" : saved ? "Ανανέωση" : "Κατέβασε"}</button>
+    </div>
+    {#if saving}<div class="bar" aria-hidden="true"><i style:width="{saving.total ? (saving.done / saving.total) * 100 : 0}%"></i></div>{/if}
+    {#if saveNote}<p class="dlnote" role="status">{saveNote}</p>{/if}
   </div>
 
   {#if oldest != null || (cityAge != null && app.cityOn)}
@@ -215,6 +251,12 @@
     transition: transform .2s; }
   .chev.open { transform: rotate(0deg); }
   .howtext { margin: 0; padding: 4px 14px 14px 58px; font-size: 12px; line-height: 1.5; color: var(--muted); }
+  .dl { flex: none; height: 34px; display: inline-flex; align-items: center; justify-content: center; padding: 0 14px; border: 0; border-radius: 17px;
+    background: var(--accent); color: #fff; font: inherit; font-size: 13px; font-weight: 700; line-height: 1; cursor: pointer; }
+  .dl:disabled { opacity: .6; cursor: default; }
+  .bar { height: 4px; margin: 0 12px 12px; border-radius: 2px; background: var(--control); overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 2px; background: var(--accent); transition: width .2s; }
+  .dlnote { margin: 0; padding: 0 12px 12px; font-size: 12px; line-height: 1.35; color: var(--muted); }
   .fresh { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 4px 4px 0; font-size: 11.5px; color: var(--muted); }
   @media (pointer: coarse) { .seg3 button { height: 40px; } }
   @media (prefers-reduced-motion: reduce) { .sw, .sw i, .chev { transition: none; } }

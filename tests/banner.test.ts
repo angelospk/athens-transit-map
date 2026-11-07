@@ -20,4 +20,9 @@ describe("bannerMessages", () => {
   it("names stale lines", () => {
     expect(bannerMessages(false, ok, ["040", "Α1"]).messages).toEqual(["Χωρίς ενημέρωση πάνω από 2 λεπτά: 040, Α1."]);
   });
+  it("says without a network that the timetables still show, and nothing else", () => {
+    const b = bannerMessages(true, ok, ["040"], true);
+    expect(b.offline).toBe(true);
+    expect(b.messages).toEqual([expect.stringMatching(/^Χωρίς σύνδεση · δείχνω το πρόγραμμα/)]);
+  });
 });

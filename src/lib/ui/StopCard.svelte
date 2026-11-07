@@ -89,9 +89,13 @@
   const usual = $derived(board ? usualRows(board.usual, groups, now) : []);
   // A terminus (a route's first stop): OASA predicts no arrivals there, so a line with no bus on its way shows its next
   // departures from today's timetable instead of «no bus». Asked once a minute.
-  const starts = $derived(ix && i != null ? lines.flatMap(l => l.variants.filter(v => ix.l[l.line]?.[v]?.[0] === i).map(v => ({ line: l.line, variant: v }))) : []);
+  // With no arrivals at all (no connection), every line here shows its timetable instead: kept on the phone
+  // (public/sw.js), the times it leaves its terminus.
+  const noBoard = $derived(!board && failed);
+  const starts = $derived(ix && i != null ? lines.flatMap(l => l.variants.filter(v => noBoard ? !!ix.l[l.line]?.[v]?.includes(i) && ix.l[l.line][v].at(-1) !== i : ix.l[l.line]?.[v]?.[0] === i)
+    .map(v => ({ line: l.line, variant: v, first: ix.l[l.line]?.[v]?.[0] === i }))) : []);
   const startsKey = $derived(starts.map(t => `${t.line}/${t.variant}`).join(","));
-  let departs = $state.raw<{ line: string; variant: string; to: string; times: string[] }[]>([]);
+  let departs = $state.raw<{ line: string; variant: string; to: string; from: string; first: boolean; times: string[] }[]>([]);
   $effect(() => {
     const key = startsKey, list = untrack(() => starts);
     departs = [];
@@ -103,10 +107,11 @@
         try {
           const [st, r] = await Promise.all([fetchLineStatic(t.line), fetchSchedule(t.line, AbortSignal.any([ac.signal, AbortSignal.timeout(10_000)]))]);
           const v = st.variants[t.variant], sc = r.body as Schedule | null;
-          if (r.status !== 200 || !v || !Array.isArray(sc?.directions) || out.some(o => o.line === t.line && o.to === v.headsign)) continue;
+          if (r.status !== 200 || !v || !Array.isArray(sc?.directions) || out.some(o => o.line === t.line && o.to.trim() === v.headsign.trim())) continue;
           const dir = matchDirection(sc!.directions, v.headsign);
           const times = dir ? timetableView(dir, athensClock(app.serverMs(), sc!.date)).items.filter(x => x.state === "next").map(x => x.t) : [];
-          if (times.length) out.push({ line: t.line, variant: t.variant, to: v.headsign, times });
+          // Two variants of one direction share its timetable: once.
+          if (times.length && !out.some(o => o.line === t.line && o.times.join() === times.join())) out.push({ line: t.line, variant: t.variant, to: v.headsign, from: st.stops[v.stops[0]]?.name ?? "", first: t.first, times });
         } catch { /* the next minute tries again */ }
       }
       if (!ac.signal.aborted) departs = out;
@@ -219,11 +224,14 @@
     let busy = false, misses = 0;
     now = app.serverMs();
     board = boardOf(peekStop(sid));
+    const online = app.online;
     const load = async () => {
       if (busy) return;
       clearTimeout(timer);
       let quick = false;
-      if (document.visibilityState !== "hidden") {
+      // No network: no use asking; the timetables show at once (and this starts over when it is back).
+      if (!online && !board) failed = true;
+      else if (document.visibilityState !== "hidden") {
         busy = true;
         const r = await fetchStop(sid);
         busy = false;
@@ -408,7 +416,22 @@
         {/if}
       </div>
     {:else if failed}
-      <p>{id ? "Δεν φόρτωσαν οι αφίξεις. Ξαναδοκιμάζω σε 20″." : "Οι αφίξεις δεν είναι διαθέσιμες. Ανανέωσε τη σελίδα."}</p>
+      <p class="offnote">{!app.online ? "Χωρίς σύνδεση. Οι ζωντανές αφίξεις έρχονται μόλις συνδεθείς." : id ? "Δεν φόρτωσαν οι αφίξεις. Ξαναδοκιμάζω σε 20″." : "Οι αφίξεις δεν είναι διαθέσιμες. Ανανέωσε τη σελίδα."}</p>
+      {#if departs.length}
+        {@const shown = departs.filter(d => !only || only === d.line)}
+        <section class="dcard" aria-label="Από το πρόγραμμα">
+          <div class="dtop"><span class="offh">Από το πρόγραμμα · ώρες αναχώρησης</span></div>
+          {#each shown as d (d.line + d.to)}
+            {@const col = app.lineColor(d.line)}
+            <button type="button" class="drow" onclick={() => app.openLineAt(d.line, [d.variant])}>
+              <b class="lchip sm" style:--lb={col.bg} style:--lf={col.fg}>{d.line}</b>
+              <span class="dmid"><span class="dto" title={d.to}>{titleCase(placeNote(toward(d.to)).place)}</span>
+                <small class="dnote muted">{d.first || !d.from ? "Από την αφετηρία" : `Φεύγει από ${titleCase(d.from)}`}</small></span>
+              <span class="dwhen"><b class="plain">{d.times[0]}</b>{#if d.times[1]}<small>{d.times[1]}</small>{/if}</span>
+            </button>
+          {/each}
+        </section>
+      {/if}
     {:else}
       <p>Φόρτωση αφίξεων…</p>
     {/if}
@@ -595,6 +618,8 @@
   .dwhen b.plain { color: var(--fg); font-size: 18px; }
   .dwhen small { color: var(--muted); font-size: 14px; font-weight: 600; }
   .empty { margin: 4px 0; font-size: 14px; }
+  .offnote { margin: 0; font-size: 14px; line-height: 1.4; }
+  .offh { display: flex; align-items: center; min-height: 20px; font-size: 13px; font-weight: 600; color: var(--muted); }
 
   .on { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 10px 12px; border-radius: var(--radius-sm);
     background: var(--accent-bg); color: var(--accent); font-weight: 500; }

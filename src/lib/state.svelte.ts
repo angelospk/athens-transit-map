@@ -119,6 +119,8 @@ export class AppState {
   pollState = $state.raw<Record<string, PollState>>({});
   status = $state.raw<Status | null>(null);
   statusFailed = $state(false);
+  /** The browser has a network (navigator.onLine): without one the app shows what it kept, the timetables. */
+  online = $state(typeof navigator === "undefined" || navigator.onLine !== false);
   selection = $state.raw<Selection | null>(null);
   // Per line, the variants of the one direction to show (route card, "μόνο → …").
   focus = $state.raw<Record<string, string[]>>({});
@@ -582,7 +584,8 @@ export class AppState {
     this.nav = new CardNav(history, s => { this.stack = s; this.show(s[s.length - 1] ?? null); },
       s => pageUrl(this.cityId, s[s.length - 1] ?? null, this.selected) + location.hash);
     addEventListener("popstate", e => this.nav?.popped(e.state));
-    addEventListener("online", () => this.backOnline());
+    addEventListener("online", () => { this.online = true; this.backOnline(); });
+    addEventListener("offline", () => (this.online = false));
     this.nav.start(linkedCard);
     for (const id of this.selected) this.startLine(id);
     void Promise.allSettled(this.selected.map(fetchLineStatic)).then(() => { if (!this.stack.length) this.fit(this.selected); });   // a linked card frames its own
