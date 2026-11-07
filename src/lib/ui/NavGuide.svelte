@@ -194,14 +194,24 @@
     const k = 35 / 111_320, rad = (bearing * Math.PI) / 180;
     const c: [number, number] = [at[1] + (Math.sin(rad) * k) / Math.cos((at[0] * Math.PI) / 180), at[0] + Math.cos(rad) * k];
     was3d = app.threeD;
-    if (!app.threeD) app.setThreeD(true);
     peeking = false;
     looking = true;
-    app.lookFrom(c, bearing);
+    // 3D first, then the camera: turning 3D on loads its models and tilts the map its own way when ready, which cut
+    // a move begun before it short (it only turned 3D). The look waits for it.
+    if (!app.threeD) { lookPending = { c, bearing }; app.setThreeD(true); }
+    else app.lookFrom(c, bearing);
   }
+  let lookPending = $state.raw<{ c: [number, number]; bearing: number } | null>(null);
+  $effect(() => {
+    const p = lookPending;
+    if (!p || !app.threeD || app.load3d) return;
+    const t = setTimeout(() => { if (looking) app.lookFrom(p.c, p.bearing); lookPending = null; }, 350);
+    return () => clearTimeout(t);
+  });
   function endLook(back = true) {
     if (!looking) return;
     looking = false;
+    lookPending = null;
     if (!was3d) app.setThreeD(false);
     if (back) app.followMe();
   }
