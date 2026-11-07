@@ -96,10 +96,10 @@ const thess = new Bot({
 }, load(thessFile));
 const cityApi = process.env.CITYBUS_API_BASE || "https://staseis-rt.haroldpoi.dev";
 const mapBase = process.env.MAP_BASE || "https://staseis.gr";
-const citybus = CITYBUS.map(c => {
+const citybus = CITYBUS.map((c): [string, Bot] => {
   const f = join(dir, `state-${c.slug}.json`);
   return [c.slug, new Bot({ urls: citybusUrls(cityApi, mapBase, c), agency: "Αστικού ΚΤΕΛ", now: Date.now, sleep,
-    save: saver(f), tg: async () => ({ ok: false }), get, push }, load(f))] as const;
+    save: saver(f), tg: async () => ({ ok: false }), get, push }, load(f))];
 });
 const cities: [string, Bot][] = [["athens", bot], ["thessaloniki", thess], ...citybus];
 const bots = cities.map(([, b]) => b);
