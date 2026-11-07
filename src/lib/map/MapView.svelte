@@ -978,7 +978,10 @@
       const r = me.mover.step(Date.now() / 1000);
       me.marker.setLngLat(r.pos);
       if (me.mover.fixing) fixing = true;
-      if (follow && (!app.tripPlan || app.guide) && !m.isMoving()) {   // not during the fly-to or a gesture; a trip framed stays, unless followed
+      // Not during the fly-to or a gesture, nor with a finger on the map: a camera move then (setCenter is a jumpTo)
+      // stops MapLibre's drag before it starts, so the drag that would end the follow never came and the map stood
+      // still under the finger while the fix was being smoothed. A trip framed stays, unless followed.
+      if (follow && (!app.tripPlan || app.guide) && !m.isMoving() && !handsOn()) {
         const fr = app.guide && !app.headingUp ? app.guideFrame : null;   // the phone turned: the user ahead, not an overview
         if (fr?.length) frameGuide(m, r.pos, fr);
         else {
@@ -1440,8 +1443,9 @@
         pinch = { d: gap(e.touches), z: chaseZoom ?? m.getZoom() };
         touch = null;
       } else {
+        // MapLibre gets it too: the chase camera waits while a finger is down (chaseTo), so a drag that ends the
+        // chase moves the map at once instead of needing a second try.
         touch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-        e.stopPropagation();   // MapLibre would start a drag the chase camera then fights
       }
     }, { capture: true, passive: false });
     canvasBox.addEventListener("touchmove", e => {
@@ -1452,7 +1456,7 @@
       } else if (touch && Math.hypot(e.touches[0].clientX - touch.x, e.touches[0].clientY - touch.y) > 12) {
         touch = null;
         if (app.chase) app.setChase(null);
-      } else e.stopPropagation();
+      }
     }, { capture: true, passive: false });
     canvasBox.addEventListener("touchend", e => { if (e.touches.length < 2) pinch = null; if (!e.touches.length) touch = null; }, { capture: true, passive: true });
     canvasBox.addEventListener("wheel", e => {
@@ -1877,10 +1881,12 @@
   const handsOn = () => pointersDown > 0 || performance.now() - wheelAt < 400;
   function watchHands(m: MlMap) {
     const box = m.getCanvasContainer();
-    box.addEventListener("pointerdown", () => { pointersDown++; });
+    // A primary pointer down means no other is: the count starts again (a lost pointerup cannot hold it above 0).
+    box.addEventListener("pointerdown", e => { pointersDown = e.isPrimary ? 1 : pointersDown + 1; });
     const up = () => { pointersDown = Math.max(0, pointersDown - 1); };
     addEventListener("pointerup", up);
     addEventListener("pointercancel", up);
+    addEventListener("touchend", e => { if (!e.touches.length) pointersDown = 0; }, { passive: true });
     box.addEventListener("wheel", () => { wheelAt = performance.now(); }, { passive: true });
   }
 
