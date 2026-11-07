@@ -21,8 +21,9 @@ export function serviceNote(s: Service, inName: string): string | null {
 export type MuniGaps = { stops: boolean; times: boolean };
 
 // What a municipal route lacks: stops (OSM has none for it), times (no transcribed timetable of its municipality).
+// No tables at all means not loaded yet (or failed): unknown, so not claimed.
 export const muniGaps = (r: MunicipalRoute, tables: MuniTimetable[]): MuniGaps =>
-  ({ stops: r.stops.length === 0, times: !tables.some(t => t.municipality === r.municipality) });
+  ({ stops: r.stops.length === 0, times: tables.length > 0 && !tables.some(t => t.municipality === r.municipality) });
 
 export function muniGapNote(g: MuniGaps): string | null {
   const what = g.stops && g.times ? "στάσεις και ώρες" : g.stops ? "στάσεις" : g.times ? "ώρες" : null;

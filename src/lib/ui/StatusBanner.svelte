@@ -15,14 +15,14 @@
   const KEY = "serviceNoteHidden";
   const note = $derived(serviceNote(app.cityInfo.service, app.cityInfo.inName));
   const seen = $derived(`${app.cityId}:${app.cityInfo.service}`);
-  let hidden = $state<string[]>((() => { try { return JSON.parse(localStorage.getItem(KEY) ?? "[]"); } catch { return []; } })());
+  let hidden = $state<string[]>((() => { try { const v = JSON.parse(localStorage.getItem(KEY) ?? "[]"); return Array.isArray(v) ? v : []; } catch { return []; } })());
   function hide() {
     hidden = [...hidden, seen];
     try { localStorage.setItem(KEY, JSON.stringify(hidden)); } catch { /* private mode */ }
   }
 </script>
 
-{#if note && !(Array.isArray(hidden) && hidden.includes(seen))}
+{#if note && !hidden.includes(seen)}
   <div class="info" role="note">
     <p>{note}</p>
     <button type="button" aria-label="Κλείσιμο" onclick={hide}>×</button>

@@ -54,10 +54,13 @@ const table = (municipality: string) => ({ municipality, checked: "2026-11-05", 
 
 describe("muniGaps", () => {
   it("a route with no stops; a municipality with no timetable", () => {
-    expect(muniGaps(route([]), [])).toEqual({ stops: true, times: true });
+    expect(muniGaps(route([]), [table("Δήμος Βύρωνα")])).toEqual({ stops: true, times: true });
     expect(muniGaps(route([], "Δήμος Νέας Ιωνίας"), [table("Δήμος Νέας Ιωνίας")])).toEqual({ stops: true, times: false });
     expect(muniGaps(route(["osm:n1"], "Δήμος Βύρωνα"), [table("Δήμος Βύρωνα")])).toEqual({ stops: false, times: false });
     expect(muniGaps(route(["osm:n1"]), [table("Δήμος Βύρωνα")])).toEqual({ stops: false, times: true });
+  });
+  it("claims no times only once the timetables are loaded (none yet: unknown, not missing)", () => {
+    expect(muniGaps(route(["osm:n1"]), [])).toEqual({ stops: false, times: false });
   });
 });
 
