@@ -5,7 +5,7 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { CITIES, DEFAULT_CITY, type CityId } from "../src/lib/cities";
+import { CITIES, type CityId } from "../src/lib/cities";
 import {
   byDayType, complete, gaps, hasDelays, hourBand, hourly, kmh, lineTrends, LONG_DAYS, MIN_DELAY_RUNS, MIN_LINE_HOURS,
   ranking, slowLines, tripShare, validDay, type DayStats,
@@ -36,7 +36,7 @@ const sub = (c: StatsCity) => (c.dir ? `/${c.dir}` : "");
 export const statsPath = (c: StatsCity) => `/${c.id}/stats/`;
 export const csvPath = (c: StatsCity, date: string, kind: "hours" | "lines") => `${statsPath(c)}data/${date}-${kind}.csv`;
 export const rawDayUrl = (c: StatsCity, date: string) => `${RAW_BASE}${sub(c)}/days/${date}.json`;
-const mapHref = (c: StatsCity) => (c.id === DEFAULT_CITY ? "/" : `/?city=${c.id}`);
+const mapHref = (c: StatsCity) => `/${c.id}/`;
 
 // ---- CSV: one row per hour and one per line, numbers as the day file has them, km/h with a dot.
 
@@ -252,7 +252,7 @@ ${table("days", ["Μέρα", "Οχήματα", "km/h", "Αρχεία"], archive)
     body,
     ld: dataset(c, days, latest),
     style: STYLE,
-    footer: `<a href="/">Στάσεις</a> · ζωντανός χάρτης · ${cities.map(o => `<a href="${statsPath(o)}">Στατιστικά ${escape(o.name)}</a>`).join(" · ")}`,
+    footer: `<a href="/${c.id}/">Στάσεις</a> · ζωντανός χάρτης · ${cities.map(o => `<a href="${statsPath(o)}">Στατιστικά ${escape(o.name)}</a>`).join(" · ")}`,
   });
 }
 
