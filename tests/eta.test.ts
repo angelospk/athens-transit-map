@@ -73,13 +73,17 @@ describe("upcomingStops", () => {
     // 0.5·M ≈ 439 m: 400 m at 10 m/s, the rest at the mean, 10 m/s
     expect(r[0].at).toBeCloseTo(1000 + (0.5 * M) / 10, -1);
   });
-  it("uses the vehicle's speed without path_speeds (citybus.gr cities)", () => {
-    const r = upcomingStops(variant, stops, bus(0.5, "B", { path_speeds: null, speed: 8 }));
+  it("uses the vehicle's speed without path_speeds when asked (citybus.gr cities)", () => {
+    const r = upcomingStops(variant, stops, bus(0.5, "B", { path_speeds: null, speed: 8 }), true);
     expect(r[0].at).toBeCloseTo(1000 + (0.5 * M) / 8, -1);
     expect(r[2].at).toBeCloseTo(1000 + (2.5 * M) / 8, -1);
   });
-  it("keeps path_speeds first when the vehicle also has a speed (Athens, Thessaloniki)", () => {
-    const r = upcomingStops(variant, stops, bus(0.5, "B", { path_speeds: [10, 10, 10], speed: 3 }));
+  it("ignores the vehicle's speed unless asked (Athens, Thessaloniki: a parked bus sends 0)", () => {
+    const r = upcomingStops(variant, stops, bus(0.5, "B", { path_speeds: null, speed: 0 }));
+    expect(r[0].at).toBeCloseTo(1000 + (0.5 * M) / FALLBACK_MPS, -1);
+  });
+  it("keeps path_speeds first when the vehicle also has a speed", () => {
+    const r = upcomingStops(variant, stops, bus(0.5, "B", { path_speeds: [10, 10, 10], speed: 3 }), true);
     expect(r[0].at).toBeCloseTo(1000 + (0.5 * M) / 10, -1);
   });
   it("puts a bus that is past its next stop's point on that stop (no negative time)", () => {
