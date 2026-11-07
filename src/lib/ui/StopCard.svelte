@@ -603,7 +603,7 @@
   .thanks { flex: none; max-width: 50%; font-size: 12px; line-height: 1.3; color: var(--muted); }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   @media (max-width: 719px) {
-    .card { left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); width: auto; border-radius: 28px;
+    .card { left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); width: auto; border-radius: var(--sheet-r);
       padding: 10px 16px 16px; max-height: 78dvh; }
     .grip { display: block; align-self: center; flex: none; width: 40px; height: 5px; border-radius: 3px; background: var(--border); }
   }

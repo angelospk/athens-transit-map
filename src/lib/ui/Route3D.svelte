@@ -238,7 +238,7 @@
      stop, the folded count short. */
   @media (max-width: 719px) {
     .r3d { left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); max-width: none; padding: 16px 16px 14px;
-      border-radius: 28px; gap: 14px; }
+      border-radius: var(--sheet-r); gap: 14px; }
     /* line · title · ×, the delay under the title, the buttons across */
     header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "chip ttl x" ". late ." "acts acts acts";
       align-items: center; gap: 8px 12px; }

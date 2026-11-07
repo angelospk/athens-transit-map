@@ -524,7 +524,7 @@
      finger moves it): the search bar and the tab bar step away so the map gets the room, the sheet goes to the foot. */
   @media (max-width: 719px) {
     :global(:root[data-tripsheet]) .panel { display: none; }
-    :global(:root[data-tripsheet]) .popwrap.tabbed:has(:global(.rv)) { bottom: calc(8px + env(safe-area-inset-bottom)); height: var(--trip-h, 52dvh);
+    :global(:root[data-tripsheet]) .popwrap.tabbed:has(:global(.rv)) { top: auto !important; bottom: calc(8px + env(safe-area-inset-bottom)) !important; height: var(--trip-h, 52dvh);
       max-height: none !important; transition: height .26s cubic-bezier(.2, .8, .2, 1); }
     :global(:root[data-tripsheet="peek"]) { --trip-h: var(--trip-peek, 200px); }
     :global(:root[data-tripsheet="half"]) { --trip-h: 52dvh; }

@@ -150,7 +150,7 @@
   .star.pin.on { background: color-mix(in srgb, var(--pc) 18%, var(--card)); color: var(--pc); }
   @media (prefers-reduced-motion: reduce) { .card { transition: none !important; } }
   @media (max-width: 719px) {
-    .card { left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); width: auto; border-radius: 28px;
+    .card { left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); width: auto; border-radius: var(--sheet-r);
       padding: 14px 16px 16px; transition: transform .22s ease; }
     .card.dragging { transition: none; }
     .grab { display: block; }

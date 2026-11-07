@@ -9,6 +9,7 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
+  import { settleSnap, sheetDrag, type SheetDrag } from "../sheetDrag";
   import { slide } from "svelte/transition";
   import { fetchLines, fetchLineStatic, getJSON } from "../api";
   import { bestSlice, matchRoads, sensibleWalk, sliceShape, stationsAlong, stopsBetween, type Mid } from "../planShape";
@@ -302,50 +303,33 @@
     const t = setTimeout(() => untrack(() => { if (fitPts.length) app.fitPoints(fitPts); }), 280);
     return () => clearTimeout(t);
   });
-  let drag: { id: number; y: number; h: number; moved: boolean; t: number } | null = null;
   const sheetEl = () => rvTopEl?.closest<HTMLElement>(".popwrap");
   function snapsPx(): Record<Snap, number> {
     const cs = getComputedStyle(document.documentElement);
     const peek = parseFloat(cs.getPropertyValue("--trip-peek")) || 200;
     return { peek, half: innerHeight * 0.52, full: innerHeight - 24 };
   }
-  function gripDown(e: PointerEvent) {
-    if (!sheetOn || e.button !== 0 || (e.target as Element).closest("button:not(.grip)")) return;
-    const el = sheetEl();
-    if (!el) return;
-    drag = { id: e.pointerId, y: e.clientY, h: el.offsetHeight, moved: false, t: performance.now() };
-    (e.currentTarget as Element).setPointerCapture(e.pointerId);
-  }
-  function gripMove(e: PointerEvent) {
-    if (!drag || e.pointerId !== drag.id) return;
-    const dy = e.clientY - drag.y;
-    if (!drag.moved && Math.abs(dy) < 6) return;
-    drag.moved = true;
-    const s = snapsPx();
-    const h = Math.max(s.peek * 0.8, Math.min(s.full, drag.h - dy));
-    document.documentElement.style.setProperty("--trip-drag", `${h}px`);
-    document.documentElement.dataset.tripdrag = "";
-  }
-  function gripUp(e: PointerEvent) {
-    if (!drag || e.pointerId !== drag.id) return;
-    const d = drag;
-    drag = null;
-    const root = document.documentElement;
-    if (!d.moved) {
-      if (e.type === "pointerup") snap = snap === "peek" ? "half" : snap === "half" ? "full" : "peek";
-      return;
-    }
-    const h = parseFloat(root.style.getPropertyValue("--trip-drag")) || d.h;
-    delete root.dataset.tripdrag;
-    root.style.removeProperty("--trip-drag");
-    // A flick goes one step its way; a slow drag settles at the nearest height.
-    const s = snapsPx(), v = (d.h - h) / Math.max(1, performance.now() - d.t);   // px per ms, up is +
-    const order: Snap[] = ["peek", "half", "full"];
-    if (Math.abs(v) > 0.6) {
-      const i = order.indexOf(snap) + (v > 0 ? 1 : -1);
-      snap = order[Math.max(0, Math.min(2, i))];
-    } else snap = order.reduce((a, b) => (Math.abs(s[b] - h) < Math.abs(s[a] - h) ? b : a));
-  }
+  // The handle and the header drag the sheet (sheetDrag.ts: touch events, so iOS does not scroll instead); their
+  // buttons keep their taps. Off a phone nothing is dragged.
+  let dragH0 = 0;
+  const clampH = (h: number) => { const s = snapsPx(); return Math.max(s.peek * 0.8, Math.min(s.full, h)); };
+  const stepSnap = () => { snap = snap === "peek" ? "half" : snap === "half" ? "full" : "peek"; };
+  const tripDrag = $derived<SheetDrag>({
+    ignore: sheetOn ? "button:not(.grip)" : "*",
+    start: () => { dragH0 = sheetEl()?.offsetHeight ?? 0; },
+    move: dy => {
+      const root = document.documentElement;
+      root.style.setProperty("--trip-drag", `${clampH(dragH0 - dy)}px`);
+      root.dataset.tripdrag = "";
+    },
+    end: (dy, v) => {
+      const root = document.documentElement;
+      delete root.dataset.tripdrag;
+      root.style.removeProperty("--trip-drag");
+      snap = settleSnap<Snap>(["peek", "half", "full"], snap, clampH(dragH0 - dy), snapsPx(), v, "up");
+    },
+    tap: stepSnap,
+  });
   let fareOpen = $state(false), mapOpen = $state(false);   // the ticket and the map rows: closed until a change
   let bodyEl: HTMLElement | undefined = $state();
   $effect(() => { void review; bodyEl?.scrollTo({ top: 0 }); });
@@ -704,12 +688,10 @@
     {@const fare = tripFare(p.it, plan!.r)}
     <!-- The picked option on its own: the options as tabs, its times, its parts in proportion, its steps, «Ξεκίνα». -->
     <div class="rv" class:peek={sheetOn && snap === "peek"}>
-      <!-- svelte-ignore a11y_no_static_element_interactions (the keyboard goes through the grip button) -->
-      <div class="rvtop" bind:this={rvTopEl} bind:offsetHeight={topH} onpointerdown={gripDown} onpointermove={gripMove} onpointerup={gripUp}
-        onpointercancel={gripUp} onlostpointercapture={gripUp}>
+      <div class="rvtop" bind:this={rvTopEl} bind:offsetHeight={topH} use:sheetDrag={tripDrag}>
       {#if sheetOn}
         <button type="button" class="grip" aria-label={snap === "full" ? "Μικρότερο" : "Μεγαλύτερο"}
-          onclick={e => { if (e.detail === 0) snap = snap === "peek" ? "half" : snap === "half" ? "full" : "peek"; }}><span></span></button>
+          onclick={e => { if (e.detail === 0) stepSnap(); }}><span></span></button>
       {/if}
       <div class="row rvhead">
         <button type="button" class="icon back" aria-label="Πίσω στις επιλογές" title="Πίσω στις επιλογές" onclick={() => (review = false)}><Icon name="back" size={18} /></button>

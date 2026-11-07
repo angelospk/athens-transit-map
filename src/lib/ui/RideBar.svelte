@@ -69,7 +69,7 @@
 
 <style>
   .ridebar { position: absolute; z-index: 8; left: 50%; bottom: 100px; transform: translateX(-50%); max-width: calc(100% - 24px);
-    display: flex; align-items: center; gap: 6px; padding: 6px; box-sizing: border-box; border-radius: 28px; background: var(--glass-strong); --card: var(--glass-fill); --card-border: var(--glass-line); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); text-shadow: var(--glass-text); }
+    display: flex; align-items: center; gap: 6px; padding: 6px; box-sizing: border-box; border-radius: var(--sheet-r); background: var(--glass-strong); --card: var(--glass-fill); --card-border: var(--glass-line); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); text-shadow: var(--glass-text); }
   .main { min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
   .pill { flex: none; height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border-radius: 18px;
     background: var(--card); color: var(--fg); font-size: 13px; font-weight: 700; line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }

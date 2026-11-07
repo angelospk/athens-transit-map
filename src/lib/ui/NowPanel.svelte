@@ -4,6 +4,8 @@
   // the map). The routine reminders run from here too. Live data from /v2, asked again every 30 s while it shows (at most 4 requests at a time).
   // On a phone a sheet over the map, above the tab bar; on a desktop a card in the map's left column.
   import { untrack } from "svelte";
+  import { MediaQuery } from "svelte/reactivity";
+  import { safeInsets, settleSnap, sheetDrag, type SheetDrag } from "../sheetDrag";
   import { fetchV2Stop } from "../api";
   import { forLine, strikes } from "../disruptions";
   import { busStopCard } from "../legacy";
@@ -200,7 +202,45 @@
     });
   });
 
+  // A phone: the panel is a sheet with a handle. «peek» shows the search and home and work over a big map, «half»
+  // where it opens, «full» all of it; dragged by the handle (sheetDrag.ts), it follows the finger and settles at
+  // the nearest (a flick goes one step); a tap on the handle steps it.
+  const narrow = new MediaQuery("(max-width: 719px)");
+  type NSnap = "peek" | "half" | "full";
+  let nsnap = $state<NSnap>("half");
+  let nowEl = $state<HTMLElement>(), savedEl = $state<HTMLElement>();
+  let nowTop = $state<number | null>(null), dragging = $state(false), vh = $state(typeof innerHeight === "number" ? innerHeight : 800);
+  let top0 = 0;
+  function tops(): Record<NSnap, number> {
+    const { top: st, bottom: sb } = safeInsets();
+    const foot = vh - (Math.max(12, sb) + 88);
+    const peekH = nowEl && savedEl ? savedEl.getBoundingClientRect().bottom - nowEl.getBoundingClientRect().top + 16 : 190;
+    return { full: st + 72, half: Math.max(220, vh * 0.32 + st), peek: Math.max(st + 72, foot - peekH) };
+  }
+  $effect(() => {
+    void vh;
+    const k = nsnap;
+    if (!narrow.current) { nowTop = null; return; }
+    untrack(() => { nowTop = k === "half" ? null : tops()[k]; });
+  });
+  const stepN = () => { nsnap = nsnap === "peek" ? "half" : nsnap === "half" ? "full" : "peek"; };
+  const nowDrag = $derived<SheetDrag>({
+    ignore: narrow.current ? undefined : "*",
+    start: () => { top0 = nowEl?.getBoundingClientRect().top ?? 0; dragging = true; },
+    move: dy => { const t = tops(); nowTop = Math.max(t.full, Math.min(t.peek + 40, top0 + dy)); },
+    end: (dy, v) => {
+      dragging = false;
+      const t = tops(), at = Math.max(t.full, Math.min(t.peek + 40, top0 + dy));
+      const next = settleSnap<NSnap>(["peek", "half", "full"], nsnap, at, t, v, "up");
+      if (next === nsnap) nowTop = next === "half" ? null : t[next];
+      nsnap = next;
+      if (next === "half") nowTop = null;
+    },
+    tap: stepN,
+  });
 </script>
+
+<svelte:window bind:innerHeight={vh} />
 
 {#if shown}
   <!-- One notice on the map, under the search: a strike first, else the newest about a favourite line. -->
@@ -213,8 +253,9 @@
     {@const n = notices[0]}
     <a class="mapnote" in:rise={{ y: -12, delay: 200 }} href={n.d.url} target="_blank" rel="noopener"><Icon name="warn" size={15} /><span>{badge(n.line.id).label}: {n.d.title}</span></a>
   {/if}
-  <section class="now" aria-label="Αρχική" in:rise>
-    <div class="grip" aria-hidden="true"></div>
+  <section class="now" class:dragging aria-label="Αρχική" in:rise bind:this={nowEl} style:top={nowTop != null ? `${nowTop}px` : undefined}>
+    <div class="grip" role="button" tabindex="0" aria-label={nsnap === "full" ? "Μικρότερο" : "Μεγαλύτερο"} use:sheetDrag={nowDrag}
+      onkeydown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); stepN(); } }}></div>
 
     <!-- The one search: «Πού πας;» (StartScreen), for places, stops and lines, with our engine. -->
     <button type="button" class="where" aria-haspopup="dialog" onclick={() => (app.start = true)}>
@@ -222,7 +263,7 @@
     </button>
 
     <!-- Home and work: one tap from here, set on first use -->
-    <div class="saved">
+    <div class="saved" bind:this={savedEl}>
       {#each SAVED as p (p.k)}
         {@const at = app.places[p.k]}
         <button type="button" class="place" onclick={() => goPlace(p.k)} aria-label={at ? `${p.label}: διαδρομή ως ${at.label}` : `Όρισε ${p.label.toLowerCase()}`}>
@@ -490,8 +531,13 @@
   @media (max-width: 719px) {
     .mapnote { left: 16px; top: calc(76px + env(safe-area-inset-top)); }
     .now { left: 16px; right: 16px; width: auto; top: max(220px, calc(32dvh + env(safe-area-inset-top))); bottom: calc(max(12px, env(safe-area-inset-bottom)) + 88px); max-height: none;
-      padding: 10px 16px 16px; border-radius: 28px; }
-    .grip { display: block; align-self: center; flex: none; width: 40px; height: 5px; border-radius: 3px; background: var(--border); }
+      padding: 10px 16px 16px; border-radius: var(--sheet-r); }
+    /* The handle: a band across the top (an easy target), its bar in the middle. */
+    .grip { display: block; position: relative; flex: none; height: 22px; margin: -10px -16px -10px; cursor: grab; }
+    .grip::after { content: ""; position: absolute; left: 50%; top: 9px; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: var(--border); }
+    .grip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 12px; }
+    .now { overscroll-behavior: none; transition: top .26s cubic-bezier(.2, .8, .2, 1); }
+    .now.dragging { transition: none; }
   }
   /* Under a press, the big buttons and rows give a little. */
   .where, .place, .row, .tile, .go { transition: transform .12s, background-color .15s, border-color .15s; }

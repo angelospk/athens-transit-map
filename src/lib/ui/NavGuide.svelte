@@ -709,7 +709,7 @@
   .sheet[hidden] { display: none; }
   .sheet > * { flex-shrink: 0; }
   .sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 72dvh; overflow-y: auto; box-sizing: border-box;
-    display: flex; flex-direction: column; gap: 12px; padding: 8px 14px max(16px, env(safe-area-inset-bottom)); border-radius: 28px 28px 0 0;
+    display: flex; flex-direction: column; gap: 12px; padding: 8px 14px max(16px, env(safe-area-inset-bottom)); border-radius: var(--sheet-r) var(--sheet-r) 0 0;
     background: var(--surface); border-top: 1px solid var(--border); box-shadow: 0 -18px 40px rgba(0, 0, 0, .35); scrollbar-width: none; }
   .sheet::-webkit-scrollbar { display: none; }
   .grip { align-self: center; width: 38px; height: 5px; border-radius: 3px; background: var(--border); }
