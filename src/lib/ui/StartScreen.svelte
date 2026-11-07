@@ -1657,12 +1657,12 @@
     background: color-mix(in srgb, var(--fg) 10%, transparent); color: var(--fg); cursor: pointer; }
   .actrow .link :global(svg) { flex: none; }
   .findnote { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.4; text-align: center; }
-  /* ---- The answer on a phone (mockups 42 B, 44): the trip asked in a band of its own at the top, lighter than the
-     page and pinned while the routes scroll under it; «Από» and «Προς» as fields on a dotted route line, the swap
+  /* ---- The answer on a phone (mockups 42 B, 44): the trip asked in a card of its own floating at the top, lighter
+     than the page and pinned while the routes scroll under it; «Από» and «Προς» as fields on a dotted route line, the swap
      between them; when and with what as two chips that open the options. */
-  .band { position: sticky; top: 0; z-index: 25; display: flex; flex-direction: column; gap: 16px;
-    margin: calc(-28px - env(safe-area-inset-top)) -16px 0; padding: calc(28px + env(safe-area-inset-top)) 16px 18px;
-    border-radius: 0 0 28px 28px; background: color-mix(in srgb, var(--fg) 9%, var(--bg)); box-shadow: 0 10px 30px rgba(0, 0, 0, .3);
+  .band { position: sticky; top: calc(10px + env(safe-area-inset-top)); z-index: 25; display: flex; flex-direction: column; gap: 16px;
+    margin: -18px -6px 0; padding: 18px 14px 16px; border-radius: 30px;
+    background: color-mix(in srgb, var(--fg) 9%, var(--bg)); box-shadow: 0 10px 30px rgba(0, 0, 0, .3);
     --tf-bg: color-mix(in srgb, var(--fg) 14%, var(--bg)); }
   .band .brandrow { margin: -8px 0 -4px; }
   .tends { display: flex; gap: 10px; }
@@ -1686,6 +1686,6 @@
   .tchip > :global(svg:first-child) { color: var(--muted); }
   .tcv { display: flex; color: var(--muted); }
   .rcount { margin: 0 0 -6px; height: 20px; display: flex; align-items: center; font-size: 16px; font-weight: 700; line-height: 1; color: var(--fg); }
-  .box.ans .acts { border-top: 1px solid var(--pc-edge, var(--glass-line)); margin: 0 -16px -4px; padding: 12px 16px 4px; background: var(--acts-bg, var(--surface)); }
+  .box.ans .acts { border-top: 1px solid var(--pc-edge, var(--glass-line)); margin: auto -16px -4px; padding: 12px 16px 4px; background: var(--acts-bg, var(--surface)); }
   @media (prefers-reduced-motion: reduce) { .tswap { transition: none; } }
 </style>

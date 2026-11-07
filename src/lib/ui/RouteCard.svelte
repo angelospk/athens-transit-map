@@ -92,7 +92,7 @@
       <span class="legs">
         {#each legs as l, j (j)}
           {@const lg = l.walk ? "" : logoOf(l.mode)}
-          <span class="leg" class:walk={l.walk} class:lg={!!lg} style:--lb={l.color || undefined} style:--lt={l.text || undefined}>{#if l.walk}<span class="lwi" aria-label="Πόδια"><Icon name="walk" size={12} /></span>{:else if lg}<span class="lgo {l.mode}" aria-hidden="true"><img src={lg} alt="" /></span>{/if}{l.label}</span>
+          <span class="leg" class:walk={l.walk} class:lg={!!lg} style:--lb={l.color || undefined} style:--lt={l.text || undefined}>{#if l.walk}<span class="lwi" aria-label="Πόδια"><Icon name="walk" size={12} /></span>{:else if lg}<span class="lgo m-{l.mode}" aria-hidden="true"><img src={lg} alt="" /></span>{/if}{l.label}</span>
         {/each}
         {#if bus?.live}<span class="eta1"><i class="dot"></i>{etaText}</span>{/if}
       </span>
@@ -184,9 +184,9 @@
   .lwi { display: flex; }
   .lgo { flex: none; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; border-radius: 50%; }
   .lgo img { display: block; width: 16px; height: 16px; }
-  .lgo.bus, .lgo.trolley { background: #fff; }
-  .lgo.bus img, .lgo.trolley img { width: 10px; height: 10px; }
-  .lgo.tram img { width: 12px; height: 16px; object-fit: contain; }
+  .lgo.m-bus, .lgo.m-trolley { background: #fff; }
+  .lgo.m-bus img, .lgo.m-trolley img { width: 10px; height: 10px; }
+  .lgo.m-tram img { width: 12px; height: 16px; object-fit: contain; }
   .eta1 { margin-left: 3px; display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 700; color: var(--ontime); line-height: 1; white-space: nowrap; }
   .tms { flex: none; font-size: 13px; color: var(--muted); line-height: 1; white-space: nowrap; }
 
