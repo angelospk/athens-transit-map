@@ -18,6 +18,7 @@ import { LinePoller, type PollState } from "./poller";
 import { BACKOFF_MS, ClockOffset } from "./schedule";
 import { CityTiles, loadTiles, viewTiles, type Tile, type View } from "./tiles";
 import { isTheme, type Theme } from "./theme";
+import { isLook3D, type Look3D } from "./map/look3d";
 import { MAX_LINES, selectionIds, splitKnown, toggle } from "./selection";
 import { hitText, type AlertHit, type AlertSpec } from "./alerts";
 import { assignSlots, colorOf, type LineColor } from "./lineColors";
@@ -26,14 +27,23 @@ import type { CityLive, CityVehicle, LineInfo, LineLive, LineStatic, Status, Veh
 import { CardNav, cardFromQuery, cardQuery, sameCard, type Card } from "./cards";
 import { busVehicleCard, cardTitle, legacyOf, routeCard, trainCard } from "./legacy";
 import { stopIndex } from "./stops";
+import { dropPin, inkOn, isPins, setPin, type Pin } from "./pins";
+import { upcomingStops } from "./eta";
+import { sendLoad, type Load } from "./crowd";
+import { isNotifyPrefs, isRoutines, type NotifyPrefs, type Routine } from "./routines";
 import { busFavIds, loadFavs, toggleLine as toggleFavLineIn, toggleStop, type FavLine, type FavStop, type Favs } from "./favs";
 import { fold } from "./search";
 import { parseAlerts, type Disruption } from "./disruptions";
-import { focusLines, nearbyGroups } from "./nearby";
+import { focusLines, nearbyGroups, titleCase } from "./nearby";
 import type { LocState } from "./locate";
+import type { Guide } from "./guide";
 import { CITIES, initialCity, type CityId } from "./cities";
 import { autoCityOnFix, cityUrl, favKey } from "./cityBases";
 
+export type TripMode = "bus" | "trolley" | "metro" | "tram";
+export interface TripPrefs { modes: TripMode[]; order: "time" | "changes" | "walk"; later: number; radius: number; pick?: [number, number] }
+
+export type Tab = "now" | "map" | "trip" | "alerts";
 export const STALE_S = 120;
 // A picked line whose feed has no vehicles for this many updates in a row is taken off the map.
 const EMPTY_DROPS = 2;
@@ -57,6 +67,12 @@ function stored<T>(key: string, fallback: T, ok: (v: unknown) => boolean): T {
     return ok(v) ? (v as T) : fallback;
   } catch { return fallback; }
 }
+export interface SavedPlace { label: string; at: [number, number] }
+const isPlace = (v: unknown): v is SavedPlace => {
+  const p = v as SavedPlace | null;
+  return !!p && typeof p.label === "string" && Array.isArray(p.at) && p.at.length === 2 && p.at.every(Number.isFinite);
+};
+const isPlaces = (v: unknown) => typeof v === "object" && v !== null && Object.values(v).every(isPlace);
 function store(key: string, v: unknown) {
   try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* private mode */ }
 }
@@ -118,6 +134,9 @@ export class AppState {
     this.cityId === "athens" ? stored<unknown>("favorites", null, () => true) : null));
   // The favourites panel (★ in the top bar); it shows while no card is open.
   favsOpen = $state(false);
+  // The four places of the app (TabBar): «Τώρα» (leave-now, favourites, nearby), the map, the trip planner and the
+  // alerts. A link to a card or to lines opens on the map; a bare visit on «Τώρα». Not kept across visits.
+  tab = $state<Tab>("now");
   // «Κοντά σου» (NearbyPanel): the stops near the user, shown while no card and no favourites are open. myPos: the
   // last location fix ([lat, lon]); locState: the locate button's state. Both written by MapView.
   nearOpen = $state(false);
@@ -129,9 +148,120 @@ export class AppState {
   // switch away from it until the user taps locate.
   cityLocked = false;
   // The search modal (B8): closed, or open on a kind filter.
-  finder = $state<"all" | "lines" | "stops" | "places" | null>(null);
   // A place from the search modal to plan a trip to: the panel opens the trip planner, which takes it as its end.
   tripTo = $state.raw<Place | null>(null);
+  // «Ταξίδι από εδώ» on a stop card: the planner opens with the stop as its start.
+  tripFrom = $state.raw<Place | null>(null);
+  // «Πού πας;» (StartScreen): the first screen of a visit, and again from the search pill of «Τώρα». pickFor: which end
+  // is being chosen on the map (the screen steps aside for a crosshair); mapCenter: the map's centre, [lat, lon].
+  start = $state(false);
+  pickFor = $state<"from" | "to" | null>(null);
+  mapCenter = $state.raw<[number, number] | null>(null);
+  mapPick = $state.raw<[number, number] | null>(null);   // a click on the map while picking: that point
+  // Riding a bus (VehicleCard): the vehicle, and the stop the rider gets off at (null until chosen). rideBuzz: vibrate one
+  // stop before it (kept).
+  // rid: the ride's random id for the crowd endpoint (crowd.ts); load: how full the rider said it is.
+  ride = $state.raw<{ line: string; vehicle: string; stop: { id: string; i: number; name: string } | null; buzzed: boolean;
+    rid: string; load?: Load } | null>(null);
+  // The ride's bus and the stops still ahead of it, from the line's live data (kept polling while riding, with the
+  // card open or not); null while the line's data or the bus is missing.
+  rideAhead = $derived.by(() => {
+    const r = this.ride;
+    const v = r && this.live[r.line]?.vehicles.find(x => x.id === r.vehicle);
+    const st = r && this.statics[r.line];
+    const variant = v && st && v.variant ? st.variants[v.variant] : undefined;
+    return v && st && variant ? upcomingStops(variant, st.stops, v) : null;
+  });
+  private rideSeen = 0;
+  startRide(line: string, vehicle: string) {
+    this.ride = { line, vehicle, stop: null, buzzed: false, rid: crypto.randomUUID() };
+    this.rideShare = false;
+    this.rideSeen = Date.now();
+    this.startLine(line);   // already running while its card is open; this keeps it so
+  }
+  // How full the bus is, as the rider says: kept for the ride, and sent to the crowd endpoint for others to see.
+  setRideLoad(l: Load) {
+    const r = this.ride;
+    if (!r || r.load === l) return;
+    this.ride = { ...r, load: l };
+    void sendLoad(r.rid, r.line, r.vehicle, l).then(ok => { if (ok) this.say("Ευχαριστούμε: το βλέπουν όσοι περιμένουν."); });
+  }
+
+  // The ride as a small bar (RideBar): the card closes and the map is free to look around; the ride goes on.
+  minimizeRide() {
+    const r = this.ride;
+    if (r && this.chase === `${r.line}/${r.vehicle}`) this.setChase(null);
+    this.setTab("map");
+  }
+  endRide() {
+    const r = this.ride;
+    this.ride = null;
+    if (r && this.chase === `${r.line}/${r.vehicle}`) this.setChase(null);
+    if (r && !this.detailLines.includes(r.line)) this.closeLine(r.line);
+  }
+  // Run on each new position (App.svelte): one stop before the rider's stop, a buzz, a notice and (when allowed) a
+  // notification; the stop behind the bus, the ride ends. A bus gone from the data for 10 minutes ends it too.
+  checkRide() {
+    const r = this.ride;
+    if (!r) return;
+    const ahead = this.rideAhead;
+    if (!ahead) {
+      if (this.live[r.line] && Date.now() - this.rideSeen > 600_000) { this.say("Το λεωφορείο δεν φαίνεται πια· η διαδρομή έληξε."); this.endRide(); }
+      return;
+    }
+    this.rideSeen = Date.now();
+    if (!r.stop || !ahead.length) return;
+    const k = ahead.findIndex(a => a.id === r.stop!.id && a.i === r.stop!.i);
+    if (k < 0) { this.say(`Έφτασες: ${r.stop.name}`); this.endRide(); return; }
+    if (k > 0 || r.buzzed) return;
+    this.ride = { ...r, buzzed: true };
+    const text = `Επόμενη στάση: ${r.stop.name}. Πάτα STOP.`;
+    this.say(text);
+    if (!this.rideBuzz) return;
+    navigator.vibrate?.([250, 120, 250, 120, 250]);
+    try { if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification(text, { tag: "ride" }); } catch { /* none here */ }
+  }
+  // A stop card opened for one line («040 Σύνταγμα»): the card shows that line only (StopCard takes it once).
+  stopOnly = $state<string | null>(null);
+  // Fares (fares.ts): the reduced price shown everywhere once picked, and the «Εισιτήρια» sheet.
+  fareReduced = $state(stored("fareReduced", false, isBool));
+  setFareReduced(on: boolean) { this.fareReduced = on; store("fareReduced", on); }
+  faresOpen = $state(false);
+  // Lines and stops pinned on the map (pins.ts), and the pin sheet's subject while it is open.
+  pins = $state.raw<Pin[]>(stored<Pin[]>("pins", [], isPins));
+  pinEdit = $state.raw<Pin | null>(null);
+  pinOf(kind: Pin["kind"], id: string): Pin | undefined { return this.pins.find(p => p.kind === kind && p.id === id); }
+  savePin(p: Pin) {
+    this.pins = setPin(this.pins, p);
+    store("pins", this.pins);
+    this.wakePins();
+  }
+  unpin(kind: Pin["kind"], id: string) {
+    this.pins = dropPin(this.pins, kind, id);
+    store("pins", this.pins);
+    if (kind === "line" && !this.detailLines.includes(id)) this.closeLine(id);
+  }
+  // A pinned line's route (its static data) always; its live buses while `vehicles` is on.
+  private wakePins() {
+    for (const p of this.pins) {
+      if (p.kind !== "line") continue;
+      if (p.vehicles) this.startLine(p.id);
+      else if (!this.statics[p.id]) fetchLineStatic(p.id).then(s => (this.statics = { ...this.statics, [p.id]: s }), () => {});
+    }
+  }
+  rideBuzz = $state(stored("rideBuzz", true, isBool));
+  setRideBuzz(on: boolean) { this.rideBuzz = on; store("rideBuzz", on); }
+  // «Κάθε μέρα» (AlertsPanel): a stop and a line the user takes on given days from a given hour. While the page is open
+  // in that window, «Τώρα» plans from it and reminds the user (routines.ts). Kept in localStorage.
+  routines = $state.raw<Routine[]>(stored<Routine[]>("routines", [], isRoutines));
+  setRoutines(r: Routine[]) { this.routines = r; store("routines", r); }
+  // «Για τις γραμμές σου»: which notices to show (strikes, route changes, a favourite bus over 10′ late).
+  notifyPrefs = $state.raw<NotifyPrefs>(stored<NotifyPrefs>("notifyPrefs", { strikes: true, changes: true, delay: false }, isNotifyPrefs));
+  setNotifyPref(k: keyof NotifyPrefs, on: boolean) { this.notifyPrefs = { ...this.notifyPrefs, [k]: on }; store("notifyPrefs", this.notifyPrefs); }
+
+  // Send the rider's position while riding (crowd.ts; only where the crowd endpoint is set): asked each ride, off at start.
+  rideShare = $state(false);
+  setRideShare(on: boolean) { this.rideShare = on; }
   // Favourites only (B7): the map shows the favourite bus lines and not the city layer. The user's own cityOn
   // choice is kept in localStorage and comes back when this is off.
   favOnly = $state(stored("favOnly", true, isBool));
@@ -144,6 +274,20 @@ export class AppState {
   motion = $state(stored("motion", true, isBool));
   // Typical bus speed per road segment (public/speed/segments.geojson, lab/segspeed).
   speedOn = $state(stored("speedOn", false, isBool));
+  look3d = $state<Look3D>(stored("look3d", "real", isLook3D));   // how the 3D city looks: «Ρεαλιστική» or «Μινιατούρα»
+  threeD = $state(false);
+  load3d = $state<{ p: number; label: string } | null>(null);   // the 3D mode's loading screen: how far, and on what
+  bus3d = $state<string | null>(null);
+  under = $state(false);   // 3D: see the metro under the street (scene3d.setUnder); also on while a metro train is picked   // 3D: the bus whose route is open across (Route3D), "line/id"
+
+  /** A line's static data (stops, variants), fetched once, for a bus that is not on a followed line (3D labels). */
+  private staticAsked = new Set<string>();
+  ensureStatic(line: string) {
+    if (this.statics[line] || this.staticAsked.has(line)) return;
+    this.staticAsked.add(line);
+    fetchLineStatic(line).then(s => (this.statics = { ...this.statics, [line]: s }), () => this.staticAsked.delete(line));
+  }   // the 3D street mode (map/scene3d.ts): off at every visit, turned on from its button
+  chase = $state<string | null>(null);   // the vehicle ("line/id") the 3D camera rides behind; not kept
   // «Δημοτικά»: the municipal bus routes (municipal.ts). Off at first; the switch shows only once the data
   // is there (loaded when the map menu opens, or at start when the switch was left on).
   municipalOn = $state(stored("municipalOn", false, isBool));
@@ -211,10 +355,67 @@ export class AppState {
   private alertsStarted = false;
   // The trip planner's start and end ([lat, lon]), marked on the map while the planner is open.
   tripEnds = $state.raw<{ from: [number, number]; to: [number, number] } | null>(null);
-  // The stops of the trip picked in the planner: where to get on, change and get off ([lat, lon]).
-  tripStops = $state.raw<{ at: [number, number]; name: string }[]>([]);
+  // The stops of the trip picked in the planner ([lat, lon]): where to get on, change and get off, and (mid) the
+  // stops a ride passes between them, small, in the line's colour.
+  tripStops = $state.raw<{ at: [number, number]; name: string; mid?: boolean; color?: string }[]>([]);
+  // «Πού πας;» (StartScreen): what the user asked for, handed to the planner with the ends: which means, what
+  // matters most, when they leave, how far they walk. The planner takes it once, then clears it.
+  tripPrefs = $state.raw<TripPrefs | null>(null);
   // The planner's timed trip (/v2/plan, plan.ts) on the map: rides in their line's colour, walks dotted.
   tripPlan = $state.raw<FeatureCollection<LineString> | null>(null);
+  // The route chosen on «Πού πας;» (StartScreen), drawn on the map while that screen is open; the planner's own after.
+  startPreview = $state.raw<FeatureCollection<LineString> | null>(null);
+
+  // «Ξεκίνα»: the trip being followed step by step (guide.ts, NavGuide), the leg the user is on, and whether the bus
+  // of a ride leg was boarded. The walking route of the leg, for the map (MapView draws it).
+  guide = $state.raw<Guide | null>(null);
+  guideStep = $state(0);
+  guideOn = $state(false);    // on the bus of the current ride leg
+  guideWalk = $state.raw<[number, number][] | null>(null);   // [lat, lon]
+  // The bus a waiting rider waits for, and its way to the stop (for the lane on the map): [lat, lon] points.
+  guideApproach = $state.raw<[number, number][] | null>(null);
+  // The picked timed trip's words on the map (TripPlanner → MapView), and whether the rest of the city shows with it
+  // (off: only the trip, its lines' vehicles and its labels).
+  planLabels = $state.raw<import("./plan").PlanLabel[]>([]);
+  planShowAll = $state(false);
+  // The open line's stops with a station near (LineCard → MapView badges): [lon, lat].
+  lineHubs = $state.raw<{ id: string; name: string; at: [number, number]; badges: { label: string; color: string; round: boolean }[]; more: number }[]>([]);
+  // That bus where it is now ([lat, lon]), for its marker on the map while the rider walks or waits.
+  guideBus = $state.raw<{ at: [number, number]; line: string; vehicle: string } | null>(null);   // vehicle: its OASA id
+  startGuide(g: Guide) {
+    this.closeCards();
+    this.start = false;
+    this.guide = g;
+    this.guideStep = 0;
+    this.guideOn = false;
+    this.guideWalk = null;
+    this.guideApproach = null;
+    this.guideBus = null;
+    this.followMe();
+  }
+  endGuide() {
+    this.guide = null;
+    this.guideWalk = null;
+    this.guideApproach = null;
+    this.guideBus = null;
+  }
+  // Every location fix (myPos moves only every 25 m, for the lists): the guide needs each one.
+  myFix = $state.raw<{ at: [number, number]; acc: number; heading: number | null; speed: number | null; t: number } | null>(null);
+  // Set by MapView: find me and keep the map on me, close in (the guide).
+  followMe: () => void = () => {};
+  // Set by MapView: the map off the user for a look at these points ([lon, lat]), until followMe again.
+  peekAt: (pts: [number, number][]) => void = () => {};
+
+  // «Σπίτι» and «Δουλειά» on the home screen: a place each, kept on this device.
+  places = $state.raw<{ home?: SavedPlace; work?: SavedPlace }>(stored("places", {}, isPlaces));
+  // The «Πού πας;» screen opened to set one of them: the next place picked is saved as it.
+  savingPlace = $state<"home" | "work" | null>(null);
+  setPlace(k: "home" | "work", p: SavedPlace | null) {
+    const next = { ...this.places };
+    if (p) next[k] = p; else delete next[k];
+    this.places = next;
+    store("places", next);
+  }
 
   // Set by MapView: frame the given lines once their shapes are loaded; bring a point ([lon, lat]) into view.
   fit: (ids: string[]) => void = () => {};
@@ -246,7 +447,14 @@ export class AppState {
   private baseTitle = "";
 
   // Lines drawn in detail (routes, DOM markers): the picks plus the temporary one.
-  detailLines = $derived(this.tempLine && !this.selected.includes(this.tempLine) ? [...this.selected, this.tempLine] : this.selected);
+  // The picked lines, the one shown for a card, and the line of the bus being ridden (it stays on the map, card or not).
+  detailLines = $derived.by(() => {
+    const base = this.tempLine && !this.selected.includes(this.tempLine) ? [...this.selected, this.tempLine] : this.selected;
+    const r = this.ride?.line;
+    const withRide = r && !base.includes(r) ? [...base, r] : base;
+    const pinned = this.pins.filter(p => p.kind === "line" && p.vehicles && !withRide.includes(p.id)).map(p => p.id);
+    return pinned.length ? [...withRide, ...pinned] : withRide;
+  });
 
   // Each detail line's colour slot (lineColors.ts); a line keeps its slot while it stays.
   private slotMemo = new Map<string, number>();
@@ -254,6 +462,8 @@ export class AppState {
 
   // A detail line's own colour; any other line keeps its operator colour.
   lineColor(id: string): LineColor {
+    const pin = this.pins.find(p => p.kind === "line" && p.id === id);
+    if (pin) return { bg: pin.color, fg: inkOn(pin.color) };
     const info = this.lineInfo.get(id);
     return colorOf(this.lineSlots, id) ?? { bg: info?.color || "#3b5bdb", fg: info?.text_color || "#ffffff" };
   }
@@ -326,10 +536,13 @@ export class AppState {
   init() {
     const ids = selectionIds(location.search);
     this.linked = ids.length > 0 || !!cardFromQuery(location.search);
+    if (this.linked) this.tab = "map";
+    else this.start = true;   // a plain visit opens on «Πού πας;» (StartScreen)
     this.cityLocked = !autoCityOnFix(location.search);
     this.cityId = initialCity(location.search, stored<unknown>("city", null, () => true));
     store("city", this.cityId);
     this.selected = ids.slice(0, MAX_LINES);
+    this.wakePins();
     if (ids.length > MAX_LINES) this.say(`Ο σύνδεσμος είχε ${ids.length} γραμμές. Κράτησα τις πρώτες ${MAX_LINES}.`);
     this.baseTitle = document.title;
     this.nav = new CardNav(history, s => { this.stack = s; this.show(s[s.length - 1] ?? null); },
@@ -386,9 +599,11 @@ export class AppState {
   // Stop a line and forget its data: reopened, it must not show (or hide city vehicles behind)
   // an old copy. The poller is kept, so its pacing survives.
   private closeLine(id: string) {
+    this.setFocus(id, null);
+    if (this.ride?.line === id) return;   // the bus being ridden: its data keeps coming (endRide closes it)
+    if (this.pins.some(p => p.kind === "line" && p.id === id && p.vehicles)) return;   // pinned: its buses stay
     this.pollers.get(id)?.stop();
     this.empty.delete(id);
-    this.setFocus(id, null);
     const { [id]: _, ...rest } = this.live;
     this.live = rest;
   }
@@ -432,14 +647,14 @@ export class AppState {
     if (!this.nav) return;
     this.nav.retitle(title);
     this.stack = this.nav.stack;
-    document.title = `${title} · ${this.baseTitle}`;
+    document.title = `${titleCase(title)} · ${this.baseTitle}`;
   }
 
   private isTop = (c: Card) => { const t = this.stack[this.stack.length - 1]; return !!t && sameCard(t, c); };
 
   // Shows the top card through the field its card reads; null: no card.
   private show(c: Card | null) {
-    if (typeof document !== "undefined") document.title = c ? `${cardTitle(c)} · ${this.baseTitle}` : this.baseTitle;
+    if (typeof document !== "undefined") document.title = c ? `${titleCase(cardTitle(c))} · ${this.baseTitle}` : this.baseTitle;
     const l = c && legacyOf(c);
     this.metroStation = this.railStation = this.train = this.busStop = this.railLine = null;
     this.pendingStation = null;
@@ -572,6 +787,15 @@ export class AppState {
     store("strikesClosed", this.closedStrikes);
   }
   // ★ shows the panel: over an open card it closes the cards (the panel shows when none is open), else it toggles.
+  // A tab: the favourites and nearby lists close (Τώρα holds both), and so do the cards (the tab bar shows only
+  // with no card open, so a tap here comes from the bar itself or a link inside a tab).
+  setTab(t: Tab) {
+    this.favsOpen = false;
+    this.nearOpen = false;
+    if (this.stack.length) this.closeCards();
+    this.tab = t;
+  }
+
   toggleFavs() {
     this.nearOpen = false;
     if (this.stack.length) { this.closeCards(); this.favsOpen = true; return; }
@@ -594,7 +818,8 @@ export class AppState {
 
   // «Κοντά σου» opens over the bare map only: an open card stays as it is.
   showNear() {
-    if (this.stack.length) return;
+    // «Τώρα» shows the stops near the user itself; «Ειδοποιήσεις» stays as it is.
+    if (this.stack.length || this.tab === "now" || this.tab === "alerts") return;
     this.favsOpen = false;
     this.nearOpen = true;
   }
@@ -844,6 +1069,22 @@ export class AppState {
     store("speedOn", on);
   }
 
+  setLook3d(l: Look3D) {
+    this.look3d = l;
+    store("look3d", l);
+  }
+
+  setThreeD(on: boolean) {
+    this.threeD = on;
+    if (!on) { this.chase = null; this.bus3d = null; this.under = false; }
+  }
+
+  /** Ride behind a vehicle in 3D (MapView's chase camera), or stop. */
+  setChase(key: string | null) {
+    if (key && !this.threeD) this.setThreeD(true);
+    this.chase = key;
+  }
+
   setMotion(on: boolean) {
     this.motion = on;
     store("motion", on);
@@ -906,6 +1147,7 @@ export class AppState {
 
   // The map reports its view when it loads and after every move. No tiles are fetched before the first view.
   setCityView(view: View, zoom: number) {
+    this.mapCenter = [(view.north + view.south) / 2, (view.east + view.west) / 2];
     this.mapMoving = false;
     const missing = this.cityTiles.want(viewTiles(view, zoom));
     const held = [...this.refreshHeld];

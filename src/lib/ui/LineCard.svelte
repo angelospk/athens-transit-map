@@ -2,16 +2,22 @@
   // The card of a line, any mode, from /v2: its two directions, the vehicles now of the chosen one and,
   // for a bus line, today's runs. The vehicles are asked again every 20 s while it is open.
   import { untrack } from "svelte";
-  import { fetchV2Line, fetchV2LineVehicles, peekV2Line, peekV2LineVehicles } from "../api";
-  import { fmtDelay } from "../format";
+  import { fetchV2Line, fetchV2LineVehicles, fetchV2Run, peekV2Line, peekV2LineVehicles } from "../api";
+  import { glance, lineDiagram, lineSpeed, mainPattern, spread } from "../linediagram";
+  import { titleCase } from "../nearby";
+  import { LOADS, loadLabel } from "../crowd";
+  import LoadIcon from "./LoadIcon.svelte";
+  import { clockHM } from "../trains";
+  import Icon from "./Icon.svelte";
   import { busVehicleCard } from "../legacy";
   import { directionGroups } from "../directions";
-  import { dirLabels, headsignName, lineVehicleRows, withDirections, type LineDetail, type V2Vehicle } from "../v2";
+  import { dirLabels, headsignName, lineVehicleRows, vehicleDir, withDirections, type LineDetail, type V2Run, type V2Vehicle } from "../v2";
   import type { AppState } from "../state.svelte";
   import CardSheet from "./CardSheet.svelte";
   import DisruptionRows from "./DisruptionRows.svelte";
   import { forLine } from "../disruptions";
   import Timetable from "./Timetable.svelte";
+  import { linesOfStop, nearby, railBadge, railPoints, stopsNear, type RailMode, type RailNear } from "../hubs";
 
   let { app }: { app: AppState } = $props();
 
@@ -67,10 +73,19 @@
 
   const nativeLine = $derived(card ? native(card.id) : "");
   const isBus = $derived(!!card && card.id.startsWith("oasa:"));
+  const pinId = $derived(isBus ? nativeLine : null);   // a bus or trolley line can be pinned on the map (PinSheet)
   // A bus line's directions come from its /v1 direction groups (withDirections), with their termini as labels.
   const groups = $derived(isBus && app.statics[nativeLine] ? directionGroups(app.statics[nativeLine]) : []);
   const patterns = $derived(withDirections(detail?.patterns ?? [], groups));
-  const labels = $derived<(string | null)[]>(groups.length === 2 ? groups.map(g => g.to) : dirLabels(patterns, detail?.stops));
+  // Each direction by its main pattern's last stop; with the /v1 groups, the group that holds that pattern (the
+  // groups' order need not match /v2's direction numbers: 224's are the other way round).
+  const ends = $derived(([0, 1] as const).map(d => {
+    const p = detail ? mainPattern(patterns, d) : null;
+    const last = p ? detail?.stops[p.stops[p.stops.length - 1]]?.name ?? null : null;
+    return { label: last, group: p ? groups.find(g => g.variants.includes(native(p.id))) ?? null : null };
+  }));
+  const labels = $derived<(string | null)[]>(ends.every(e => e.label) ? ends.map(e => e.label)
+    : groups.length === 2 ? groups.map(g => g.to) : dirLabels(patterns, detail?.stops));
   const dir = $derived<0 | 1>(card?.dir ?? (card?.pattern ? patterns.find(p => p.id === card.pattern)?.direction : undefined) ?? 0);
   const label = $derived(detail?.line.label ?? detail?.line.name ?? nativeLine);
   // With the /v1 directions, a vehicle's own (OASA: 0) direction is no better than its pattern's: its headsign decides.
@@ -85,6 +100,144 @@
   });
 
   $effect(() => { if (detail) untrack(() => app.retitle(label)); });
+
+  // The diagram: the direction's vehicles, their runs (each stop's times; asked again with the vehicles), and the
+  // stops to mark: the stop this line was opened from, and the favourite stops.
+  const dirVehicles = $derived(own && detail ? own.filter(v => vehicleDir(v, patterns) === dir) : []);
+  let runs = $state.raw<Record<string, V2Run>>({});
+  const runKey = $derived(dirVehicles.map(v => v.run ?? "").filter(Boolean).sort().join("|"));
+  // Asked again with each vehicle poll (their passed stops and times move on); the API caches a run for 15 s.
+  $effect(() => {
+    void vehicles;
+    if (!runKey) return;
+    const ids = runKey.split("|").slice(0, 10);
+    const ac = new AbortController();
+    void Promise.all(ids.map(id => fetchV2Run(id).then(r => {
+      const run = (r.body as { run?: V2Run } | null)?.run;
+      if (!ac.signal.aborted && r.status === 200 && run) runs = { ...runs, [id]: run };
+    }).catch(() => {})));
+    return () => ac.abort();
+  });
+  const here = $derived.by(() => {
+    const below = app.stack.length > 1 ? app.stack[app.stack.length - 2] : null;
+    return new Set([...(below?.kind === "stop" ? [below.id] : []), ...app.favs.stops.map(s => s.id)]);
+  });
+  const nowS = $derived(app.serverNow / 1000);
+  const pattern = $derived(detail ? mainPattern(patterns, dir, dirVehicles, runs) : null);
+  const diagram = $derived(pattern && detail ? lineDiagram(pattern, detail.stops, dirVehicles, runs, nowS, here) : []);
+  const stats = $derived(glance(dirVehicles, runs, nowS));
+  const speed = $derived(pattern && detail ? lineSpeed(pattern, detail.stops, dirVehicles, runs) : null);
+  const etaText = (at: number | null) => {
+    if (at == null) return "";
+    const m = Math.round((at - nowS) / 60);
+    return m <= 0 ? "τώρα" : m < 60 ? `${m}′` : clockHM(at);
+  };
+  const delayTone = (d: number | null) => (d == null ? "none" : d >= 600 ? "late3" : d >= 300 ? "late2" : d >= 120 ? "late1" : "ontime");
+  const delayText = (d: number | null) => (d == null ? "χωρίς δρομολόγιο" : d >= 120 ? `+${Math.round(d / 60)}′ καθυστέρηση` : "στην ώρα του");
+  // «Ακολούθησε σε 3D»: the bus that reaches a marked stop first, else the first on the line.
+  const chaseTarget = $derived.by(() => {
+    const k = diagram.findIndex(i => i.kind === "stop" && i.here);
+    const before = (k >= 0 ? diagram.slice(0, k) : diagram).filter(i => i.kind === "vehicle");
+    const v = (before.at(-1) ?? diagram.find(i => i.kind === "vehicle")) as { vehicle: V2Vehicle } | undefined;
+    return v?.vehicle ?? null;
+  });
+  function follow() {
+    const v = chaseTarget;
+    if (!v) return;
+    open(v);
+    if (isBus) app.setChase(`${nativeLine}/${native(v.id)}`);
+  }
+
+  // Opened, the diagram scrolls to the marked stop once (it can be 30 stops down).
+  const MODES: Record<string, string> = { bus: "Λεωφορείο", trolley: "Τρόλεϊ", tram: "Τραμ", metro: "Μετρό", rail: "Προαστιακός", suburban: "Προαστιακός" };
+  // The diagram's first and last stops (Αφετηρία, Τέρμα), and where the line goes.
+  const firstStop = $derived(diagram.findIndex(i => i.kind === "stop"));
+  // How its vehicles are spread along the way (linediagram.ts spread): a strip under the glance on a phone, a card over
+  // the map's lower right on a computer (moved to <body>: the card's sheet would clip it).
+  const sp = $derived(spread(diagram));
+  let wide = $state(typeof matchMedia === "function" && matchMedia("(min-width: 1024px)").matches);
+  $effect(() => {
+    const q = matchMedia("(min-width: 1024px)"), on = () => (wide = q.matches);
+    q.addEventListener("change", on);
+    return () => q.removeEventListener("change", on);
+  });
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return { destroy() { node.remove(); } };
+  }
+  const lastStopAt = $derived(diagram.reduce((at, i, k) => (i.kind === "stop" ? k : at), -1));
+  const lastStop = $derived(lastStopAt >= 0 ? (diagram[lastStopAt] as { name: string }).name : "");
+  const firstHere = $derived(diagram.findIndex(i => i.kind === "stop" && i.here));
+  let scrolledFor = "";
+  function scrollHere(el: HTMLElement) {
+    const k = untrack(() => `${card?.id}|${dir}`);
+    if (scrolledFor === k) return;
+    scrolledFor = k;
+    el.scrollIntoView({ block: "center" });
+  }
+
+  // ---- Changes along the line (hubs.ts): at each stop the stations a short walk away, and the bus lines that join here
+  // (at the stop or next to it, and not at the two stops before: where lines cross, not every stop of a shared street).
+  $effect(() => { if (card && !app.stopIx) void app.loadStops(); });
+  const rail = $derived(railPoints(app.metro, app.suburban));
+  const railColors = $derived(Object.fromEntries((app.metro?.lines ?? []).map(l => [l.id, l.color])));
+  type Conn = { rail: RailNear[]; bus: string[] };
+  const conns = $derived.by(() => {
+    const out = new Map<string, Conn>();
+    if (!pattern || !detail) return out;
+    const ix = app.stopIx, own = nativeLine;
+    const busAt = (id: string): Set<string> => {
+      const st = detail!.stops[id];
+      if (!ix || !st || !isBus) return new Set();
+      return new Set(stopsNear(ix, [st.lat, st.lon], 120).flatMap(s => linesOfStop(ix, s.i)).filter(l => l !== own));
+    };
+    const seen: Set<string>[] = [];
+    for (const id of pattern.stops) {
+      const st = detail.stops[id];
+      const here = busAt(id);
+      const before = new Set([...(seen.at(-1) ?? []), ...(seen.at(-2) ?? [])]);
+      seen.push(here);
+      if (!st) continue;
+      const r = nearby(null, rail, [st.lat, st.lon], { railM: 250 }).rail
+        .map(x => ({ ...x, lines: x.lines.filter(l => l !== own) })).filter(x => x.lines.length);
+      out.set(id, { rail: r, bus: [...here].filter(l => !before.has(l)) });
+    }
+    return out;
+  });
+  // «Μόνο αλλαγές»: the stops with a change of the kind picked; the rest in runs («6 στάσεις χωρίς αλλαγή»).
+  let onlyChanges = $state(false);
+  let changeMode = $state<"all" | RailMode | "bus">("all");
+  $effect(() => { void card?.id; onlyChanges = false; changeMode = "all"; });
+  const hasChange = (c: Conn | undefined) => !!c && (changeMode === "all" ? c.rail.length > 0 || c.bus.length > 0
+    : changeMode === "bus" ? c.bus.length > 0 : c.rail.some(r => r.mode === changeMode));
+  const modesHere = $derived(new Set([...conns.values()].flatMap(c => c.rail.map(r => r.mode))));
+  type ViewItem = (typeof diagram)[number] | { kind: "gap"; id: string; n: number };
+  const view = $derived.by<ViewItem[]>(() => {
+    if (!onlyChanges) return diagram;
+    const out: ViewItem[] = [];
+    let gap = 0;
+    diagram.forEach((it, k) => {
+      if (it.kind !== "stop") return;
+      const keep = k === firstStop || k === lastStopAt || it.here || hasChange(conns.get(it.id));
+      if (!keep) { gap++; return; }
+      if (gap) out.push({ kind: "gap", id: `gap-${it.id}`, n: gap });
+      gap = 0;
+      out.push(it);
+    });
+    return out;
+  });
+
+  // The map: the line's stops with a station near, as badges on it (MapView), while the card is open.
+  $effect(() => {
+    if (!detail || !pattern) { app.lineHubs = []; return; }
+    app.lineHubs = pattern.stops.flatMap(id => {
+      const c = conns.get(id), st = detail!.stops[id];
+      if (!c?.rail.length || !st) return [];
+      const badges = [...new Set(c.rail.flatMap(r => r.lines))].map(l => railBadge(l, railColors));
+      return [{ id, name: titleCase(st.name), at: [st.lon, st.lat] as [number, number], badges, more: c.bus.length }];
+    });
+    return () => { app.lineHubs = []; };
+  });
 
   let showTimes = $state(false);
   const color = $derived(isBus ? app.lineColor(nativeLine) : { bg: detail?.line.color ?? "#3b5bdb", fg: detail?.line.text_color ?? "#ffffff" });
@@ -101,18 +254,35 @@
   }
   // A bus line's map shows the chosen direction only (as a line opened from a stop does).
   function pick(d: 0 | 1) {
-    const c = card!, g = groups[d];
+    const c = card!, g = ends[d].group ?? (ends.every(e => e.label) ? null : groups[d]);
     app.replaceTop({ ...c, dir: d, pattern: undefined });
     if (g && groups.length === 2) app.setFocus(nativeLine, g.variants);   // the segments are the two groups
   }
 </script>
 
+{#snippet strip()}
+  <div class="sph">
+    <b>Πώς απλώνονται {isBus ? "τα λεωφορεία" : "τα οχήματα"}</b>
+    {#if sp.bunch}<span class="bn">{sp.bunch.n} μαζί πριν από {titleCase(sp.bunch.before)}</span>{:else}<span class="ev">Ομοιόμορφα</span>{/if}
+  </div>
+  <div class="track" style:--lc={color.bg}>
+    <i class="rail"></i>
+    {#each sp.dots as d (d.id)}<span class="sd" class:bunched={d.bunched} style:left="{d.x * 100}%"></span>{/each}
+  </div>
+  <div class="spe"><span>{titleCase((diagram[firstStop] as { name: string } | undefined)?.name ?? "")}</span><span>{titleCase(lastStop)}</span></div>
+{/snippet}
+
 {#if card}
   <CardSheet {app} key={card.id} starred={starred} starLabel={starred ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
-    onstar={() => app.toggleFavLine({ id: card.id, label })}>
+    onstar={() => app.toggleFavLine({ id: card.id, label })}
+    pinColor={pinId ? app.pinOf("line", pinId)?.color : null}
+    onpin={pinId ? () => (app.pinEdit = app.pinOf("line", pinId) ?? { kind: "line", id: pinId, label, color: "#b58cff", width: 2, vehicles: true, top: true }) : undefined}>
     {#snippet header()}
       <span class="pill" style:--c={color.bg} style:--t={color.fg}>{label}</span>
-      <h2>{detail?.line.name ?? ""}</h2>
+      <div class="tt">
+        <h2>{titleCase(detail?.line.name ?? "")}</h2>
+        <small>{MODES[detail?.line.mode ?? ""] ?? "Γραμμή"}{stats.everyMin != null ? ` · κάθε ${stats.everyMin}′` : ""}</small>
+      </div>
     {/snippet}
     <DisruptionRows alerts={disruptions} />
     {#if missing}
@@ -125,37 +295,100 @@
       <div class="dirs" role="group" aria-label="Κατεύθυνση">
         {#each labels as l, d (d)}
           {#if l !== null}
-            <button type="button" aria-pressed={dir === d} onclick={() => pick(d as 0 | 1)}>→ {l}</button>
+            <button type="button" aria-pressed={dir === d} onclick={() => pick(d as 0 | 1)} title="Προς {titleCase(l)}"><span class="dl">Προς {titleCase(l)}</span></button>
           {/if}
         {/each}
       </div>
 
-      <h3 class="sub">Οχήματα τώρα{rows ? ` · ${rows.length}` : ""}</h3>
-      {#if rows?.length}
-        <ul class="runs" aria-live="polite" aria-label="Τα οχήματα της κατεύθυνσης">
-          {#each rows as r (r.id)}
-            <li><button type="button" onclick={() => open(r.vehicle)}>
-              {#if r.label}<span class="lab">#{r.label}</span>{/if}
-              <span class="next">{r.next ?? "—"}</span>
-              {#if r.delay_s !== null}<span class="delay">{fmtDelay(r.delay_s)}</span>{/if}
-              <span aria-hidden="true" class="chev">›</span>
-            </button></li>
-          {/each}
-        </ul>
-      {:else}
-        <p class="muted">{rows ? "Κανένα όχημα σε αυτή την κατεύθυνση τώρα." : vFailed ? "Δεν φόρτωσαν τα οχήματα. Νέα προσπάθεια σε λίγο." : "Φόρτωση…"}</p>
+      <!-- At a glance -->
+      <div class="glance">
+        <div><b>{rows ? stats.count : "–"}</b><span>εν κινήσει</span></div>
+        <div><b class={stats.delayMin != null && stats.delayMin >= 2 ? "late" : ""}>{stats.delayMin == null ? "–" : stats.delayMin >= 1 ? `+${stats.delayMin}′` : "0′"}</b><span>μέση καθυστέρηση</span></div>
+        <div><b>{speed == null ? "–" : `${speed} χλμ/ω`}</b><span>ταχύτητα γραμμής</span></div>
+      </div>
+
+      {#if sp.dots.length > 1}
+        {#if wide}
+          <section class="spread float" use:portal aria-label="Πώς απλώνονται τα οχήματα">{@render strip()}</section>
+        {:else}
+          <section class="spread" aria-label="Πώς απλώνονται τα οχήματα">{@render strip()}</section>
+        {/if}
       {/if}
 
-      <!-- frequency summary slot (option B, frequent.html): phase 3/4 -->
-
-      {#if isBus}
-        <button type="button" class="times" aria-expanded={showTimes} aria-controls="card-times" onclick={() => (showTimes = !showTimes)}>
-          Δρομολόγια σήμερα <svg viewBox="0 0 12 8" width="9" height="6" aria-hidden="true" class={{ up: showTimes }}><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
-        </button>
-        {#if showTimes}
-          <div id="card-times"><Timetable line={nativeLine} headsign={dirHeadsign} now={app.serverNow} /></div>
+      <!-- The line, stop by stop, with its buses between the stops -->
+      {#if diagram.length}
+        <!-- Which way: the line runs down the rail, from the first stop to the last. -->
+        <p class="way"><Icon name="down" size={14} /><span>Η γραμμή πάει από πάνω προς τα κάτω, <b>προς {titleCase(lastStop)}</b></span></p>
+        <div class="chg" role="group" aria-label="Ποιες στάσεις">
+          <button type="button" aria-pressed={!onlyChanges} onclick={() => (onlyChanges = false)}>Όλες οι στάσεις</button>
+          <button type="button" aria-pressed={onlyChanges} onclick={() => (onlyChanges = true)}><Icon name="swap" size={15} /><span>Μόνο αλλαγές</span></button>
+        </div>
+        {#if onlyChanges}
+          <div class="chmodes" role="group" aria-label="Αλλαγή με">
+            {#each [["all", "Όλα"], ["metro", "Μετρό"], ["tram", "Τραμ"], ["suburban", "Προαστιακός"], ["bus", "Λεωφορείο"]] as [m, t] (m)}
+              {#if m === "all" || (m === "bus" ? isBus : modesHere.has(m as RailMode))}
+                <button type="button" aria-pressed={changeMode === m} onclick={() => (changeMode = m as typeof changeMode)}>{t}</button>
+              {/if}
+            {/each}
+          </div>
         {/if}
+        <ol class="diagram" aria-live="polite" aria-label="Οι στάσεις και τα λεωφορεία, προς {titleCase(lastStop)}" style:--lc={color.bg} style:--lt={color.fg}>
+          {#each view as it, k (it.kind + it.id)}
+            {#if it.kind === "gap"}
+              <li class="gap"><button type="button" onclick={() => (onlyChanges = false)}>{it.n} {it.n === 1 ? "στάση" : "στάσεις"} χωρίς αλλαγή</button></li>
+            {:else if it.kind === "vehicle"}
+              {@const nextStop = view.slice(k + 1).find(x => x.kind === "stop") as { name: string } | undefined}
+              <!-- A bus where it is now: on the rail, between the stop it left and the one it drives to. -->
+              <li class="veh"><button type="button" onclick={() => open(it.vehicle)}
+                aria-label="Λεωφορείο {it.label ?? ''}, {delayText(it.delay_s)}{nextStop ? `, πλησιάζει ${titleCase(nextStop.name)}` : ''}">
+                <span class="vbus"><Icon name="bus" size={15} /><i class="vtone {delayTone(it.delay_s)}"></i></span>
+                <span class="vtxt">
+                  <b>Λεωφορείο εδώ <span class="vt {delayTone(it.delay_s)}">· {delayText(it.delay_s)}</span></b>
+                  <small>{nextStop ? `επόμενη στάση ${titleCase(nextStop.name)}` : "στο τέλος της γραμμής"}{it.label ? ` · #${it.label}` : ""}{it.vehicle.position.kind === "crowd" ? ` · θέση από ${it.vehicle.position.riders ?? 2} επιβάτες` : ""}</small>
+                </span>
+                {#if it.vehicle.occupancy}{@const o = it.vehicle.occupancy}
+                  <span class="occ {o.level}" title="{loadLabel(o.level)}, από {o.reports} {o.reports === 1 ? 'επιβάτη' : 'επιβάτες'}"><LoadIcon level={LOADS.find(x => x.value === o.level)?.level ?? 0} size={11} /><span>{loadLabel(o.level)}</span></span>
+                {/if}
+                <Icon name="chevron" size={14} />
+              </button></li>
+            {:else}
+              {@const first = it.id === (diagram[firstStop] as { id: string } | undefined)?.id}
+              {@const last = it.id === (diagram[lastStopAt] as { id: string } | undefined)?.id}
+              {@const c = conns.get(it.id)}
+              <li class="st" class:here={it.here} class:end={first || last} {@attach !onlyChanges && k === firstHere ? scrollHere : undefined}>
+                <span class="sdot"></span>
+                <span class="sname">
+                  <span class="nm">{titleCase(it.name)}</span>
+                  {#if first}<span class="tag">Αφετηρία</span>{:else if last}<span class="tag">Τέρμα</span>{/if}
+                  {#if it.here}<span class="tag here">εδώ</span>{/if}
+                  {#if c && (c.rail.length || (onlyChanges && c.bus.length))}
+                    <span class="conn">
+                      {#each c.rail as r (r.name + r.mode)}{#each r.lines as l (l)}{@const b = railBadge(l, railColors)}<b class="rb" class:round={b.round} style:--rb={b.color}>{b.label}</b>{/each}{/each}
+                      {#if c.rail.length}<small>{c.rail[0].m < 60 ? "δίπλα" : `${c.rail[0].walk}′`}</small>{/if}
+                      {#if onlyChanges && c.bus.length}<small class="more">+{c.bus.length} {c.bus.length === 1 ? "γραμμή" : "γραμμές"}</small>{/if}
+                    </span>
+                  {/if}
+                </span>
+                <span class="seta" class:sched={!it.live}>{etaText(it.at)}</span>
+              </li>
+            {/if}
+          {/each}
+        </ol>
       {:else}
+        <p class="muted">{rows ? (rows.length ? "Φόρτωση στάσεων…" : "Κανένα όχημα σε αυτή την κατεύθυνση τώρα.") : vFailed ? "Δεν φόρτωσαν τα οχήματα. Νέα προσπάθεια σε λίγο." : "Φόρτωση…"}</p>
+      {/if}
+
+      <div class="acts">
+        {#if chaseTarget}
+          <button type="button" class="primary" onclick={follow}><Icon name="cube" size={18} /><span>{isBus ? "Ακολούθησε σε 3D" : "Το επόμενο όχημα"}</span></button>
+        {/if}
+        {#if isBus}
+          <button type="button" class="ghost" aria-expanded={showTimes} aria-controls="card-times" onclick={() => (showTimes = !showTimes)}>Πρόγραμμα</button>
+        {/if}
+      </div>
+      {#if isBus && showTimes}
+        <div id="card-times"><Timetable line={nativeLine} headsign={dirHeadsign} now={app.serverNow} /></div>
+      {:else if !isBus}
         <p class="muted">Το πρόγραμμα της ημέρας έρχεται σύντομα.</p>
       {/if}
     {/if}
@@ -163,22 +396,121 @@
 {/if}
 
 <style>
-  .muted { margin: 4px 0; color: var(--muted); font-size: 12px; }
-  .dirs { display: flex; gap: 2px; padding: 2px; border-radius: 10px; background: var(--control); }
-  .dirs button { flex: 1; min-width: 0; min-height: 36px; padding: 4px 8px; border: 0; border-radius: 8px; background: none; color: inherit;
-    font: inherit; font-size: 13px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dirs button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
-  .sub { margin: 10px 0 2px; font-size: 12px; font-weight: 600; color: var(--muted); }
-  .runs { list-style: none; margin: 0; padding: 0; }
-  .runs button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 0 4px; margin: 0 -4px; border: 0;
-    border-radius: 8px; background: none; color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
-  .runs button:hover { background: var(--control); }
-  .lab { flex: none; min-width: 44px; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .next { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .delay { flex: none; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-  .chev { flex: none; color: var(--muted); }
-  .times { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; margin-top: 8px; padding: 0;
-    border: 0; background: none; color: var(--accent); font-size: 13px; cursor: pointer; }
-  .times svg { transition: transform .15s; }
-  .times svg.up { transform: rotate(180deg); }
+  /* How full a bus is, from its riders: a small pill in the level's tone. */
+  .occ { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 13px; font-size: 12px; font-weight: 700;
+    line-height: 1; white-space: nowrap; background: color-mix(in srgb, var(--t) 14%, transparent); color: var(--t); }
+  .occ.empty { --t: var(--ontime); } .occ.some { --t: var(--late1); } .occ.full { --t: var(--late3); }
+  /* The line's name over two lines at most (cut with …), its kind and how often under it, never over it. */
+  .tt { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+  .tt small { flex: none; font-size: 12px; line-height: 1.25; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tt :global(h2) { flex: none !important; white-space: normal !important; overflow: hidden !important; font-size: 15px !important; line-height: 1.25 !important;
+    max-height: 2.5em; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+  .muted { margin: 4px 0; color: var(--muted); font-size: 13px; }
+  .dirs { display: flex; height: 44px; padding: 4px; border-radius: 22px; background: var(--card); box-sizing: border-box; }
+  .dirs button { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; padding: 0 10px; border: 0; border-radius: 18px;
+    background: none; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; line-height: 1; cursor: pointer;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dirs button[aria-pressed="true"] { background: var(--fg); color: var(--surface); font-weight: 700; }
+  .dirs .dl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dirs button { transition: background-color .2s, color .2s; }
+  .glance { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
+  .glance div { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 14px; background: var(--card); }
+  .glance b { font-size: 18px; font-weight: 800; line-height: 1; }
+  .glance b.late { color: var(--late2); }
+  .glance span { font-size: 11px; line-height: 1.1; color: var(--muted); }
+
+  /* The diagram: a rail in the line's colour (--lc), the stops on it, the vehicles between them. */
+  .diagram { position: relative; list-style: none; margin: 0; padding: 0; }
+  /* The rail, with chevrons down it: the way the buses go. */
+  .diagram::before { content: ""; position: absolute; left: 21px; top: 22px; bottom: 22px; width: 4px; border-radius: 2px; background: var(--lc); opacity: .85; }
+  .diagram::after { content: ""; position: absolute; left: 17px; top: 30px; bottom: 30px; width: 12px; opacity: .55; pointer-events: none;
+    background: linear-gradient(135deg, transparent 45%, var(--lc) 45%, var(--lc) 60%, transparent 60%) 0 0 / 6px 6px no-repeat,
+      linear-gradient(225deg, transparent 45%, var(--lc) 45%, var(--lc) 60%, transparent 60%) 6px 0 / 6px 6px no-repeat;
+    mask: repeating-linear-gradient(to bottom, #000 0 6px, transparent 6px 88px); }
+  .way { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; padding: 8px 10px; border-radius: 12px; background: var(--card);
+    font-size: 12px; line-height: 1.3; color: var(--muted); }
+  .way b { color: var(--fg); font-weight: 700; }
+  .way :global(svg) { flex: none; color: var(--lc, var(--accent)); }
+  .st { position: relative; display: flex; align-items: center; gap: 14px; min-height: 44px; padding-left: 15px; }
+  .sdot { flex: none; width: 16px; height: 16px; border-radius: 50%; background: var(--surface); border: 3px solid var(--lc); box-sizing: border-box; }
+  .st.here .sdot { background: var(--accent); border-color: var(--surface); box-shadow: 0 0 0 3px var(--accent); }
+  .sname { flex: 1; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; font-size: 14px; line-height: 1.2; padding: 6px 0; }
+  .nm { min-width: 0; overflow-wrap: anywhere; }
+  .tag { flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 10px; background: var(--control);
+    color: var(--muted); font-size: 11px; font-weight: 700; line-height: 1; }
+  .tag.here { background: var(--accent-bg); color: var(--accent); }
+  .st.end .sdot { width: 18px; height: 18px; background: var(--lc); border-color: var(--lc); }
+  .st.end .nm { font-weight: 700; }
+  .st.here .sname { font-weight: 800; }
+  .mark { color: var(--accent); font-weight: 700; }
+  .seta { flex: none; font-size: 14px; font-weight: 700; line-height: 1; color: var(--fg); opacity: .85; font-variant-numeric: tabular-nums; }
+  .seta.sched { color: var(--muted); font-weight: 600; }
+  .st.here .seta { color: var(--accent); opacity: 1; }
+  /* A bus on the rail: its icon in the line's colour (a dot for how late), where it is heading, and its delay. */
+  /* On the rail itself (no box over it): the bus between the stop it left and the next, what it is and where it goes. */
+  .veh { margin: 2px 0; }
+  .veh button { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 50px; padding: 4px 10px 4px 7px; border: 0;
+    border-radius: 14px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+    transition: background-color .15s, transform .12s; }
+  .veh button:hover { background: color-mix(in srgb, var(--lc) 10%, transparent); }
+  .veh button:active { transform: scale(.98); }
+  .veh button > :global(svg:last-child) { flex: none; color: var(--muted); rotate: -90deg; }
+  .vbus { position: relative; flex: none; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%;
+    background: var(--lc); color: var(--lt, #fff); box-shadow: 0 0 0 3px var(--surface); animation: busPulse 2.4s ease-in-out infinite; }
+  .vtone { position: absolute; right: -2px; bottom: -2px; width: 11px; height: 11px; border-radius: 50%; box-shadow: 0 0 0 2px var(--surface); }
+  @keyframes busPulse { 50% { box-shadow: 0 0 0 3px var(--surface), 0 0 0 7px color-mix(in srgb, var(--lc) 28%, transparent); } }
+  .vtxt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .vtxt b { font-size: 13px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+  .vtxt small { font-size: 12px; line-height: 1.2; color: var(--muted); }
+  .vt { font-weight: 700; background: none !important; }
+  .vt.ontime { color: var(--ontime); } .vt.late1 { color: var(--late1); } .vt.late2 { color: var(--late2); } .vt.late3 { color: var(--late3); } .vt.none { color: var(--muted); }
+  @media (prefers-reduced-motion: reduce) { .vbus { animation: none; } .veh button { transition: none; } }
+  .ontime { background: var(--ontime); } .late1 { background: var(--late1); } .late2 { background: var(--late2); }
+  .late3 { background: var(--late3); } .none { background: var(--none); }
+  /* «Όλες οι στάσεις | Μόνο αλλαγές», and with the second, the kind of change. */
+  .chg { display: flex; height: 40px; margin: 0 0 8px; padding: 4px; border-radius: 20px; background: var(--card); box-sizing: border-box; }
+  .chg button { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 10px; border: 0; border-radius: 16px;
+    background: none; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; line-height: 1; cursor: pointer; white-space: nowrap; }
+  .chg button[aria-pressed="true"] { background: var(--control-hover); color: var(--fg); font-weight: 700; }
+  .chmodes { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+  .chmodes button { height: 32px; display: flex; align-items: center; justify-content: center; padding: 0 12px; border: 1px solid var(--border); border-radius: 16px;
+    background: none; color: var(--fg); font: inherit; font-size: 13px; font-weight: 600; line-height: 1; cursor: pointer; }
+  .chmodes button[aria-pressed="true"] { background: var(--fg); color: var(--surface); border-color: var(--fg); }
+  /* A stop's changes: the stations' lines as badges, the walk to them, the bus lines that join. */
+  .conn { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+  .conn small { color: var(--muted); font-size: 11px; font-weight: 600; line-height: 1; }
+  .conn small.more { margin-left: 2px; }
+  .rb { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 4px; box-sizing: border-box; border-radius: 5px;
+    background: var(--rb); color: #fff; font-size: 11px; font-weight: 800; line-height: 1; }
+  .rb.round { border-radius: 10px; }
+  .gap { position: relative; display: flex; align-items: center; min-height: 40px; padding-left: 46px; }
+  .gap button { height: 30px; display: flex; align-items: center; padding: 0 12px; border: 0; border-radius: 15px; background: var(--card); color: var(--muted);
+    font: inherit; font-size: 12px; font-weight: 600; line-height: 1; cursor: pointer; }
+  .gap button:hover { color: var(--fg); }
+  .acts { display: flex; gap: 8px; margin-top: 12px; }
+  .primary { flex: 1; height: 48px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 16px; border: 0; border-radius: 24px;
+    background: var(--accent); color: var(--on-accent); font-size: 14px; font-weight: 700; line-height: 1; cursor: pointer; }
+  .ghost { flex: none; height: 48px; display: flex; align-items: center; justify-content: center; padding: 0 18px; border: 1px solid var(--border);
+    border-radius: 24px; background: transparent; color: var(--fg); font-size: 13px; font-weight: 600; line-height: 1; cursor: pointer; }
+  .ghost[aria-expanded="true"] { background: var(--card); }
+  #card-times { margin-top: 10px; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* How the vehicles are spread: a rail from the first stop to the last, a dot per vehicle, the bunched ones amber. */
+  .spread { display: flex; flex-direction: column; gap: 10px; padding: 14px 14px 12px; border-radius: 16px; background: var(--card); border: 1px solid var(--card-border); }
+  .spread.float { position: fixed; z-index: 7; right: 84px; bottom: 64px; width: 480px; box-sizing: border-box; padding: 16px 18px 14px; border-radius: 18px;
+    background: var(--glass-strong); border: 1px solid var(--glass-line); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--shadow);
+    color: var(--fg); font-family: var(--font); animation: spIn .3s cubic-bezier(.2, .8, .2, 1); }
+  @keyframes spIn { from { transform: translateY(12px); opacity: 0; } }
+  .sph { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 14px; line-height: 1.2; }
+  .sph b { font-weight: 800; }
+  .bn, .ev { font-size: 12px; font-weight: 700; white-space: nowrap; }
+  .bn { color: var(--late1); } .ev { color: var(--ontime); }
+  .track { position: relative; height: 22px; margin: 0 10px; }
+  .rail { position: absolute; left: -10px; right: -10px; top: 9px; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--lc) 35%, var(--control)); }
+  .sd { position: absolute; top: 3px; width: 16px; height: 16px; margin-left: -8px; box-sizing: border-box; border-radius: 50%; background: var(--lc);
+    border: 3px solid var(--surface); transition: left .8s cubic-bezier(.2, .8, .2, 1); }
+  .sd.bunched { background: var(--late1); }
+  .spe { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; line-height: 1.2; color: var(--muted); }
+  .spe span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 48%; }
+  @media (prefers-reduced-motion: reduce) { .sd { transition: none; } .spread.float { animation: none; } }
 </style>

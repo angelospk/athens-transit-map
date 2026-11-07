@@ -26,7 +26,11 @@ export interface V2Arrival {
 
 export interface V2Vehicle {
   id: string; line: string; run: string | null; mode: string; headsign: string; label: string | null;
-  position: { kind: "gps" | "estimate"; lat: number; lon: number; bearing: number | null; at: number };
+  // crowd (contract rev 20): riders on the bus agree on a newer place than its own fix (reported).
+  position: { kind: "gps" | "estimate" | "crowd"; lat: number; lon: number; bearing: number | null; at: number;
+    riders?: number; reported?: { lat: number; lon: number; at: number } };
+  // rev 21: how full riders on it say it is (the last 10 minutes); absent with no report.
+  occupancy?: { level: "empty" | "some" | "full"; reports: number; at: number };
   delay_s: number | null; next_stop: string | null; motion: unknown; source: string;
   direction?: 0 | 1 | null;
 }
@@ -138,6 +142,7 @@ export function nextStops(run: V2Run, max = 8) {
 export function freshness(v: V2Vehicle, nowS: number): { text: string; warn: boolean } {
   if (v.position.kind === "estimate") return { text: "πρόγραμμα", warn: false };
   const age = nowS - v.position.at;
+  if (v.position.kind === "crowd") return { text: `${ageLabel(age)} · από ${v.position.riders ?? 2} επιβάτες`, warn: age > 90 };
   return { text: ageLabel(age), warn: age > 90 };
 }
 

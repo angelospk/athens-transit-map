@@ -403,10 +403,27 @@ describe("Bot recurring alerts", () => {
     expect(other.texts()[0]).toMatch(/Δεν έχεις/);
   });
 
-  it("is for Telegram only: web push refuses it", async () => {
+  it("runs as web push too (the page's «Κάθε μέρα»): watches only in its window, and stops on DELETE", async () => {
     const t = setup();
     const sub = { endpoint: "https://fcm.googleapis.com/fcm/send/x", keys: { p256dh: "B".repeat(87), auth: "A".repeat(22) } };
-    expect((await t.bot.web({ method: "POST", path: "/alerts", body: { p: repPayload, sub } })).status).toBe(400);
+    const r = await t.bot.web({ method: "POST", path: "/alerts", body: { p: repPayload, sub } });
+    expect(r.status).toBe(201);
+    const id = (r.body as { id: string }).id;
+    expect(t.saved()!.alerts.find(a => a.id === id)?.rep).toEqual(REP);
+    await t.bot.tick();
+    expect(polls(t)).toBe(0);                                  // 10:00: not yet
+    t.advance(31 * 60_000);
+    t.live.vehicles = [bus("s2", { position_at: (T0 + 31 * 60_000) / 1000 })];
+    await t.bot.tick();
+    await t.bot.flush();
+    expect(t.pushed).toHaveLength(1);
+    expect(t.pushed[0].data.body).toMatch(/^🚌 Το 622 είναι 3 στάσεις πριν/);
+    expect(t.sent.filter(s => s.method === "sendMessage")).toHaveLength(0);
+    t.advance(3 * 3600_000);
+    await t.bot.tick();
+    expect(t.saved()!.alerts).toHaveLength(1);                // not ended after 2 hours
+    expect((await t.bot.web({ method: "DELETE", path: `/alerts/${id}`, body: null })).status).toBe(204);
+    expect(t.saved()!.alerts).toHaveLength(0);
   });
 
   it("checks the data again within minutes while the stop index and the backend disagree", async () => {

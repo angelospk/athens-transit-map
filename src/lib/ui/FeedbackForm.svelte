@@ -123,7 +123,7 @@
   .shot img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; }
   .shot span { flex: 1; color: var(--muted); }
   .x { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; }
-  .send { background: var(--accent); color: #fff; }
+  .send { background: var(--accent); color: var(--on-accent); }
   .send:disabled { opacity: .45; cursor: default; }
   .follow { align-self: stretch; background: var(--fg); color: var(--bg); }   /* black in light, white in dark */
   .fine { font-size: 11px; text-align: center; }

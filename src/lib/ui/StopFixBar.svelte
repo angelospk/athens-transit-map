@@ -61,7 +61,7 @@
 
 <style>
   .fixbar { position: absolute; z-index: 6; left: 12px; bottom: 28px; width: 360px; padding: 12px 16px; box-sizing: border-box;
-    background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); backdrop-filter: blur(8px); }
+    background: var(--panel); border: 0; border-radius: var(--radius); box-shadow: var(--shadow); backdrop-filter: blur(10px); }
   p { margin: 0; }
   .title { font-size: 15px; font-weight: 600; }
   .hint { margin-top: 2px; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
@@ -69,12 +69,12 @@
   .row { display: flex; gap: 8px; margin-top: 10px; }
   .btn { flex: 1; min-height: 44px; border: 0; border-radius: 10px; background: var(--control); color: var(--fg); font: inherit;
     font-size: 14px; font-weight: 600; cursor: pointer; }
-  .primary { background: var(--accent); color: #fff; }
+  .primary { background: var(--accent); color: var(--on-accent); }
   .btn:disabled { opacity: .45; cursor: default; }
   .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .fine { margin-top: 6px; color: var(--muted); font-size: 11px; text-align: center; }
   @media (max-width: 719px) {
-    .fixbar { left: 0; right: 0; bottom: 0; width: auto; border-radius: 16px 16px 0 0; border-width: 1px 0 0;
+    .fixbar { left: 0; right: 0; bottom: 0; width: auto; border-radius: 22px 22px 0 0;
       padding: 12px 16px calc(10px + env(safe-area-inset-bottom)); }
   }
 </style>

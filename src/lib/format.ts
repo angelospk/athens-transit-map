@@ -9,6 +9,13 @@ export function duration(sec: number): string {
   return `${Math.floor(t / 60)}′${String(t % 60).padStart(2, "0")}″`;
 }
 
+// A trip's length: «23′» under an hour, «1h 01m» from an hour on.
+export function durText(min: number): string {
+  const m = Math.max(0, Math.round(min));
+  // Greek and short, so it fits a tab: «1ω», «1ω 05′».
+  return m < 60 ? `${m}′` : m % 60 ? `${Math.floor(m / 60)}ω ${String(m % 60).padStart(2, "0")}′` : `${m / 60}ω`;
+}
+
 // Delay with sign: "+45″", "−2′"; under 30″ it is on time.
 export function fmtDelay(s: number): string {
   const a = Math.abs(s);

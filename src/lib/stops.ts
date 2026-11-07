@@ -134,6 +134,13 @@ function places(headsign: string): string[] {
 }
 export const toward = (headsign: string) => places(headsign).pop()!.trim() || headsign;
 
+// "ΠΕΙΡΑΙΑΣ(ΠΡΟΣΩΡΙΝΗ ΛΟΓΩ ΕΡΓΩΝ)" → the place and the note in brackets, apart: a title reads "Προς Πειραιας" and
+// the note goes under it.
+export function placeNote(s: string): { place: string; note: string } {
+  const m = /^(.*?)\s*\(([^)]*)\)\s*$/.exec(s);
+  return m && m[1].trim() ? { place: m[1].trim(), note: m[2].trim() } : { place: s, note: "" };
+}
+
 // Where a bus of `line`/`variant` at stop k runs to. On a loop the headsign names the turn (OASA: "ΣΤ. ΚΟΡΩΠΙ -
 // ... - ΑΥΛΑΚΙ"), the same on both sides of a road; after the turn the bus runs back to the start: back, and to
 // is the headsign's first place (or the first stop). The turn: the stop named as the headsign's end, else the
@@ -160,13 +167,21 @@ export function headTo(ix: TripIndex, line: string, variant: string, k: number, 
 const GONE_MS = 60_000;
 
 // here: at the stop (it is the bus's next one, at most HERE_M away); away: stops to go, from 2;
-// est: no trip, a time from speed only. Each is left out when not so or not known.
-export interface ArrivalTime { min: number; vehicle: string; late: number; here?: true; away?: number; est?: true }
+// est: no trip, a time from speed only; max: the far end of the time's range in minutes, when the
+// prediction is loose enough to span a minute or more (etaSpread); age: how old the bus's position is,
+// seconds, when it is older than STALE_S (the time counts down on a position nobody has refreshed).
+// Each is left out when not so or not known.
+export interface ArrivalTime { min: number; vehicle: string; late: number; here?: true; away?: number; est?: true; max?: number; age?: number }
 export interface ArrivalGroup { line: string; headsign: string; variant: string; times: ArrivalTime[] }
 export const HERE_M = 50;
+export const STALE_S = 60;
+
+/** How far a prediction `etaS` seconds out may be off, seconds, to the late side: the error grows with the
+ *  horizon (lab/eta: it is mostly late, from waits at stops and lights the averages smooth out). */
+export const etaSpread = (etaS: number) => 30 + 0.25 * Math.max(0, etaS);
 
 export const timeText = (t: ArrivalTime) =>
-  t.here ? "στη στάση" : `${t.est ? "~" : ""}${t.min === 0 ? "τώρα" : `${t.min}′`}`;
+  t.here ? "στη στάση" : `${t.est ? "~" : ""}${t.min === 0 ? "τώρα" : `${t.max ? `${t.min}–${t.max}` : t.min}′`}`;
 
 // Arrivals by line and headsign, soonest first, each with up to 3 times in minutes from `at` (so an
 // answer cached a while still counts down); late: the delay in whole minutes. A bus more than GONE_MS past its
@@ -180,7 +195,11 @@ export function arrivalGroups(arrivals: StopArrival[], nowMs: number): ArrivalGr
     let g = groups.get(key);
     if (!g) groups.set(key, (g = { line: a.line, headsign: a.headsign, variant: a.variant, times: [] }));
     if (g.times.length >= 3) continue;
-    const t: ArrivalTime = { min: Math.max(0, Math.round((a.at * 1000 - nowMs) / 60_000)), vehicle: a.vehicle, late: Math.round(a.delay_s / 60) };
+    const etaS = Math.max(0, (a.at * 1000 - nowMs) / 1000);
+    const t: ArrivalTime = { min: Math.round(etaS / 60), vehicle: a.vehicle, late: Math.round(a.delay_s / 60) };
+    const max = Math.round((etaS + etaSpread(etaS)) / 60);
+    if (t.min >= 3 && max > t.min) t.max = max;   // under 3′ a bus is nearly here: one number
+    if (a.position_at) { const age = Math.round(nowMs / 1000 - a.position_at); if (age >= STALE_S) t.age = age; }
     if (a.stops_away === 1 && a.distance_m != null && a.distance_m <= HERE_M) t.here = true;
     if (a.stops_away != null && a.stops_away >= 2) t.away = a.stops_away;
     if (a.trip_id === null) { t.est = true; t.late = 0; }
@@ -206,6 +225,8 @@ export function alertLinesAt(ix: TripIndex, k: number, lines?: string[], hint?: 
 export function arrivalNote(t: ArrivalTime): { text: string; tone: "ok" | "late" | "muted" } {
   if (t.here) return { text: "στη στάση", tone: "ok" };
   const where = t.away ? [`${t.away} στάσεις πριν`] : [];
+  // An old position: the time counts on from where the bus last was, so say so instead of a verdict on it.
+  if (t.age != null) return { text: [...where, `θέση πριν ${Math.round(t.age / 60)}′`].join(" · "), tone: "muted" };
   if (t.est) return { text: [...where, "εκτίμηση"].join(" · "), tone: "muted" };
   if (t.late >= 2) return { text: [...where, `αργεί ${t.late}′`].join(" · "), tone: "late" };
   return { text: [...where, "στην ώρα του"].join(" · "), tone: "ok" };
@@ -228,14 +249,21 @@ const clock = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Athens", hour
 // The usual service of the lines with no bus on its way (groups: the live ones), one row per line and headsign
 // (map#24, wording 2): the server's usual time while it is ahead, else the usual gap at this hour; rows with
 // neither are left out. Nothing from a server before rev 18.
-export function usualRows(usual: Usual[] | undefined, groups: ArrivalGroup[], nowMs: number): { line: string; headsign: string; text: string }[] {
-  const out: { line: string; headsign: string; text: string }[] = [];
+// Each row also comes split for a board with a narrow time column: `big` (≈21:40, or 15′ with `every`) and a short `note`.
+export interface UsualRow { line: string; headsign: string; text: string; big: string; every: boolean; note: string }
+export function usualRows(usual: Usual[] | undefined, groups: ArrivalGroup[], nowMs: number): UsualRow[] {
+  const out: UsualRow[] = [];
   for (const u of usual ?? []) {
     if (groups.some(g => g.line === u.line)) continue;
-    const text = u.next_at != null && u.next_at * 1000 > nowMs
-      ? `Συνήθως περνά ~${clock.format(new Date(u.next_at * 1000))} (από τις προηγούμενες εβδομάδες)`
-      : u.headway_min != null ? `Συνήθως περνά κάθε ~${u.headway_min}′ τέτοια ώρα` : null;
-    if (text) out.push({ line: u.line, headsign: u.headsign, text });
+    const row = { line: u.line, headsign: u.headsign };
+    if (u.next_at != null && u.next_at * 1000 > nowMs) {
+      const at = clock.format(new Date(u.next_at * 1000));
+      out.push({ ...row, text: `Συνήθως περνά ~${at} (από τις προηγούμενες εβδομάδες)`, big: `~${at}`, every: false,
+        note: "Συνήθως τέτοια ώρα · από τις προηγούμενες εβδομάδες" });
+    } else if (u.headway_min != null) {
+      out.push({ ...row, text: `Συνήθως περνά κάθε ~${u.headway_min}′ τέτοια ώρα`, big: `${u.headway_min}′`, every: true,
+        note: "Συνήθως περνά τόσο συχνά τέτοια ώρα" });
+    }
   }
   return out;
 }

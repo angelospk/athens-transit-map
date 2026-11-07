@@ -110,6 +110,11 @@ export const stopUrl = (id: string) => `${API_BASE}/v1/stops/${encodeURIComponen
 export const fetchStop = (id: string) =>
   railGet(stopUrl(id), 15_000, async () => (await import("./mock")).mockStop(id));
 export const peekStop = (id: string) => railCache.peek(stopUrl(id));
+// A metro train's run, every station with its time (Route3D, the 3D ride along the track): the timetable's, so it
+// is kept for 10 minutes.
+const stasyTripUrl = (id: string) => `${API_BASE}/v1/rail/stasy/trips/${encodeURIComponent(id)}`;
+export const fetchTrainRun = (_kind: "metro", id: string) =>
+  railCache.get(stasyTripUrl(id), 600_000, () => getJSON(stasyTripUrl(id), AbortSignal.timeout(10_000)));
 
 // The unified /v2 API (v2.ts) for the cards: a Line with its patterns, its vehicles now, a Stop board, a Run.
 // A body without its main field (a source still warming up: `line: null`), or with a field of the wrong type,

@@ -1,42 +1,98 @@
+/* Design tokens. --card and --card-border: a raised tile inside a sheet (the redesign's rows and tiles). --surface is a solid card, --panel the same with a touch of transparency over the map, --control
+   the quiet fill of chips, inputs and segmented controls. --on-accent is the text on an --accent fill: white in
+   light, near-black in dark (the dark accent is too light for white text). */
 :root {
-  --bg: #ffffff; --fg: #1d1d1f; --muted: #6e6e73; --panel: rgba(255, 255, 255, .96); --border: #d2d2d7;
-  --ontime: #1a7f37; --late1: #a87c00; --late2: #d9480f; --late3: #c92a2a; --none: #6c757d; --warn-bg: #fff3cd;
-  --control: #f2f2f4; --control-hover: #e8e8ed; --accent: #0071e3;
-  --shadow: 0 4px 16px rgba(0, 0, 0, .18);
+  --bg: #ffffff; --fg: #13161b; --muted: #5b6270; --panel: rgba(255, 255, 255, .97); --surface: #ffffff; --border: #e3e6eb;
+  --ontime: #1a7f37; --late1: #b7791f; --late2: #d9480f; --late3: #c2261f; --none: #6b7280; --warn-bg: #fdf0da;
+  --ok-bg: #e5f3e9; --warn-fg: #9a5b00; --bad-bg: #fce9e7;
+  --control: #f2f4f7; --control-hover: #e8ebf0; --accent: #0a5bd3; --on-accent: #ffffff; --accent-bg: #e3edfc; --star: #c98200;
+  --ring: #ffffff; --card: #f5f6f8; --card-border: #e6e8ec;
+  --shadow: 0 10px 30px rgba(16, 24, 40, .14), 0 1px 3px rgba(16, 24, 40, .08);
+  --shadow-sm: 0 4px 14px rgba(16, 24, 40, .14), 0 1px 2px rgba(16, 24, 40, .08);
+  --radius: 20px; --radius-sm: 12px;
+  --sheet-r: 28px;   /* the phone sheets' corners (below) */
+  --font: "Commissioner", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  /* The floating controls and panels over the map (the names kept from the glass of 0.4): buttons and bars on the
+     panel's grey (a little see-through, blurred), panels with text on the solid surface; fields inside on the cards. */
+  --glass: var(--panel);
+  --glass-strong: var(--surface);
+  --glass-fill: var(--card);
+  --glass-line: var(--card-border);
+  --glass-fx: blur(10px);
+  --glass-rim: var(--shadow);
+  --glass-text: none;
+  --label-edge: var(--border);
   color-scheme: light dark;
 }
 /* Dark: the device's setting, unless the page is marked light; or the page is marked dark (lib/theme.ts).
    The values are repeated because MapView reads them with getComputedStyle, where light-dark() would stay unresolved. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #111113; --fg: #f5f5f7; --muted: #a1a1a6; --panel: rgba(28, 28, 30, .96); --border: #3a3a3c;
-    --warn-bg: #4a3b00; --control: #2c2c2e; --control-hover: #3a3a3c; --accent: #0a84ff;
+    --bg: #15181e; --fg: #eef0f3; --muted: #a3aab6; --panel: rgba(21, 24, 30, .97); --surface: #15181e; --border: #2a2f38;
+    --ontime: #46c267; --late1: #f0ae45; --late2: #ff8a3d; --late3: #ff6b60; --none: #8b93a0; --warn-bg: rgba(240, 174, 69, .16);
+    --ok-bg: rgba(70, 194, 103, .16); --warn-fg: #f0ae45; --bad-bg: rgba(255, 107, 96, .16);
+    --control: #1f232b; --control-hover: #272c35; --accent: #5b9dff; --on-accent: #0a1424; --accent-bg: rgba(91, 157, 255, .16);
+    --star: #f0b33a; --ring: #15181e; --card: #1b1f27; --card-border: #242934;
+    --shadow: 0 12px 32px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .05);
+    --shadow-sm: 0 4px 14px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .05);
   }
 }
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #111113; --fg: #f5f5f7; --muted: #a1a1a6; --panel: rgba(28, 28, 30, .96); --border: #3a3a3c;
-  --warn-bg: #4a3b00; --control: #2c2c2e; --control-hover: #3a3a3c; --accent: #0a84ff;
+  --bg: #15181e; --fg: #eef0f3; --muted: #a3aab6; --panel: rgba(21, 24, 30, .97); --surface: #15181e; --border: #2a2f38;
+  --ontime: #46c267; --late1: #f0ae45; --late2: #ff8a3d; --late3: #ff6b60; --none: #8b93a0; --warn-bg: rgba(240, 174, 69, .16);
+  --ok-bg: rgba(70, 194, 103, .16); --warn-fg: #f0ae45; --bad-bg: rgba(255, 107, 96, .16);
+  --control: #1f232b; --control-hover: #272c35; --accent: #5b9dff; --on-accent: #0a1424; --accent-bg: rgba(91, 157, 255, .16);
+  --star: #f0b33a; --ring: #15181e; --card: #1b1f27; --card-border: #242934;
+  --shadow: 0 12px 32px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .05);
+  --shadow-sm: 0 4px 14px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .05);
 }
+/* A floating control or panel: one recipe (the tokens above). */
+.glass, .maplibregl-ctrl-group:not(:empty) { background: var(--glass); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx);
+  box-shadow: var(--glass-rim); text-shadow: var(--glass-text); }
 * { box-sizing: border-box; }
-html, body, #app { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg);
-  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
-button, input { font: inherit; color: inherit; }
+html, body, #app { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; background: var(--bg); color: var(--fg);
+  font: 14px/1.45 var(--font); font-feature-settings: "tnum" 1; -webkit-text-size-adjust: 100%; }
+button, input, select, textarea { font: inherit; color: inherit; }
+
+/* Scrollbars: thin, rounded, on the theme (Firefox and the WebKit/Blink pseudo-elements). */
+/* Blink and WebKit draw their own from the pseudo-elements below only while the standard properties are unset (else
+   Windows gets its wide bar with arrows): those are for Firefox alone. */
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 45%, transparent) transparent; }
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+::-webkit-scrollbar-corner { background: transparent; }
+/* The track stops short of the ends: on a rounded panel the thumb stays inside its corners. */
+::-webkit-scrollbar-track { background: transparent; margin-block: 18px; }
+::-webkit-scrollbar-thumb { border-radius: 10px; background: color-mix(in srgb, var(--muted) 40%, transparent);
+  border: 3px solid transparent; background-clip: padding-box; min-height: 40px; }
+::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--muted) 70%, transparent); }
+/* A phone scrolls by touch: no scrollbar to see or to take room from the cards. */
+@media (pointer: coarse) {
+  * { scrollbar-width: none; }
+  ::-webkit-scrollbar { display: none; width: 0; height: 0; }
+}
 
 /* Vehicle markers are MapLibre DOM markers, outside any component scope. The marker element is a
    plain wrapper (MapLibre owns its transform); .bus inside it is the visible pill. */
 .maplibregl-marker.sel { z-index: 2; }
 /* A detail line's vehicle: the line's colour (--c, --t from lineColors.ts) with its delay (--d) as a ring, held
    apart by a white gap inside and a dark hairline outside, so it reads on both themes and over the speed layer. */
-.bus { position: relative; display: block; min-width: 34px; height: 22px; padding: 0 5px; border-radius: 11px; cursor: pointer;
-  font: 700 11px/18px system-ui, sans-serif; text-align: center; border: 2px solid #fff;
-  box-shadow: 0 0 0 3px var(--d), 0 0 0 4px rgba(0, 0, 0, .5), 0 1px 4px 3px rgba(0, 0, 0, .3); white-space: nowrap; }
+/* The redesign: a clean pill in the line's colour with a hairline of the map's ground round it, and the delay as a
+   dot on its top-right shoulder (::after) instead of a thick ring: the line reads first, the delay second. */
+.bus { position: relative; display: inline-flex; align-items: center; justify-content: center; min-width: 38px; height: 24px;
+  padding: 0 8px; border-radius: 12px; cursor: pointer; font: 700 12px/1 var(--font); border: 2px solid var(--ring);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .3); white-space: nowrap; }
+.bus::after { content: ""; position: absolute; top: -5px; right: -5px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--d); border: 2px solid var(--ring); box-sizing: border-box; pointer-events: none; }
 .bus .dir { position: absolute; left: 50%; top: 50%; width: 0; height: 0; margin: -4px 0 0 -4px; pointer-events: none;
   border: 4px solid transparent; border-top: 0; border-bottom: 7px solid var(--fg);
   filter: drop-shadow(0 0 1px var(--bg)) drop-shadow(0 0 1px var(--bg)); }
-.vm .age { position: absolute; top: calc(100% + 1px); left: 50%; transform: translateX(-50%); padding: 0 3px;
-  border-radius: 6px; background: var(--panel); color: var(--fg); font: 600 10px/13px system-ui, sans-serif;
+.vm .age { position: absolute; top: calc(100% + 3px); left: 50%; transform: translateX(-50%); padding: 0 4px;
+  border-radius: 6px; background: var(--panel); color: var(--fg); font: 600 10px/14px var(--font);
   box-shadow: 0 0 2px rgba(0, 0, 0, .35); pointer-events: none; font-variant-numeric: tabular-nums; }
 .bus.faded { border-style: dashed; opacity: .7; }
 .bus.stale { opacity: .45; }
@@ -49,9 +105,9 @@ button, input { font: inherit; color: inherit; }
 .ontime, .late1, .late2, .late3, .none { background: var(--d); }
 .bus.bus { background: var(--c, var(--d)); color: var(--t, #fff); }
 
-.maplibregl-popup-content { background: var(--panel); color: var(--fg); font-size: 13px; padding: 6px 10px; border-radius: 8px; }
+.maplibregl-popup-content { background: var(--surface); color: var(--fg); font-size: 13px; padding: 8px 12px; border-radius: 12px;
+  box-shadow: var(--shadow-sm); }
 .maplibregl-popup-tip { border-top-color: var(--panel) !important; border-bottom-color: var(--panel) !important; }
-.maplibregl-ctrl-top-right { top: env(safe-area-inset-top); }
 /* The zoom buttons are for the mouse: a phone pinches. */
 @media (max-width: 719px) { .maplibregl-ctrl-group:has(.maplibregl-ctrl-zoom-in) { display: none; } }
 /* A finger needs 44 px (B10); the panel's rail of buttons (Panel.svelte) grows with them. */
@@ -97,16 +153,235 @@ button, input { font: inherit; color: inherit; }
 .trip-stop { max-width: 160px; padding: 2px 7px; border-radius: 8px; background: #222; color: #fff; pointer-events: none;
   font: 600 11px/1.4 system-ui, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
+/* A stop the picked trip's ride passes: a dot in the line's colour, popping in along the route; its name close in. */
+.trip-mid { display: flex; align-items: center; gap: 6px; pointer-events: none; animation: tripMidIn .4s cubic-bezier(.34, 1.56, .64, 1) both; animation-delay: calc(var(--i, 0) * 35ms); }
+.trip-mid i { width: 10px; height: 10px; border-radius: 50%; background: #fff; border: 3px solid var(--lb, #3b5bdb); box-sizing: border-box; box-shadow: 0 1px 3px rgba(0, 0, 0, .35); }
+.trip-mid span { display: none; max-width: 140px; padding: 2px 6px; border-radius: 7px; background: color-mix(in srgb, var(--lb, #3b5bdb) 88%, #000); color: #fff;
+  font: 600 11px/1.25 var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: none; }
+.near-stops .trip-mid span { display: block; }
+@keyframes tripMidIn { from { opacity: 0; transform: scale(.4); } }
+@media (prefers-reduced-motion: reduce) { .trip-mid { animation: none; } }
 
-.maplibregl-ctrl-group button.details { width: auto; height: 24px; padding: 0 10px; font: 12px var(--font, inherit); color: #333; }
-/* «Λεπτομέρειες» shares the ⓘ row: same height and pill shape as the credits. */
-.maplibregl-ctrl-bottom-right > .details-ctl { clear: none; margin-top: 10px; border-radius: 12px; }
-.maplibregl-ctrl-bottom-right > .details-ctl button.details { border-radius: 12px; }
-.maplibregl-ctrl-group button.locate { display: grid; place-items: center; color: #333; }
+.maplibregl-ctrl-group button.details { display: inline-flex; align-items: center; width: auto; height: 28px; padding: 0 12px;
+  font: 500 12px/1 var(--font, inherit); color: var(--fg); }
+/* The map's corner, bottom right: north, the place and the zoom buttons in a column at the edge, under them one row with the
+   credits (ⓘ, opening leftwards) and «Λεπτομέρειες», both 28 px pills, all on the same 16 px edge and 8 px apart. */
+.maplibregl-ctrl-bottom-right { display: grid; grid-template-columns: auto auto; grid-template-areas: ". north" ". locate" ". zoom" "attrib details";
+  justify-items: end; align-items: center; gap: 8px; padding: 0 16px 16px 0; }
+.maplibregl-ctrl-bottom-right > .maplibregl-ctrl { float: none; clear: none; margin: 0 !important; }
+.maplibregl-ctrl-bottom-right > .maplibregl-ctrl-group:has(.locate) { grid-area: locate; }
+.maplibregl-ctrl-bottom-right > .north-ctl { grid-area: north; }
+.maplibregl-ctrl-group button.north { display: grid; place-items: center; color: var(--fg); }
+.north .needle { transition: transform .12s linear; }
+.north:not(.turned) .needle { opacity: .75; }
+.maplibregl-ctrl-bottom-right > .maplibregl-ctrl-group:has(.maplibregl-ctrl-zoom-in) { grid-area: zoom; }
+.maplibregl-ctrl-bottom-right > .details-ctl { grid-area: details; border-radius: 14px; }
+.maplibregl-ctrl-bottom-right > .maplibregl-ctrl-attrib { grid-area: attrib; }
+/* The credits and «Λεπτομέρειες» sit above the floating tab bar while it shows (TabBar.svelte), where they would meet
+   it: a phone, and a desktop window under 1400 px (the bar at the bottom centre, the credits at the right). */
+@media (max-width: 719px) {
+  :root:has(nav.tabs) .maplibregl-ctrl-bottom-left, :root:has(nav.tabs) .maplibregl-ctrl-bottom-right { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 64px); }
+}
+@media (min-width: 720px) and (max-width: 1399px) {
+  :root:has(nav.tabs) .maplibregl-ctrl-bottom-right { bottom: calc(16px + env(safe-area-inset-bottom) + 68px); }
+}
+.maplibregl-ctrl-bottom-right > .details-ctl button.details { border-radius: 14px; }
+.maplibregl-ctrl-group button.locate { display: grid; place-items: center; color: var(--fg); }
 .locate .core { fill: none; }
 .locate[data-state="searching"] { animation: locating 1s ease-in-out infinite alternate; }
-.locate[data-state="on"], .locate[data-state="unavailable"], .locate[data-state="follow"] { color: #1a73e8 !important; }
+.locate[data-state="on"], .locate[data-state="unavailable"], .locate[data-state="follow"] { color: var(--accent) !important; }
 .locate[data-state="follow"] .core { fill: currentColor; }
-.locate[data-state="denied"] { color: #999 !important; }
+.locate[data-state="denied"] { color: var(--muted) !important; }
 @keyframes locating { to { opacity: .35; } }
-/* MapLibre's buttons stay white in dark, so the locate icon keeps its dark colour. */
+
+/* Map controls (zoom, locate, details): themed floating buttons with rounded corners, in light and dark. */
+.maplibregl-ctrl-group:not(:empty) { border-radius: 24px; overflow: hidden; }
+.maplibregl-ctrl-group button { width: 40px; height: 40px; }
+.maplibregl-ctrl-group button + button { border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+.maplibregl-ctrl-group button:not(:disabled):hover { background-color: color-mix(in srgb, var(--control) 60%, transparent); }
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: none; }
+:root[data-theme="dark"] .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: invert(1) brightness(1.6); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: invert(1) brightness(1.6); }
+}
+/* The credits: a 28 px ⓘ, opening into a pill of the same height, its text centred, the ⓘ kept at its right end. */
+.maplibregl-ctrl-attrib.maplibregl-compact { position: relative; display: flex; align-items: center; box-sizing: border-box; min-height: 28px;
+  min-width: 28px; padding: 0; border-radius: 14px; background: var(--glass); color: var(--muted); box-shadow: var(--shadow);
+  -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); font: 500 12px/1 var(--font, inherit); }
+.maplibregl-ctrl-attrib.maplibregl-compact-show { padding: 7px 32px 7px 12px; }
+/* At most 340 px wide (two lines), so open it never reaches the tab bar at the bottom's middle. */
+.maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-inner { max-width: min(340px, calc(100vw - 200px)); line-height: 1.3; white-space: normal; text-align: right; }
+.maplibregl-ctrl-attrib.maplibregl-compact-show { border-radius: 14px; }
+.maplibregl-ctrl-attrib.maplibregl-compact .maplibregl-ctrl-attrib-button { top: 50%; transform: translateY(-50%); right: 2px; width: 24px; height: 24px; border-radius: 50%;
+  background-color: transparent; background-position: center; }
+:root[data-theme="dark"] .maplibregl-ctrl-attrib-button { filter: invert(1) brightness(1.4); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .maplibregl-ctrl-attrib-button { filter: invert(1) brightness(1.4); } }
+.maplibregl-ctrl-attrib a { color: var(--muted); }
+@media (pointer: coarse) { .maplibregl-ctrl-group button { width: 44px; height: 44px; } }
+
+/* 3D mode (map/scene3d.ts): close in, a vehicle is a model on the street and its pill becomes a callout above it:
+   a dark glass box with the line's tile and a tile of the minutes to its next stop, in the colour of its delay;
+   a thin stem down to the bus. The heading arrow and the delay dot go (the model and the minutes show them). */
+.bus .eta { display: none; }
+.map3d-near .vm .bus { translate: 0 -44px; gap: 4px; height: auto; min-width: 0; padding: 4px; border: 0; border-radius: 12px;
+  background: rgba(24, 27, 33, .82); box-shadow: 0 6px 18px rgba(0, 0, 0, .35), inset 0 0 0 1px rgba(255, 255, 255, .08);
+  backdrop-filter: blur(6px); }
+.map3d-near .vm .bus .num, .map3d-near .vm .bus .eta:not(:empty) { display: inline-flex; align-items: center; justify-content: center;
+  height: 28px; min-width: 44px; padding: 0 9px; border-radius: 8px; font: 700 15px/1 var(--font); }
+.map3d-near .vm .bus .num { background: var(--c, var(--d)); color: var(--t, #fff); }
+.map3d-near .vm .bus .eta { min-width: 38px; background: var(--d); color: var(--on-accent); }
+.map3d-near .vm .bus::after { display: none; }
+.map3d-near .vm .bus::before { content: ""; position: absolute; left: 50%; top: calc(100% + 6px); width: 12px; height: 12px; margin-left: -6px;
+  background: rgba(24, 27, 33, .82); rotate: 45deg; translate: 0 -12px; border-radius: 2px; pointer-events: none; }
+.map3d-near .vm .bus .dir { display: none; }
+.map3d-near .vm .age { translate: 0 -44px; }
+
+/* Riding behind a vehicle (MapView's chase camera): only that one shows. */
+.chasing .vm:not(.sel) { display: none; }
+.map3d-near .vm .bus.selected { outline: none; }
+
+/* «Τώρα» and «Ειδοποιήσεις» on a phone: the sheet holds everything, so the map's buttons give way (App.svelte sets data-home). */
+@media (max-width: 719px) {
+  :root[data-home] .rail, :root[data-home] .maplibregl-ctrl-group, :root[data-home] .details-ctl { display: none; }
+}
+
+/* Following a bus in 3D on a phone: the street gets the screen. The top bar, the map's buttons and hints go; the card
+   below (and the ride bar) stay, and they are the way out. */
+@media (max-width: 719px) {
+  :root[data-chase] .panel, :root[data-chase] .rail, :root[data-chase] .maplibregl-ctrl-group,
+  :root[data-chase] .popwrap { display: none; }
+}
+
+/* Picking a trip's end on the map («Πού πας;»): only the map, the crosshair and its two buttons. */
+:root[data-pick] .panel, :root[data-pick] .rail, :root[data-pick] .maplibregl-ctrl-group, :root[data-pick] .tabs,
+:root[data-pick] .now, :root[data-pick] .ridebar, :root[data-pick] .mapnote { display: none; }
+
+/* «Πού πας;» on a computer is a panel over the live map: the left column under it gives way; the map keeps its buttons.
+   Picking on the map, the pointer is a crosshair. */
+@media (min-width: 720px) {
+  :root[data-start] .panel, :root[data-start] .now, :root[data-start] .tabs, :root[data-start] .alerts,
+  :root[data-start] .mapnote, :root[data-start] .ridebar { display: none; }
+}
+:root[data-pick] .maplibregl-canvas { cursor: crosshair; }
+
+/* Following a trip (NavGuide): its banner and sheet take the screen; the panel, tabs and home sheet step aside. */
+:root[data-guide] .panel, :root[data-guide] .tabs, :root[data-guide] .now, :root[data-guide] .alerts, :root[data-guide] .ridebar,
+:root[data-guide] .mapnote, :root[data-guide] .popwrap { display: none; }
+@media (max-width: 719px) { :root[data-guide] .rail, :root[data-guide] .maplibregl-ctrl-group { display: none; } }
+
+/* 3D, close in: the chip above the selected bus or the one under the mouse (MapView showInfo). */
+.info3d { display: flex; align-items: center; gap: 10px; max-width: 260px; padding: 8px 12px 8px 8px; border-radius: 16px; background: var(--panel);
+  color: var(--fg); box-shadow: var(--shadow); backdrop-filter: blur(10px); pointer-events: none; animation: info3dIn .25s cubic-bezier(.2, .8, .2, 1); }
+.info3d[hidden] { display: none; }
+.info3d .b { flex: none; display: inline-flex; align-items: center; justify-content: center; height: 30px; min-width: 30px; padding: 0 10px;
+  border-radius: 15px; font-size: 14px; font-weight: 800; line-height: 1; }
+.info3d .t { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.info3d b { font-size: 14px; font-weight: 700; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.info3d small { font-size: 12px; line-height: 1.15; color: var(--muted); white-space: nowrap; }
+.info3d .late { color: var(--late3); font-weight: 700; }
+.info3d .ok { color: var(--ontime); font-weight: 600; }
+.info3d::after { content: ""; position: absolute; left: 50%; top: 100%; width: 10px; height: 10px; margin: -5px 0 0 -5px; transform: rotate(45deg);
+  background: var(--panel); }
+@keyframes info3dIn { from { opacity: 0; translate: 0 6px; } }
+/* The small ones, over every bus model near the centre (MapView syncLabels): the same, smaller, and a tap opens it. */
+.info3d.mini { max-width: 210px; border: 0; font-family: inherit; text-align: left;
+  pointer-events: auto; cursor: pointer; animation: none; box-shadow: var(--shadow-sm); }
+.info3d.mini .b { height: 22px; min-width: 22px; padding: 0 7px; border-radius: 11px; font-size: 12px; }
+.info3d.mini { gap: 6px; padding: 4px 9px 4px 4px; border-radius: 13px; align-items: center; font-size: 12px; font-weight: 600; line-height: 1; white-space: nowrap; }
+.info3d.mini .to { min-width: 0; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+.info3d.mini em { font-style: normal; font-weight: 700; }
+.info3d.mini em.late { color: var(--late3); }
+.info3d.mini em.ok { color: var(--ontime); }
+.info3d.mini::after { width: 8px; height: 8px; margin: -4px 0 0 -4px; }
+.info3d.mini:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chasing .info3d.mini { display: none; }
+/* 3D, close in: a label on each bus model (MapView syncLabels), its stem on the roof at its left: the line, the next
+   stop, the minutes to it, how late (green on time, orange late, red very late). A tap opens its route (Route3D).
+   On a phone: the line and the minutes, in the delay's colour. */
+/* Their own layer over the map, under the panels; each label placed by a transform from the map's top left. */
+.labels3d { position: absolute; inset: 0; z-index: 2; overflow: hidden; pointer-events: none; }
+.labels3d .label3d { position: absolute; left: 0; top: 0; pointer-events: auto; will-change: transform; }
+.label3d { display: flex; align-items: center; gap: 10px; padding: 6px 9px 6px 6px; border: 1px solid var(--label-edge); border-radius: 14px;
+  background: var(--glass-strong); color: var(--fg); font: inherit; text-align: left; white-space: nowrap;
+  box-shadow: var(--glass-rim); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); text-shadow: var(--glass-text); cursor: pointer; }
+/* The stem: a square turned on its corner, the label's own colour and edge on its two lower sides, over the label's
+   bottom edge where they meet, so label and stem read as one outline. */
+.label3d::after { content: ""; position: absolute; left: 9px; top: 100%; width: 10px; height: 10px; margin-top: -6px; transform: rotate(45deg);
+  box-sizing: border-box; background: var(--glass-strong); border-right: 1px solid var(--label-edge); border-bottom: 1px solid var(--label-edge);
+  clip-path: polygon(100% 0, 100% 100%, 0 100%); }
+.label3d.picked { box-shadow: 0 0 0 2px var(--accent), var(--glass-rim); }
+.label3d:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.label3d .b { flex: none; display: inline-flex; align-items: center; justify-content: center; height: 26px; min-width: 26px; padding: 0 8px; box-sizing: border-box;
+  border-radius: 7px; font-size: 13px; font-weight: 800; line-height: 1; }
+.label3d .t, .label3d .m { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.label3d .m { align-items: flex-end; }
+.label3d .t b { max-width: 150px; overflow: hidden; text-overflow: ellipsis; font-size: 13px; font-weight: 700; line-height: 1; }
+.label3d .m b { font-size: 15px; font-weight: 800; line-height: 1; }
+.label3d small { color: var(--muted); font-size: 11px; font-weight: 500; line-height: 1; }
+.label3d .m small { font-weight: 700; }
+.label3d .ok { color: var(--ontime); }
+.label3d .late { color: var(--late1); }
+.label3d .bad { color: var(--late3); }
+@media (max-width: 719px) {
+  .label3d { gap: 7px; height: 28px; padding: 0 9px 0 3px; box-sizing: border-box; border-radius: 14px; }
+  .label3d.picked { height: 28px; }
+  .label3d .b { height: 22px; min-width: 22px; padding: 0 6px; border-radius: 11px; font-size: 12px; }
+  .label3d em { font-style: normal; font-size: 13px; font-weight: 800; line-height: 1; }
+  .label3d::after { width: 8px; height: 8px; margin-top: -4px; }
+}
+.chasing .label3d { display: none; }
+/* A followed line's own pill steps aside where its model has a label. */
+.map3d-near .vm.lab { visibility: hidden; }
+@media (prefers-reduced-motion: reduce) { .info3d { animation: none; } }
+
+/* 3D, close in: an invisible button over each stop's arrival screen (scene3d draws the screen; MapView refreshHolos). */
+.board-hit { width: 64px; height: 34px; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
+.board-hit:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* The guide's bus on the map (MapView): its line on its colour, a ring that breathes. */
+.guide-bus { display: flex; align-items: center; justify-content: center; min-width: 40px; height: 28px; padding: 0 9px; box-sizing: border-box;
+  border-radius: 14px; background: var(--lb); color: var(--lf); font: 800 13px/1 var(--font);
+  border: 0; cursor: pointer; box-shadow: 0 0 0 3px #fff, 0 4px 14px rgba(0, 0, 0, .45); animation: guideBus 2s ease-in-out infinite; }
+@keyframes guideBus { 50% { box-shadow: 0 0 0 3px #fff, 0 0 0 9px color-mix(in srgb, var(--lb) 35%, transparent), 0 4px 14px rgba(0, 0, 0, .45); } }
+@media (prefers-reduced-motion: reduce) { .guide-bus { animation: none; } }
+
+/* (The open line's changes are a map layer now: MapView line-hubs.) */
+.hub-mark { display: flex; align-items: center; gap: 3px; height: 26px; padding: 0 4px; border: 0; border-radius: 13px; background: var(--surface);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .35); cursor: pointer; }
+.hub-mark b { display: flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box;
+  border-radius: 5px; color: #fff; font: 800 11px/1 var(--font); }
+.hub-mark b.round { border-radius: 9px; }
+.hub-mark:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* A picked trip's words on the map (MapView): a ride's line and minutes; where to get on, a change, the arrival. */
+.plan-leg { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px 0 4px; border-radius: 13px; background: var(--surface); color: var(--fg);
+  font: 700 12px/1 var(--font); box-shadow: 0 4px 12px rgba(0, 0, 0, .35); pointer-events: none; }
+.plan-leg b { display: flex; align-items: center; height: 18px; padding: 0 6px; border-radius: 9px; font-size: 11px; font-weight: 800; }
+.plan-pin { display: flex; flex-direction: column; gap: 4px; padding: 7px 10px; border-radius: 10px; background: var(--surface); color: var(--fg);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .35); pointer-events: none; white-space: nowrap; }
+.plan-pin b { font: 800 12px/1 var(--font); }
+.plan-pin small { font: 600 11px/1 var(--font); color: var(--muted); }
+.plan-pin.change { box-shadow: 0 0 0 2px var(--accent), 0 4px 14px rgba(0, 0, 0, .35); }
+.plan-pin.change small { color: var(--ontime); }
+.plan-pin.change.tight small { color: var(--late2); }
+.plan-pin .pc-lines { display: flex; align-items: center; gap: 5px; margin-bottom: 2px; }
+.plan-pin .pc-lines b { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: 5px; font: 800 11px/1 var(--font); }
+.plan-pin .pc-lines i { font-style: normal; font: 700 12px/1 var(--font); color: var(--muted); }
+/* Crisp text on the map's labels: no subpixel smoothing tricks, whole-pixel places (MapView crisp). */
+.plan-pin, .plan-leg { -webkit-font-smoothing: antialiased; }
+
+/* Underground (metro mode): nothing on the ground; the map's markers and pop-ups go, the trains' labels stay. */
+:root[data-under] .maplibregl-marker, :root[data-under] .maplibregl-popup { display: none; }
+
+/* A phone with the planner or a card open (Panel's data-sheet): the map's own buttons (zoom, locate, north, info)
+   step aside, so the open panel and the map have the room. */
+@media (max-width: 719px) {
+  .maplibregl-ctrl-bottom-right { transition: opacity .2s, transform .25s cubic-bezier(.2, .8, .2, 1); }
+  :root[data-sheet] .maplibregl-ctrl-bottom-right { opacity: 0; pointer-events: none; transform: translateX(12px); }
+}
+
+/* A phone: the panels and sheets round like the screen's own corners (an iPhone's are about 47 pt; a panel inset
+   about 10 px from the edge takes a little less, so the two curves run alongside). */
+@media (max-width: 719px) {
+  :root { --radius: 40px; --sheet-r: 40px; }
+}

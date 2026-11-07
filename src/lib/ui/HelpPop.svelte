@@ -7,10 +7,10 @@
 <ul>
   <li><span class="s"><span class="bus late1" style:--c={PALETTE[0].bg} style:--t={PALETTE[0].fg}>040</span></span>
     <span>Όχημα γραμμής που ακολουθείς. Κάθε γραμμή έχει δικό της χρώμα, ίδιο στη διαδρομή και στο κουμπί της.
-      Το δαχτυλίδι γύρω του είναι η καθυστέρηση. Πάτα το για τις λεπτομέρειες.</span></li>
-  <li><span class="s"><i class="dot ontime"></i><i class="dot late1"></i><i class="dot late3"></i></span>
-    <span>Όχημα της πόλης: το χρώμα του είναι η καθυστέρηση. Πράσινο στην ώρα του, κίτρινο, πορτοκαλί, κόκκινο όλο και
-      πιο αργά, γκρι χωρίς δρομολόγιο. Πάτα το για να δεις ολόκληρη τη γραμμή του.</span></li>
+      Η κουκκίδα στη γωνία του είναι η καθυστέρηση. Πάτα το για τις λεπτομέρειες.</span></li>
+  <li><span class="s"><span class="ico"><img src="{import.meta.env.BASE_URL}icons/bus.png" alt="" /><i class="d ontime"></i></span><span class="ico"><img src="{import.meta.env.BASE_URL}icons/trolley.png" alt="" /><i class="d late3"></i></span></span>
+    <span>Όχημα της πόλης: μπλε το λεωφορείο, πορτοκαλί το τρόλεϊ. Η κουκκίδα στη γωνία του είναι η καθυστέρηση: πράσινη
+      στην ώρα του, κίτρινη, πορτοκαλί, κόκκινη όλο και πιο αργά, γκρι χωρίς δρομολόγιο. Πάτα το για να δεις ολόκληρη τη γραμμή του.</span></li>
   <li><span class="s"><span class="bus ontime" style:--c={PALETTE[1].bg} style:--t={PALETTE[1].fg}>550<i class="dir" style="transform: translate(24px, 0) rotate(90deg)"></i></span></span>
     <span>Το βελάκι δείχνει προς πού κινείται. Λείπει όταν το όχημα στέκεται.</span></li>
   <li><span class="s"><span class="age">24″</span></span>
@@ -25,27 +25,41 @@
     <span>Διαδρομή. Τα βέλη δείχνουν την κατεύθυνση. Πάτα τη για τις στάσεις της.</span></li>
   <li><span class="s"><i class="stop"></i></span>
     <span>Στάση της γραμμής που διάλεξες. Πάτα την για το όνομά της.</span></li>
-  <li><span class="s"><i class="station"></i></span>
-    <span>Σταθμός μετρό, ΗΣΑΠ ή τραμ. Πάτα τον για τις γραμμές του.</span></li>
+  <li><span class="s"><span class="ico"><img src="{import.meta.env.BASE_URL}icons/stop.png" alt="" /></span></span>
+    <span>Στάση λεωφορείου ή τρόλεϊ (όταν μεγεθύνεις). Πάτα την για τις αφίξεις.</span></li>
+  <li><span class="s"><span class="disc" style:background="#e30613"><img src="{import.meta.env.BASE_URL}icons/glyph-metro.png" alt="" /></span><span class="disc" style:background="#dc137a"><img src="{import.meta.env.BASE_URL}icons/glyph-tram.png" alt="" /></span></span>
+    <span>Σταθμός ή συρμός μετρό, ΗΣΑΠ ή τραμ, στο χρώμα της γραμμής του. Πάτα τον για τις γραμμές του.</span></li>
   <li><span class="s"><span class="me"><b></b></span></span>
     <span>Η θέση σου, από το κουμπί του στόχου στον χάρτη.</span></li>
+  <li><span class="s"><span class="three">3D</span></span>
+    <span>Κτίρια, δέντρα και λεωφορεία σε τρεις διαστάσεις. Στην κάρτα ενός λεωφορείου, «Ακολούθησε σε 3D» και η κάμερα
+      πάει πίσω του· ό,τι έχει ήδη περάσει από τη διαδρομή του σβήνει. Σύρε τον χάρτη για να σταματήσεις.</span></li>
   <li><span class="s"><i class="empty">×</i></span>
     <span>Πάτα σε κενό σημείο του χάρτη για να ξαναδείς όλα τα οχήματα.</span></li>
 </ul>
 
 <style>
+  .ico { position: relative; display: inline-block; flex: none; width: 22px; height: 22px; }
+  .ico + .ico { margin-left: 4px; }
+  .ico img { display: block; width: 22px; height: 22px; }
+  .ico .d { position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--surface);
+    background: var(--d); box-sizing: border-box; }
+  .disc { display: inline-grid; place-items: center; flex: none; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .15); box-sizing: border-box; }
+  .disc + .disc { margin-left: 4px; }
+  .disc img { display: block; width: 26px; height: 26px; }
+  .three { display: inline-flex; align-items: center; justify-content: center; height: 22px; padding: 0 6px; border-radius: 7px;
+    background: var(--accent-bg); color: var(--accent); font-size: 11px; font-weight: 700; line-height: 1; }
   ul { margin: 0; padding: 0; list-style: none; }
   li { display: grid; grid-template-columns: 56px 1fr; align-items: center; gap: 10px; min-height: 40px; padding: 4px 0; }
   li + li { border-top: 1px solid var(--border); }
   .s { display: flex; align-items: center; justify-content: center; gap: 4px; pointer-events: none; }
-  .dot { display: block; width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .15); }
-  .age { padding: 0 4px; border-radius: 6px; background: var(--control); font: 600 10px/16px system-ui, sans-serif;
+  .age { padding: 0 4px; border-radius: 6px; background: var(--control); font: 600 10px/16px var(--font);
     font-variant-numeric: tabular-nums; }
   .trail { display: block; width: 40px; height: 8px; border-radius: 4px; background: var(--accent); opacity: .55; }
   .trail.back { height: 0; border-radius: 0; background: none; border-top: 3px dashed #80868b; opacity: .9; }
   .route { display: block; width: 40px; height: 4px; border-radius: 2px; background: #c2185b; opacity: .8; }
   .stop { display: block; width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 2px solid #c2185b; }
-  .station { display: block; width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2px solid #e30613; }
   .empty { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; border: 1px dashed var(--muted);
     color: var(--muted); font-style: normal; }
   .me { transform: scale(.8); }

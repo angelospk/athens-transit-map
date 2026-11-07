@@ -4,7 +4,7 @@
   import Icon from "./Icon.svelte";
 
   // The picked lines (chips), and under them, while the panel's dropdown is open (expanded), the button that opens
-  // the search modal (onsearch) and the quick picks (favourites, popular).
+  // the quick picks (favourites, popular).
   // tail: buttons of the panel, at the right of the first row (the chips, or the search with no chips).
   let { app, expanded = true, onsearch, tail }:
     { app: AppState; expanded?: boolean; onsearch?: () => void; tail?: Snippet } = $props();
@@ -51,11 +51,12 @@
   {/if}
   {#if tail}<div class="tail">{@render tail()}</div>{/if}
 
-  {#if expanded || !app.selected.length}
-    <button type="button" class="find" onclick={onsearch}>
+  {#if !app.selected.length}
+    <!-- The one search, «Πού πας;» (StartScreen); with lines on the map, the glass beside them opens it instead. -->
+    <button type="button" class="find" aria-haspopup="dialog" onclick={onsearch}>
       <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
         <circle cx="8.5" cy="8.5" r="5.5" /><path d="M12.6 12.6L17 17" />
-      </svg><span class="lbl long">Αναζήτηση γραμμής ή στάσης</span><span class="lbl short">Βρες γραμμή ή στάση</span>
+      </svg><span>Πού πας; Στάση ή γραμμή</span><kbd aria-hidden="true">/</kbd>
     </button>
   {/if}
 
@@ -85,35 +86,39 @@
 
 <style>
   .picker { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 4px; align-items: start; }
-  .chips { grid-column: 1; grid-row: 1; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; padding: 0; list-style: none; }
+  .chips { grid-column: 1; grid-row: 1; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; padding: 0; list-style: none; }
   .folded .chips { margin-bottom: 0; }   /* nothing under them */
   /* The panel's buttons: beside the chips, or, with no chips, beside the search. */
-  .tail { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 2px; margin: -4px -6px 0 0; }
+  .tail { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 2px; height: 44px; margin: 0 -6px 0 0; }   /* centred on the search's row */
   .picker:not(.chipped) .find { grid-column: 1; grid-row: 1; }
-  .chipped .find { grid-column: 1 / -1; grid-row: 2; }
-  .find { display: inline-flex; align-items: center; justify-self: start; gap: 6px; min-height: 36px; padding: 0 12px;
-    border: 0; border-radius: 18px; background: var(--control); color: var(--muted); font-size: 13px; cursor: pointer; }
-  .find { max-width: 100%; }
-  .find .lbl { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }   /* one line, even in a wide fallback font */
+  .chipped .find { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; }
+  .find { display: flex; align-items: center; justify-self: stretch; gap: 10px; min-height: 44px; padding: 0 10px 0 14px;
+    border: 0; border-radius: 14px; background: var(--control); color: var(--muted); font: inherit; font-size: 15px; font-weight: 600; line-height: 1; cursor: pointer; }
+  .find svg { color: var(--accent); }
+  .find kbd { flex: none; margin-left: auto; min-width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;
+    border: 1px solid var(--border); border-radius: 7px; font: inherit; font-size: 12px; font-weight: 700; color: var(--muted); }
+  @media (pointer: coarse) { .find kbd { display: none; } }
   .find:hover { background: var(--control-hover); }
-  /* On a phone the long label does not fit beside the panel's buttons (about 185 px for 165): a shorter one. Only one
-     shows, so the button's name is the shown text. */
-  .find .short { display: none; }
-  @media (max-width: 440px) { .find .long { display: none; } .find .short { display: inline; } }
+  .find { min-width: 0; max-width: 100%; }
+  .find svg { flex: none; }
+  .find span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .quick, .tip { grid-column: 1 / -1; }
-  .chip { display: inline-flex; align-items: stretch; min-height: 32px; border-radius: 16px; background: var(--c); color: var(--t); }
-  .chip button { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; color: inherit; cursor: pointer; }
-  .chip .open { padding: 0 4px 0 10px; font-weight: 700; }
-  .chip .x { min-width: 28px; justify-content: center; padding: 0 8px 0 2px; opacity: .8; font-size: 15px; }
+  /* A line on the map: its chip opens its card, only the × takes it off (two buttons in one chip). */
+  .chip { display: inline-flex; align-items: stretch; min-height: 34px; border-radius: 10px; background: var(--c); color: var(--t);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .06); }
+  .chip button { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: inherit;
+    font: inherit; font-size: 14px; font-weight: 700; line-height: 1; cursor: pointer; }
+  .chip .open { padding: 0 4px 0 12px; }
+  .chip .x { min-width: 30px; justify-content: center; padding: 0 6px 0 2px; font-size: 16px; font-weight: 600; opacity: .8; }
   .chip .x:hover { opacity: 1; }
-  .chip .st { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%;
-    background: rgba(0, 0, 0, .3); font-size: 11px; }
-  .quick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; color: var(--muted); font-size: 12px; }
-  .q { min-height: 32px; padding: 0 10px; border: 0; border-radius: 16px; background: var(--c, #3b5bdb); color: #fff;
-    font-weight: 700; cursor: pointer; }
-  .fav { min-height: 32px; padding: 0 10px; border: 2px solid var(--c, #3b5bdb); border-radius: 16px; background: none;
-    color: var(--fg); font-weight: 700; cursor: pointer; }
-  .all { min-height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: 16px; background: var(--control);
-    font-size: 12px; cursor: pointer; }
-  .tip { margin-top: 6px; color: var(--muted); font-size: 11px; }
+  .chip .st { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
+    background: rgba(0, 0, 0, .3); font-size: 11px; line-height: 1; }
+  .quick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; color: var(--muted); font-size: 12px; }
+  .q { display: inline-flex; align-items: center; min-height: 32px; padding: 0 10px; border: 0; border-radius: 9px;
+    background: var(--c, var(--accent)); color: #fff; font-weight: 700; line-height: 1; cursor: pointer; }
+  .fav { display: inline-flex; align-items: center; min-height: 32px; padding: 0 10px; border: 2px solid var(--c, var(--accent)); border-radius: 9px;
+    background: none; color: var(--fg); font-weight: 700; line-height: 1; cursor: pointer; }
+  .all { display: inline-flex; align-items: center; min-height: 32px; padding: 0 12px; border: 0; border-radius: 9px; background: var(--control);
+    font-size: 12px; font-weight: 600; line-height: 1; cursor: pointer; }
+  .tip { margin-top: 8px; color: var(--muted); font-size: 12px; }
 </style>

@@ -13,12 +13,23 @@
   import { suburbanFC } from "../suburban";
   import { trainsFC } from "../trains";
   import { RailGlide, trackStops, type Track } from "../rails";
+  import { fetchV2Stop } from "../api";
+  import { stopRows, type V2Arrival } from "../v2";
   import { Locator, userPlan, type Fix, type LocState } from "../locate";
   import { CITIES, nearestCity as cityAt } from "../cities";
   import { onOpen, type Perm } from "../nearby";
   import { distanceM } from "../glide";
+  import { BUS_ZOOM, prefetchTiles, prepare3d, PREPARED, Scene3D, ST_LEN, STREET_ZOOM as STREET3D_ZOOM, TRAIN_LEN } from "./scene3d";
+  import type { Look3D } from "./look3d";
+  import Route3D from "../ui/Route3D.svelte";
+  import { busRoute, lateness, minsTo } from "../bus3d";
+  import { smoothPath, snapTram } from "./tramRails";
+  import { metroGlyph, oasaLogo, stopSign, tramGlyph } from "./mapIcons";
+  import { Clouds } from "./clouds";
+  import { bearingOf, depthAt, liveryOf, metroStops, nearestIndex, rightOf, straighten, trackBehind } from "./metroDepth";
+  import { snapLine } from "../roadSnap";
   import { Mover, planOnto } from "../motion";
-  import { shapeLength, stopOffsets } from "../predict";
+  import { predictS, shapeLength, stopOffsets } from "../predict";
   import { loadSpeed, SPEED_STOPS, type SpeedData } from "../speed";
   import { municipalFC } from "../municipal";
     import { stitch } from "../muniLine";
@@ -26,16 +37,27 @@
   import type { Variant } from "../types";
   import type { AppState } from "../state.svelte";
   import SpeedLegend from "../ui/SpeedLegend.svelte";
-  import { lightenDark } from "./basemap";
+  import { paintBase } from "./basemap";
+  import { AppleBase, MAPKIT_TOKEN } from "./appleBase";
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
-  import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
-  import { STOPS_ZOOM, busStopsFC } from "../stops";
+  import { bounds, routesFC, smoothLine, stopsFC, variantFC, type DrawnLine } from "./layers";
+  import { STOPS_ZOOM, busStopsFC, placeNote, toward } from "../stops";
+  import { pinLinesFC, pinStopsFC } from "../pins";
+  import { fold } from "../search";
+  import { titleCase } from "../nearby";
+  import { durText } from "../format";
   import { STOP_ZOOM, VEHICLE_ZOOM, focusZoom, sheetReserve, stopPin } from "../focus";
   import type { Card } from "../cards";
   import { busStopCard, busVehicleCard, railStationCard, routeCard, stationCard } from "../legacy";
   // Rail stations show from these zooms, small like the bus stops (from STOPS_ZOOM); there are fewer of them.
   const RAIL_ZOOM = 13, SUBURBAN_ZOOM = 12;
   const TRACK_SHIFT = 3;   // a moving train off its line's centre, in its image's pixels (B5)
+  // A layer reads a feature's arrays as strings (the GeoJSON goes to the map's worker), so an offset can't be a
+  // property: the side's direction is one of 16 (`q`), each with its offset as a literal.
+  const SIDES = 16;
+  const sideOffset = ["match", ["get", "q"],
+    ...Array.from({ length: SIDES }, (_, q) => { const a = (q / SIDES) * 2 * Math.PI; return [q, ["literal", [Math.round(Math.cos(a) * TRACK_SHIFT * 100) / 100, Math.round(Math.sin(a) * TRACK_SHIFT * 100) / 100]]]; }).flat(),
+    ["literal", [0, 0]]] as unknown as ExpressionSpecification;
   const POINTER_K = 0.68;  // a train's heading pointer, against its square
   import type { TripIndex } from "../trip";
 
@@ -46,7 +68,8 @@
   const FOLLOW_VIEW_MS = 2000;   // following the user: the view is reported this often
   const VIEW_SETTLE_MS = 300;   // the map must rest this long before the city layer asks for tiles
   const DELAY_CLASSES = ["ontime", "late1", "late2", "late3", "none"];
-  const STYLE = (dark: boolean) => `https://tiles.openfreemap.org/styles/${dark ? "dark" : "positron"}`;
+  // One style for both themes: basemap.ts paints it in the light or the dark colours.
+  const STYLE = "https://tiles.openfreemap.org/styles/dark";
   const EMPTY = { type: "FeatureCollection" as const, features: [] };
   const COS_LAT = Math.cos((37.98 * Math.PI) / 180);
   const M_PER_PX_Z0 = 156_543.03 * COS_LAT;   // metres per pixel at zoom 0, at Athens
@@ -54,6 +77,29 @@
   let map = $state.raw<MlMap>();
   // The map has its style and our layers; false while a new style (the other theme) loads.
   let loaded = $state(false);
+  // The 3D street mode (scene3d.ts): its layers go in after every style load; the vehicles are fed each frame.
+  const scene3d = new Scene3D();
+  // In 3D, close in, the drawn routes go onto their roads (roadSnap.ts): each new set of roads in view bumps this.
+  let roadsSeen = $state(0);
+  scene3d.onRoads = () => roadsSeen++;
+  // Close enough in for the routes to go onto their roads: it flips as the zoom crosses STREET3D_ZOOM, and the routes
+  // are sent again then (not only when their data changes).
+  let streetZoom = $state(false);
+  // Each route snapped once per road index: the same shape always gives the same line, at every zoom and data refresh.
+  const snapCache = new WeakMap<object, Map<string, [number, number][]>>();
+  function onRoads<F extends GeoJSON.FeatureCollection<GeoJSON.LineString>>(fc: F): F {
+    const idx = scene3d.roads;
+    if (!app.threeD || !idx || !map || !streetZoom) return fc;
+    const cache = snapCache.get(idx) ?? new Map<string, [number, number][]>();
+    snapCache.set(idx, cache);
+    return { ...fc, features: fc.features.map(f => {
+      const src = f.geometry.coordinates as [number, number][];
+      const key = src.join(";");
+      let coords = cache.get(key);
+      if (!coords) cache.set(key, (coords = smoothLine(snapLine(src, idx), 6, 4)));
+      return { ...f, geometry: { ...f.geometry, coordinates: coords } };
+    }) };
+  }
   // Moves the map to a tapped stop or vehicle (set once the map is up).
   let focusOn: (at: LngLat, min: number) => void = () => {};
   let failed = $state(false);
@@ -70,7 +116,7 @@
   const fleet = new Fleet();
   // DOM markers of the detailed lines. They live outside Svelte's reactivity: moved every frame.
   interface Dom {
-    marker: Marker; wrap: HTMLDivElement; el: HTMLButtonElement; dir: HTMLElement; age: HTMLElement;
+    marker: Marker; wrap: HTMLDivElement; el: HTMLButtonElement; dir: HTMLElement; age: HTMLElement; eta: HTMLElement;
     width: number; heading: number | null;
   }
   const doms = new Map<string, Dom>();
@@ -121,8 +167,18 @@
   function padding() {
     const panel = document.querySelector(".panel")?.getBoundingClientRect();
     if (!panel) return 40;
+    // On a computer the left column is the panel and what hangs under it (a card, the planner).
+    // The planner may still be loading when its trip is framed: its column is 392 px all the same.
+    const right = Math.max(panel.right, app.tab === "trip" ? 392 : 0, ...[...document.querySelectorAll(".popwrap.tabbed, section.card, .start.side .box")].map(e => e.getBoundingClientRect().right));
+    // Following a trip: clear of its instruction on top and its panel (or bar) at the foot.
+    const gt = document.querySelector(".guide .banner")?.getBoundingClientRect();
+    const gb = document.querySelector(".guide .sheet:not([hidden]), .guide .minibar")?.getBoundingClientRect();
+    if (gt || gb) return { top: (gt?.bottom ?? 0) + 16, bottom: gb ? Math.min(innerHeight * 0.7, innerHeight - gb.top + 16) : 24, left: 24, right: innerWidth >= 720 ? 84 : 24 };
+    // The tab bar floats over the foot of the map: what is framed stays above it.
+    const tabs = document.querySelector("nav.tabs")?.getBoundingClientRect();
+    const foot = tabs && tabs.height ? Math.max(40, innerHeight - tabs.top + 16) : 40;
     return innerWidth >= 720
-      ? { top: 40, bottom: 40, left: panel.right + 24, right: 60 }
+      ? { top: 40, bottom: foot, left: right + 24, right: 84 }
       : { top: panel.bottom + 16, bottom: 24, left: 24, right: 24 };
   }
 
@@ -132,7 +188,7 @@
     // With a card open, clear of the sheet too, at its usual height on a phone (a loading card grows), as focusOn.
     const pad = app.stack.length ? padNow() : padding();
     if (app.stack.length && innerWidth < 720 && typeof pad !== "number") pad.bottom = Math.max(pad.bottom ?? 0, sheetReserve(innerHeight));
-    map.fitBounds(b, { padding: pad, maxZoom: 15, duration: 600 });
+    map.fitBounds(b, { padding: pad, maxZoom: 15, duration: 600, absolutePadding: true });
   }
 
   // A right-pointing chevron; symbol layers turn it along each line in travel direction.
@@ -164,34 +220,51 @@
 
   // A rounded square of side k × 28 px, white on a 48 px transparent canvas, tinted by each layer (sdf): the marker
   // of every train (B3). One canvas size for every part, so one icon-size and one icon-offset move them together.
-  function railImage(k: number): ImageData {
-    const c = document.createElement("canvas"), side = 28 * k, o = (48 - side) / 2;
+  // The map's icons (public/icons, made from the OASA/STASY pictograms): a vehicle per mode, a white glyph per rail
+  // mode to set on a disc of the line's colour, a bus stop. They start loading with the module, so they are there
+  // when the style is.
+  const ICONS = { "mode-bus": ["bus", 2], "mode-trolley": ["trolley", 2] } as const;
+  const iconImages = Object.fromEntries(Object.entries(ICONS).map(([name, [file]]) => {
+    const img = new Image();
+    img.src = `${import.meta.env.BASE_URL}icons/${file}.png`;
+    return [name, img.decode().then(() => img, () => null)];
+  })) as Record<keyof typeof ICONS, Promise<HTMLImageElement | null>>;
+  function addIcons(m: MlMap) {
+    for (const [name, [, ratio]] of Object.entries(ICONS)) {
+      void iconImages[name as keyof typeof ICONS].then(img => {
+        if (img && !m.hasImage(name)) { m.addImage(name, img, { pixelRatio: ratio }); m.triggerRepaint(); }
+      });
+    }
+    if (!m.hasImage("mode-disc")) m.addImage("mode-disc", discImage(), { pixelRatio: 2, sdf: true });
+    // Drawn crisp (mapIcons.ts), at the sizes the layers expect: the glyphs 24 px, the stop sign 48 px.
+    if (!m.hasImage("mode-glyph-metro")) m.addImage("mode-glyph-metro", metroGlyph(), { pixelRatio: 128 / 24 });
+    if (!m.hasImage("mode-glyph-tram")) m.addImage("mode-glyph-tram", tramGlyph(), { pixelRatio: 128 / 24 });
+    if (!m.hasImage("mode-stop")) m.addImage("mode-stop", stopSign(), { pixelRatio: 128 / 48 });
+    void oasaLogo().then(img => { if (img && m.hasImage("mode-stop")) m.updateImage("mode-stop", stopSign()); });
+  }
+  // A white disc (tinted per feature: sdf), 28 px across in a 48 px image, like the rail squares were.
+  function discImage(): ImageData {
+    const c = document.createElement("canvas");
     c.width = c.height = 48;
     const g = c.getContext("2d")!;
     g.fillStyle = "#fff";
-    g.beginPath(); g.roundRect(o, o, side, side, 7 * Math.min(1, k)); g.fill();
-    return g.getImageData(0, 0, c.width, c.height);
+    g.beginPath(); g.arc(24, 24, 14, 0, Math.PI * 2); g.fill();
+    return g.getImageData(0, 0, 48, 48);
   }
 
   // Trains (metro and tram from the timetable, Proastiakos by GPS), over everything else, the size of a bus dot
-  // (B3): a rounded square in the line's colour, hollow (a white centre) when its place comes from the timetable.
+  // (B3): a disc in the line's colour with its mode's glyph (metro, tram; Proastiakos as metro).
   // A moving train sits on the right-hand track of its line (`side`, B5). A GPS fix too old is faded, and its age
   // shows per «Ηλικία θέσης». Under them, the tapped train's line.
   function addTrainLayers(m: MlMap) {
     const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#3b5bdb";
+    const ring = (getComputedStyle(document.documentElement).getPropertyValue("--surface").trim() || "#ffffff");
     const byZoom = (stops: unknown[]) => ["interpolate", ["linear"], ["zoom"], ...stops] as ExpressionSpecification;
     const vis = app.trainsOn ? "visible" : "none";
-    const fade = ["case", ["get", "stale"], 0.45, 1] as ExpressionSpecification;
+    // A tram drawn as a model (3D, close in: m3d) leaves its disc out.
+    const fade = ["case", ["to-boolean", ["get", "m3d"]], 0, ["get", "stale"], 0.45, 1] as ExpressionSpecification;
     // The bus dot's diameter (5, 9, 20, 26 px at z10, 13, 14, 17) over the 16 px square (k = 1), times k.
     const size = (k: number) => byZoom([10, 0.31 * k, 13, 0.56 * k, 14, 1.25 * k, 17, 1.63 * k]);
-    const square = (id: string, k: number, color: unknown, filter?: unknown) => {
-      if (!m.hasImage(`rail-${k}`)) m.addImage(`rail-${k}`, railImage(k), { pixelRatio: 2, sdf: true });
-      m.addLayer({
-      id, type: "symbol", source: "trains", ...(filter ? { filter: filter as ExpressionSpecification } : {}),
-      layout: { "icon-image": `rail-${k}`, "icon-size": size(1), "icon-offset": ["get", "off"] as ExpressionSpecification,
-        "icon-allow-overlap": true, "icon-ignore-placement": true, visibility: vis },
-      paint: { "icon-color": color as ExpressionSpecification, "icon-opacity": fade } });
-    };
     m.addSource("train-route", { type: "geojson", data: EMPTY });
     m.addSource("trains", { type: "geojson", data: EMPTY });
     m.addLayer({ id: "train-route-casing", type: "line", source: "train-route", layout: { "line-join": "round", "line-cap": "round" },
@@ -203,10 +276,20 @@
           // The trains' own shift (TRACK_SHIFT × their icon-size), so each one sits on its track at every zoom.
           "line-offset": byZoom([10, 0.31 * TRACK_SHIFT * k, 13, 0.56 * TRACK_SHIFT * k, 14, 1.25 * TRACK_SHIFT * k, 17, 1.63 * TRACK_SHIFT * k]) } },
         "metro-station");
-    square("train-sel", 1.45, accent, ["get", "sel"]);
-    square("train-edge", 1.15, "#ffffff");
-    square("train-dot", 1, ["get", "color"]);
-    square("train-hole", 0.45, "#ffffff", ["get", "est"]);
+    // A disc in the line's colour with a white ring, the mode's glyph on it (train-hole keeps its old id); the tapped
+    // train gets an accent ring round it.
+    const disc = (id: string, k: number, color: unknown, filter?: unknown) => m.addLayer({
+      id, type: "symbol", source: "trains", ...(filter ? { filter: filter as ExpressionSpecification } : {}),
+      layout: { "icon-image": "mode-disc", "icon-size": size(k * 1.15), "icon-offset": sideOffset,
+        "icon-allow-overlap": true, "icon-ignore-placement": true, visibility: vis },
+      paint: { "icon-color": color as ExpressionSpecification, "icon-opacity": fade } });
+    disc("train-sel", 1.4, accent, ["get", "sel"]);
+    disc("train-edge", 1.1, ring);   // a thin ring in the map's own colour: a flat sticker, not a raised button
+    disc("train-dot", 1, ["get", "color"]);
+    m.addLayer({ id: "train-hole", type: "symbol", source: "trains",
+      layout: { "icon-image": ["concat", "mode-glyph-", ["get", "glyph"]] as ExpressionSpecification, "icon-size": size(1.15),
+        "icon-offset": sideOffset, "icon-allow-overlap": true, "icon-ignore-placement": true, visibility: vis },
+      paint: { "icon-opacity": fade } });
     // The pointer turns with the heading, and its offset with it: in its own frame the right-hand track is +x.
     // Sized with the square (POINTER_K of it), so TRACK_SHIFT / POINTER_K of its pixels is the square's shift.
     m.addLayer({ id: "train-heading", type: "symbol", source: "trains", minzoom: 13, filter: ["has", "h"],
@@ -229,19 +312,26 @@
     const css = getComputedStyle(document.documentElement);
     const color = (c: string) => css.getPropertyValue(`--${c}`).trim() || "#6c757d";
     m.addSource("city", { type: "geojson", data: EMPTY });
-    m.addLayer({ id: "city-dot", type: "circle", source: "city",
+    // Each vehicle is its mode's pictogram (bus blue, trolley orange), its delay a small dot on its shoulder (from
+    // zoom 12, where it can be told apart), its line under it from zoom 14.
+    const iconSize = ["interpolate", ["linear"], ["zoom"], 10, 0.2, 13, 0.3, 14, 0.45, 17, 0.58] as ExpressionSpecification;
+    m.addLayer({ id: "city-dot", type: "symbol", source: "city",
+      layout: { "icon-image": ["match", ["get", "mode"], "trolley", "mode-trolley", "mode-bus"] as ExpressionSpecification,
+        "icon-size": iconSize, "icon-allow-overlap": true, "icon-ignore-placement": true },
+      paint: { "icon-opacity-transition": { duration: 300 } } as never });
+    m.addLayer({ id: "city-delay", type: "circle", source: "city", minzoom: 12,
       paint: {
         "circle-color": ["match", ["get", "cls"], ...DELAY_CLASSES.slice(0, 4).flatMap(c => [c, color(c)]), color("none")],
-        "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 2.5, 13, 4.5, 14, 10, 17, 13],
-        "circle-stroke-color": "#ffffff",
-        "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 14, 1.5],
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 12, 2.5, 14, 3.5, 17, 4.5],
+        "circle-translate": ["interpolate", ["linear"], ["zoom"], 12, ["literal", [5, -5]], 14, ["literal", [8, -8]], 17, ["literal", [10, -10]]],
+        "circle-stroke-color": color("ring"), "circle-stroke-width": 1.5,
         "circle-opacity-transition": { duration: 300 }, "circle-stroke-opacity-transition": { duration: 300 },
       } as never });
     m.addLayer({ id: "city-label", type: "symbol", source: "city", minzoom: 14,
-      layout: { "text-field": ["get", "line"], "text-font": ["Noto Sans Bold"],
-        "text-size": ["case", [">", ["length", ["get", "line"]], 3], 8, 10],
+      layout: { "text-field": ["get", "line"], "text-font": ["Noto Sans Bold"], "text-size": 10, "text-offset": [0, 1.7],
         "text-allow-overlap": true, "text-ignore-placement": true },
-      paint: { "text-color": "#ffffff", "text-opacity-transition": { duration: 300 } } as never });
+      paint: { "text-color": color("fg"), "text-halo-color": color("surface"), "text-halo-width": 1.5,
+        "text-opacity-transition": { duration: 300 } } as never });
     // A pointer on each moving vehicle (heading `h`), from zoom 13, where the dots are big enough.
     m.addImage("city-pointer", pointerImage(), { pixelRatio: 2 });
     m.addLayer({ id: "city-heading", type: "symbol", source: "city", minzoom: 13, filter: ["has", "h"],
@@ -260,6 +350,7 @@
   function addMetroLayers(m: MlMap) {
     const sel = (a: unknown, b: unknown) => ["case", ["get", "sel"], a, b] as ExpressionSpecification;
     const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#3b5bdb";
+    const ring = (getComputedStyle(document.documentElement).getPropertyValue("--surface").trim() || "#ffffff");
     const byZoom = (stops: unknown[]) => ["interpolate", ["linear"], ["zoom"], ...stops] as ExpressionSpecification;
     m.addSource("metro", { type: "geojson", data: EMPTY });
     m.addLayer({ id: "metro-line", type: "line", source: "metro", filter: ["==", ["get", "kind"], "line"],
@@ -268,14 +359,19 @@
     const stationVis = app.trainsOn ? "visible" : "none";
     m.addLayer({ id: "metro-station", type: "circle", source: "metro", filter: ["==", ["get", "kind"], "station"], minzoom: RAIL_ZOOM,
       layout: { visibility: stationVis },
-      paint: { "circle-radius": byZoom([RAIL_ZOOM, sel(6, ["case", ["get", "hub"], 4, 3.5]), 17, sel(9, ["case", ["get", "hub"], 7, 6])]),
-        "circle-color": "#ffffff", "circle-stroke-color": sel(accent, ["case", ["get", "hub"], "#222222", ["get", "color"]]),
-        "circle-stroke-width": byZoom([RAIL_ZOOM, sel(3, 2), 17, sel(3.5, 2.5)]) } });
+      paint: { "circle-radius": byZoom([RAIL_ZOOM, sel(6, ["case", ["get", "hub"], 4, 3.5]), 14, sel(10, 9), 17, sel(16, 15)]),
+        "circle-color": ["case", ["get", "hub"], "#2b2f36", ["get", "color"]], "circle-stroke-color": sel(accent, ring),
+        "circle-stroke-width": byZoom([RAIL_ZOOM, sel(3, 1), 17, sel(3.5, 1.5)]) } });
+    // Close in, the station shows its mode's glyph (metro or tram) on its disc.
+    m.addLayer({ id: "metro-station-glyph", type: "symbol", source: "metro", filter: ["==", ["get", "kind"], "station"], minzoom: 14,
+      layout: { visibility: stationVis, "icon-image": ["concat", "mode-glyph-", ["get", "glyph"]] as ExpressionSpecification,
+        "icon-size": byZoom([14, 0.8, 17, 1.25]), "icon-allow-overlap": true, "icon-ignore-placement": true } });
     m.addLayer({ id: "metro-label", type: "symbol", source: "metro", minzoom: RAIL_ZOOM + 1,
       filter: ["==", ["get", "kind"], "station"],
-      layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Bold"], "text-size": 10,
-        "text-offset": [0, 0.9], "text-anchor": "top", "text-optional": true, visibility: stationVis },
-      paint: { "text-color": "#333333", "text-halo-color": "#ffffff", "text-halo-width": 1.5 } });
+      layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Bold"], "text-size": byZoom([RAIL_ZOOM + 1, 10, 15, 11.5, 17, 13]),
+        "text-letter-spacing": 0.03, "text-offset": byZoom([RAIL_ZOOM + 1, ["literal", [0, 0.9]], 17, ["literal", [0, 1.5]]]), "text-anchor": "top",
+        "text-optional": true, visibility: stationVis },
+      paint: { "text-color": styleDark ? "#f1f3f6" : "#1d2026", "text-halo-color": styleDark ? "#14171c" : "#ffffff", "text-halo-width": 1.6, "text-halo-blur": 0.4 } });
   }
 
   // Suburban rail: its stations as small dots filled with their corridor's colour, from SUBURBAN_ZOOM (moved
@@ -283,13 +379,17 @@
   function addSuburbanLayers(m: MlMap) {
     const sel = (a: unknown, b: unknown) => ["case", ["get", "sel"], a, b] as ExpressionSpecification;
     const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#3b5bdb";
+    const ring = (getComputedStyle(document.documentElement).getPropertyValue("--surface").trim() || "#ffffff");
     const byZoom = (stops: unknown[]) => ["interpolate", ["linear"], ["zoom"], ...stops] as ExpressionSpecification;
     const vis = app.trainsOn ? "visible" : "none";
     m.addSource("suburban", { type: "geojson", data: EMPTY });
     m.addLayer({ id: "suburban-station", type: "circle", source: "suburban", filter: ["==", ["get", "kind"], "station"], minzoom: SUBURBAN_ZOOM,
       layout: { visibility: vis },
-      paint: { "circle-radius": byZoom([SUBURBAN_ZOOM, sel(5, 3), 17, sel(8, 6)]), "circle-color": ["get", "color"],
-        "circle-stroke-color": sel(accent, "#ffffff"), "circle-stroke-width": byZoom([SUBURBAN_ZOOM, sel(3, 1.5), 17, sel(3.5, 2)]) } });
+      paint: { "circle-radius": byZoom([SUBURBAN_ZOOM, sel(5, 3), 15, sel(10, 9), 17, sel(13, 12)]), "circle-color": ["get", "color"],
+        "circle-stroke-color": sel(accent, ring), "circle-stroke-width": byZoom([SUBURBAN_ZOOM, sel(3, 1), 17, sel(3.5, 1.5)]) } });
+    m.addLayer({ id: "suburban-station-glyph", type: "symbol", source: "suburban", filter: ["==", ["get", "kind"], "station"], minzoom: 15,
+      layout: { visibility: vis, "icon-image": "mode-glyph-metro", "icon-size": byZoom([15, 0.85, 17, 1.1]),
+        "icon-allow-overlap": true, "icon-ignore-placement": true } });
     m.addLayer({ id: "suburban-label", type: "symbol", source: "suburban", minzoom: RAIL_ZOOM + 1,
       filter: ["==", ["get", "kind"], "station"],
       layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Bold"], "text-size": 10,
@@ -312,14 +412,23 @@
       features: [{ type: "Feature", properties: { acc: f.acc }, geometry: { type: "Point", coordinates: f.pos } }] });
   }
 
+  // Clouds where the sky has them now (clouds.ts): under the map's names and all of ours, gone by street level.
+  const clouds = new Clouds();
+  const showClouds = (m: MlMap) => {
+    const before = m.getStyle()?.layers.find(l => l.type === "symbol")?.id;
+    void clouds.show(m, CITIES[untrack(() => app.cityId)].center, styleDark, before);
+  };
   function addAll(m: MlMap) {
+    addIcons(m);
     addLayers(m);
+    showClouds(m);
     addMeAcc(m);
     if (me) showAcc(m, me.fix);
     nextDue = 0;   // the city layer and the trails start empty: draw them now
     cityWasEmpty = trailsWereEmpty = true;
     started = true;
     loaded = true;
+    scene3d.restyled();
   }
 
   // The other theme: the base map's style is swapped. diff: false builds the style anew, so `style.load` fires.
@@ -330,13 +439,14 @@
     styleDark = d;
     loaded = false;
     const gen = ++styleGen;
+    scene3d.styleGone();
     m.once("style.load", () => {   // a style replaced before it loaded never fires
       if (gen !== styleGen) return;
       addAll(m);
       const want = untrack(() => dark);
       if (want !== styleDark) restyle(m, want);   // the theme changed meanwhile, offline (restyle skipped it)
     });
-    m.setStyle(STYLE(d), { diff: false });
+    m.setStyle(STYLE, { diff: false });
   }
 
   // Typical bus speed per stop-to-stop segment (speed.ts): thin and translucent, under every other layer of ours.
@@ -407,7 +517,7 @@
     addMetroLayers(m);
     addSuburbanLayers(m);
     addCityLayers(m);
-    for (const id of ["metro-station", "metro-label", "suburban-station", "suburban-label"]) m.moveLayer(id);
+    for (const id of ["metro-station", "metro-station-glyph", "metro-label", "suburban-station", "suburban-station-glyph", "suburban-label"]) m.moveLayer(id);
     addTrainLayers(m);
     // Trails of corrections (the route a vehicle glided along) and, with motion off, of moves to a
     // new fix. Always under the vehicle: city dots' trails under the dots, detailed lines' trails
@@ -428,8 +538,10 @@
     // The detailed lines' routes go under the city vehicles: a city vehicle just selected is still drawn
     // by the city layer while its line loads, and the highlighted route must not cover it.
     const under = "city-dot";
-    m.addSource("routes", { type: "geojson", data: EMPTY });
-    m.addSource("highlight", { type: "geojson", data: EMPTY });
+    // tolerance 0: MapLibre simplifies GeoJSON lines per tile zoom by default (0.375), which bends a route a little
+    // differently at each zoom; in 3D, on the modelled streets, that shows as the line changing shape while zooming.
+    m.addSource("routes", { type: "geojson", data: EMPTY, tolerance: 0 });
+    m.addSource("highlight", { type: "geojson", data: EMPTY, lineMetrics: true, tolerance: 0 });   // lineMetrics: the chase dims what is behind
     m.addSource("stops", { type: "geojson", data: EMPTY });
     m.addLayer({ id: "routes", type: "line", source: "routes",
       layout: { "line-join": "round", "line-cap": "round" },
@@ -453,9 +565,9 @@
     trail("trails-line", true, under);
     // Every bus and trolley stop, from STOPS_ZOOM: over the routes, under the vehicles. The tapped one ringed.
     m.addSource("bus-stops", { type: "geojson", data: app.stopIx ? busStopsFC(app.stopIx) : EMPTY });
-    m.addLayer({ id: "bus-stop", type: "circle", source: "bus-stops", minzoom: STOPS_ZOOM,
-      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], STOPS_ZOOM, 3.5, 17, 6], "circle-color": "#ffffff",
-        "circle-stroke-color": "#5f6368", "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], STOPS_ZOOM, 1.5, 17, 2] } }, under);
+    m.addLayer({ id: "bus-stop", type: "symbol", source: "bus-stops", minzoom: STOPS_ZOOM,
+      layout: { "icon-image": "mode-stop", "icon-size": ["interpolate", ["linear"], ["zoom"], STOPS_ZOOM, 0.3, 17, 0.46],
+        "icon-allow-overlap": true, "icon-ignore-placement": true } }, under);
     m.addLayer({ id: "bus-stop-selected", type: "circle", source: "bus-stops", filter: ["==", ["get", "i"], app.busStop ?? -1],
       paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 12, 6, 17, 11], "circle-opacity": 0,
         "circle-stroke-color": accent, "circle-stroke-width": 3 } });
@@ -469,9 +581,47 @@
       layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#ffffff", "line-width": 9 } }, under);
     m.addLayer({ id: "trip-plan-ride", type: "line", source: "trip-plan", filter: ride,
       layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": ["get", "color"], "line-width": 5 } }, under);
-    m.addLayer({ id: "trip-plan-walk", type: "line", source: "trip-plan", filter: ["==", ["get", "kind"], "walk"],
+    // A walk: round dots, light on the dark map and dark on the light one, on a soft casing, so a change between two
+    // means reads as a way to walk, never a blank.
+    const walk = ["==", ["get", "kind"], "walk"] as ["==", ["get", string], string];
+    m.addLayer({ id: "trip-plan-walk-casing", type: "line", source: "trip-plan", filter: walk, layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": styleDark ? "#0b0d12" : "#ffffff", "line-width": 8, "line-opacity": 0.55 } }, under);
+    m.addLayer({ id: "trip-plan-walk", type: "line", source: "trip-plan", filter: walk,
       layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": "#5f6368", "line-width": 4, "line-dasharray": [0, 2] } }, under);
+      paint: { "line-color": ["coalesce", ["get", "color"], styleDark ? "#e3e7ee" : "#4b5563"], "line-width": 4.5, "line-dasharray": [0, 1.8] } }, under);
+    // The open line's changes (LineCard): a badge strip by each stop with a station near, drawn by the map itself, so
+    // it stays on its stop as the map moves and zooms, and gives way where it would cover another.
+    m.addSource("line-hubs", { type: "geojson", data: EMPTY });
+    m.addLayer({ id: "line-hubs", type: "symbol", source: "line-hubs", minzoom: 12.5,
+      layout: { "icon-image": ["get", "img"], "icon-anchor": "left", "icon-offset": [7, 0], "icon-allow-overlap": false, "icon-padding": 2 } });
+    // Pinned lines and stops (pins.ts): over the other routes, under the vehicles, in the user's colour on a soft halo.
+    m.addSource("pin-lines", { type: "geojson", data: EMPTY, tolerance: 0 });
+    m.addSource("pin-stops", { type: "geojson", data: EMPTY });
+    m.addLayer({ id: "pin-lines-halo", type: "line", source: "pin-lines", layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": ["get", "color"], "line-width": ["+", ["*", ["get", "w"], 1.5], 5], "line-opacity": 0.2 } }, under);
+    m.addLayer({ id: "pin-lines", type: "line", source: "pin-lines", layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": ["get", "color"], "line-width": ["get", "w"] } }, under);
+    m.addLayer({ id: "pin-stops", type: "circle", source: "pin-stops",
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 6, 16, 9], "circle-color": ["get", "color"],
+        "circle-stroke-color": "#ffffff", "circle-stroke-width": 3 } });
+    m.addLayer({ id: "pin-stops-label", type: "symbol", source: "pin-stops", minzoom: 12,
+      layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Bold"], "text-size": 12, "text-anchor": "left", "text-offset": [1.1, 0],
+        "text-optional": true },
+      paint: { "text-color": styleDark ? "#eef0f3" : "#13161b", "text-halo-color": styleDark ? "#0f1218" : "#ffffff", "text-halo-width": 1.6 } });
+    // The guide (NavGuide): the stop to wait at, a ring of light on the pavement; the bus's way to it, a lane of
+    // light on the road that grows brighter towards the stop.
+    m.addSource("guide", { type: "geojson", data: EMPTY, lineMetrics: true });
+    const gz = (stops: unknown[]) => ["interpolate", ["linear"], ["zoom"], ...stops] as ExpressionSpecification;
+    m.addLayer({ id: "guide-approach", type: "line", source: "guide", filter: ["==", ["get", "kind"], "approach"],
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-width": gz([12, 5, 16, 12, 19, 30]), "line-blur": gz([12, 1, 18, 6]),
+        "line-gradient": ["interpolate", ["linear"], ["line-progress"], 0, "rgba(91,157,255,0)", 0.6, "rgba(91,157,255,0.35)", 1, "rgba(91,157,255,0.8)"] } }, under);
+    m.addLayer({ id: "guide-halo", type: "circle", source: "guide", filter: ["==", ["get", "kind"], "ring"],
+      paint: { "circle-radius": gz([12, 10, 16, 28, 19, 90]), "circle-color": "#5b9dff", "circle-opacity": 0.2, "circle-blur": 0.7,
+        "circle-pitch-alignment": "map" } });
+    m.addLayer({ id: "guide-ring", type: "circle", source: "guide", filter: ["==", ["get", "kind"], "ring"],
+      paint: { "circle-radius": gz([12, 6, 16, 16, 19, 52]), "circle-opacity": 0, "circle-stroke-color": "#5b9dff",
+        "circle-stroke-width": gz([12, 2, 18, 4]), "circle-stroke-opacity": 0.9, "circle-pitch-alignment": "map" } });
   }
 
   // The train under a click (finger margin r), the nearest if several.
@@ -502,7 +652,7 @@
 
 
   // The bus stop under a click, with a finger-sized margin; the nearest if several.
-  function nearestBusStop(m: MlMap, p: { x: number; y: number }, r = 10) {
+  function nearestBusStop(m: MlMap, p: { x: number; y: number }, r = scene3d.on ? 26 : 10) {   // in 3D: the whole shelter
     if (!m.getLayer("bus-stop") || m.getZoom() < STOPS_ZOOM) return null;
     const hits = m.queryRenderedFeatures([[p.x - r, p.y - r], [p.x + r, p.y + r]], { layers: ["bus-stop"] });
     const d = (f: (typeof hits)[number]) => {
@@ -574,6 +724,7 @@
       me.mover.apply(h, now);
     }
     me.fix = f;
+    app.myFix = { at: [f.pos[1], f.pos[0]], acc: f.acc, heading: f.heading, speed: f.speed, t: f.at };
     // The first fix of the page or after a locate tap, in another city's area: the app switches to it. Later fixes
     // leave the city alone, so a hand pick in «Κοντά σου» stays.
     const near = cityOnFix && !app.cityLocked ? cityAt(f.pos) : null;
@@ -587,6 +738,9 @@
     showAcc(m, f);
     if (flyOnFix) {
       flyOnFix = false;
+      // A trip on the map (the planner fitted it) matters more than where the user stands: no fly to them.
+      // Nor while «Θέλω να πάω» stands as a panel beside the map (a wide window): it shows the city, or the trip's ends.
+      if (app.tripPlan || app.tripEnds || (app.start && innerWidth >= 1024)) return;
       // Above «Κοντά σου», which may still be loading: keep the lower half free on a phone.
       const pad = padNow();
       if (innerWidth < 720) pad.bottom = Math.max(pad.bottom ?? 0, innerHeight * 0.5);
@@ -607,7 +761,7 @@
     if (locState === "off" || locState === "denied") {
       app.cityLocked = false;   // a tap asks for the city the user is in
       locateMe();
-    } else if (!app.nearShown && !app.stack.length) {
+    } else if (!app.nearShown && !app.stack.length && app.tab !== "now" && app.tab !== "alerts") {
       // On, with «Κοντά σου» closed: open it again (also while the first fix is still on its way).
       follow = true;
       app.showNear();
@@ -654,14 +808,20 @@
     const features: GeoJSON.Feature<GeoJSON.Point>[] = [];
     const trails: GeoJSON.Feature<GeoJSON.LineString>[] = [];
     const s = app.selection, selKey = s?.kind === "vehicle" ? `${s.line}/${s.id}` : null, only = app.only;
+    const infoKey = scene3d.on && streetZoom ? selKey ?? hoverKey : null;   // the 3D info chip's vehicle
+    let infoAt: LngLat | null = null;
     const still = !app.motion;
     if (!still) fleet.spacing(now);
+    // In 3D, close in, the city's vehicles in view are models too (up to CITY_3D of them), not the flat pictograms:
+    // their feature stays, unseen (m3d), for the taps and the info chip.
+    const city3d = scene3d.on && z >= BUS_ZOOM && cull && !app.chase ? new Set<string>() : null;   // a chase shows its bus alone
+    const labelAt = new Map<string, LngLat>();
     for (const e of fleet.entries.values()) {
       const dom = owned.has(e.line);
       const shown = e.key === selKey || (!isGonePos(now - e.at) && passes(only, e.cls, now - e.at));
       if (!shown && !dom) continue;
       const moved = still && !reduced && e.moved && now - e.moved.at < STILL_TRAIL_S ? e.moved : null;
-      if (!dom && (!app.cityOn || (cull && (still
+      if (!dom && (!app.cityOn || (focusLines && !focusLines.has(e.line)) || (cull && (still
         ? !moved && cull(e.pos)
         : !e.mover.fixing && cull(e.mover.pos) && cull(e.mover.targetPos(now) ?? e.mover.pos))))) continue;
       let pos: LngLat, trail: { geom: LngLat[]; alpha: number } | null, back = false, rewind = false;
@@ -683,19 +843,64 @@
       if (trail && shown && o && trail.geom.length > 1)
         trails.push({ type: "Feature", geometry: { type: "LineString", coordinates: trail.geom }, properties: { alpha: trail.alpha * o, dom, ...(back && { back }) } });
       if (dom) {
-        const d = drawDom(e, pos, still);
+        // In 3D, close in, the vehicle is drawn in the middle of its lane, where its route is painted (scene3d.place).
+        const placed = scene3d.on ? scene3d.place(pos, doms.get(e.key)?.heading ?? null, e.line, e.key) : null;
+        const d = drawDom(e, placed?.pos ?? pos, still);
+        if (e.key === infoKey) infoAt = placed?.pos ?? pos;
+        if (e.key === focus?.key) focusAt = placed?.pos ?? pos;
+        if (app.chase === e.key && shown) chaseTo(placed?.pos ?? pos, placed?.heading ?? d.heading);
+        else if (e.key === selKey && shown) dimBehind(m, placed?.pos ?? pos);
         d.wrap.classList.toggle("filtered", !shown);
+        if (scene3d.on) {
+          if (shown) scene3d.upsert(e.key, placed?.pos ?? pos, placed?.heading ?? d.heading, app.lineColor(e.line).bg, app.lineInfo.get(e.line)?.kind === "trolley" ? "trolley" : "bus", e.line, e.cls); else scene3d.drop(e.key);
+          if (shown && z >= BUS_ZOOM) labelAt.set(e.key, placed?.pos ?? pos);
+          const label = etaLabel(e);
+          if (d.eta.textContent !== label) d.eta.textContent = label;
+        }
         d.el.classList.toggle("rewind", rewind);
       }
       else {
         const h = headingOf(e, still);
+        // A city vehicle (a line not followed) being chased: the camera rides behind it and it is a model too (the
+        // city layer is hidden while chasing).
+        if (app.chase === e.key && scene3d.on) {
+          const placed = scene3d.place(pos, h ?? chasedHeading);
+          if (placed.heading != null) chasedHeading = placed.heading;
+          scene3d.upsert(e.key, placed.pos, placed.heading, app.lineColor(e.line).bg, app.lineInfo.get(e.line)?.kind === "trolley" ? "trolley" : "bus", e.line, e.cls);
+          chaseTo(placed.pos, placed.heading);
+          chasedCity = e.key;
+          if (e.key === infoKey) infoAt = placed.pos;
+        } else {
+          let at = pos;
+          if (city3d && city3d.size < CITY_3D && shown && o && !cull!(pos)) {
+            const placed = scene3d.place(pos, h, e.line, e.key);
+            scene3d.upsert(e.key, placed.pos, placed.heading, app.lineColor(e.line).bg, app.lineInfo.get(e.line)?.kind === "trolley" ? "trolley" : "bus", e.line, e.cls);
+            city3d.add(e.key);
+            at = placed.pos;
+            labelAt.set(e.key, at);
+          }
+          if (e.key === infoKey) infoAt = at;
+          if (e.key === focus?.key) focusAt = at;
+          if (e.key === selKey && shown) dimBehind(m, at);
+        }
         features.push({ type: "Feature", geometry: { type: "Point", coordinates: pos },
-          properties: { line: e.line, id: e.id, cls: e.cls, stale: isStalePos(now - e.at), ...(h != null && { h }), ...(rewind && { rewind }) } });
+          properties: { line: e.line, id: e.id, cls: e.cls, mode: app.lineInfo.get(e.line)?.kind ?? "bus", stale: isStalePos(now - e.at), ...(h != null && { h }), ...(rewind && { rewind }),
+            ...(city3d?.has(e.key) && { m3d: true }) } });
       }
     }
+    // The guide's bus: on the city layer's own vehicle as it moves (its polled place only until the fleet has it).
+    const gb = app.guideBus, gbe = gb && guideBusMarker ? fleet.entries.get(`${gb.line}/${gb.vehicle}`) : undefined;
+    if (gbe) guideBusMarker!.setLngLat(still ? gbe.pos : gbe.mover.pos);
+    showInfo(infoKey && !labels.has(infoKey) ? infoKey : null, infoAt, now);
+    for (const [k, at] of metroWant) labelAt.set(k, at);
+    for (const [k, at] of tramWant) labelAt.set(k, at);
+    if (scene3d.under) for (const k of [...labelAt.keys()]) if (!k.startsWith("metro/")) labelAt.delete(k);   // underground: the trains' only
+    syncLabels(labelAt, now);
+    for (const k of cityModels) if (!city3d?.has(k) && k !== chasedCity) scene3d.drop(k);
+    cityModels = city3d ?? new Set();
     for (const [k, d] of doms) {
       const e = fleet.entries.get(k);
-      if (!e || !owned.has(e.line)) { d.marker.remove(); doms.delete(k); }
+      if (!e || !owned.has(e.line)) { d.marker.remove(); doms.delete(k); scene3d.drop(k); }
     }
     if (app.cityOn && (features.length || !cityWasEmpty)) {
       (m.getSource("city") as GeoJSONSource).setData({ type: "FeatureCollection", features });
@@ -704,7 +909,9 @@
     if (app.stasyTrains.length || app.suburbanTrains.length || !trainsWereEmpty) {
       drawTrains();
       trainsWereEmpty = !app.stasyTrains.length && !app.suburbanTrains.length;
+      if (trams3d.size && z >= BUS_ZOOM) fixing = true;   // a tram model moves every frame, not once a second
     }
+    if (focus?.follow) { focusFrame(m); fixing = true; }   // followed: every frame, so the camera glides
     if (trails.length || !trailsWereEmpty) {
       (m.getSource("trails") as GeoJSONSource).setData({ type: "FeatureCollection", features: trails });
       trailsWereEmpty = !trails.length;
@@ -714,12 +921,13 @@
       const r = me.mover.step(Date.now() / 1000);
       me.marker.setLngLat(r.pos);
       if (me.mover.fixing) fixing = true;
-      if (follow && !m.isMoving()) m.setCenter(r.pos, { follow: true });   // not during the fly-to or a gesture
+      if (follow && !app.tripPlan && !m.isMoving()) m.setCenter(r.pos, { follow: true });   // not during the fly-to or a gesture
     }
     // Corrections and trails: 30 fps close up; zoomed out, where they are a few pixels and every frame
     // steps the whole city, 4 fps.
+    // In 3D close in (the models, their labels riding on them, the near street seen large at a slant): every frame.
     // With motion off nothing steps: between fixes (a new one leaves a trail, fast again) once a second is enough.
-    const idle = still ? 1000 : Math.min(1000, Math.max(16, (0.5 * mpp / 20) * 1000));
+    const idle = scene3d.on && z >= BUS_ZOOM ? 0 : still ? 1000 : Math.min(1000, Math.max(16, (0.5 * mpp / 20) * 1000));
     nextDue = t + (fixing ? Math.min(idle, z >= 13 ? 33 : 250) : idle);
   }
 
@@ -747,30 +955,305 @@
     return d;
   }
 
+  // Minutes to the vehicle's next stop, from its track (where it is on the route, how fast, where the stops are):
+  // «τώρα» under half a minute; "" when unknown (no track: not a detail line).
+  // The chase camera (3D, a vehicle followed from its card): behind and above it, steep and close, turning with
+  // it smoothly; the vehicle sits low on the screen. The user's zoom is kept (within 17-19.5); a drag ends it.
+  const MAX_RATIO = 2;   // the map's pixel ratio, at most
+  const MAX_RATIO_3D = 1.5;   // in 3D
+  let chaseBearing: number | null = null;
+  // The chased vehicle's route (the highlight), drawn as it is: what is behind the vehicle fades (dimBehind).
+  let hl: { coords: LngLat[]; color: string } | null = null;
+  let dimAt = 0;
+  let chasedCity: string | null = null, chasedHeading: number | null = null;   // a chased vehicle of the city layer
+  // The city vehicles drawn as models (3D, close in), at most CITY_3D at a time.
+  const CITY_3D = 80;
+  let cityModels = new Set<string>();
+  let chaseZoom: number | null = null;   // the chase's zoom, set by the wheel
+  function chaseTo(pos: LngLat, heading: number | null) {
+    const m = map;
+    if (!m) return;
+    dimBehind(m, pos);
+    // It starts behind the vehicle, looking the way it goes; after that the angle is the user's (turn and tilt as
+    // they like: right-drag, Ctrl+drag, two fingers), and the camera only keeps the vehicle in place, never turning.
+    const first = chaseBearing == null;
+    if (first) chaseBearing = heading ?? m.getBearing();
+    if (!first && pointersDown > 0) return;   // a turn or a tilt in hand: let it run
+    // On a phone the card's header covers the bottom: the vehicle sits low in the strip above it.
+    const h = m.getCanvas().clientHeight;
+    const card = innerWidth < 720 ? document.querySelector<HTMLElement>("section.card") : null;
+    const under = card ? Math.max(0, Math.min(h * 0.6, h - card.getBoundingClientRect().top)) : 0;
+    m.jumpTo({ center: pos, ...(first ? { bearing: chaseBearing!, pitch: 66 } : {}), zoom: first ? (chaseZoom = 18.6) : (chaseZoom ?? 18.6),
+      padding: { top: (h - under) * 0.3, bottom: under, left: 0, right: 0 } }, { follow: true });
+  }
+  // Riding behind a vehicle, the part of its route already driven goes faint (30% of its colour): where it is on the
+  // drawn line, as a fraction of the line's length, is the step of a line gradient (lineMetrics on the source). A few
+  // times a second is enough.
+  // The route behind the selected (or chased) vehicle goes faint; back to whole when nothing is selected.
+  let dimmed = false;
+  function undim(m: MlMap) {
+    if (!dimmed) return;
+    dimmed = false;
+    if (m.getLayer("highlight")) m.setPaintProperty("highlight", "line-gradient", undefined as never);
+    if (m.getLayer("highlight-casing")) m.setPaintProperty("highlight-casing", "line-gradient", undefined as never);
+  }
+  $effect(() => {
+    const s = app.selection, m = map;
+    void app.highlight;
+    if (m && loaded && s?.kind !== "vehicle") untrack(() => undim(m));
+  });
+  function dimBehind(m: MlMap, pos: LngLat) {
+    const now = performance.now();
+    if (!hl || hl.coords.length < 2 || now - dimAt < 150 || !m.getLayer("highlight")) return;
+    dimAt = now;
+    const kx = 111320 * Math.cos((pos[1] * Math.PI) / 180), ky = 110540;
+    let total = 0, best = Infinity, at = 0;
+    for (let i = 1; i < hl.coords.length; i++) {
+      const [ax, ay] = [(hl.coords[i - 1][0] - pos[0]) * kx, (hl.coords[i - 1][1] - pos[1]) * ky];
+      const [bx, by] = [(hl.coords[i][0] - pos[0]) * kx, (hl.coords[i][1] - pos[1]) * ky];
+      const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy, L = Math.sqrt(L2);
+      const t = L2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L2)) : 0;
+      const d = Math.hypot(ax + dx * t, ay + dy * t);
+      if (d < best) { best = d; at = total + L * t; }
+      total += L;
+    }
+    if (!total || best > 60) return;
+    const p = Math.min(0.999, Math.max(0.001, at / total));
+    const c = hl.color.replace("#", ""), [r, g, b] = [0, 2, 4].map(i => parseInt(c.slice(i, i + 2), 16));
+    m.setPaintProperty("highlight", "line-gradient", ["step", ["line-progress"], `rgba(${r},${g},${b},0.3)`, p, `rgb(${r},${g},${b})`]);
+    m.setPaintProperty("highlight-casing", "line-gradient", ["step", ["line-progress"], "rgba(255,255,255,0.15)", p, "rgba(255,255,255,1)"]);
+    dimmed = true;
+  }
+
+  // The chase ends with its vehicle's card; while it runs the map is quiet (scene3d: no labels but street names,
+  // no icons, no park colours) and shows no other vehicles.
+  $effect(() => {
+    const k = app.chase, s = app.selection;
+    if (k && !(s?.kind === "vehicle" && `${s.line}/${s.id}` === k)) app.setChase(null);
+  });
+  $effect(() => {
+    const on = !!app.chase, m = map;
+    if (!m || !loaded) return;
+    scene3d.quiet(on);
+    m.getContainer().classList.toggle("chasing", on);
+    document.documentElement.toggleAttribute("data-chase", on);   // app.css: a phone gives the street the whole screen
+    const vis = on || !app.cityOn ? "none" : "visible";
+    for (const id of ["city-dot", "city-delay", "city-label", "city-heading", "city-selected"]) if (m.getLayer(id)) m.setLayoutProperty(id, "visibility", vis);
+    // The other routes go (the vehicle's own stays: the highlight), and the stops and stations: only the street, its
+    // route and the vehicle.
+    for (const id of ["routes", "route-arrows", "x3d-route-edge", "highlight-arrows"]) if (m.getLayer(id)) m.setLayoutProperty(id, "visibility", on ? "none" : "visible");
+    const rail = on || !app.trainsOn ? "none" : "visible";
+    for (const [id, v] of [["bus-stop", on ? "none" : "visible"], ["bus-stop-selected", on ? "none" : "visible"], ["metro-station", rail],
+      ["metro-station-glyph", rail], ["metro-label", rail], ["suburban-station", rail], ["suburban-station-glyph", rail], ["suburban-label", rail]])
+      if (m.getLayer(id)) m.setLayoutProperty(id, "visibility", v as "none" | "visible");
+    if (!on) chaseZoom = null;
+    if (!on && chasedCity) { scene3d.drop(chasedCity); chasedCity = null; chasedHeading = null; }
+    if (!on && app.selection?.kind !== "vehicle") undim(m);
+    if (!on && chaseBearing != null) {
+      chaseBearing = null;
+      m.easeTo({ padding: { top: 0, bottom: 0, left: 0, right: 0 }, duration: 500 });
+    }
+  });
+
+  // 3D, close in: a chip above the selected bus (or the one under the mouse) with what its card would say first: the
+  // line, where it goes, how late it is, and the minutes to its next stop. Rebuilt at most twice a second.
+  let hoverKey: string | null = null;
+  let info: { marker: Marker; el: HTMLDivElement; key: string; at: number } | null = null;
+  function showInfo(key: string | null, at: LngLat | null, now: number) {
+    if (!key || !at || !map) { if (info) info.el.hidden = true; return; }
+    if (!info) {
+      const el = document.createElement("div");
+      el.className = "info3d";
+      el.setAttribute("role", "status");
+      info = { marker: new Marker({ element: el, anchor: "bottom", offset: [0, -92] }).setLngLat(at).addTo(map), el, key: "", at: 0 };
+    }
+    info.el.hidden = false;
+    info.marker.setLngLat(at);
+    if (info.key === key && now - info.at < 0.5) return;
+    info.key = key;
+    info.at = now;
+    info.el.innerHTML = infoHtml(key);
+  }
+  // A vehicle's line, where it goes, how late it is and the minutes to its next stop, as the info chips show them.
+  function infoHtml(key: string, mini = false): string {
+    const e = fleet.entries.get(key);
+    const [line, id] = key.split("/");
+    const pv = app.vehicles.find(p => p.line === line && p.v.id === id)?.v;
+    const cv = pv ? null : app.cityByKey.get(key) ?? null;
+    const variant = pv?.variant ?? cv?.variant ?? null;
+    const head = variant ? app.statics[line]?.variants[variant]?.headsign : undefined;
+    const delay = pv?.delay_s ?? cv?.delay_s ?? null;
+    const eta = e ? etaLabel(e) : "";
+    const c = app.lineColor(line);
+    const esc = (t: string) => t.replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]!);
+    const late = delay == null ? "" : delay >= 120 ? `<span class="late">+${Math.round(delay / 60)}′ αργεί</span>`
+      : delay <= -120 ? `<span class="ok">${Math.round(-delay / 60)}′ νωρίτερα</span>` : `<span class="ok">στην ώρα του</span>`;
+    if (mini) {
+      // One line: the line, where it goes when known, how late it is.
+      const d = delay == null ? "" : delay >= 120 ? `<em class="late">+${Math.round(delay / 60)}′</em>` : delay <= -120 ? `<em class="ok">${Math.round(-delay / 60)}′ νωρίς</em>` : `<em class="ok">στην ώρα</em>`;
+      return `<span class="b" style="background:${esc(c.bg)};color:${esc(c.fg)}">${esc(line)}</span>` +
+        `${head ? `<span class="to">${esc(titleCase(placeNote(toward(head)).place))}</span>` : ""}${d}`;
+    }
+    return `<span class="b" style="background:${esc(c.bg)};color:${esc(c.fg)}">${esc(line)}</span>` +
+      `<span class="t"><b>${head ? `→ ${esc(titleCase(placeNote(toward(head)).place))}` : `Όχημα ${esc(id)}`}</b>` +
+      `<small>${late}${eta ? `${late ? " · " : ""}${eta === "τώρα" ? "φτάνει στη στάση" : `στάση σε ${esc(eta)}`}` : ""}</small></span>`;
+  }
+
+  // 3D, close in: a label on each bus model near the view's centre (LABEL_MAX of them): its line, its next stop and
+  // the minutes to it, how late it is (bus3d.ts); on a phone only the line and the minutes, in the delay's colour. It
+  // rides on the model as drawn (scene3d.drawnAt: out to pass, back in a queue), moved at every frame the map draws.
+  // A tap opens the bus's route across (Route3D).
+  const LABEL_ZOOM = 16.8, LABEL_MAX = 10;
+  const labels = new Map<string, { el: HTMLButtonElement; at: number; html: string; want: LngLat }>();
+  // The labels' own layer over the map (not MapLibre markers, which stand on the street and move a step behind the
+  // models): each placed at its model's roof as the 3D draws it (scene3d.screenAt, onFrame).
+  let labelLayer: HTMLDivElement | null = null;
+  const narrowLabels = () => innerWidth < 720;
+  const escHtml = (t: string) => t.replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]!);
+  function busOf(key: string) {
+    const [line, id] = key.split("/");
+    const v = app.vehicles.find(p => p.line === line && p.v.id === id)?.v ?? app.cityByKey.get(key) ?? null;
+    if (v) app.ensureStatic(line);
+    return { line, id, v, route: busRoute(line, id, v, app.statics[line]) };
+  }
+  // A label's place on the map: on its model as drawn; a metro train's, where its car is on the screen under the street
+  // (the marker stands on the street there, so it shows right at the train).
+  function labelAt(key: string, want?: LngLat): [number, number] | null {
+    const q = scene3d.screenAt(key);
+    if (q) return q;
+    if (!want || !map || key.startsWith("metro/") || key.startsWith("tram/")) return null;
+    const p = map.project(want);
+    return [p.x, p.y];
+  }
+  // A metro train's or a tram's label: its line, its next station (a tram's: stop) and the minutes to it.
+  function metroLabelHtml(key: string, now: number): string {
+    const tram = key.startsWith("tram/"), v = app.stasyTrains.find(x => x.trip === key.slice(key.indexOf("/") + 1));
+    if (!v) return "";
+    const chip = `<span class="b" style="background:${escHtml(v.route_color || "#0a7cc4")};color:#fff">${escHtml(v.line)}</span>`;
+    const eta = minsTo(v.to.at, now);
+    if (narrowLabels()) return chip + `<em>${escHtml(eta)}</em>`;
+    return chip + `<span class="t"><b>${escHtml(titleCase(v.to.name))}</b><small>${tram ? "επόμενη στάση" : "επόμενος σταθμός"}</small></span><span class="m"><b>${escHtml(eta)}</b></span>`;
+  }
+  function labelHtml(key: string, now: number): string {
+    if (key.startsWith("metro/") || key.startsWith("tram/")) return metroLabelHtml(key, now);
+    const { line, v, route } = busOf(key), c = app.lineColor(line), late = lateness(v?.delay_s ?? null);
+    const next = route?.ahead[0], eta = next ? minsTo(next.at, now) : "";
+    const chip = `<span class="b" style="background:${escHtml(c.bg)};color:${escHtml(c.fg)}">${escHtml(line)}</span>`;
+    if (narrowLabels()) return chip + (eta || late.short ? `<em class="${late.tone === "none" ? "" : late.tone}">${escHtml(eta || late.short)}</em>` : "");
+    const head = v?.variant ? app.statics[line]?.variants[v.variant]?.headsign : undefined;
+    const name = next ? next.name : head ? `→ ${titleCase(placeNote(toward(head)).place)}` : "";
+    return chip + (name ? `<span class="t"><b>${escHtml(name)}</b>${next ? "<small>επόμενη στάση</small>" : ""}</span>` : "") +
+      (eta || late.short ? `<span class="m">${eta ? `<b>${escHtml(eta)}</b>` : ""}${late.short ? `<small class="${late.tone === "none" ? "" : late.tone}">${escHtml(late.short)}</small>` : ""}</span>` : "");
+  }
+  function syncLabels(want: Map<string, LngLat>, now: number) {
+    const m = map!;
+    const keys: string[] = [];
+    if (m.getZoom() >= LABEL_ZOOM && want.size) {
+      const c = m.getCenter(), k = Math.cos((c.lat * Math.PI) / 180), [bw, bh] = narrowLabels() ? [84, 34] : [214, 54];
+      // The open one first, then nearest the centre; one that would cover another on the screen is left out.
+      const taken: { x: number; y: number }[] = [];
+      const d = (p: LngLat) => Math.hypot((p[0] - c.lng) * k, p[1] - c.lat);
+      for (const key of [...want.keys()].sort((a, b) => (a === app.bus3d ? -1 : b === app.bus3d ? 1 : d(want.get(a)!) - d(want.get(b)!)))) {
+        if (keys.length >= LABEL_MAX) break;
+        const q = labelAt(key, want.get(key));
+        if (!q) continue;
+        if (taken.some(t => Math.abs(t.x - q[0]) < bw && Math.abs(t.y - q[1]) < bh)) continue;
+        taken.push({ x: q[0], y: q[1] });
+        keys.push(key);
+      }
+    }
+    const keep = new Set(keys);
+    for (const [k, l] of labels) if (!keep.has(k)) { l.el.remove(); labels.delete(k); }
+    if (!labelLayer && keys.length) {
+      labelLayer = document.createElement("div");
+      labelLayer.className = "labels3d";
+      m.getContainer().append(labelLayer);
+    }
+    for (const k of keys) {
+      let l = labels.get(k);
+      if (!l) {
+        const el = document.createElement("button");
+        el.type = "button";
+        el.className = "label3d";
+        const [line, id] = k.split("/");
+        if (line === "tram") {
+          el.setAttribute("aria-label", "Τραμ: η κάρτα του");
+          el.onclick = ev => { ev.stopPropagation(); app.open(app.cardOfTrain({ kind: "metro", id })); };   // as a tap on its disc
+        } else if (line === "metro") {
+          el.setAttribute("aria-label", "Τρένο του μετρό: η διαδρομή του");
+          el.onclick = ev => { ev.stopPropagation(); app.bus3d = k; };   // its route across (Route3D), the camera down with it
+        } else {
+          el.setAttribute("aria-label", `Γραμμή ${line}, όχημα ${id}: η διαδρομή του`);
+          el.onclick = ev => { ev.stopPropagation(); app.bus3d = k; };
+        }
+        labelLayer!.append(el);
+        l = { el, at: 0, html: "", want: want.get(k)! };
+        labels.set(k, l);
+      }
+      l.want = want.get(k)!;
+      const picked = app.bus3d === k || (app.train?.kind === "metro" && k === `metro/${app.train.id}`);   // (a metro key in bus3d too)
+      l.el.classList.toggle("picked", picked);
+      l.el.setAttribute("aria-expanded", String(app.bus3d === k));
+      if (now - l.at > 2) {
+        l.at = now;
+        const html = labelHtml(k, now);
+        if (html !== l.html) { l.html = html; l.el.innerHTML = html; l.el.hidden = !html; }   // nothing to say: no empty box
+      }
+    }
+    rideLabels();
+    for (const [k, d] of doms) d.wrap.classList.toggle("lab", labels.has(k));
+  }
+  // At every frame the map draws: each label onto its model, where it was just drawn.
+  function rideLabels() {
+    for (const [k, l] of labels) {
+      const q = labelAt(k, l.want);
+      l.el.style.visibility = q ? "" : "hidden";
+      // Not rounded to whole pixels: a slow bus would make its label hop a pixel at a time.
+      if (q) l.el.style.transform = `translate3d(${(q[0] - 14).toFixed(2)}px, ${(q[1] - 8).toFixed(2)}px, 0) translateY(-100%)`;
+    }
+  }
+
+  function etaLabel(e: FleetEntry): string {
+    const t = e.track;
+    if (!t) return "";
+    const s = predictS(t, app.serverMs() / 1000), next = t.stopS.find(x => x > s + 5);
+    if (next == null) return "";
+    const sec = (next - s) / Math.max(t.speed ?? 5, 3);
+    return sec < 30 ? "τώρα" : `${Math.max(1, Math.round(sec / 60))}′`;
+  }
+
   function makeDom(e: FleetEntry, pos: LngLat): Dom {
     const el = document.createElement("button");
     el.type = "button";
     el.className = "bus";
     el.onclick = ev => {
       ev.stopPropagation();
+      if (app.pickFor) { app.mapPick = [e.pos[1], e.pos[0]]; return; }   // «Πού πας;» on the map
       app.open(busVehicleCard(e.line, e.id));
     };
     const num = document.createElement("span");
+    num.className = "num";
     num.textContent = e.line;
+    // 3D close in (app.css .map3d-near): the minutes to its next stop, beside the line, as in a callout.
+    const eta = document.createElement("span");
+    eta.className = "eta";
     const dir = document.createElement("i");
     dir.className = "dir";
     const age = document.createElement("span");
     age.className = "age";
-    el.append(num, dir);
+    el.append(num, eta, dir);
     el.setAttribute("aria-label", `Γραμμή ${e.line}, όχημα ${e.id}`);
     // The marker element only positions; the visible pill is the child. The age label is beside the
     // pill, not in it: a stale pill is faint, its age stays readable.
     const wrap = document.createElement("div");
     wrap.className = "vm";
     wrap.append(el, age);
+    wrap.onmouseenter = () => (hoverKey = e.key);   // 3D: its info chip (showInfo)
+    wrap.onmouseleave = () => { if (hoverKey === e.key) hoverKey = null; };
     const marker = new Marker({ element: wrap, anchor: "center", subpixelPositioning: true }).setLngLat(pos).addTo(map!);
     paint(el, e.line);
-    const d: Dom = { marker, wrap, el, dir, age, width: el.offsetWidth, heading: null };
+    el.dataset.line = e.line;
+    const d: Dom = { marker, wrap, el, dir, age, eta, width: el.offsetWidth, heading: null };
     doms.set(e.key, d);
     const s = app.selection;
     if (s?.kind === "vehicle" && s.line === e.line && s.id === e.id) { el.classList.add("selected"); wrap.classList.add("sel"); }
@@ -798,28 +1281,121 @@
     try {
       m = new MlMap({
         container: node,
-        style: STYLE(styleDark),
+        style: STYLE,
         center: CITIES[untrack(() => app.cityId)].center,   // untracked: a city change moves this map, it does not rebuild it
         zoom: CITIES[untrack(() => app.cityId)].zoom,
         attributionControl: { compact: true },
+        pixelRatio: Math.min(devicePixelRatio || 1, MAX_RATIO),
+        // Tiles kept off screen for going back: two zoom levels' worth, not five. Each keeps its buffers on the GPU
+        // (in 3D its buildings and streets too), and five filled a phone's memory until the browser dropped the map.
+        maxTileCacheZoomLevels: 2,
         // Greek names for the map's own controls (a screen reader read them in English).
         locale: { "Map.Title": "Χάρτης", "NavigationControl.ZoomIn": "Μεγέθυνση", "NavigationControl.ZoomOut": "Σμίκρυνση",
           "AttributionControl.ToggleAttribution": "Πηγές του χάρτη" },
         dragRotate: false,
         pitchWithRotate: false,
+        // Smooth edges: the 3D buildings, roads and models are not jagged (multisampling; cheap on phone GPUs).
+        canvasContextAttributes: { antialias: true },
       });
     } catch {
       failed = true;   // GPUInitializationError: no WebGL2
       return;
     }
-    // Every style load (the first and each restyle), before its tiles draw: the dark style is lightened (basemap.ts).
-    m.on("style.load", () => { if (styleDark) lightenDark(m); });
+    // Every style load (the first and each restyle), before its tiles draw: the base map is painted for the theme (basemap.ts),
+    // and its own layers are noted (before ours go in): the ones Apple's map replaces in 2D.
+    m.on("style.load", () => {
+      paintBase(m, styleDark);
+      baseLayers = m.getStyle().layers.map(l => [l.id, (m.getLayoutProperty(l.id, "visibility") as string | undefined) ?? "visible"] as [string, string]);
+      baseHidden = false;
+      baseGen++;
+    });
+    // Apple Maps under ours in 2D, when a token is set (appleBase.ts).
+    if (MAPKIT_TOKEN) {
+      apple = new AppleBase(node);
+      apple.onFail = () => { appleFailed = true; };
+      const follow = () => { const c = m.getCanvas(); apple?.sync(m.getCenter(), m.getZoom(), c.clientWidth, c.clientHeight); };
+      m.on("move", follow);
+      m.on("resize", follow);
+    }
     m.touchZoomRotate.disableRotation();
-    m.addControl(new NavigationControl({ showCompass: false }), "top-right");
-    m.addControl({ onAdd: () => locateCtl, onRemove: () => locateCtl.remove() }, "top-right");
+    // Bottom right, over the credits: the zoom buttons last (lowest), the locate button above them; the rest of the
+    // map's buttons are at the top right (Panel's rail). A new bottom control goes above the ones there.
+    m.addControl(new NavigationControl({ showCompass: false }), "bottom-right");
+    m.addControl({ onAdd: () => locateCtl, onRemove: () => locateCtl.remove() }, "bottom-right");
+    m.addControl({ onAdd: () => northCtl, onRemove: () => northCtl.remove() }, "bottom-right");
+    m.on("rotate", () => needleTo(m));
+    needleTo(m);
     m.addControl({ onAdd: () => infoCtl, onRemove: () => infoCtl.remove() }, "bottom-right");
     // MapLibre puts a new bottom control above the others; after the credits it floats left of the ⓘ, on its row.
     infoCtl.parentElement?.append(infoCtl);
+    watchHands(m);
+    const cloudTimer = setInterval(() => { if (!document.hidden) showClouds(m); }, 20 * 60_000);
+    m.on("remove", () => clearInterval(cloudTimer));
+    // 3D: a stop under the mouse lights up whole (pole, shelter, a ring), and the pointer says it can be tapped.
+    let hovered = false;
+    m.on("mousemove", e => {
+      if (!scene3d.on || m.getZoom() < STOPS_ZOOM || pointersDown) { if (hovered) { hovered = false; scene3d.hoverStop(null); } return; }
+      const f = nearestBusStop(m, e.point);
+      scene3d.hoverStop(f ? ((f.geometry as GeoJSON.Point).coordinates as LngLat) : null);
+      if (!!f !== hovered) { hovered = !!f; m.getCanvas().style.cursor = f ? "pointer" : ""; }
+    });
+    m.on("dragstart", () => { follow = false; if (dive) dive.follow = false; if (focus) focus.follow = false; });   // only user gestures fire them
+    // Untracked: setup runs inside the attachment's effect, and reading streetZoom there would make the whole map
+    // depend on it (crossing zoom 15 would then tear the map down and build it again at the city's starting view).
+    const zoomed = () => untrack(() => { const z = m.getZoom() >= STREET3D_ZOOM; if (z !== streetZoom) streetZoom = z; });
+    m.on("zoom", zoomed);
+    zoomed();
+    // 3D, close in, a mouse over a city bus shows its info chip (showInfo); a few times a second is enough.
+    let hoverAt = 0;
+    m.on("mousemove", e => {
+      const now = performance.now();
+      if (now - hoverAt < 120) return;
+      hoverAt = now;
+      if (!scene3d.on || !streetZoom) { hoverKey = null; return; }
+      if ((e.originalEvent.target as Element | null)?.closest?.(".vm")) return;
+      const f = nearestCity(m, e.point);
+      hoverKey = f ? `${f.properties?.line}/${f.properties?.id}` : null;
+      m.getCanvas().style.cursor = f ? "pointer" : "";
+    });
+    m.on("mouseout", () => (hoverKey = null));
+    scene3d.onFrame = rideLabels;   // each label onto its model, in the same frame the 3D draws it
+    // The chase camera moves the map every frame, which cuts MapLibre's own drag and wheel short: a press on the map
+    // ends the chase, and the wheel sets its zoom (17-19.5) instead.
+    const canvasBox = m.getCanvasContainer();
+    // Only a plain left press (a drag of the map): the right button and Ctrl+drag turn and tilt the view, chasing on.
+    const endChase = (e: MouseEvent) => { if (app.chase && e.button === 0 && !e.ctrlKey) app.setChase(null); };
+    canvasBox.addEventListener("mousedown", endChase);
+    // Touch: two fingers pinch the chase's zoom (as the wheel); one finger that moves past a tap ends the chase, so a
+    // tap (a bus, a stop) or a slip of the thumb does not.
+    let touch: { x: number; y: number } | null = null, pinch: { d: number; z: number } | null = null;
+    const gap = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    canvasBox.addEventListener("touchstart", e => {
+      if (!app.chase) return;
+      if (e.touches.length >= 2) {
+        e.preventDefault(); e.stopPropagation();
+        pinch = { d: gap(e.touches), z: chaseZoom ?? m.getZoom() };
+        touch = null;
+      } else {
+        touch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        e.stopPropagation();   // MapLibre would start a drag the chase camera then fights
+      }
+    }, { capture: true, passive: false });
+    canvasBox.addEventListener("touchmove", e => {
+      if (!app.chase) return;
+      if (pinch && e.touches.length >= 2) {
+        e.preventDefault(); e.stopPropagation();
+        chaseZoom = Math.min(19.5, Math.max(17, pinch.z + Math.log2(gap(e.touches) / pinch.d)));
+      } else if (touch && Math.hypot(e.touches[0].clientX - touch.x, e.touches[0].clientY - touch.y) > 12) {
+        touch = null;
+        if (app.chase) app.setChase(null);
+      } else e.stopPropagation();
+    }, { capture: true, passive: false });
+    canvasBox.addEventListener("touchend", e => { if (e.touches.length < 2) pinch = null; if (!e.touches.length) touch = null; }, { capture: true, passive: true });
+    canvasBox.addEventListener("wheel", e => {
+      if (!app.chase) return;
+      e.preventDefault(); e.stopPropagation();
+      chaseZoom = Math.min(19.5, Math.max(17, (chaseZoom ?? m.getZoom()) - e.deltaY * 0.0025));
+    }, { capture: true, passive: false });
     // MapLibre shows the credits (ⓘ) open until the first drag: on a phone they cover the map. They fold after a few
     // seconds instead; a tap on the ⓘ opens them again (#34: they must be seen first).
     // A tap on the ⓘ before then is the user's choice: the timer stops.
@@ -828,7 +1404,6 @@
         node.querySelector(".maplibregl-ctrl-attrib.maplibregl-compact-show")?.classList.remove("maplibregl-compact-show"), CREDITS_MS);
       node.querySelector(".maplibregl-ctrl-attrib-button")?.addEventListener("click", () => clearTimeout(t), { once: true });
     });
-    m.on("dragstart", () => (follow = false));   // only user gestures fire it
     // The city layer loads the tiles of the view: at first, and 300 ms after the map stops moving (never during a move).
     const reportView = () => {
       if (m.getZoom() >= STOPS_ZOOM - 0.5 && !app.stopIx) loadStops();
@@ -847,6 +1422,11 @@
     m.on("moveend", e => (ticked(e) ? reportFollow() : reportSoon()));
 
     const popup = new Popup({ closeButton: false, offset: 10, maxWidth: "240px" });
+    // The GPU dropped the map (out of memory, a driver reset). MapLibre puts back a copy of the style without our 3D
+    // layer and without our other additions in step, so tiles stayed empty: the style is loaded afresh instead, and
+    // everything goes in again (addAll), the 3D scene too.
+    m.on("webglcontextlost", () => { loaded = false; scene3d.styleGone(); });
+    m.on("webglcontextrestored", () => restyle(m, styleDark));
     m.on("load", () => {
       addAll(m);
       if (untrack(() => dark) !== styleDark) restyle(m, untrack(() => dark));   // the theme changed while the map loaded
@@ -885,6 +1465,8 @@
     m.on("click", e => {
       if (!loaded) return;   // the style is being replaced: our layers are not there to hit
       if ((e.originalEvent.target as Element | null)?.closest?.(".bus")) return;
+      // «Πού πας;», choosing an end on the map: a click (a computer) takes that point; nothing else opens.
+      if (app.pickFor) { app.mapPick = [e.lngLat.lat, e.lngLat.lng]; return; }
       // «Λάθος θέση;»: a tap puts the blue pin there (a tap on the pin itself does nothing); nothing else opens.
       if (app.stopFix) {
         if (!(e.originalEvent.target as Element | null)?.closest?.(".fix-pin")) {
@@ -893,6 +1475,10 @@
         }
         return;
       }
+      const pinned = m.getLayer("pin-stops") ? m.queryRenderedFeatures(e.point, { layers: ["pin-stops"] })[0] : undefined;
+      if (pinned) { app.push({ kind: "stop", id: `oasa:${pinned.properties.id}`, title: String(pinned.properties.name) }); return; }
+      const hub = m.getLayer("line-hubs") ? m.queryRenderedFeatures(e.point, { layers: ["line-hubs"] })[0] : undefined;
+      if (hub) { app.push({ kind: "stop", id: String(hub.properties.id), title: String(hub.properties.name) }); return; }
       const onTrain = nearestTrain(m, e.point, 4);
       if (onTrain) {
         popup.remove();
@@ -957,7 +1543,7 @@
       }
       app.closeCards();
     });
-    for (const layer of ["routes-hit", "stops", "city-dot", "metro-station", "suburban-station", "speed", "train-dot", "municipal-hit", "municipal-stop"]) {
+    for (const layer of ["pin-stops", "line-hubs", "routes-hit", "stops", "city-dot", "metro-station", "suburban-station", "speed", "train-dot", "municipal-hit", "municipal-stop"]) {
       m.on("mouseenter", layer, () => (m.getCanvas().style.cursor = "pointer"));
       m.on("mouseleave", layer, () => (m.getCanvas().style.cursor = ""));
     }
@@ -966,6 +1552,22 @@
     app.fit = fitTo;
     // «Χρήση της θέσης μου» (NearbyPanel): a tap, so the user's city wins over a ?city= in the URL.
     app.locate = () => { if (locState === "off" || locState === "denied") { app.cityLocked = false; locateMe(); } };
+    // The guide: the location on, the map on it, close in (a street's width).
+    app.followMe = () => {
+      if (locState === "off" || locState === "denied") { follow = true; flyOnFix = false; cityOnFix = true; locator.start(); }
+      follow = true;
+      if (me) m.easeTo({ center: me.mover.pos, zoom: Math.max(m.getZoom(), 17), padding: padNow(), duration: reducedMotion.matches ? 0 : 800 });
+      else if (app.guide?.legs[0]) { const l = app.guide.legs[0], at = l.kind === "walk" ? l.from : l.board.at; m.easeTo({ center: [at[1], at[0]], zoom: 17, duration: 0 }); }
+    };
+    // The guide's look at the bus and the user together: off the user until followMe again.
+    app.peekAt = pts => {
+      if (!pts.length) return;
+      follow = false;
+      const b = pts.reduce((b, p) => b.extend(p), new LngLatBounds(pts[0], pts[0]));
+      // The guide's padding stays on the map (easeTo keeps it): fitBounds would add its own on top of it.
+      m.setPadding({ top: 0, bottom: 0, left: 0, right: 0 });
+      m.fitBounds(b, { padding: padNow(), maxZoom: 17, duration: reducedMotion.matches ? 0 : 700, absolutePadding: true });
+    };
     app.showCity = c => {
       follow = false;
       m.flyTo({ center: CITIES[c].center, zoom: CITIES[c].zoom, duration: reducedMotion.matches ? 0 : 1200 });
@@ -975,7 +1577,10 @@
     const sheetPad = () => {
       const pp = padding(), card = document.querySelector(".card")?.getBoundingClientRect();
       const pad = typeof pp === "number" ? { top: pp, bottom: pp, left: pp, right: pp } : { ...pp };
-      if (innerWidth < 720) pad.bottom = Math.max(pad.bottom, card ? innerHeight - card.top + 16 : innerHeight * 0.45);
+      // A phone: above the card, or the trip's sheet at the foot (its details open), else the lower half.
+      const sheet = document.querySelector(".popwrap.tabbed")?.getBoundingClientRect();
+      const foot = card ?? (sheet && sheet.top > innerHeight * 0.25 ? sheet : null);
+      if (innerWidth < 720) pad.bottom = Math.max(pad.bottom, foot ? innerHeight - foot.top + 16 : innerHeight * 0.45);
       return pad;
     };
     padNow = sheetPad;
@@ -998,14 +1603,19 @@
     };
     // Frames a set of points (a line's stops), at most as close as a street.
     app.fitPoints = pts => {
+      follow = false;   // framing a trip: the camera no longer follows the user back to where they stand
       if (pts.length < 2) { if (pts.length) app.flyTo(pts[0]); return; }
       const b = pts.reduce((b, p) => b.extend(p), new LngLatBounds(pts[0], pts[0]));
-      m.fitBounds(b, { padding: sheetPad(), maxZoom: 15, duration: reducedMotion.matches ? 0 : 600 });
+      // absolutePadding: these insets alone, not added to what an earlier move left on the map (it framed the trip off
+      // to one side, under the panel).
+      m.fitBounds(b, { padding: sheetPad(), maxZoom: 15, duration: reducedMotion.matches ? 0 : 600, absolutePadding: true });
     };
-    if (import.meta.env.DEV) Object.assign(window, { __map: m, __fleet: fleet, __doms: doms });
+    if (import.meta.env.DEV) Object.assign(window, { __map: m, __fleet: fleet, __doms: doms, __scene3d: scene3d, __labels: labels, __dive: () => dive, __focus: () => ({ focus, focusAt }), __app: app });
     return () => {
       app.fit = () => {};
       app.locate = () => {};
+      app.followMe = () => {};
+      app.peekAt = () => {};
       app.showCity = () => {};
       app.flyTo = () => {};
       app.fitPoints = () => {};
@@ -1050,9 +1660,11 @@
   });
 
   $effect(() => {
-    const vis = app.trainsOn ? "visible" : "none";
-    if (loaded) for (const id of ["train-sel", "train-edge", "train-dot", "train-hole", "train-heading", "train-age", "train-route", "train-route-2", "train-route-casing", "metro-station", "metro-label",
-      "suburban-station", "suburban-label"]) map!.setLayoutProperty(id, "visibility", vis);
+    const vis = app.trainsOn ? "visible" : "none", stations = app.trainsOn && !app.chase ? "visible" : "none";   // a chase hides the stations
+    if (loaded) for (const id of ["train-sel", "train-edge", "train-dot", "train-hole", "train-heading", "train-age", "train-route", "train-route-2", "train-route-casing"])
+      map!.setLayoutProperty(id, "visibility", vis);
+    if (loaded) for (const id of ["metro-station", "metro-station-glyph", "metro-label", "suburban-station", "suburban-station-glyph", "suburban-label"])
+      map!.setLayoutProperty(id, "visibility", stations);
   });
 
   $effect(() => { const f = ageFilter(app.ageMode); if (loaded) map!.setFilter("train-age", f); });
@@ -1062,6 +1674,38 @@
   const tracks = $derived(Object.fromEntries((app.metro?.lines ?? []).map(l =>
     [l.id, l.paths.map(p => p.map(([lon, lat]) => [lat, lon] as [number, number]))])) as Record<string, Track[]>);
   const glide = new RailGlide(2_000);
+  // The tram lines' railway, for 3D (scene3d's rails): rounded at the corners (tramRails.ts), and the trams put on it.
+  const tramPaths = $derived(Object.fromEntries(Object.entries(tracks).filter(([id]) => id.startsWith("T"))
+    .map(([id, paths]) => [id, paths.map(p => smoothPath(p).map(([lat, lon]) => [lon, lat] as LngLat))])) as Record<string, LngLat[][]>);
+  // The metro lines' tracks the same way: its trains ride them in 3D, under the street where the line is underground,
+  // in their tunnels (scene3d.setMetro).
+  // Straight through each station (metroDepth.straighten), as they are built.
+  const metroPaths = $derived(Object.fromEntries(Object.entries(tracks).filter(([id]) => id.startsWith("M"))
+    .map(([id, paths]) => {
+      const stops = metroStops(app.metro?.stations ?? [], id).map(st => [st.lon, st.lat] as LngLat);   // its own, once each
+      return [id, paths.map(p => straighten(smoothPath(p).map(([lat, lon]) => [lon, lat] as LngLat), stops, ST_LEN))];
+    })) as Record<string, LngLat[][]>);
+  // Underground (the rail's button, or a metro train picked in 3D): the street dims so the tunnels show, and the
+  // metro's lines leave the street: each is drawn along its tunnel's floor instead (scene3d).
+  $effect(() => {
+    const under = app.threeD && app.under, m = map;   // the metro mode: the «Υπόγεια» button (a metro train picked turns it on)
+    if (!app.threeD && app.under) untrack(() => (app.under = false));   // 3D off ends the metro mode: back to a whole map
+    scene3d.setUnder(under);
+    document.documentElement.toggleAttribute("data-under", under);   // app.css: no markers on the street
+    if (!m || !loaded) return;
+    const line = ["==", ["get", "kind"], "line"];
+    if (m.getLayer("metro-line")) m.setFilter("metro-line", (under ? ["all", line, ["!=", ["slice", ["get", "id"], 0, 1], "M"]] : line) as FilterSpecification);
+    const metroPicked = under && app.train?.kind === "metro";
+    for (const id of ["train-route-casing", "train-route", "train-route-2"])
+      if (m.getLayer(id)) m.setPaintProperty(id, "line-opacity", metroPicked ? 0 : id === "train-route-casing" ? 0.9 : 1);
+  });
+  $effect(() => {
+    scene3d.setMetro(Object.entries(metroPaths).map(([id, paths]) => ({ id, paths })), app.metro?.stations ?? []);
+  });
+  $effect(() => {
+    scene3d.setTramTracks({ type: "FeatureCollection", features: Object.entries(tramPaths)
+      .flatMap(([id, paths]) => paths.map(p => ({ type: "Feature" as const, properties: { line: id }, geometry: { type: "LineString" as const, coordinates: p } }))) });
+  });
   // Each corridor's stations along it: a train runs on no farther than the next one.
   const corridorStops = $derived.by(() => {
     const d = app.suburban;
@@ -1084,8 +1728,211 @@
     const fc = trainsFC({ stasy: app.stasyTrains, suburban: app.suburbanTrains, corridors: app.suburban?.corridors ?? {},
       nowS: now / 1000, sel: app.train, tracks, motions: app.stasyMotion, glide: t => glide.at(t.train, now) });
     // icon-offset is in the image's pixels, times icon-size: TRACK_SHIFT of them land on the track's line-offset.
-    for (const f of fc.features) { const [x, y] = f.properties!.side as number[]; f.properties!.off = [x * TRACK_SHIFT, y * TRACK_SHIFT]; }
+    if (focusLines) fc.features = fc.features.filter(f => focusLines!.has(String(f.properties!.line)));   // a picked trip: its own lines only
+    for (const f of fc.features) { const [x, y] = f.properties!.side as number[]; f.properties!.q = ((Math.round(Math.atan2(y, x) / (2 * Math.PI / SIDES)) % SIDES) + SIDES) % SIDES; }
+    // In 3D, close in, each tram is a model too (scene3d.ts buildTram): its cars follow the track it has driven, and
+    // its disc gives way (m3d).
+    const now3d = new Set<string>(), near3d = scene3d.on && map!.getZoom() >= BUS_ZOOM;
+    tramWant.clear();
+    if (near3d) for (const f of fc.features) if (f.properties!.glyph === "tram") f.properties!.m3d = true;
+    // Only the trams near the view (a model is drawn within ~1 km): snapping one onto its rails each frame is not free.
+    const vc = map!.getCenter(), vkx = 111320 * Math.cos((vc.lat * Math.PI) / 180);
+    if (near3d) for (const f of fc.features) {
+      const pr = f.properties!;
+      if (pr.glyph !== "tram") continue;
+      const at = (f.geometry as GeoJSON.Point).coordinates as LngLat, h = (pr.h as number | undefined) ?? null;
+      if (Math.hypot((at[0] - vc.lng) * vkx, (at[1] - vc.lat) * 110540) > 2500) continue;
+      const key = `tram/${pr.id}`;
+      now3d.add(key);
+      // On the rails as drawn (rounded), heading along them; standing at a stop it has no heading of its own: its
+      // line's way where it stands, so its cars lie along the rails.
+      const on = snapTram(tramPaths[String(pr.line)] ?? [], at, h);
+      scene3d.upsert(key, on?.pos ?? at, on?.heading ?? h ?? pathHeading(tracks[String(pr.line)] ?? [], at), String(pr.color ?? "#ee7a2c"), "tram", String(pr.line ?? ""));
+      tramWant.set(key, at);   // its label, as a bus's
+    }
+    // The metro's trains too: on their direction's track, at their depth (metroDepth.ts), in their own livery. Their
+    // disc stays on the street above them, to tap.
+    if (focus?.key.startsWith("train/")) {
+      const f = fc.features.find(x => `train/${x.properties!.id}` === focus!.key);
+      if (f) focusAt = scene3d.drawnAt(`tram/${f.properties!.id}`) ?? ((f.geometry as GeoJSON.Point).coordinates as LngLat);
+    }
+    metroWant.clear();
+    if (airportTrains.size > 200) airportTrains.clear();
+    const stasyBy = new Map(app.stasyTrains.map(v => [v.trip, v]));
+    // A station's name to match a headsign: no accents, one case («Ελληνικό» and «ΕΛΛΗΝΙΚΟ» are one).
+    const key1 = (t: string) => fold(t).toLocaleUpperCase("el").trim();
+    const stationAt = new Map((app.metro?.stations ?? []).map(st => [key1(st.name), [st.lon, st.lat] as [number, number]]));
+    if (near3d) for (const f of fc.features) {
+      const pr = f.properties!;
+      if (pr.kind !== "metro" || pr.glyph !== "metro") continue;
+      const at = (f.geometry as GeoJSON.Point).coordinates as LngLat, h = (pr.h as number | undefined) ?? null, line = String(pr.line ?? "");
+      if (Math.hypot((at[0] - vc.lng) * vkx, (at[1] - vc.lat) * 110540) > 2500) continue;
+      const key = `metro/${pr.id}`;
+      now3d.add(key);
+      // On the line's centre, then its own track to the right of its way: two trains passing never share the rails.
+      const on = snapTram((metroPaths[line] ?? []).slice(0, 1), at, h);
+      const heading = on?.heading ?? h ?? pathHeading(tracks[line] ?? [], at);
+      // Its model shows it (on the surface, or under the street with «Υπόγεια» on), with its label: its disc gives way.
+      if (scene3d.under || depthAt(line, at[0], at[1]) <= 3) { pr.m3d = true; metroWant.set(key, at); }
+      // Its cars along the rails behind it, on its own track; else (off the drawn line) along where it has been. Which
+      // way it runs comes from its two stations along the line (kept while it stands at one), not from a heading.
+      const centre = metroPaths[line]?.[0] ?? [], v = stasyBy.get(String(pr.id));
+      if (v && centre.length) {
+        // Toward the end of its run (its headsign, a station of the line); else from its last station to its next.
+        const end = stationAt.get(key1(v.headsign)), here = nearestIndex(centre, on?.pos ?? at);
+        const fi = nearestIndex(centre, [v.from.lon, v.from.lat]), ti = nearestIndex(centre, [v.to.lon, v.to.lat]);
+        if (end) { const ei = nearestIndex(centre, end); if (ei !== here) metroWay.set(key, ei > here); }
+        else if (fi !== ti) metroWay.set(key, ti > fi);
+      }
+      const laid = trackBehind(centre, on?.pos ?? at, heading, TRAIN_LEN, line, metroWay.get(key), TRAIN_LEN / 2);   // centred on its place
+      const way = laid && laid.length > 1 ? bearingOf(laid[laid.length - 2], laid[laid.length - 1]) : heading;
+      const onTrack = laid ? laid[laid.length - 1] : on && heading != null ? rightOf(on.pos, heading) : on?.pos ?? at;
+      // The airport's train once seen as one (its headsign, or on the airport branch) stays one back into town.
+      let livery = liveryOf(line, String(pr.head ?? ""), at[0]);
+      if (livery === "airport") airportTrains.add(key); else if (airportTrains.has(key)) livery = "airport";
+      scene3d.upsert(key, onTrack, way, String(pr.color ?? "#0a7cc4"), "metro", line, "none", livery);
+      if (laid) scene3d.layTrain(key, laid);
+      if (dive?.key === key && way != null) dive.heading = way;
+    }
+    if (dive) diveFrame(dive);
     (map!.getSource("trains") as GeoJSONSource).setData(fc);
+    for (const k of trams3d) if (!now3d.has(k)) scene3d.drop(k);
+    trams3d = now3d;
+  }
+  let trams3d = new Set<string>();
+  const metroWant = new Map<string, LngLat>();   // the metro trains drawn in 3D, for their labels (syncLabels)
+  const airportTrains = new Set<string>();   // metro trains known to run the airport service
+  const tramWant = new Map<string, LngLat>();    // the trams drawn in 3D, the same
+  const metroWay = new Map<string, boolean>();   // each metro train's way along its line's path (true: as drawn)
+
+  // The user's hands on the map: a pointer down on it (a drag, a turn, a tilt about to start) or a wheel turned just
+  // now. A camera move then (jumpTo) would stop their gesture (MapLibre stops its handlers), so a follow waits.
+  let pointersDown = 0, wheelAt = 0;
+  const handsOn = () => pointersDown > 0 || performance.now() - wheelAt < 400;
+  function watchHands(m: MlMap) {
+    const box = m.getCanvasContainer();
+    box.addEventListener("pointerdown", () => { pointersDown++; });
+    const up = () => { pointersDown = Math.max(0, pointersDown - 1); };
+    addEventListener("pointerup", up);
+    addEventListener("pointercancel", up);
+    box.addEventListener("wheel", () => { wheelAt = performance.now(); }, { passive: true });
+  }
+
+  // Focus: the vehicle picked (a bus or trolley, a tram, a train) stays in the middle of the map as it moves, the
+  // camera gliding after it, until a drag; a picked one first brings the camera to it (close enough to see it). In 3D
+  // a metro train under the street is followed by the dive below instead, and a chase rides behind its bus.
+  type Focus = { key: string; follow: boolean; started: boolean };
+  let focus: Focus | null = null, focusAt: LngLat | null = null;
+  const followKey = $derived(app.selection?.kind === "vehicle" ? `${app.selection.line}/${app.selection.id}` : app.train ? `train/${app.train.id}` : null);
+  $effect(() => {
+    const k = followKey;
+    untrack(() => { if (k !== focus?.key) { focus = k ? { key: k, follow: true, started: false } : null; focusAt = null; nextDue = 0; } });   // to it at the next frame
+  });
+  // In 2D the map stays north-up: no turning by drag, two fingers or keyboard, followed or not (a turn only
+  // happens in 3D). Back from 3D it eases back to north.
+  $effect(() => {
+    const three = app.threeD, m = map;
+    if (!m || !loaded || three) return;
+    m.dragRotate.disable(); m.touchZoomRotate.disableRotation(); m.keyboard.disableRotation();
+    if (Math.abs(m.getBearing()) > 0.5) m.easeTo({ bearing: 0, duration: 500 });
+  });
+  function focusFrame(m: MlMap) {
+    // Where it is drawn; a vehicle the frame did not step (far off the view: culled) from the fleet itself.
+    // In 3D only the vehicles near the view are in the fleet: one far off from its last fix (busOf).
+    const f = focus, e = f ? fleet.entries.get(f.key) : undefined, vp = f && !e && !f.key.startsWith("train/") ? busOf(f.key).v : null;
+    const at = focusAt ?? e?.mover.pos ?? e?.pos ?? (vp ? [vp.lon, vp.lat] as LngLat : null);
+    if (!f?.follow || !at || app.chase || dive?.follow) return;
+    if (!f.started) {
+      f.started = true;
+      // Close by: a glide; far off (out of the view): a flight there.
+      const p = m.project(at), c = m.getCanvas(), near = p.x > -200 && p.y > -200 && p.x < c.clientWidth + 200 && p.y < c.clientHeight + 200;
+      const opts = { center: at, zoom: Math.max(m.getZoom(), 16), duration: reducedMotion.matches ? 0 : near ? 700 : 1400, essential: true };
+      if (near) m.easeTo(opts); else m.flyTo(opts);
+      return;
+    }
+    if (m.isMoving() || handsOn()) return;
+    const c = m.getCenter(), k = 0.2;
+    const lng = c.lng + (at[0] - c.lng) * k, lat = c.lat + (at[1] - c.lat) * k;
+    if (Math.abs(lng - c.lng) + Math.abs(lat - c.lat) < 1e-7) return;
+    m.jumpTo({ center: [lng, lat] });
+  }
+
+  // Down with the metro: a metro train picked in 3D takes the camera under the street to its platform side, at a
+  // standing person's eye level, looking straight along the train the way it runs (as from the platform), and keeps it
+  // there as the train runs, until a drag; picked no more, the camera comes back up. The centre's elevation
+  // (MapLibre's) is the train's depth.
+  type Dive = { key: string; line: string; follow: boolean; started: boolean; heading: number | null };
+  let dive: Dive | null = null;
+  function diveFrame(d: Dive) {
+    const m = map, at = scene3d.drawnAt(d.key);
+    if (!m || !at || !d.follow) return;
+    const elevation = -depthAt(d.line, at[0], at[1]) + 2.4;
+    const beside = d.heading != null ? rightOf(at, d.heading, 4.6) : at;   // on the platform, by the train's right side
+    if (!d.started) {
+      d.started = true;
+      m.setCenterClampedToGround(false);   // else MapLibre puts the centre back on the ground after a move
+      lowCamera(m);
+      m.flyTo({ center: beside, zoom: 19, pitch: 82, bearing: d.heading ?? m.getBearing(), elevation, duration: 1800, essential: true });
+    } else if (!m.isMoving() && !handsOn()) m.jumpTo({ center: beside, elevation });
+  }
+  $effect(() => {
+    const t = app.train, m = map;
+    if (!m || !loaded) return;
+    const b3 = app.bus3d;
+    // Only a metro line's train (M1-M3): a tram is a STASY train too, but it runs on the street.
+    const isMetro = (trip: string) => !!app.stasyTrains.find(v => v.trip === trip)?.line.startsWith("M");
+    const picked = !app.threeD ? null : t?.kind === "metro" && untrack(() => isMetro(t.id)) ? `metro/${t.id}` : b3?.startsWith("metro/") ? b3 : null;
+    // A metro train picked turns the metro mode on (once, as it is picked); the button turns it off again, and the
+    // camera comes back up with it.
+    untrack(() => { if (picked && picked !== lastPicked) app.under = true; lastPicked = picked; });
+    const key = picked && app.under ? picked : null;
+    untrack(() => {
+      if (key && dive?.key !== key) {
+        const line = app.stasyTrains.find(v => v.trip === key.slice(6))?.line ?? "";
+        dive = { key, line, follow: true, started: false, heading: null };
+      } else if (!key && dive) {
+        dive = null;
+        surface(m, app.threeD && app.under ? -18 : 0, Math.min(m.getPitch(), 65));
+      }
+    });
+  });
+  let lastPicked: string | null = null;
+  // Under the street the camera may tilt further, nearly level (MapLibre allows 85°), to look along a tunnel.
+  let maxPitchUp: number | null = null;
+  function lowCamera(m: MlMap) {
+    if (maxPitchUp == null) { maxPitchUp = m.getMaxPitch(); m.setMaxPitch(Math.max(maxPitchUp, 110)); }
+  }
+  // The camera to an elevation (0: back on the street, where MapLibre keeps it again, and tilts as before).
+  function surface(m: MlMap, elevation: number, pitch: number) {
+    m.easeTo({ elevation, pitch, duration: 900 });
+    if (!elevation) m.once("moveend", () => {
+      if (dive || (app.threeD && app.under)) return;
+      m.setCenterClampedToGround(true);
+      if (maxPitchUp != null) { m.setMaxPitch(maxPitchUp); maxPitchUp = null; }
+    });
+  }
+  // «Υπόγεια» with no train picked: the camera a little under the street and tilted, to see along the tunnels.
+  $effect(() => {
+    const under = app.threeD && app.under, m = map;
+    if (!m || !loaded) return;
+    untrack(() => {
+      if (dive) return;
+      if (under) { m.setCenterClampedToGround(false); lowCamera(m); m.easeTo({ elevation: -18, pitch: Math.max(m.getPitch(), 74), duration: 1000 }); }
+      else if (Math.abs(m.getCenterElevation()) > 0.5) surface(m, 0, m.getPitch());
+    });
+  });
+  // The bearing (degrees from north) of the stretch of a line nearest a point, the way the line is drawn; null far off.
+  function pathHeading(paths: [number, number][][], at: LngLat): number | null {
+    const kx = 111320 * Math.cos((at[1] * Math.PI) / 180), ky = 110540;
+    let best = 30, h: number | null = null;
+    for (const p of paths) for (let i = 1; i < p.length; i++) {
+      const ax = (p[i - 1][1] - at[0]) * kx, ay = (p[i - 1][0] - at[1]) * ky, bx = (p[i][1] - at[0]) * kx, by = (p[i][0] - at[1]) * ky;
+      const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+      const t = L2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L2)) : 0;
+      const d = Math.hypot(ax + dx * t, ay + dy * t);
+      if (d < best) { best = d; h = (Math.atan2(dx, dy) * 180) / Math.PI; }
+    }
+    return h == null ? null : (h + 360) % 360;
   }
   let trainsWereEmpty = true;
   $effect(() => {
@@ -1113,6 +1960,67 @@
     if (loaded) (map!.getSource("train-route") as GeoJSONSource).setData(fc);
   });
 
+
+  // Apple's base map in 2D: MapLibre's own base layers hidden (its canvas then clear) while Apple's map shows under it;
+  // back as they were for 3D, without a token, or when Apple refuses it.
+  let apple: AppleBase | null = null;
+  let appleFailed = $state(false);
+  let baseLayers: [string, string][] = [];
+  let baseHidden = false;
+  let baseGen = $state(0);
+  function hideBase(m: MlMap, hide: boolean) {
+    if (hide === baseHidden) return;
+    baseHidden = hide;
+    for (const [id, vis] of baseLayers) if (m.getLayer(id)) m.setLayoutProperty(id, "visibility", hide ? "none" : vis as "visible" | "none");
+  }
+  $effect(() => {
+    const m = map, on = !!apple && !appleFailed && !app.threeD && loaded, d = dark;
+    void baseGen;
+    if (!m || !apple) return;
+    if (!on) { untrack(() => { hideBase(m, false); apple!.hide(); }); return; }
+    untrack(() => {
+      void apple!.show(d).then(ok => {
+        if (!ok || app.threeD) return;
+        hideBase(m, true);
+        const c = m.getCanvas();
+        apple!.sync(m.getCenter(), m.getZoom(), c.clientWidth, c.clientHeight);
+      });
+    });
+  });
+
+  // 3D: on or off, and its look (the theme, «Ρεαλιστική» or «Μινιατούρα»). While a style loads, addAll() adds it once the style is there.
+  // Turned on (or restyled while on), it shows behind a loading screen: everything it needs is fetched first and kept
+  // (prepare3d), then it is built, and the screen goes once its first full frame is drawn (scene3d.whenReady).
+  let warmGen = 0;
+  async function warm3d(m: MlMap, d: boolean, look: Look3D) {
+    const gen = ++warmGen, live = () => gen === warmGen && app.threeD;
+    app.load3d = { p: 0, label: "Μοντέλα" };
+    await prepare3d((p, label) => { if (live()) app.load3d = { p, label }; });
+    if (!live()) return;
+    // The buildings and streets around (the base map's tiles), so the first view is whole.
+    const at = m.getCenter().toArray() as LngLat;
+    await prefetchTiles(m, at, 1.2, f => { if (live()) app.load3d = { p: PREPARED + (0.85 - PREPARED) * f, label: "Κτίρια" }; });
+    if (!live()) return;
+    app.load3d = { p: 0.85, label: "Σκιές και φως" };
+    await scene3d.set(m, true, d, look);
+    await scene3d.whenReady();
+    if (gen !== warmGen) return;
+    app.load3d = null;
+    // Then, quietly, a wider ring of them (not on a metered or slow connection): moving about, blocks are already there.
+    const net = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string; type?: string } }).connection;
+    if (!net?.saveData && net?.type !== "cellular" && !/2g|3g/.test(net?.effectiveType ?? "")) void prefetchTiles(m, at, 4);
+  }
+  $effect(() => {
+    const on = app.threeD, d = dark, m = map, look = app.look3d;
+    if (m && on) untrack(() => void warm3d(m, d, look));
+    else if (m) { warmGen++; app.load3d = null; void scene3d.set(m, false, d, look); }
+    // At most 2× (a 3× screen would draw 2.25 times the pixels for little to see), in 2D too: smoother, cooler. In 3D
+    // at most 1.5× (multisampled, the edges stay smooth): the shadows, extrusions and models fill every pixel.
+    if (m) {
+      const want = Math.min(devicePixelRatio || 1, on ? MAX_RATIO_3D : MAX_RATIO);
+      if (m.getPixelRatio() !== want) m.setPixelRatio(want);
+    }
+  });
 
   $effect(() => {
     const on = app.speedOn;
@@ -1156,7 +2064,11 @@
   });
 
   $effect(() => {
-    if (loaded) (map!.getSource("routes") as GeoJSONSource).setData(routesFC(drawn));
+    void roadsSeen; void app.threeD; void streetZoom;
+    if (!loaded) return;
+    const fc = onRoads(routesFC(drawn));
+    (map!.getSource("routes") as GeoJSONSource).setData(fc);
+    scene3d.setRoutes(app.threeD && streetZoom ? fc : null);   // the vehicles ride on the routes as drawn
   });
 
   $effect(() => {
@@ -1165,10 +2077,12 @@
     (map!.getSource("metro") as GeoJSONSource).setData(data ? metroFC(data, [], app.metroStation) : EMPTY);
   });
 
-  // The trip planner's start (A) and end (B).
+  // The trip planner's start (A) and end (B), and below its plan and stops: only on the «Ταξίδι» tab, so another
+  // tab's map is not left with an old trip on it.
+  const tripShown = $derived(app.tab === "trip" || !!app.guide);
   $effect(() => {
     const ends = app.tripEnds, m = map;
-    if (!ends || !m) return;
+    if (!ends || !m || !tripShown) return;
     const pins = ([["from", "A"], ["to", "B"]] as const).map(([k, label]) => {
       const el = document.createElement("div");
       el.className = "trip-end";
@@ -1179,20 +2093,200 @@
   });
 
   $effect(() => {
-    if (loaded) (map!.getSource("trip-plan") as GeoJSONSource | undefined)?.setData(app.tripPlan ?? EMPTY);
+    const preview = app.start ? app.startPreview : null;   // «Πού πας;»: the route chosen there, until the planner opens
+    if (loaded) (map!.getSource("trip-plan") as GeoJSONSource | undefined)?.setData(preview ?? (tripShown ? app.tripPlan ?? EMPTY : EMPTY));
+  });
+
+  // The guide's ring (the stop to wait at, until the bus is boarded) and the bus's lane to it.
+  $effect(() => {
+    const g = app.guide, leg = g?.legs[app.guideStep], lane = app.guideApproach;
+    if (!loaded) return;
+    const feats: GeoJSON.Feature[] = [];
+    if (leg?.kind === "ride" && !app.guideOn) {
+      feats.push({ type: "Feature", properties: { kind: "ring" }, geometry: { type: "Point", coordinates: [leg.board.at[1], leg.board.at[0]] } });
+      if (lane && lane.length > 1) feats.push({ type: "Feature", properties: { kind: "approach" }, geometry: { type: "LineString", coordinates: lane.map(p => [p[1], p[0]]) } });
+    } else if (leg?.kind === "walk" && g) {
+      const next = g.legs[app.guideStep + 1];
+      if (next?.kind === "ride") feats.push({ type: "Feature", properties: { kind: "ring" }, geometry: { type: "Point", coordinates: [next.board.at[1], next.board.at[0]] } });
+    }
+    (map!.getSource("guide") as GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features: feats });
+  });
+
+  // The open line's changes (LineCard): at each stop with a station near, the stations' lines as badges (the
+  // line-hubs layer); a tap opens that stop's card (its «Αλλαγές εδώ κοντά»). Not during the guide.
+  function hubImage(badges: { label: string; color: string; round?: boolean }[], dark: boolean) {
+    const R = 2, h = 26, pad = 4, gap = 3, bh = 18, c = document.createElement("canvas"), x = c.getContext("2d")!;
+    x.font = `800 ${11 * R}px Inter, system-ui, sans-serif`;
+    const ws = badges.map(b => Math.max(18, x.measureText(b.label).width / R + 8));
+    const w = pad * 2 + ws.reduce((a, b) => a + b, 0) + gap * (badges.length - 1);
+    c.width = Math.ceil(w * R) + 8; c.height = h * R + 8;
+    x.scale(R, R); x.translate(2, 2);
+    x.shadowColor = "rgba(0,0,0,.35)"; x.shadowBlur = 4; x.shadowOffsetY = 1;
+    x.fillStyle = dark ? "#1b1f27" : "#ffffff";
+    x.beginPath(); x.roundRect(0, 0, w, h, h / 2); x.fill();
+    x.shadowColor = "transparent";
+    let at = pad;
+    badges.forEach((b, k) => {
+      x.fillStyle = b.color;
+      x.beginPath(); x.roundRect(at, (h - bh) / 2, ws[k], bh, b.round ? bh / 2 : 5); x.fill();
+      x.fillStyle = "#ffffff"; x.font = "800 11px Inter, system-ui, sans-serif"; x.textAlign = "center"; x.textBaseline = "middle";
+      x.fillText(b.label, at + ws[k] / 2, h / 2 + 0.5);
+      at += ws[k] + gap;
+    });
+    return x.getImageData(0, 0, c.width, c.height);
+  }
+  $effect(() => {
+    const hubs = app.lineHubs, m = map, guide = app.guide;
+    void baseGen;
+    if (!m || !loaded) return;
+    const src = m.getSource("line-hubs") as GeoJSONSource | undefined;
+    if (!hubs.length || guide) { src?.setData(EMPTY); return; }
+    const dark = untrack(() => styleDark);
+    src?.setData({ type: "FeatureCollection", features: hubs.map(h => {
+      const img = `hub-${dark ? "d" : "l"}-${h.badges.map(b => `${b.label}${b.color}${b.round ? "r" : ""}`).join("|")}`;
+      if (!m.hasImage(img)) m.addImage(img, hubImage(h.badges, dark), { pixelRatio: 2 });
+      return { type: "Feature" as const, properties: { img, id: h.id, name: h.name }, geometry: { type: "Point" as const, coordinates: h.at } };
+    }) });
+  });
+
+  // A marker on whole pixels: MapLibre centres an element with translate(-50%), which on an odd width puts it on a
+  // half pixel, and its text blurs. Its size is taken once, off screen, and the centring done in whole pixels.
+  function crisp(el: HTMLElement, anchor: "center" | "bottom", gap = 0): Marker {
+    // Measured as it will sit on the map: out of the flow (absolute), so it takes its own width, not the page's.
+    el.style.cssText += ";visibility:hidden;position:absolute;left:0;top:0";
+    document.body.append(el);
+    const w = el.offsetWidth, h = el.offsetHeight;
+    el.remove();
+    el.style.visibility = el.style.position = el.style.left = el.style.top = "";
+    return new Marker({ element: el, anchor: "top-left", offset: [-Math.round(w / 2), anchor === "center" ? -Math.round(h / 2) : -h - gap] });
+  }
+
+  // A picked timed trip (the planner): the map shows it alone. The city's vehicles are only those of its lines (the
+  // frame and drawTrains read focusLines); the stops, stations and places go, until «Δείξε όλα» (app.planShowAll).
+  const planFocus = $derived(!!app.tripPlan && app.tab === "trip" && !app.guide && !app.planShowAll);
+  const focusLines = $derived.by(() => {
+    if (!planFocus) return null;
+    const ids = (app.tripPlan?.features ?? []).map(f => f.properties?.line).filter((l): l is string => typeof l === "string");
+    return new Set(ids.map(l => l.slice(l.indexOf(":") + 1)));
+  });
+  const FOCUS_HIDE = ["bus-stop", "bus-stop-selected", "stops", "metro-station", "metro-station-glyph", "metro-label", "suburban-station",
+    "suburban-station-glyph", "suburban-label", "municipal-line", "municipal-hit", "municipal-stop", "speed"];
+  $effect(() => {
+    const on = planFocus, m = map;
+    void baseGen;
+    if (!m || !loaded || !on) return;
+    const was = untrack(() => FOCUS_HIDE.filter(id => m.getLayer(id)).map(id => [id, m.getLayoutProperty(id, "visibility") ?? "visible"] as const));
+    for (const [id] of was) m.setLayoutProperty(id, "visibility", "none");
+    nextDue = 0;   // the city layer now: its other lines go at once
+    return () => { for (const [id, v] of was) if (m.getLayer(id)) m.setLayoutProperty(id, "visibility", v as "visible" | "none"); nextDue = 0; };
+  });
+  // A pin's colour changed: the buses already on the map take it now.
+  $effect(() => {
+    void app.pins;
+    untrack(() => { for (const d of doms.values()) if (d.el.dataset.line) paint(d.el, d.el.dataset.line); });
+  });
+  // The pins: stay put unless set «on top» while a trip or a card is open.
+  $effect(() => {
+    void baseGen;
+    const m = map, pins = app.pins, hide = planFocus || app.stack.length > 0;
+    if (!m || !loaded) return;
+    const shape = (id: string) => { const d = app.statics[id]; return d ? Object.values(d.variants).map(v => smoothLine(v.shape.map(([a, b]) => [b, a] as [number, number]))) : null; };
+    (m.getSource("pin-lines") as GeoJSONSource | undefined)?.setData(pinLinesFC(pins, shape, hide));
+    (m.getSource("pin-stops") as GeoJSONSource | undefined)?.setData(pinStopsFC(pins, hide));
+  });
+  // Its words on the map: the line and minutes of each ride, where to get on, each change, the arrival.
+  $effect(() => {
+    const labels = app.planLabels, m = map;
+    if (!m || !labels.length || !app.tripPlan || app.tab !== "trip" || app.guide) return;
+    const marks = labels.map(l => {
+      const el = document.createElement("div");
+      el.setAttribute("aria-hidden", "true");
+      if (l.kind === "leg") {
+        el.className = "plan-leg";
+        const b = document.createElement("b");
+        b.textContent = l.label;
+        b.style.background = l.color;
+        b.style.color = l.text;
+        el.append(b, durText(l.min));
+      } else {
+        el.className = `plan-pin ${l.kind}${l.ok === false ? " tight" : ""}`;
+        // A change: the line left and the one taken, as their badges («Χ95 → Προαστιακός»), then where and how long.
+        if (l.kind === "change" && l.lines?.length) {
+          const row = document.createElement("span");
+          row.className = "pc-lines";
+          l.lines.forEach((b, k) => {
+            if (k) { const a = document.createElement("i"); a.textContent = "→"; row.append(a); }
+            const t = document.createElement("b");
+            t.textContent = b.label;
+            t.style.background = b.color;
+            t.style.color = b.text;
+            row.append(t);
+          });
+          el.append(row);
+        }
+        const n = document.createElement("b"), sub = document.createElement("small");
+        n.textContent = l.kind === "change" ? `Αλλαγή στο ${titleCase(l.name.replace(/^Αλλαγή · /, ""))}` : titleCase(l.name);
+        sub.textContent = l.sub;
+        el.append(n, sub);
+      }
+      return crisp(el, l.kind === "leg" ? "center" : "bottom", 14).setLngLat(l.at).addTo(m);
+    });
+    return () => marks.forEach(k => k.remove());
+  });
+
+  // The guide's bus, where it is now: its line on a pulsing marker, over the city layer.
+  let guideBusMarker: Marker | null = null;
+  $effect(() => {
+    const b = app.guideBus, m = map;
+    if (!m || !b) { guideBusMarker?.remove(); guideBusMarker = null; return; }
+    const c = app.lineColor(b.line);
+    if (!guideBusMarker) {
+      const el = document.createElement("button");
+      el.type = "button";
+      el.className = "guide-bus";
+      guideBusMarker = new Marker({ element: el, anchor: "center" }).setLngLat([b.at[1], b.at[0]]).addTo(m);
+    } else guideBusMarker.setLngLat([b.at[1], b.at[0]]);
+    const el = guideBusMarker.getElement();
+    el.textContent = b.line;
+    el.title = `Το ${b.line}: η κάρτα του`;
+    el.onclick = e => { e.stopPropagation(); app.push(busVehicleCard(b.line, b.vehicle)); };
+    el.style.setProperty("--lb", c.bg);
+    el.style.setProperty("--lf", c.fg);
   });
 
   // The picked trip's stops: get on, change, get off.
   $effect(() => {
-    const stops = app.tripStops, m = map;
-    if (!stops.length || !m) return;
-    const pins = stops.map(st => {
+    const stops = app.tripStops, m = map, sel = app.busStop != null ? app.stopIx?.s[app.busStop] : undefined;
+    if (!stops.length || !m || !tripShown) return;
+    // Not over the tapped stop: its pin is there, and the name is in its card. A stop a ride passes (mid) is a small
+    // dot in the line's colour, its name beside it from zoom 15.5 on (the container's class, below), each one a
+    // little after the one before along the route, so the route fills in.
+    const pins = stops.filter(st => !sel || Math.hypot(st.at[0] - sel[1], st.at[1] - sel[2]) > 0.0002).map((st, k) => {
       const el = document.createElement("div");
+      if (st.mid) {
+        el.className = "trip-mid";
+        el.style.setProperty("--lb", st.color ?? "#3b5bdb");
+        el.style.setProperty("--i", String(Math.min(k, 40)));
+        const dot = document.createElement("i"), name = document.createElement("span");
+        name.textContent = titleCase(st.name);
+        el.append(dot, name);
+        return new Marker({ element: el, anchor: "left", offset: [-5, 0] }).setLngLat([st.at[1], st.at[0]]).addTo(m);
+      }
       el.className = "trip-stop";
-      el.textContent = st.name;
+      el.textContent = titleCase(st.name);
       return new Marker({ element: el, anchor: "bottom", offset: [0, -6] }).setLngLat([st.at[1], st.at[0]]).addTo(m);
     });
     return () => pins.forEach(p => p.remove());
+  });
+  // The names of the route's stops show close in: the container says how close the map is.
+  $effect(() => {
+    const m = map;
+    if (!m) return;
+    const c = m.getContainer();
+    const on = () => c.classList.toggle("near-stops", m.getZoom() >= 15.5);
+    on();
+    m.on("zoom", on);
+    return () => { m.off("zoom", on); c.classList.remove("near-stops"); };
   });
 
   // New city data, or a change of the lines drawn in detail: hand the vehicles to the fleet.
@@ -1219,23 +2313,126 @@
     const o = !s || app.others === "normal" ? 1 : app.others === "dim" ? 0.22 : 1;
     // «Κοντά σου» with nothing selected: the lines of the nearest stops stay, the others dim.
     const near = !s && app.nearFocus ? app.nearFocus : null;
-    const opacity: ExpressionSpecification = ["*", ["case", sel, 1, o], near ? ["case", ["in", ["get", "line"], ["literal", near]], 1, 0.22] : 1, ["case", ["get", "stale"], 0.3, 1], ["case", ["to-boolean", ["get", "rewind"]], 0.5, 1]];
-    m.setPaintProperty("city-dot", "circle-opacity", opacity);
-    m.setPaintProperty("city-dot", "circle-stroke-opacity", opacity);
+    const opacity: ExpressionSpecification = ["*", ["case", sel, 1, o], near ? ["case", ["in", ["get", "line"], ["literal", near]], 1, 0.22] : 1, ["case", ["get", "stale"], 0.3, 1], ["case", ["to-boolean", ["get", "rewind"]], 0.5, 1],
+      ["case", ["to-boolean", ["get", "m3d"]], 0, 1]];
+    m.setPaintProperty("city-dot", "icon-opacity", opacity);
+    m.setPaintProperty("city-delay", "circle-opacity", opacity);
+    m.setPaintProperty("city-delay", "circle-stroke-opacity", opacity);
     m.setPaintProperty("city-label", "text-opacity", opacity);
     m.setPaintProperty("city-heading", "icon-opacity", opacity);
     const filter = s && app.others === "hide" ? sel : null;
     m.setFilter("city-dot", filter);
+    m.setFilter("city-delay", filter);
     m.setFilter("city-heading", filter ? ["all", ["has", "h"], filter] : ["has", "h"]);
     m.setFilter("city-label", filter);
     m.setFilter("city-selected", s?.kind === "vehicle" ? sel : ["boolean", false]);
-    const vis = app.cityOn ? "visible" : "none";
-    for (const id of ["city-dot", "city-label", "city-heading", "city-selected"]) m.setLayoutProperty(id, "visibility", vis);
+    const vis = app.cityOn && !app.chase ? "visible" : "none";   // a chase shows only its own vehicle
+    for (const id of ["city-dot", "city-delay", "city-label", "city-heading", "city-selected"]) m.setLayoutProperty(id, "visibility", vis);
   });
 
   $effect(() => {
     const ix = app.stopIx;
     if (loaded && ix) (map!.getSource("bus-stops") as GeoJSONSource | undefined)?.setData(busStopsFC(ix));
+  });
+  // 3D, close in: the flat stop icons give way to the stop models (scene3d) and their arrival screens (below).
+  const HOLO_ZOOM = 17, HOLO_MAX = 4, HOLO_REACH_M = 320, HOLO_EVERY_MS = 30_000;
+  $effect(() => {
+    const on = app.threeD, m = map;
+    if (!m || !loaded) return;
+    for (const id of ["bus-stop", "bus-stop-selected"]) {
+      const l = m.getLayer(id);
+      if (l) m.setLayerZoomRange(id, l.minzoom ?? 0, on ? HOLO_ZOOM : 24);
+    }
+  });
+
+  // The arrival screens: on the poles of the nearest stops to the view's centre, the next buses there (line, where
+  // to, minutes) from the stop's /v2 board, drawn by scene3d as the OASA LED screen. Over each, an invisible button
+  // opens the stop. Again after each move and every 30 s; none while following a bus.
+  type Hit = { marker: Marker; el: HTMLButtonElement; name: string; at: number; pos: LngLat; rows: [string, string, string][] };
+  const holos = new Map<string, Hit>();
+  let holoGen = 0;
+  const poleOf = (p: LngLat): LngLat => scene3d.roads?.kerb(p, 0.4)?.at ?? p;
+  const pushBoards = () => scene3d.setBoards([...holos.values()].map(h => ({ at: h.pos, rows: h.rows })));
+  async function refreshHolos() {
+    const m = map, ix = app.stopIx, gen = ++holoGen;
+    const want = new Map<string, { name: string; pos: LngLat }>();
+    if (m && ix && app.threeD && m.getZoom() >= HOLO_ZOOM && !app.chase) {
+      const c = m.getCenter(), kx = 111320 * Math.cos((c.lat * Math.PI) / 180), ky = 110540;
+      const near: { d: number; s: (typeof ix.s)[number] }[] = [];
+      for (const s of ix.s) {
+        if (!s[3]) continue;
+        const d = Math.hypot((s[2] - c.lng) * kx, (s[1] - c.lat) * ky);
+        if (d <= HOLO_REACH_M) near.push({ d, s });
+      }
+      near.sort((a, b) => a.d - b.d);
+      // Not two side by side (the two sides of a street, a stop and its twin): 60 m apart at least.
+      const taken: LngLat[] = [];
+      for (const { s } of near) {
+        if (want.size >= HOLO_MAX) break;
+        if (taken.some(t => Math.hypot((t[0] - s[2]) * kx, (t[1] - s[1]) * ky) < 60)) continue;
+        taken.push([s[2], s[1]]);
+        want.set(s[3]!, { name: titleCase(s[0]), pos: [s[2], s[1]] });
+      }
+    }
+    let changed = false;
+    for (const [id, h] of holos) if (!want.has(id)) { h.marker.remove(); holos.delete(id); changed = true; }
+    for (const [id, w] of want) {
+      let h = holos.get(id);
+      if (!h) {
+        const el = document.createElement("button");
+        el.type = "button";
+        el.className = "board-hit";
+        el.setAttribute("aria-label", `Στάση ${w.name}: οι επόμενες αφίξεις`);
+        el.onclick = ev => { ev.stopPropagation(); app.open(busStopCard(id, w.name)); };
+        h = { marker: new Marker({ element: el, anchor: "center", offset: [0, holoLift()] }).setLngLat(poleOf(w.pos)).addTo(m!), el, name: w.name, at: 0, pos: w.pos, rows: [] };
+        holos.set(id, h);
+        changed = true;
+      } else h.marker.setLngLat(poleOf(w.pos));   // the roads may have loaded since
+      if (Date.now() - h.at < HOLO_EVERY_MS - 1000) continue;
+      h.at = Date.now();
+      const hit = h;
+      void fetchV2Stop(`oasa:${id}`).then(r => {
+        if (gen !== holoGen && !holos.has(id)) return;
+        const arr = (r.body as { arrivals?: V2Arrival[] } | null)?.arrivals ?? [];
+        const nowS = app.serverNow / 1000;
+        const rows = r.status === 200 ? stopRows(arr, nowS).filter(x => x.times.length).slice(0, 3) : [];
+        // As the real screens write it: the line, the end in capitals without accents, the minutes.
+        hit.rows = rows.map(x => {
+          const min = Math.max(0, Math.round((x.times[0].at - nowS) / 60));
+          const to = fold(placeNote(toward(x.headsign)).place).toLocaleUpperCase("el");
+          return [x.line.replace(/^oasa:/, ""), to, min === 0 ? "ΤΩΡΑ" : `${min}'`];
+        });
+        pushBoards();
+      });
+    }
+    if (changed) pushBoards();
+  }
+  // A marker sits on the ground: the click target is lifted by the screen height of the screen's middle, 2.2 m up,
+  // which grows with the zoom and the tilt.
+  function holoLift(): number {
+    const m = map;
+    if (!m) return -30;
+    const c = m.getCenter(), mpp = (40075016.686 * Math.cos((c.lat * Math.PI) / 180)) / (512 * 2 ** m.getZoom());
+    return -Math.round((2.2 / mpp) * Math.sin((m.getPitch() * Math.PI) / 180));
+  }
+  $effect(() => {
+    void app.threeD; void app.chase; void app.stopIx;
+    if (!map || !loaded) return;
+    const m = map;
+    untrack(() => void refreshHolos());
+    const onMove = () => void refreshHolos();
+    m.on("moveend", onMove);
+    const lift = () => { if (holos.size) { const y = holoLift(); for (const h of holos.values()) h.marker.setOffset([0, y]); } };
+    m.on("zoom", lift);
+    m.on("pitch", lift);
+    const t = setInterval(() => void refreshHolos(), HOLO_EVERY_MS);
+    return () => { m.off("moveend", onMove); m.off("zoom", lift); m.off("pitch", lift); clearInterval(t); };
+  });
+
+  // The stops for 3D: built close in, as a pole with its sign and, on wide streets, a shelter (scene3d).
+  $effect(() => {
+    const ix = app.stopIx;
+    if (ix) untrack(() => scene3d.setStops(ix.s.map(x => [x[2], x[1]] as LngLat)));
   });
   $effect(() => {
     if (loaded) map!.setFilter("bus-stop-selected", ["==", ["get", "i"], app.busStop ?? -1]);
@@ -1300,7 +2497,10 @@
     if (!loaded) return;
     const h = app.highlight;
     const line = h ? drawn.find(d => d.id === h.line) : undefined;
-    (map!.getSource("highlight") as GeoJSONSource).setData(variantFC(line, h?.variant));
+    void roadsSeen; void app.threeD; void streetZoom;
+    const fc = onRoads(variantFC(line, h?.variant));
+    (map!.getSource("highlight") as GeoJSONSource).setData(fc);
+    hl = fc.features[0] ? { coords: fc.features[0].geometry.coordinates as LngLat[], color: String(fc.features[0].properties?.color ?? "#0072b2") } : null;
     // No direction focused ("Όλες"): the stops of every direction, not only of the one clicked.
     (map!.getSource("stops") as GeoJSONSource).setData(stopsFC(line, h?.variant, !!h && !app.focus[h.line]));
   });
@@ -1366,6 +2566,23 @@
     locateBtn.setAttribute("aria-pressed", String(s !== "off" && s !== "denied"));
   });
 
+  // North: a needle that turns with the map (its red end points north); a tap turns the map back to north.
+  const northCtl = document.createElement("div");
+  northCtl.className = "maplibregl-ctrl maplibregl-ctrl-group north-ctl";
+  const northBtn = document.createElement("button");
+  northBtn.type = "button";
+  northBtn.className = "north";
+  northBtn.title = "Στρέψε τον χάρτη στον βορρά";
+  northBtn.setAttribute("aria-label", "Στρέψε τον χάρτη στον βορρά");
+  northBtn.innerHTML = '<svg class="needle" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M10 2.2 13.2 10H6.8z" fill="#e5484d"/><path d="M10 17.8 6.8 10h6.4z" fill="currentColor" opacity=".55"/></svg>';
+  northBtn.onclick = () => map?.easeTo({ bearing: 0, duration: reducedMotion.matches ? 0 : 500 });
+  northCtl.append(northBtn);
+  const needleTo = (m: MlMap) => {
+    const b = m.getBearing();
+    (northBtn.firstElementChild as SVGElement).style.transform = `rotate(${-b}deg)`;
+    northBtn.classList.toggle("turned", Math.abs(b) > 0.5);
+  };
+
   // «Λεπτομέρειες» (a control left of the ⓘ, bottom right) opens the info sheet. The ⓘ stays MapLibre's: it shows the
   // map's credits (open at first, closed after CREDITS_MS or the first drag), which the licences want visible (#34).
   const infoCtl = document.createElement("div");
@@ -1403,6 +2620,7 @@
 </script>
 
 <div class="map ages-{app.ageMode}" {@attach setup}></div>
+{#if app.bus3d && app.threeD && !app.load3d}<Route3D {app} key={app.bus3d} />{/if}
 {#if app.speedOn}<SpeedLegend meta={speedData?.meta ?? null} onclose={() => app.setSpeedOn(false)} />{/if}
 {#if Info}<Info bind:open={infoOpen} bind:tab={infoTab} motion={app.motion} {ended} />{/if}
 {#if failed}
@@ -1414,6 +2632,8 @@
 
 <style>
   .map { position: absolute; inset: 0; }
+  :global(.applemap) { position: absolute; inset: 0; pointer-events: none; }
+  :global(.applemap[hidden]) { display: none; }
   :global(.fix-pin) { cursor: grab; touch-action: none; filter: drop-shadow(0 3px 4px rgb(0 0 0 / 0.4)); }
   :global(.stop-pin) { pointer-events: none; filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.35)); }
   :global(.stop-pin.drop svg) { animation: pin-drop 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) both; transform-origin: 50% 100%; }

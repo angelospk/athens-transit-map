@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { distanceM, type LngLat } from "../src/lib/glide";
 import {
-  bridge, CATCH_MAX, chase, cumulativeLL, drive, DWELL_S, GLIDE_MAX_S, GLIDE_S, glideS, holdM, HORIZON_S, linePlan, MIN_CRUISE, Mover, PACE,
+  bridge, CATCH_MAX, LEAP_M, OWN_STAND_S, chase, cumulativeLL, drive, DWELL_S, GLIDE_MAX_S, GLIDE_S, glideS, holdM, HORIZON_S, linePlan, MIN_CRUISE, Mover, PACE,
   pathPlan, pointAtLL, project, STEP_M, subLine, TRAIL_S, walk, type Plan,
 } from "../src/lib/motion";
 
@@ -9,6 +9,8 @@ import {
 const M = 877.4;
 const east: LngLat[] = [[23.70, 37.97], [23.71, 37.97], [23.72, 37.97]];
 const plan = (target: (t: number) => number, geom = east): Plan => ({ geom, cum: cumulativeLL(geom), target });
+// Steps on to `t` half a second at a time (a frame loop; a longer gap between steps snaps), the last step at t.
+const stepTo = (mv: Mover, t: number) => { for (let x = (mv as unknown as { last: number }).last; x + 0.5 < t; x += 0.5) mv.step(x + 0.5); return mv.step(t); };
 const atM = (m: number): LngLat => [23.70 + (m / M) * 0.01, 37.97];
 // East M metres, then north (0.01° lat ≈ 1112 m): a bend at s = M.
 const N = 1111.9;
@@ -95,63 +97,71 @@ describe("Mover", () => {
     expect(mv.s).toBeCloseTo(200, 0);
   });
   it("glides back along the route to a target far behind, then leaves a fading trail", () => {
-    const mv = new Mover(onBent(M + 500));
-    mv.setPlan(plan(() => M + 500, bent), M + 500, 0);
+    const mv = new Mover(onBent(M + 200));
+    mv.setPlan(plan(() => M + 200, bent), M + 200, 0);
     mv.step(0.1);
-    mv.retarget(plan(() => 200, bent), 1);   // the target jumps back past the bend
+    mv.retarget(plan(() => M - 100, bent), 1);   // the target jumps 300 m back, past the bend
+    const G = glideS(300, true);
     const a = mv.step(1.1);
     expect(a.fx).not.toBeNull();
-    expect(distanceM(a.pos, onBent(M + 500))).toBeLessThan(1);           // starts where it was
-    const q = mv.step(1.1 + GLIDE_S / 4);
-    expect(mv.s).toBeCloseTo(M + 500 - (M + 300) * (1 / 16), 0);          // ease-in-out: slow start
-    expect(distanceM(q.trail!.geom[0], onBent(M + 500))).toBeLessThan(2);
-    mv.step(1.1 + GLIDE_S * 0.75);
+    expect(distanceM(a.pos, onBent(M + 200))).toBeLessThan(1);           // starts where it was
+    const q = stepTo(mv, 1.1 + G / 4);
+    expect(mv.s).toBeCloseTo(M + 200 - 300 * (1 / 16), 0);                // ease-in-out: slow start
+    expect(distanceM(q.trail!.geom[0], onBent(M + 200))).toBeLessThan(2);
+    stepTo(mv, 1.1 + G * 0.75);
     expect(mv.s).toBeLessThan(M);                                          // past the bend, on the route
-    const end = mv.step(1.1 + GLIDE_S + 0.01);
+    const end = stepTo(mv, 1.1 + G + 0.01);
     expect(end.fx).toBeNull();
-    expect(mv.s).toBe(200);
+    expect(mv.s).toBe(M - 100);
     expect(end.trail!.geom).toHaveLength(3);                               // old place, bend, new place
     expect(end.trail!.alpha).toBeGreaterThan(0.9);
     expect(mv.fixing).toBe(true);                                          // still drawing the trail
-    expect(mv.step(1.1 + GLIDE_S + TRAIL_S / 2).trail!.alpha).toBeCloseTo(0.5, 1);
-    expect(mv.step(1.1 + GLIDE_S + TRAIL_S + 0.01).trail).toBeNull();
+    expect(mv.step(1.1 + G + TRAIL_S / 2).trail!.alpha).toBeCloseTo(0.5, 1);
+    expect(mv.step(1.1 + G + TRAIL_S + 0.01).trail).toBeNull();
     expect(mv.fixing).toBe(false);
   });
-  it("glides forward to a target far ahead, never backwards", () => {
+  it("races up to a target ahead, never backwards; leaps at once to one far ahead (a new place)", () => {
     const mv = new Mover(atM(0));
     mv.setPlan(plan(() => 0), 0, 0);
     mv.step(0.1);
-    mv.retarget(plan(() => 1500), 0.2);
+    mv.retarget(plan(() => 350), 0.2);
     let prev = 0;
-    for (let t = 0.3; t < 0.3 + GLIDE_MAX_S + 0.1; t += 0.05) {
+    for (let t = 0.3; t < 80; t += 0.5) {
       mv.step(t);
       expect(mv.s).toBeGreaterThanOrEqual(prev);
       prev = mv.s;
     }
-    expect(mv.s).toBe(1500);
+    expect(mv.s).toBeGreaterThan(340);   // the chase closes in on the target (exponentially)
+    const far = new Mover(atM(0));
+    far.setPlan(plan(() => 0), 0, 0);
+    far.step(0.1);
+    far.retarget(plan(() => LEAP_M + 300), 0.2);
+    const r = far.step(0.3);
+    expect(r.fx).toBeNull();
+    expect(far.s).toBe(LEAP_M + 300);
   });
   it("starts a correction glide from the shown point of a fix handoff", () => {
-    const mv = new Mover(atM(1500));
-    mv.setPlan(plan(() => 1500), 1500, 0);
+    const mv = new Mover(atM(400));
+    mv.setPlan(plan(() => 400), 400, 0);
     mv.step(0.1);
     const h = linePlan(mv.pos, atM(100), 90);                // far behind the bearing: a correction
     expect(h.fix).toBe(true);
     mv.apply(h, 1);
-    expect(distanceM(mv.step(1.01).pos, atM(1500))).toBeLessThan(2);
-    expect(distanceM(mv.step(1 + GLIDE_S + 0.01).pos, atM(100))).toBeLessThan(0.5);
+    expect(distanceM(mv.step(1.01).pos, atM(400))).toBeLessThan(2);
+    expect(distanceM(stepTo(mv, 1 + glideS(300, true) + 0.01).pos, atM(100))).toBeLessThan(0.5);
   });
   it("drops the old sideways offset on a correction to new geometry: it starts at the shown point", () => {
     const mv = new Mover([23.71, 37.9702]);
     mv.setPlan(plan(() => M), M, 0, [0, 0.0002]);
     const a = mv.step(0.1).pos;
-    mv.apply(linePlan(a, atM(100), 90), 0.15);              // far behind the bearing: a correction
+    mv.apply(linePlan(a, atM(M - 300), 90), 0.15);          // far behind the bearing: a correction
     expect(distanceM(mv.step(0.2).pos, a)).toBeLessThan(3);
   });
   it("keeps a fading sideways offset when a glide starts: no jump", () => {
     const mv = new Mover([23.71, 37.9702]);                 // 22 m north of the line at s = M
     mv.setPlan(plan(() => M), M, 0, [0, 0.0002]);
     const a = mv.step(0.1).pos;
-    mv.retarget(plan(() => 100), 0.15);
+    mv.retarget(plan(() => M - 300), 0.15);
     const b = mv.step(0.2).pos;
     expect(distanceM(a, b)).toBeLessThan(3);
   });
@@ -289,45 +299,48 @@ describe("Mover lifecycle", () => {
     expect(mv.s).toBe(100);
   });
   it("restarts a running glide from where the dot is when a new correction arrives", () => {
-    const mv = new Mover(atM(1500));
-    mv.setPlan(plan(() => 1500), 1500, 0);
+    const mv = new Mover(atM(400));
+    mv.setPlan(plan(() => 400), 400, 0);
     mv.step(0.1);
     mv.retarget(plan(() => 100), 1);
     mv.step(1);                                              // the glide starts here
-    const mid = mv.step(1 + GLIDE_S / 2).pos;
-    mv.apply(linePlan(mid, atM(50), 90), 1 + GLIDE_S / 2);   // newer fix, still far behind
-    expect(distanceM(mv.step(1 + GLIDE_S / 2 + 0.01).pos, mid)).toBeLessThan(2);
-    expect(mv.step(1 + GLIDE_S).fx).not.toBeNull();          // a new schedule, not the old one
-    mv.step(1 + GLIDE_S * 1.5 + 0.01);
+    const G = glideS(300, true);
+    const mid = stepTo(mv, 1 + G / 2).pos;
+    mv.apply(linePlan(mid, atM(50), 90), 1 + G / 2);         // newer fix, still far behind
+    expect(distanceM(mv.step(1 + G / 2 + 0.01).pos, mid)).toBeLessThan(2);
+    expect(stepTo(mv, 1 + G).fx).not.toBeNull();             // a new schedule, not the old one
+    stepTo(mv, 1 + G / 2 + GLIDE_MAX_S + 0.01);
     expect(distanceM(mv.pos, atM(50))).toBeLessThan(0.5);
   });
   it("goes on from where the dot is when the target moves on the same geometry mid-glide", () => {
-    const mv = new Mover(atM(1500));
-    mv.setPlan(plan(() => 1500), 1500, 0);
+    const mv = new Mover(atM(400));
+    mv.setPlan(plan(() => 400), 400, 0);
     mv.step(0.1);
     mv.retarget(plan(() => 100), 1);
     mv.step(1);
-    const mid = mv.step(1 + GLIDE_S / 2).pos;
-    mv.retarget(plan(() => 200), 1 + GLIDE_S / 2);
-    expect(distanceM(mv.step(1 + GLIDE_S / 2).pos, mid)).toBeLessThan(1);
-    mv.step(1 + GLIDE_S * 1.5 + 0.01);
+    const G = glideS(300, true);
+    const mid = stepTo(mv, 1 + G / 2).pos;
+    mv.retarget(plan(() => 200), 1 + G / 2);
+    expect(distanceM(mv.step(1 + G / 2).pos, mid)).toBeLessThan(1);
+    stepTo(mv, 1 + G * 1.5 + 0.01);
     expect(mv.s).toBe(200);
   });
   it("ends a glide without a jump when new data needs no correction, and fades its trail", () => {
-    const mv = new Mover(atM(1500));
-    mv.setPlan(plan(() => 1500), 1500, 0);
+    const mv = new Mover(atM(400));
+    mv.setPlan(plan(() => 400), 400, 0);
     mv.step(0.1);
     mv.retarget(plan(() => 100), 1);
     mv.step(1);                                              // the glide starts here
-    const mid = mv.step(1 + GLIDE_S / 2).pos;
-    const h = linePlan(mid, atM(805), null);                 // close by: no correction
+    const G = glideS(300, true);
+    const mid = stepTo(mv, 1 + G / 2).pos;
+    const h = linePlan(mid, atM(255), null);                 // close by: no correction
     expect(h.fix).toBe(false);
-    mv.apply(h, 1 + GLIDE_S / 2);
-    const r = mv.step(1 + GLIDE_S / 2 + 0.02);
+    mv.apply(h, 1 + G / 2);
+    const r = mv.step(1 + G / 2 + 0.02);
     expect(r.fx).toBeNull();
     expect(distanceM(r.pos, mid)).toBeLessThan(2);
     expect(r.trail!.geom.length).toBeGreaterThanOrEqual(2);
-    expect(mv.step(1 + GLIDE_S / 2 + TRAIL_S + 0.05).trail).toBeNull();
+    expect(mv.step(1 + G / 2 + TRAIL_S + 0.05).trail).toBeNull();
   });
   it("snaps on request (tab shown again) and with reduced motion", () => {
     const mv = new Mover(atM(0));
@@ -376,37 +389,36 @@ describe("Mover lifecycle", () => {
 });
 
 describe("corrections forward and back", () => {
-  it("takes longer for a longer jump ahead, within bounds; a jump back is quick", () => {
-    expect(glideS(700, false)).toBeGreaterThan(GLIDE_S);
+  it("takes longer for a longer jump, either way, within bounds: a slide, not a blink", () => {
+    expect(glideS(200, false)).toBeGreaterThan(GLIDE_S);
+    expect(glideS(200, true)).toBe(glideS(200, false));
+    expect(200 / glideS(200, true)).toBeLessThan(40);   // never faster than this, m/s
     expect(glideS(5000, false)).toBe(GLIDE_MAX_S);
-    expect(glideS(5000, true)).toBe(GLIDE_S);
     expect(glideS(0, false)).toBe(GLIDE_S);
   });
   it("marks a glide back, and its trail, as back; a glide ahead is not", () => {
-    const mv = new Mover(atM(1500));
-    mv.setPlan(plan(() => 1500), 1500, 0);
+    const mv = new Mover(atM(400));
+    mv.setPlan(plan(() => 400), 400, 0);
     mv.step(0.1);
     mv.retarget(plan(() => 100), 1);
     expect(mv.step(1.1).back).toBe(true);
-    const end = mv.step(1.1 + GLIDE_S + 0.01);
+    const end = stepTo(mv, 1.1 + glideS(300, true) + 0.01);
     expect(end.trail).not.toBeNull();
     expect(end.back).toBe(true);
     const fw = new Mover(atM(0));
     fw.setPlan(plan(() => 0), 0, 0);
     fw.step(0.1);
-    fw.retarget(plan(() => 1500), 0.2);
-    const r = fw.step(0.3);
-    expect(r.fx).not.toBeNull();
-    expect(r.back).toBe(false);
+    fw.retarget(plan(() => 350), 0.2);
+    expect(fw.step(0.3).back).toBe(false);
   });
   it("keeps facing the way it travels while it glides back", () => {
-    const mv = new Mover(onBent(M + 500));
-    mv.setPlan(plan(() => M + 500, bent), M + 500, 0);
+    const mv = new Mover(onBent(M + 200));
+    mv.setPlan(plan(() => M + 200, bent), M + 200, 0);
     mv.step(0.1);
-    const h = bridge(mv, linePlan(mv.pos, onBent(200), 0));   // heading north; the fix is back past the bend
+    const h = bridge(mv, linePlan(mv.pos, onBent(M - 100), 0));   // heading north; the fix is back past the bend
     mv.apply(h, 1);
     mv.step(1.05);
-    mv.step(1 + GLIDE_S * 0.75);                                   // past the bend, going west on the route
+    stepTo(mv, 1 + glideS(300, true) * 0.75);                       // past the bend, going west on the route
     expect(mv.heading()).toBeCloseTo(0, 0);                        // still north, the way it travels
   });
 });
@@ -491,5 +503,19 @@ describe("walk (contract rev 6 path_speeds)", () => {
     expect(r.plan.target(1040)).toBeCloseTo(walk([6, 3], 15, end)(40), 5);
     expect(pathPlan(atM(0), east, 15, 1000, 1000, [400], null).plan.target(1040)).toBeCloseTo(drive(15, [400], end)(40), 5);
     expect(pathPlan(atM(0), east, 15, 1000, 1000, [400], []).plan.target(1040)).toBeCloseTo(drive(15, [400], end)(40), 5);
+  });
+});
+
+describe("walk with the bus's own speed", () => {
+  it("runs the first 500 m at the measured speed, fading into the step speeds; a standing bus waits first", () => {
+    const steps = [12, 12, 12, 12, 12, 12];
+    const typical = walk(steps, 5, 2000);
+    const slow = walk(steps, 5, 2000, undefined, 2);
+    expect(slow(30)).toBeLessThan(typical(30) / 2);          // crawling at first
+    expect(slow(100) - slow(99)).toBeCloseTo(12, 0);          // past 500 m, at the road's speed
+    const stand = walk(steps, 5, 2000, undefined, 0);
+    expect(stand(OWN_STAND_S - 1)).toBe(0);
+    expect(stand(OWN_STAND_S + 10)).toBeGreaterThan(0);
+    expect(walk(steps, 5, 2000, undefined, null)(30)).toBe(typical(30));
   });
 });

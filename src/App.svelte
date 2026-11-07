@@ -11,19 +11,35 @@
   import RailStopCard from "./lib/ui/RailStopCard.svelte";
   import FavsPanel from "./lib/ui/FavsPanel.svelte";
   import NearbyPanel from "./lib/ui/NearbyPanel.svelte";
-  import SearchModal from "./lib/ui/SearchModal.svelte";
+  import NowPanel from "./lib/ui/NowPanel.svelte";
+  import TabBar from "./lib/ui/TabBar.svelte";
+  import AlertsPanel from "./lib/ui/AlertsPanel.svelte";
+  import RideBar from "./lib/ui/RideBar.svelte";
+  import StartScreen from "./lib/ui/StartScreen.svelte";
+  import NavGuide from "./lib/ui/NavGuide.svelte";
+  import PinSheet from "./lib/ui/PinSheet.svelte";
+  import FaresSheet from "./lib/ui/FaresSheet.svelte";
   import MuniReport from "./lib/ui/MuniReport.svelte";
   import { applyTheme } from "./lib/theme";
 
   const app = new AppState();
   app.init();
   $effect(() => applyTheme(app.theme));
+  // «Τώρα» and «Ειδοποιήσεις» with no card: the phone hides the map's own buttons (app.css), as the mockup has none.
+  $effect(() => { document.documentElement.toggleAttribute("data-pick", !!app.start && !!app.pickFor); });
+  $effect(() => { document.documentElement.toggleAttribute("data-start", !!app.start && !app.pickFor); });
+  $effect(() => { document.documentElement.toggleAttribute("data-home", (app.tab === "now" || app.tab === "alerts") && !app.stack.length); });
   // Favourites only: at start (once the lines are loaded) and when it or the favourite bus lines change.
   $effect(() => {
     void app.favOnly; void app.favorites.join("|"); void app.lines;
     untrack(() => app.applyFavOnly());
   });
-  if (import.meta.env.DEV) Object.assign(window, { __app: app });
+  // Riding a bus: checked on each new position, with its card open or not.
+  $effect(() => {
+    void app.ride; void app.rideAhead;
+    untrack(() => app.checkRide());
+  });
+    if (import.meta.env.DEV) Object.assign(window, { __app: app });
 </script>
 
 <MapView {app} />
@@ -36,5 +52,12 @@
 <RailStopCard {app} />
 <FavsPanel {app} />
 <NearbyPanel {app} />
-<SearchModal {app} />
+<NowPanel {app} />
+<AlertsPanel {app} />
+<TabBar {app} />
+<RideBar {app} />
+<StartScreen {app} />
+<NavGuide {app} />
+<PinSheet {app} />
+<FaresSheet {app} />
 {#if app.muniTimes.length}<MuniReport {app} />{/if}

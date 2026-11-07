@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from "./Icon.svelte";
   import AlertForm from "./AlertForm.svelte";
   import RailAlertForm from "./RailAlertForm.svelte";
   import type { RailSpec } from "../railAlerts";
@@ -32,7 +33,7 @@
       <h2 id="alert-sheet-title">Ειδοποίησέ με στο {label}</h2>
       {#if toward}<p>προς {toward}</p>{/if}
     </div>
-    <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => dlg?.close()}>×</button>
+    <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => dlg?.close()}><Icon name="close" size={16} /></button>
   </header>
   {#if rail}
     <RailAlertForm {app} {rail} onstarted={() => dlg?.close()} />
@@ -53,7 +54,7 @@
   .t { flex: 1; min-width: 0; }
   h2 { margin: 0; font-size: 18px; font-weight: 600; }
   .t p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
-  .close { flex: none; width: 36px; height: 36px; margin: -4px -8px 0 0; border: 0; border-radius: 8px; background: none;
+  .close { flex: none; display: flex; align-items: center; justify-content: center; padding: 0; width: 36px; height: 36px; margin: -4px -8px 0 0; border: 0; border-radius: 8px; background: none;
     color: var(--muted); font-size: 22px; cursor: pointer; }
   .close:hover { background: var(--control); }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

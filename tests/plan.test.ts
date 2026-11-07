@@ -71,7 +71,7 @@ describe("planSummary", () => {
   it("gives Athens clock times, whole minutes and the rides", () => {
     const s = planSummary(plan.itineraries[0], plan, 1791185350 - 5 * 60 - 30);
     expect(s).toEqual({
-      depart: "10:29", arrive: "10:47", mins: 18, leaveIn: 5, transfers: 0, walk_m: 203,
+      depart: "10:29", arrive: "10:47", mins: 18, leaveIn: 5, transfers: 0, walk_m: 203, walk_min: 3,
       rides: [{ line: "oasa:L", label: "L", color: "#153ce0", text: "#ffffff", mode: "bus", headsign: "EAST", from: "STOP 0", to: "STOP 3" }],
     });
   });
@@ -105,6 +105,23 @@ describe("planFC", () => {
       ["ride", "#e30613"], ["walk", null], ["ride", "#153ce0"], ["walk", null],
     ]);
     expect(fc.features[0].geometry).toEqual({ type: "LineString", coordinates: [[23.73552, 37.97527], [23.729, 37.9681], [23.7471, 37.8926]] });
+  });
+});
+
+describe("planFC joins the way", () => {
+  const pt = (lat: number, lon: number) => ({ stop: null, lat, lon });
+  const leg = (kind: "walk" | "ride", a: [number, number], b: [number, number], shape: [number, number][] = [], extra = {}) =>
+    ({ kind, from: pt(...a), to: pt(...b), depart_at: 0, arrive_at: 60, shape, distance_m: 100, ...extra });
+  it("draws a walk with no shape straight between its ends, and joins legs that do not meet", () => {
+    const it0 = { depart_at: 0, arrive_at: 600, duration_s: 600, transfers: 1, walk_m: 300, modes: [], legs: [
+      leg("ride", [37.90, 23.70], [37.91, 23.71], [[37.90, 23.70], [37.91, 23.71]], { line: "a" }),
+      leg("walk", [37.912, 23.712], [37.92, 23.72]),
+      leg("ride", [37.925, 23.725], [37.93, 23.73], [[37.925, 23.725], [37.93, 23.73]], { line: "b" }),
+    ] } as never;
+    const fc = planFC(it0, { lines: {}, stops: {} } as never);
+    expect(fc.features.map(f => f.properties!.kind)).toEqual(["ride", "walk", "walk", "walk", "ride"]);
+    expect(fc.features[1].geometry.coordinates).toEqual([[23.71, 37.91], [23.712, 37.912]]);
+    expect(fc.features[2].geometry.coordinates).toEqual([[23.712, 37.912], [23.72, 37.92]]);
   });
 });
 

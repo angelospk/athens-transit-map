@@ -45,3 +45,27 @@ describe("layers", () => {
     expect(bounds([])).toBeNull();
   });
 });
+
+describe("smoothLine", () => {
+  const sq: [number, number][] = [[23.7, 37.97], [23.701, 37.97], [23.701, 37.971]];   // ~88 m east, then ~111 m north
+  it("keeps the ends and rounds the corner", async () => {
+    const { smoothLine } = await import("../src/lib/map/layers");
+    const s = smoothLine(sq);
+    expect(s[0]).toEqual(sq[0]);
+    expect(s.at(-1)).toEqual(sq[2]);
+    expect(s.length).toBeGreaterThan(sq.length);
+    expect(s).not.toContainEqual(sq[1]);   // the sharp corner itself is gone
+  });
+  it("stays within a few metres of the corner", async () => {
+    const { smoothLine } = await import("../src/lib/map/layers");
+    const kx = 111320 * Math.cos((37.97 * Math.PI) / 180), ky = 110540;
+    const far = Math.max(...smoothLine(sq).map(([x, y]) => Math.min(
+      Math.abs(y - 37.97) * ky,                 // off the first leg
+      Math.abs(x - 23.701) * kx)));              // off the second leg
+    expect(far).toBeLessThan(5);                 // a 14 m cut bulges about 3.5 m from the corner at most
+  });
+  it("leaves two points as they are", async () => {
+    const { smoothLine } = await import("../src/lib/map/layers");
+    expect(smoothLine(sq.slice(0, 2))).toEqual(sq.slice(0, 2));
+  });
+});
