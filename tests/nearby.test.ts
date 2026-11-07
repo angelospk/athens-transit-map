@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nearbyGroups, focusLines, onOpen, distText, titleCase, walkMin, foldRows, rowNote } from "../src/lib/nearby";
+import { nearbyGroups, focusLines, onOpen, elsewhere, distText, titleCase, walkMin, foldRows, rowNote } from "../src/lib/nearby";
 import type { TripIndex } from "../src/lib/trip";
 
 // 0 and 1: one stop on both sides of a street (~44 m apart), 2: the same name 1.1 km away,
@@ -93,6 +93,31 @@ describe("onOpen", () => {
   it("no Permissions API (unknown) and no answer yet counts as not decided", () => {
     expect(onOpen({ linked: false, perm: "unknown", asked: false })).toBe("ask");
     expect(onOpen({ linked: false, perm: "unknown", asked: true })).toBe("button");
+  });
+  it("the page loads after a hand pick of the city: the map of that city, no panel and no question", () => {
+    expect(onOpen({ linked: false, perm: "granted", asked: true, picked: true })).toBe("none");
+    expect(onOpen({ linked: false, perm: "prompt", asked: true, picked: true })).toBe("none");
+    expect(onOpen({ linked: false, perm: "prompt", asked: false, picked: true })).toBe("none");
+    expect(onOpen({ linked: false, perm: "unknown", asked: true, last: "granted", picked: true })).toBe("none");
+    expect(onOpen({ linked: false, perm: "granted", asked: true, picked: false })).toBe("load");
+  });
+});
+
+describe("elsewhere", () => {
+  it("no fix, or the fix is in the city on show: nothing to say", () => {
+    expect(elsewhere({ fixCity: null, cityId: "athens", hasPos: false, locked: false })).toBe(null);
+    expect(elsewhere({ fixCity: "athens", cityId: "athens", hasPos: true, locked: false })).toBe(null);
+    expect(elsewhere({ fixCity: "athens", cityId: "athens", hasPos: true, locked: true })).toBe(null);
+  });
+  it("a city the user chose (picker or URL) stays: one tap goes to the fix's city, no picker", () => {
+    expect(elsewhere({ fixCity: "athens", cityId: "ioannina", hasPos: true, locked: true })).toBe("go");
+  });
+  it("a chosen city and a fix in no known city: nothing to say (the list says no stops near)", () => {
+    expect(elsewhere({ fixCity: null, cityId: "ioannina", hasPos: true, locked: true })).toBe(null);
+  });
+  it("no chosen city: the panel asks which one", () => {
+    expect(elsewhere({ fixCity: "athens", cityId: "ioannina", hasPos: true, locked: false })).toBe("pick");
+    expect(elsewhere({ fixCity: null, cityId: "ioannina", hasPos: true, locked: false })).toBe("pick");
   });
 });
 
