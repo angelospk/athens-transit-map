@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { fetchLineStatic, fetchStop, peekStop } from "../api";
-  import { alertLinesAt, arrivalGroups, arrivalNote, boardLines, headTo, linesAt, linesToWarm, mineFirst, timeText, toward, twins, usualRows, type ArrivalGroup, type ArrivalTime, type StopBoard } from "../stops";
+  import { alertLinesAt, arrivalGroups, arrivalNote, boardLines, headTo, linesAt, linesToWarm, mineFirst, timeText, toward, twins, usualRows, signCode, type ArrivalGroup, type ArrivalTime, type StopBoard } from "../stops";
   import Bell from "./Bell.svelte";
   import type { AppState } from "../state.svelte";
   import type { FetchResult } from "../poller";
@@ -43,6 +43,8 @@
   const disruptions = $derived(favId ? forStop(app.disruptions, favId, lineIds, app.serverNow) : []);
   const dir = $derived(ix && i != null ? towardsOf(ix, i) : null);   // which way the buses leave
   const across = $derived(ix && i != null ? twins(ix, i)[0] : undefined);
+  // The code on the stop sign, bottom right, so a rider can find the stop (rev 21).
+  const code = $derived(signCode(board?.stop.code, id, app.cityId === "athens"));
 
   // «Λάθος θέση;»: the card gives way to a short bar while the user drags a pin (StopFixBar, MapView).
   // sent: this device already reported this stop (one report per device per stop).
@@ -159,8 +161,8 @@
       <div class="t">
         <h2>{name}</h2>
         {#if dir && (dir.towards.length || dir.bearing != null)}<p class="dir"><Toward {dir} /></p>{/if}
-        <p class="sub">{lines.length} {lines.length === 1 ? "γραμμή" : "γραμμές"}{#if across}{" · "}<button type="button" class="across"
-          onclick={() => { const s = ix?.s[across.i]; if (s?.[3]) app.push(busStopCard(s[3], s[0])); }}>Απέναντι στάση · {across.m} μ</button>{/if}</p>
+        {#if across}<p class="sub"><button type="button" class="across"
+          onclick={() => { const s = ix?.s[across.i]; if (s?.[3]) app.push(busStopCard(s[3], s[0])); }}>Απέναντι στάση · {across.m} μ</button></p>{/if}
       </div>
       {#if alertLines.length}
         <button type="button" class="bell" class:on={!!alertFor && !alertFor.line} title="Ειδοποίηση άφιξης σε αυτή τη στάση"
@@ -247,8 +249,11 @@
     {:else}
       <p>Φόρτωση αφίξεων…</p>
     {/if}
-    {#if id && at}
-      <p class="fix">{#if sent}Έστειλες τη θέση αυτής της στάσης. Ευχαριστούμε!{:else}<button type="button" class="link" onclick={startFix}>Λάθος θέση στάσης;</button>{/if}</p>
+    {#if (id && at) || code}
+      <div class="foot">
+        {#if id && at}<p class="fix">{#if sent}Έστειλες τη θέση αυτής της στάσης. Ευχαριστούμε!{:else}<button type="button" class="link" onclick={startFix}>Λάθος θέση στάσης;</button>{/if}</p>{/if}
+        {#if code}<p class="code">Κωδ. στάσης <b>{code}</b></p>{/if}
+      </div>
     {/if}
   </section>
   {#if alertFor}
@@ -320,7 +325,10 @@
   .on { margin-bottom: 8px; color: var(--accent); }
   .link { padding: 0; border: 0; background: none; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
   .src { margin: 10px 0 0; font-size: 11px; }
-  .fix { margin: 6px 0 0; font-size: 12px; }
+  .foot { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; }
+  .fix { margin: 0; font-size: 12px; }
+  .code { margin: 0 0 0 auto; font-size: 12px; color: var(--muted); user-select: all; }
+  .code b { font-weight: 600; font-variant-numeric: tabular-nums; }
   .fix .link { min-height: 32px; color: var(--muted); }
   header .bell { margin-top: -2px; }
   .starbtn { flex: none; width: 36px; height: 36px; margin: -4px -4px 0 0; border: 0; background: none; color: var(--muted); font-size: 20px;

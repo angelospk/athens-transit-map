@@ -26,7 +26,7 @@ export interface Usual {
   headway_min: number | null; next_hour_headway_min: number | null; next_at: number | null; spread_s: number | null;
 }
 export interface StopBoard {
-  stop: { id: string; name: string; lat: number; lon: number };
+  stop: { id: string; name: string; lat: number; lon: number; code?: string };   // code: rev 21, OASA only
   lines: string[];
   arrivals: StopArrival[];
   usual?: Usual[];   // rev 18; missing: an older server
@@ -238,4 +238,11 @@ export function usualRows(usual: Usual[] | undefined, groups: ArrivalGroup[], no
     if (text) out.push({ line: u.line, headsign: u.headsign, text });
   }
   return out;
+}
+
+// The code on the stop sign, so a rider can find the stop: OASA's stop_code from the server (rev 21;
+// it differs from the stop id for a third of the stops, «040054» for 40054), elsewhere the stop id.
+export function signCode(code: string | undefined, id: string | null | undefined, athens: boolean): string | null {
+  if (code) return code;
+  return athens ? null : id || null;
 }
