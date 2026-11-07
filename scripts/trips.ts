@@ -14,6 +14,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { TripIndex } from "../src/lib/trip";
+import { stopDirections } from "../src/lib/towards";
 import { applyCorrections, type Correction } from "../src/lib/stopfix";
 import type { LineStatic, LinesIndex } from "../src/lib/types";
 
@@ -56,5 +57,6 @@ for (const f of files) {
 // An instance that lost most of its lines (a half-loaded feed) would empty the map: keep the old file.
 const old: TripIndex | null = existsSync(OUT) ? JSON.parse(readFileSync(OUT, "utf8")) : null;
 if (old && data.s.length < old.s.length / 2) throw new Error(`${data.s.length} stops, was ${old.s.length}: not written`);
+data.d = stopDirections(data);
 writeFileSync(OUT, JSON.stringify(data));
 console.log(`${files.length} lines, ${data.s.length} stops, ${Object.values(data.l).reduce((n, v) => n + Object.keys(v).length, 0)} variants`);

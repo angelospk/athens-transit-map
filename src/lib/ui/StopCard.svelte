@@ -6,6 +6,8 @@
   import type { AppState } from "../state.svelte";
   import type { FetchResult } from "../poller";
   import Back from "./Back.svelte";
+  import Toward from "./Toward.svelte";
+  import { towardsOf } from "../towards";
   import Icon from "./Icon.svelte";
   import DisruptionRows from "./DisruptionRows.svelte";
   import { forStop } from "../disruptions";
@@ -39,6 +41,7 @@
   // The OASA notices about the stop or its lines (/v2 ids: oasa:<GTFS stop id>, oasa:<line>).
   const lineIds = $derived(lines.map(l => `oasa:${l.line}`));
   const disruptions = $derived(favId ? forStop(app.disruptions, favId, lineIds, app.serverNow) : []);
+  const dir = $derived(ix && i != null ? towardsOf(ix, i) : null);   // which way the buses leave
   const across = $derived(ix && i != null ? twins(ix, i)[0] : undefined);
   // The code on the stop sign, bottom right, so a rider can find the stop (rev 21).
   const code = $derived(signCode(board?.stop.code, id, app.cityId === "athens"));
@@ -157,6 +160,7 @@
       <Back {app} />
       <div class="t">
         <h2>{name}</h2>
+        {#if dir && (dir.towards.length || dir.bearing != null)}<p class="dir"><Toward {dir} /></p>{/if}
         {#if across}<p class="sub"><button type="button" class="across"
           onclick={() => { const s = ix?.s[across.i]; if (s?.[3]) app.push(busStopCard(s[3], s[0])); }}>Απέναντι στάση · {across.m} μ</button></p>{/if}
       </div>
@@ -273,6 +277,7 @@
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
   p { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
   .sub { margin: 2px 0 0; font-size: 13px; }
+  .dir { margin: 2px 0 0; font-size: 16px; }
   .across { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; text-underline-offset: 3px; }
   .back { font-weight: 500; color: var(--muted); }
   .across:hover { text-decoration: underline; }

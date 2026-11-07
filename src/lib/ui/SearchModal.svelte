@@ -7,6 +7,8 @@
   import { fetchV2Lines, fetchV2Stops } from "../api";
   import { placeSearch, type PlaceAnswer } from "../placeSearch";
   import { geocode, type Place } from "../trip";
+  import { towardsOfId } from "../towards";
+  import Toward from "./Toward.svelte";
   import { chipOf, findLines, findMuniLines, findMuniStops, findStops, lineStopPoints, pushRecent, toggleChip, type Chip, type MuniStopHit, type Recent, type StopEntry } from "../finder";
   import type { MuniCard } from "../muniLine";
   import type { V2Line } from "../v2";
@@ -66,6 +68,7 @@
       shown = PAGE;
       if (!dialog!.open) dialog!.showModal();
       void load();
+      void app.loadStops();   // the city's stop index: which way each bus stop goes
       void tick().then(() => input?.focus());
     });
   });
@@ -179,7 +182,7 @@
   <li class="row">
     <button type="button" class="pick" onclick={() => openStop(s[0], s[1])}>
       <span class="modes">{#each stopModes(s) as c (c)}<Icon name={c} />{/each}</span>
-      <span class="name">{s[1]}<small>{s[5].slice(0, 6).map(id => byId.get(id)?.label ?? native(id)).join(" · ")}{s[5].length > 6 ? " …" : ""}</small></span>
+      <span class="name">{s[1]}<Toward dir={towardsOfId(app.stopIx, s[0])} sep /><small>{s[5].slice(0, 6).map(id => byId.get(id)?.label ?? native(id)).join(" · ")}{s[5].length > 6 ? " …" : ""}</small></span>
     </button>
   </li>
 {/snippet}
