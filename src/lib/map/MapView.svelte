@@ -604,10 +604,15 @@
     showAcc(m, f);
     if (flyOnFix) {
       flyOnFix = false;
-      // Above «Κοντά σου», which may still be loading: keep the lower half free on a phone.
-      const pad = padNow();
-      if (innerWidth < 720) pad.bottom = Math.max(pad.bottom ?? 0, innerHeight * 0.5);
-      m.flyTo({ center: f.pos, zoom: Math.max(m.getZoom(), 15.5), padding: pad, duration: 1200 });
+      // A city the user chose stays on the map: no fly-to and no follow to a fix in another city.
+      const away = app.cityLocked && cityAt(f.pos) !== app.cityId;
+      if (away) follow = false;
+      else {
+        // Above «Κοντά σου», which may still be loading: keep the lower half free on a phone.
+        const pad = padNow();
+        if (innerWidth < 720) pad.bottom = Math.max(pad.bottom ?? 0, innerHeight * 0.5);
+        m.flyTo({ center: f.pos, zoom: Math.max(m.getZoom(), 15.5), padding: pad, duration: 1200 });
+      }
     }
   }
 
@@ -890,7 +895,7 @@
       : Promise.resolve("unknown");
     void perm.then(p => {
       if (disposed) return;
-      const what = onOpen({ linked: app.linked, perm: p, asked: read("nearAsked"), last });
+      const what = onOpen({ linked: app.linked, perm: p, asked: read("nearAsked"), last, picked: app.cityPicked });
       if (what === "none") { if (p === "granted" && read("locOn")) locator.start(); return; }
       if (what === "ask") store("nearAsked", true);
       if (what === "button") app.showNear();

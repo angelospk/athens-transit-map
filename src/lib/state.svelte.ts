@@ -130,6 +130,8 @@ export class AppState {
   // The URL named the city (a hand pick or a shared link): a location fix does not switch away from it until the
   // user taps locate. The URL always carries the city in its path (paths.ts).
   cityLocked = false;
+  // the page loaded right after a hand pick of the city (setCity with fly): no «Κοντά σου» on open
+  cityPicked = false;
   // The search modal (B8): closed, or open on a kind filter.
   finder = $state<"all" | "lines" | "stops" | "places" | null>(null);
   // A place from the search modal to plan a trip to: the panel opens the trip planner, which takes it as its end.
@@ -330,6 +332,11 @@ export class AppState {
     const linkedCard = cardFromUrl(location.pathname, location.search);
     this.linked = ids.length > 0 || !!linkedCard;
     this.cityLocked = cityInUrl(location.pathname, location.search);
+    // A hand pick set this just before the reload; one-shot.
+    try {
+      this.cityPicked = sessionStorage.getItem("cityPicked") === "1";
+      sessionStorage.removeItem("cityPicked");
+    } catch { this.cityPicked = false; }
     this.cityId = pageCityOf(location.pathname, location.search, stored<unknown>("city", null, () => true));
     store("city", this.cityId);
     this.selected = ids.slice(0, MAX_LINES);
@@ -587,6 +594,7 @@ export class AppState {
   setCity(c: CityId, fly = true) {
     if (c !== this.cityId) {
       store("city", c);
+      if (fly) { try { sessionStorage.setItem("cityPicked", "1"); } catch { /* private mode */ } }
       if (typeof location !== "undefined") location.replace(cityUrl(c));
       return;
     }

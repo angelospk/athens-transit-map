@@ -5,7 +5,7 @@
   import { untrack } from "svelte";
   import { fetchV2Stop } from "../api";
   import { busVehicleCard } from "../legacy";
-  import { distText, foldRows, rowNote, titleCase, walkMin, type NearGroup } from "../nearby";
+  import { distText, elsewhere, foldRows, rowNote, titleCase, walkMin, type NearGroup } from "../nearby";
   import { toward } from "../stops";
   import { stopRows, type StopRow, type V2Arrival } from "../v2";
   import type { AppState } from "../state.svelte";
@@ -33,9 +33,9 @@
 
   $effect(() => { if (app.nearShown) void app.loadStops(); });
 
-  // The city of the last fix (myPos is [lat, lon]), and whether the map shows another one: then the user picks.
+  // The city of the last fix (myPos is [lat, lon]), and whether the map shows another one: then the user picks or taps.
   const fixCity = $derived(app.myPos ? nearestCity([app.myPos[1], app.myPos[0]]) : null);
-  const elsewhere = $derived(!!app.myPos && fixCity !== app.cityId);
+  const away = $derived(elsewhere({ fixCity, cityId: app.cityId, hasPos: !!app.myPos, locked: app.cityLocked }));
 
   const ids = $derived(app.nearGroups.flatMap(g => g.ids));
   const idKey = $derived(ids.join("|"));
@@ -119,7 +119,10 @@
     {#snippet header()}
       <h2 class="title">Κοντά σου</h2>
     {/snippet}
-    {#if elsewhere}
+    {#if away === "go" && fixCity}
+      <p class="muted">Η θέση σου είναι στην {CITIES[fixCity].name}.</p>
+      <button type="button" class="use" onclick={() => pickCity(fixCity)}>Πήγαινε στην {CITIES[fixCity].name}</button>
+    {:else if away === "pick"}
       <p class="muted">{#if fixCity}Η θέση σου είναι στην {CITIES[fixCity].name}· δείχνεις {app.cityInfo.name}.{:else}Η θέση σου δεν είναι σε πόλη που ξέρω.{/if} Διάλεξε πόλη:</p>
       {@render cities()}
     {:else if !app.myPos || app.locState === "denied"}
