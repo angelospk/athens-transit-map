@@ -1,6 +1,6 @@
 // The cities the app knows, and how one is picked: ?city=, the last choice, or the user's location.
 import { GTFS_PAGE } from "./sources";
-import { CITYBUS, type CitybusSlug } from "./citybus";
+import { CITYBUS, type CitybusSlug, type Service } from "./citybus";
 
 export type CityId = "athens" | "thessaloniki" | CitybusSlug;
 
@@ -23,6 +23,7 @@ export interface City {
   stats: boolean;             // the daily network stats (stats branch) are of this city
   alerts: boolean;            // stop alerts: the bot and web push watch this city
   telegram: boolean;          // and in Telegram (@oasa_bus_bot routes a link by its city prefix, web#56)
+  service: Service;           // how much of it we can show live (citybus.ts)
   hint: string;
 }
 
@@ -32,18 +33,18 @@ const citybus = Object.fromEntries(CITYBUS.map(c => [c.slug, {
   id: c.slug, name: c.name, center: c.center, zoom: c.zoom, radiusKm: c.radiusKm, ready: true, rail: false,
   agency: "ΚΤΕΛ", agencyThe: "Το ΚΤΕΛ", gtfsPage: "https://citybus.gr/", gtfsHost: "citybus.gr", ns: c.code, plan: false,
   inName: c.inName, box: { south: c.box[0], west: c.box[1], north: c.box[2], east: c.box[3] },
-  stats: false, alerts: true, telegram: true, hint: "Αστικό ΚΤΕΛ",
+  stats: false, alerts: true, telegram: true, service: c.service, hint: "Αστικό ΚΤΕΛ",
 } satisfies City])) as Record<CitybusSlug, City>;
 
 export const CITIES: Record<CityId, City> = {
   athens: { id: "athens", name: "Αθήνα", center: [23.73, 37.98], zoom: 11.5, radiusKm: 70, ready: true, rail: true,
     agency: "ΟΑΣΑ", agencyThe: "Ο ΟΑΣΑ", gtfsPage: GTFS_PAGE, gtfsHost: "data.gov.gr", ns: "oasa", plan: true,
     inName: "στην Αθήνα", box: { south: 37.5, west: 22.9, north: 38.5, east: 24.5 },
-    stats: true, alerts: true, telegram: true, hint: "ΟΑΣΑ · Μετρό · Τραμ · Προαστιακός" },
+    stats: true, alerts: true, telegram: true, service: "live", hint: "ΟΑΣΑ · Μετρό · Τραμ · Προαστιακός" },
   thessaloniki: { id: "thessaloniki", name: "Θεσσαλονίκη", center: [22.94, 40.63], zoom: 12, radiusKm: 40, ready: true, rail: false,
     agency: "ΟΣΕΘ", agencyThe: "Ο ΟΣΕΘ", gtfsPage: "https://data.gov.gr/dataset/42c9a7da-c86c-48b1-914c-f340e8bef00d", gtfsHost: "data.gov.gr",
     ns: "oasa", plan: true, inName: "στη Θεσσαλονίκη", box: { south: 40.3, west: 22.6, north: 41.0, east: 23.4 },
-    stats: false, alerts: true, telegram: true, hint: "ΟΣΕΘ · λεωφορεία" },
+    stats: false, alerts: true, telegram: true, service: "live", hint: "ΟΣΕΘ · λεωφορεία" },
   ...citybus,
 };
 

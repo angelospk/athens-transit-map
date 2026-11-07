@@ -9,6 +9,10 @@ export type CitybusSlug =
   | "naousa" | "xanthi" | "patras" | "ptolemaida" | "serres" | "chalkida" | "chania" | "chios" | "salamina"
   | "skiathos";
 
+// How much of the service we can show: live (buses send GPS), partial (only some do), timetable (none does:
+// the operator's timetable only) or gaps (citybus.gr's timetable is incomplete: live buses on no scheduled trip).
+export type Service = "live" | "partial" | "timetable" | "gaps";
+
 export interface CitybusCity {
   slug: CitybusSlug;
   code: string;                 // the backend's path prefix and id namespace: /pat/..., pat:101
@@ -18,6 +22,7 @@ export interface CitybusCity {
   zoom: number;
   radiusKm: number;
   box: [number, number, number, number];   // south, west, north, east
+  service: Service;
 }
 
 type Row = [CitybusSlug, string, string, string, [number, number], number, number, [number, number, number, number]];
@@ -53,8 +58,16 @@ const ROWS: Row[] = [
   ["skiathos", "jsi", "Σκιάθος", "στη Σκιάθο", [23.455, 39.152], 13, 12, [39.11, 23.37, 39.22, 23.54]],
 ];
 
+// Live buses against scheduled trips, measured 2026-11-07 (evening + baseline); revisit after the 7-day report
+// of 2026-11-14. A code not listed is "live".
+const SERVICE: Record<string, Service> = {
+  dra: "timetable", pto: "timetable", cha: "timetable", kso: "timetable", nao: "timetable", jsi: "timetable",
+  ver: "partial", ser: "partial", kom: "partial", kat: "partial", agq: "partial", mes: "partial", jkh: "partial",
+  art: "gaps",
+};
+
 export const CITYBUS: CitybusCity[] = ROWS.map(([slug, code, name, inName, center, zoom, radiusKm, box]) =>
-  ({ slug, code, name, inName, center, zoom, radiusKm, box }));
+  ({ slug, code, name, inName, center, zoom, radiusKm, box, service: SERVICE[code] ?? "live" }));
 
 // The public instance; VITE_API_BASE_CITYBUS points the web at another (staging).
 export const CITYBUS_API = "https://staseis-rt.haroldpoi.dev";
