@@ -280,14 +280,14 @@ ${sections.join("\n")}`;
 
 // The city's home is the map itself: the page names the city so a search lands here, and it
 // links the all-lines page and the stats, which a crawler cannot reach from the app.
-export function homePage(city: CityId, lines: SeoLine[], shell: string): string {
+export function homePage(city: CityId, lines: SeoLine[], shell: string, hasStats: boolean): string {
   const name = CITIES[city].name;
   const canonical = SITE + encodeURI(homePath(city));
   const body = `<p class="kicker">Στάσεις</p>
 <h1>${escape(name)}</h1>
 <p class="lead">Ζωντανός χάρτης ${FOOTER_PHRASE[city]}: θέση οχημάτων, καθυστέρηση και πότε φτάνει το επόμενο.</p>
 <a class="cta" href="${escape(encodeURI(linesPath(city)))}">Όλες οι γραμμές ›</a>
-<p><a href="${escape(encodeURI(`/${city}/stats/`))}">Στατιστικά δικτύου</a></p>`;
+${hasStats ? `<p><a href="${escape(encodeURI(`/${city}/stats/`))}">Στατιστικά δικτύου</a></p>` : ""}`;
   return appPage(shell, {
     title: `Στάσεις · ζωντανός χάρτης · ${name}`,
     description: `Ζωντανός χάρτης ${FOOTER_PHRASE[city]}: ${lines.length} γραμμές με θέση οχημάτων, καθυστέρηση και χρόνο άφιξης.`,
@@ -379,33 +379,37 @@ export async function build(
       if (bad) throw new Error(`${path}: ${bad.id} ${bad.state}`);
       return body;
     };
+    // Only the API may skip a city other than Athens: a page or write error fails the build.
+    let lines: SeoLine[], stops: StopEntry[], details: LineDetail[];
     try {
       const { lines: raw } = await complete<{ lines: (Omit<SeoLine, "label"> & { label: string | null })[] }>("lines");
-      const lines: SeoLine[] = raw.map(l => ({ ...l, label: l.label ?? "" }));
-      const { stops } = await complete<{ stops: StopEntry[] }>("stops");
-      const details = await mapLimit(lines, 6, l => complete<LineDetail>("lines/" + encodeURIComponent(l.id)));
-
-      await writePath(homePath(city), homePage(city, lines, o.shell));
-      await writePath(linesPath(city), linesPage(city, lines));
-      await Promise.all([
-        ...stops.map(s => writePath(stopPath(city, s[0]), stopPage(city, s, lines, o.shell))),
-        ...details.map(d => writePath(linePath(city, d.line.id), linePage(city, d, o.shell))),
-      ]);
-      paths.push(homePath(city), linesPath(city), ...lines.map(l => linePath(city, l.id)), ...stops.map(s => stopPath(city, s[0])));
-      cities.push({ id: city, stops: stops.length, lines: lines.length });
-
-      // The old Athens pages (before web#47) become small forwarders. Thessaloniki never had any.
-      if (o.legacy && city === "athens") {
-        await Promise.all([
-          ...stops.map(s => writeAt(`stop/${slug(s[0])}.html`, movedPage(stopPath("athens", s[0])))),
-          ...lines.map(l => writeAt(`line/${slug(l.id)}.html`, movedPage(linePath("athens", l.id)))),
-        ]);
-        await writeAt("lines.html", movedPage(linesPath("athens")));
-      }
+      lines = raw.map(l => ({ ...l, label: l.label ?? "" }));
+      ({ stops } = await complete<{ stops: StopEntry[] }>("stops"));
+      details = await mapLimit(lines, 6, l => complete<LineDetail>("lines/" + encodeURIComponent(l.id)));
     } catch (err) {
       if (city === "athens") throw err;
       console.error(`seo: ${city} skipped: ${String(err)}`);
       cities.push({ id: city, stops: 0, lines: 0, skipped: String(err) });
+      continue;
+    }
+
+    const hasStats = (o.extraPaths ?? []).includes(`/${city}/stats/`);
+    await writePath(homePath(city), homePage(city, lines, o.shell, hasStats));
+    await writePath(linesPath(city), linesPage(city, lines));
+    await Promise.all([
+      ...stops.map(s => writePath(stopPath(city, s[0]), stopPage(city, s, lines, o.shell))),
+      ...details.map(d => writePath(linePath(city, d.line.id), linePage(city, d, o.shell))),
+    ]);
+    paths.push(homePath(city), linesPath(city), ...lines.map(l => linePath(city, l.id)), ...stops.map(s => stopPath(city, s[0])));
+    cities.push({ id: city, stops: stops.length, lines: lines.length });
+
+    // The old Athens pages (before web#47) become small forwarders. Thessaloniki never had any.
+    if (o.legacy && city === "athens") {
+      await Promise.all([
+        ...stops.map(s => writeAt(`stop/${slug(s[0])}.html`, movedPage(stopPath("athens", s[0])))),
+        ...lines.map(l => writeAt(`line/${slug(l.id)}.html`, movedPage(linePath("athens", l.id)))),
+      ]);
+      await writeAt("lines.html", movedPage(linesPath("athens")));
     }
   }
 
