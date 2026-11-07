@@ -421,13 +421,9 @@
 
   /* The diagram: a rail in the line's colour (--lc), the stops on it, the vehicles between them. */
   .diagram { position: relative; list-style: none; margin: 0; padding: 0; }
-  /* The rail, with chevrons down it: the way the buses go. */
+  /* The rail (the way it runs is said once above it, in .way). */
   .diagram::before { content: ""; position: absolute; left: 21px; top: 22px; bottom: 22px; width: 4px; border-radius: 2px; background: var(--lc); opacity: .85; }
-  .diagram::after { content: ""; position: absolute; left: 17px; top: 30px; bottom: 30px; width: 12px; opacity: .55; pointer-events: none;
-    background: linear-gradient(135deg, transparent 45%, var(--lc) 45%, var(--lc) 60%, transparent 60%) 0 0 / 6px 6px no-repeat,
-      linear-gradient(225deg, transparent 45%, var(--lc) 45%, var(--lc) 60%, transparent 60%) 6px 0 / 6px 6px no-repeat;
-    mask: repeating-linear-gradient(to bottom, #000 0 6px, transparent 6px 88px); }
-  .way { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; padding: 8px 10px; border-radius: 12px; background: var(--card);
+  .way { display: flex; align-items: center; gap: 8px; margin: 12px 0 8px; padding: 10px 12px; border-radius: 12px; background: var(--card);
     font-size: 12px; line-height: 1.3; color: var(--muted); }
   .way b { color: var(--fg); font-weight: 700; }
   .way :global(svg) { flex: none; color: var(--lc, var(--accent)); }

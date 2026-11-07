@@ -450,6 +450,8 @@ export class AppState {
   // Set by MapView: frame the given lines once their shapes are loaded; bring a point ([lon, lat]) into view.
   fit: (ids: string[]) => void = () => {};
   flyTo: (at: [number, number]) => void = () => {};
+  // The map's centre exactly on a point ([lon, lat]), no padding, the user's follow off: what the picking crosshair marks.
+  centerOn: (at: [number, number], zoom?: number) => void = () => {};
   // Set by MapView: find me (the browser asks for the permission when it must) and follow.
   locate: () => void = () => {};
   // MapView: moves the view to a city's centre.

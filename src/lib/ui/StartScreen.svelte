@@ -409,7 +409,7 @@
     const at = centre(p.pts);
     checking = { f, place: p };
     app.pickFor = f;
-    app.flyTo([at[1], at[0]]);
+    app.centerOn([at[1], at[0]]);
   }
   function takeAt(c: [number, number] | null) {
     const f = app.pickFor, was = checking;
@@ -840,10 +840,10 @@
 
 {#if app.start && app.pickFor}
   <!-- Picking on the map: a crosshair at the centre and two buttons; the map stays free to move. -->
-  <div class="pickbar" role="status" transition:rise={{ y: -16 }}>
+  <div class="pickbar" class:check={!!checking} role="status" transition:rise={{ y: -16 }}>
     <span class="dot {app.pickFor}"></span>
     {#if checking}
-      <span class="chk"><b>{checking.f === "from" ? "Από" : "Προς"}: {checking.place.kind === "me" ? "Εδώ που είσαι" : titleCase(checking.place.label)}</b><small>Λάθος σημείο; Μετακίνησε τον χάρτη και πάτα «Άλλαξε εδώ».</small></span>
+      <span class="chk"><b>{checking.f === "from" ? "Από" : "Προς"}: {checking.place.kind === "me" ? "Εδώ που είσαι" : titleCase(checking.place.label)}</b><small>Αυτό είναι το σημείο. Για άλλο, σύρε τον χάρτη και πάτα «Άλλαξε εδώ».</small></span>
     {:else}
       <span class="phone">{app.pickFor === "from" ? "Μετακίνησε τον χάρτη στην αφετηρία" : "Μετακίνησε τον χάρτη στον προορισμό"}</span>
       <span class="pc">{app.pickFor === "from" ? "Κάνε κλικ στην αφετηρία" : "Κάνε κλικ στον προορισμό"}<kbd>Esc</kbd></span>
@@ -1245,7 +1245,8 @@
             <span class="lb" class:round={r.line.mode === "metro"} style:--c={bd.bg} style:--t={bd.fg}>{bd.text}</span>
             <span class="ot"><b>{titleCase(r.line.name)}</b><small class="lm"><Icon name={mn[1]} size={13} />{mn[0]}</small></span>
             {@const n = liveOf(r.line.id)}
-            {#if n}<span class="live" in:item={{ y: 0 }}><i></i>Ζωντανά · {n}</span>
+            {@const sched = r.line.mode === "metro" || r.line.mode === "tram"}
+            {#if n}<span class="live" class:sched in:item={{ y: 0 }}><i></i>{sched ? "Πρόγραμμα" : "Ζωντανά"} · {n}</span>
             {:else if n === 0}<span class="live off" in:item={{ y: 0 }}>Δεν κυκλοφορεί τώρα</span>{/if}
           {:else if r.muniLine}
             <span class="lb muni">{r.muniLine.ref ?? "Δ"}</span>
@@ -1433,6 +1434,9 @@
   .live { flex: none; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; line-height: 1; color: var(--ontime); }
   .live i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
   .live.off { color: var(--muted); font-weight: 600; }
+  /* The metro and the tram send no positions: their count is from the timetable, not live. */
+  .live.sched { color: var(--muted); }
+  .live.sched i { background: none; box-shadow: inset 0 0 0 1.5px currentColor; }
   .ok { flex: none; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--accent); color: var(--on-accent); }
   .nothing { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 10px; font-size: 13px; line-height: 1.35; color: var(--muted); }
   .spin.small { flex: none; width: 14px; height: 14px; }
@@ -1492,6 +1496,9 @@
   .pickbar { position: fixed; z-index: 30; left: 50%; top: calc(16px + env(safe-area-inset-top)); transform: translateX(-50%); max-width: calc(100% - 32px);
     height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 16px; box-sizing: border-box; border-radius: 22px; background: var(--glass); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); text-shadow: var(--glass-text); font-size: 14px; font-weight: 600; line-height: 1; white-space: nowrap; }
   .pickbar span:last-child { overflow: hidden; text-overflow: ellipsis; }
+  /* Checking an end: its name and a line under it, the bar as tall as they need. */
+  .pickbar.check { width: calc(100% - 32px); max-width: 440px; height: auto; min-height: 56px; padding: 10px 16px; border-radius: 20px; white-space: normal; }
+  .pickbar.check .dot { align-self: flex-start; margin-top: 3px; }
   .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
   .dot.to { border-radius: 2px; background: var(--late1); }
   .cross { position: fixed; z-index: 29; left: 50%; top: 50%; transform: translate(-50%, -100%); color: var(--accent); pointer-events: none;

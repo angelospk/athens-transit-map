@@ -302,7 +302,10 @@
       layout: { "icon-image": "mode-disc", "icon-size": size(k * 1.15), "icon-offset": sideOffset,
         "icon-allow-overlap": true, "icon-ignore-placement": true, visibility: vis },
       paint: { "icon-color": color as ExpressionSpecification, "icon-opacity": fade } });
-    disc("train-sel", 1.4, accent, ["get", "sel"]);
+    // Picked: a soft halo, then a thin accent ring kept off the disc by the map-coloured edge (a ring, not a blob).
+    disc("train-sel-halo", 1.95, accent, ["get", "sel"]);
+    m.setPaintProperty("train-sel-halo", "icon-opacity", ["*", 0.18, fade] as ExpressionSpecification);
+    disc("train-sel", 1.3, accent, ["get", "sel"]);
     disc("train-edge", 1.1, ring);   // a thin ring in the map's own colour: a flat sticker, not a raised button
     disc("train-dot", 1, ["get", "color"]);
     m.addLayer({ id: "train-hole", type: "symbol", source: "trains",
@@ -1662,6 +1665,11 @@
       if (inside && m.getZoom() >= 13) return;
       m.easeTo({ center: at, zoom: Math.max(m.getZoom(), 14), padding: pad, duration: reducedMotion.matches ? 0 : 600 });
     };
+    app.centerOn = (at, zoom = 16.5) => {
+      follow = false;   // else the follow of the user takes the map straight back to them
+      if (focus) focus.follow = false;
+      m.easeTo({ center: at, zoom: Math.max(m.getZoom(), zoom), padding: { top: 0, bottom: 0, left: 0, right: 0 }, duration: reducedMotion.matches ? 0 : 700 });
+    };
     focusOn = (at, min) => {
       follow = false;   // the tapped thing, not the user, is what to look at
       const pad = sheetPad();
@@ -1688,6 +1696,7 @@
       app.peekAt = () => {};
       app.showCity = () => {};
       app.flyTo = () => {};
+      app.centerOn = () => {};
       app.fitPoints = () => {};
       focusOn = () => {};
       pin.remove();
@@ -1731,7 +1740,7 @@
 
   $effect(() => {
     const vis = app.trainsOn ? "visible" : "none", stations = app.trainsOn && !app.chase ? "visible" : "none";   // a chase hides the stations
-    if (loaded) for (const id of ["train-sel", "train-edge", "train-dot", "train-hole", "train-heading", "train-age", "train-route", "train-route-2", "train-route-casing"])
+    if (loaded) for (const id of ["train-sel-halo", "train-sel", "train-edge", "train-dot", "train-hole", "train-heading", "train-age", "train-route", "train-route-2", "train-route-casing"])
       map!.setLayoutProperty(id, "visibility", vis);
     if (loaded) for (const id of ["metro-station", "metro-station-glyph", "metro-label", "suburban-station", "suburban-station-glyph", "suburban-label"])
       map!.setLayoutProperty(id, "visibility", stations);

@@ -515,8 +515,8 @@
   </CardSheet>
 {/if}
 
-{#if card && isMetro && app.threeD && app.under}
-  <!-- Metro mode on: a pill over the map says so, and how to leave it. -->
+{#if card && isMetro && app.threeD && app.under && !app.start && !app.pickFor}
+  <!-- Metro mode on: a pill over the map says so, and how to leave it (over the map only: under every panel). -->
   <div class="upill" role="status" transition:open>
     <span class="ui" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 19h5v-4h4v-4h4V7h5" /></svg></span>
     <span class="ut"><b>Λειτουργία μετρό</b><small>Μόνο τα τούνελ και τα τρένα</small></span>
@@ -741,7 +741,7 @@
   .rall { align-self: center; height: 40px; margin-top: 6px; padding: 0 16px; border: 0; border-radius: 20px; background: none; color: var(--muted);
     font: inherit; font-size: 14px; font-weight: 600; line-height: 1; cursor: pointer; }
   .rall:hover { background: var(--control); color: var(--fg); }
-  .upill { position: fixed; z-index: 40; left: 12px; right: 12px; top: calc(env(safe-area-inset-top) + 84px); max-width: 420px; margin: 0 auto; height: 56px;
+  .upill { position: fixed; z-index: 6; left: 12px; right: 12px; top: calc(env(safe-area-inset-top) + 84px); max-width: 420px; margin: 0 auto; height: 56px;
     display: flex; align-items: center; gap: 12px; padding: 0 8px 0 10px; box-sizing: border-box; border-radius: 28px;
     background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 8px 24px rgba(0, 0, 0, .4); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
   .upill .ui { flex: none; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
