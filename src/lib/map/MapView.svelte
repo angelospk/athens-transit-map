@@ -1618,14 +1618,14 @@
       m.fitBounds(b, { padding: padNow(), maxZoom: 17, duration: reducedMotion.matches ? 0 : 700, absolutePadding: true });
     };
     // The guide's look from the stop (NavGuide): close in, tilted, turned the way the bus comes from.
-    // Street level, as one stands at the stop: close in (zoom 19.6), tilted near the horizon (76°), the stop in the
+    // Street level, as one stands at the stop: close in (zoom 20.4), tilted to the horizon (80°), the stop in the
     // foreground and the street the bus comes along ahead. The 3D view allows the tilt; it may only now be turning on.
     app.lookFrom = (at, bearing) => {
       follow = false;
       looked = true;
       if (m.getMaxPitch() < 80) m.setMaxPitch(80);
       m.setPadding({ top: 0, bottom: 0, left: 0, right: 0 });
-      m.easeTo({ center: at, zoom: 19.6, pitch: 76, bearing, padding: padNow(), duration: reducedMotion.matches ? 0 : 1400 });
+      m.easeTo({ center: at, zoom: 20.4, pitch: 80, bearing, padding: padNow(), duration: reducedMotion.matches ? 0 : 1400 });
     };
     app.showCity = c => {
       follow = false;

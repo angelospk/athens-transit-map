@@ -177,9 +177,14 @@
   function comesFrom(r: GuideRide): Pt | null {
     const lane = app.guideApproach;
     if (lane && lane.length > 1) {
-      // About 150 m back along the lane from the stop.
+      // 50 m back along the lane from the stop: the street's own direction there (further back, a bend turned the
+      // camera across the street).
       let d = 0;
-      for (let i = lane.length - 1; i > 0; i--) { d += metres(lane[i], lane[i - 1]); if (d >= 150) return lane[i - 1]; }
+      for (let i = lane.length - 1; i > 0; i--) {
+        const seg = metres(lane[i], lane[i - 1]);
+        if (d + seg >= 50) { const t = (50 - d) / seg; return [lane[i][0] + (lane[i - 1][0] - lane[i][0]) * t, lane[i][1] + (lane[i - 1][1] - lane[i][1]) * t]; }
+        d += seg;
+      }
       return lane[0];
     }
     return r.before.at(-1)?.at ?? bus?.at ?? null;
@@ -191,7 +196,7 @@
     const from = comesFrom(r), at = r.board.at;
     const bearing = from ? bearingOf(at, from) : 0;
     // The point a little that way from the stop: the stop low in the picture, the street it comes along above it.
-    const k = 35 / 111_320, rad = (bearing * Math.PI) / 180;
+    const k = 18 / 111_320, rad = (bearing * Math.PI) / 180;
     const c: [number, number] = [at[1] + (Math.sin(rad) * k) / Math.cos((at[0] * Math.PI) / 180), at[0] + Math.cos(rad) * k];
     was3d = app.threeD;
     peeking = false;
@@ -223,7 +228,13 @@
       if (shape?.length) {
         const near = (p: Pt) => shape.reduce((b, q, i) => (metres(q, p) < metres(shape[b], p) ? i : b), 0);
         const i = near(at), j = near(r.board.at);
-        if (i < j && j - i < 2000) return [at, ...shape.slice(i + 1, j + 1), r.board.at];
+        if (i < j && j - i < 2000) {
+          // The shape's point nearest the stop can lie just past it: the lane ends at the stop, not beyond and back.
+          const mid = shape.slice(i + 1, j + 1);
+          const toStop = metres(at, r.board.at);
+          while (mid.length && metres(at, mid[mid.length - 1]) > toStop) mid.pop();
+          return [at, ...mid, r.board.at];
+        }
       }
     } catch { /* the stops below */ }
     return [at, ...r.before.filter(s => metres(s.at, r.board.at) < metres(at, r.board.at)).map(s => s.at), r.board.at];
@@ -875,8 +886,9 @@
     <section class="sheet" class:full={nsnap === "full"} class:dragging={dragH != null} aria-label="Η διαδρομή" hidden={app.stack.length > 0} bind:this={sheetEl} bind:offsetHeight={sheetH}
       class:free={freeH != null} style:height={dragH != null ? `${dragH}px` : freeH != null ? `${freeH}px` : undefined}>
       <div class="grip" role="button" tabindex="0" aria-label={nsnap === "full" ? "Μικρότερο" : "Μεγαλύτερο"} use:sheetDrag={navDrag}
-        onkeydown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); nsnap = nsnap === "half" ? "full" : "half"; } }}></div>
-      <button type="button" class="round sm minbtn" aria-label="Σμίκρυνση πλοήγησης" title="Σμίκρυνση" onclick={() => setMini(true)}><Icon name="chevron" size={18} /></button>
+        onkeydown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); nsnap = nsnap === "half" ? "full" : "half"; } }}>
+        <button type="button" class="round sm minbtn" aria-label="Σμίκρυνση πλοήγησης" title="Σμίκρυνση" onclick={() => setMini(true)}><Icon name="chevron" size={18} /></button>
+      </div>
       <!-- Where to, when, and the trip to scale with the user on it -->
       <header class="head">
         <span class="dest"><small>ΠΡΟΣ</small><b>{g.dest}</b></span>
@@ -1028,7 +1040,9 @@
     display: flex; flex-direction: column; gap: 12px; padding: 8px 14px max(16px, env(safe-area-inset-bottom)); border-radius: var(--sheet-r) var(--sheet-r) 0 0;
     background: var(--surface); border-top: 1px solid var(--border); box-shadow: 0 -18px 40px rgba(0, 0, 0, .35); scrollbar-width: none; }
   .sheet::-webkit-scrollbar { display: none; }
-  .grip { align-self: stretch; height: 30px; margin: -12px -14px -12px; display: flex; align-items: center; justify-content: center; cursor: grab; }
+  /* The handle stays at the top while the sheet's content scrolls under it (it scrolled away with it). */
+  .grip { position: sticky; top: -8px; z-index: 3; align-self: stretch; height: 30px; margin: -8px -14px -12px; display: flex; align-items: center; justify-content: center;
+    cursor: grab; background: var(--surface); border-radius: var(--sheet-r) var(--sheet-r) 0 0; }
   .grip::after { content: ""; width: 40px; height: 5px; border-radius: 3px; background: var(--border); }
   /* Half: the leg now and a little more, the map above it; the rest scrolls, or a drag shows it. */
   .sheet { max-height: 46dvh; }
@@ -1040,7 +1054,7 @@
   .mb { pointer-events: auto; width: 48px; height: 48px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 50%;
     background: var(--surface); color: var(--fg); cursor: pointer; box-shadow: 0 6px 18px rgba(0, 0, 0, .3); }
   .mb.on { background: var(--accent); color: var(--on-accent, #fff); border-color: transparent; }
-  .minbtn { position: absolute; top: 8px; right: 8px; z-index: 1; }
+  .minbtn { position: absolute; top: 4px; right: 8px; z-index: 1; }
   .muted { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
   .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding-right: 40px; }
   .dest { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
