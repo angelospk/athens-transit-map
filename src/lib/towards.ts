@@ -28,6 +28,7 @@ export function cleanTerminus(name: string): string {
       .filter((w, i) => !/\d/.test(w) || (i === 0 && /^\d+$/.test(w)));
     if (words[0] === "ΑΦΕΤΗΡΙΑ") words.shift();
     if (words.length > 1 && words[words.length - 1] === "ΤΕΡΜΑ") words.pop();   // «ΛΙΜΑΝΙ ΤΕΡΜΑ»
+    while (words.length > 1 && !/[\p{L}\d]/u.test(words[words.length - 1])) words.pop();   // «ΠΑΝΩ ΠΛΑΤΕΙΑ – ΤΕΡΜΑ»: the dash left
     if (words.length > 1 && /^\p{L}$/u.test(words[words.length - 1])) words.pop();   // the platform
     const out = words.join(" ");
     return out && out !== "ΑΦΕΤΗΡΙΑ" && out !== "ΤΕΡΜΑ" ? [out] : [];
@@ -69,7 +70,7 @@ export function stopDirections(ix: TripIndex): StopDirs {
 
   for (const [line, variants] of Object.entries(ix.l)) for (const seq of Object.values(variants)) {
     if (seq.length < 2) continue;
-    const loop = seq[0] === seq[seq.length - 1];
+    const loop = seq[0] === seq[seq.length - 1] || distanceM(pt(seq[0]), pt(seq[seq.length - 1])) < 50;   // back near the start: a loop too
     let turn = -1;
     for (let i = 1, far = -1; loop && i < seq.length; i++) {
       const d = distanceM(pt(seq[0]), pt(seq[i]));
@@ -81,8 +82,10 @@ export function stopDirections(ix: TripIndex): StopDirs {
         const key = `${line}|${nx}`;
         if (!votes[k].has(key)) votes[k].set(key, bearingDeg(pt(k), pt(nx)));
       }
-      const t = loop ? (i < turn ? seq[turn] : seq[0]) : seq[seq.length - 1];
-      const name = cleanTerminus(ix.s[t][0]), own = ix.s[k][0];
+      const t = loop && i < turn ? turn : seq.length - 1;                            // the terminus position in the variant
+      let name = cleanTerminus(ix.s[seq[t]][0]);                                     // a terminus with no place name
+      for (let p = t - 1; !name && p > i; p--) name = cleanTerminus(ix.s[seq[p]][0]); // (ΑΦΕΤΗΡΙΑ): the last named stop before it
+      const own = ix.s[k][0];
       if (!name || fold(name) === fold(cleanTerminus(own)) || fold(name) === fold(own)) continue;
       let set = names[k].get(name);
       if (!set) names[k].set(name, (set = new Set()));

@@ -23,7 +23,6 @@ describe("citybus cities in the bot", () => {
     });
   });
 
-  // No index yet: too many stops without a direction (tests/towards.test.ts), #57.
   it("each have the map's stop index, rebuilt daily by citybus-stops.yml", () => {
     const wf = readFileSync(".github/workflows/citybus-stops.yml", "utf8");
     for (const c of CITYBUS) {

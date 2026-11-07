@@ -65,6 +65,9 @@ describe("cleanTerminus", () => {
     ["0-ΛΙΜΑΝΙ ΤΕΡΜΑ", "ΛΙΜΑΝΙ"],
     ["ΑΣΕΛΗΝΟΣ ΤΕΡΜΑ", "ΑΣΕΛΗΝΟΣ"],
     ["ΤΕΡΜΑ", ""],
+    ["ΑΦEΤΗΡΙΑ", ""],                              // a Latin E (Ptolemaida)
+    ["ΕΠΑΛ-ΙΕΚ 2", "ΕΠΑΛ-ΙΕΚ"],
+    ["ΠΑΝΩ ΠΛΑΤΕΙΑ – ΤΕΡΜΑ", "ΠΑΝΩ ΠΛΑΤΕΙΑ"],        // no dash left behind (Drama)
   ])("%s → %s", (raw, out) => expect(cleanTerminus(raw)).toBe(out));
 });
 
@@ -147,6 +150,43 @@ describe("stopDirections", () => {
     t.d = stopDirections(t);
     expect(towardsOf(t, 1).towards).toEqual(["ΣΤΡΟΦΗ"]);
     expect(towardsOf(t, 3).towards).toEqual(["ΑΡΧΗ"]);
+  });
+
+  // Skiathos (#57): to and from «0-ΛΙΜΑΝΙ ΤΕΡΜΑ».
+  it("names a citybus.gr terminus without its stop number and ΤΕΡΜΑ", () => {
+    const t: TripIndex = {
+      v: "t",
+      s: [["0-ΛΙΜΑΝΙ", 39.16547, 23.49191, "000"], ["ΑΕΡΟΔΡΟΜΙΟ", 39.17566, 23.50048, "901"], ["0-ΛΙΜΑΝΙ ΤΕΡΜΑ", 39.16503, 23.49218, "001"]],
+      l: { ΣΚΙ: { "901": [0, 1], "902": [1, 2] } },
+    };
+    t.d = stopDirections(t);
+    expect(towardsOf(t, 0).towards).toEqual(["ΑΕΡΟΔΡΟΜΙΟ"]);
+    expect(towardsOf(t, 1).towards).toEqual(["ΛΙΜΑΝΙ"]);
+  });
+
+  // Kastoria line 13 (#57): from «ΑΦΕΤΗΡΙΑ 2» round to «ΑΦΕΤΗΡΙΑ», two stop ids 23 m apart.
+  const k13: TripIndex = {
+    v: "t",
+    s: [
+      ["ΑΦΕΤΗΡΙΑ 2", 40.52148, 21.26212, "16600"], ["ΓΕΝΙΚΑ ΛΥΚΕΙΑ", 40.53208, 21.25885, "16136"],
+      ["ΕΠΑΛ-ΙΕΚ", 40.54246, 21.2634, "16148"], ["1 ΓΥΜΝΑΣΙΟ", 40.53709, 21.26434, "16157"],
+      ["ΓΕΝΙΚΑ ΛΥΚΕΙΑ ΚΑΣΤΟΡΙΑΣ", 40.53207, 21.26004, "16156"], ["ΒΑΝ ΦΛΥΤ", 40.52295, 21.2643, "16154"],
+      ["ΑΦΕΤΗΡΙΑ", 40.5214, 21.26187, "16001"],
+    ],
+    l: { "13": { "013": [0, 1, 2, 3, 4, 5, 6] } },
+  };
+  k13.d = stopDirections(k13);
+
+  it("a line that ends within a few metres of its start is a loop too", () => {
+    expect(towardsOf(k13, 0).towards).toEqual(["ΕΠΑΛ-ΙΕΚ"]);
+    expect(towardsOf(k13, 1).towards).toEqual(["ΕΠΑΛ-ΙΕΚ"]);
+  });
+
+  it("a terminus without a place name (ΑΦΕΤΗΡΙΑ): the last named stop before it", () => {
+    expect(towardsOf(k13, 2).towards).toEqual(["ΒΑΝ ΦΛΥΤ"]);
+    expect(towardsOf(k13, 3).towards).toEqual(["ΒΑΝ ΦΛΥΤ"]);
+    expect(towardsOf(k13, 4).towards).toEqual(["ΒΑΝ ΦΛΥΤ"]);
+    expect(towardsOf(k13, 5).towards).toEqual([]);   // no named stop left after it
   });
 });
 
