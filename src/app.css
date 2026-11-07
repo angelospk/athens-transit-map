@@ -249,12 +249,12 @@ button, input, select, textarea { font: inherit; color: inherit; }
    below (and the ride bar) stay, and they are the way out. */
 @media (max-width: 719px) {
   :root[data-chase] .panel, :root[data-chase] .rail, :root[data-chase] .maplibregl-ctrl-group,
-  :root[data-chase] .popwrap { display: none; }
+  :root[data-chase] .popwrap, :root[data-chase] .under { display: none; }
 }
 
 /* Picking a trip's end on the map («Πού πας;»): only the map, the crosshair and its two buttons. */
 :root[data-pick] .panel, :root[data-pick] .rail, :root[data-pick] .maplibregl-ctrl-group, :root[data-pick] .tabs,
-:root[data-pick] .now, :root[data-pick] .ridebar, :root[data-pick] .mapnote, :root[data-pick] .favtip { display: none; }
+:root[data-pick] .now, :root[data-pick] .ridebar, :root[data-pick] .mapnote, :root[data-pick] .under { display: none; }
 
 /* «Πού πας;» on a computer is a panel over the live map: the left column under it gives way; the map keeps its buttons.
    Picking on the map, the pointer is a crosshair. */

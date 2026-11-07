@@ -17,6 +17,7 @@ export interface GuideRide {
   board: GStop; alight: GStop;
   seq: GStop[];           // the stops ridden, board first and alight last
   before: GStop[];        // up to 4 stops before the board stop (where the bus comes from)
+  shape?: Pt[];           // the plan's own way for the ride ([lat, lon]), drawn when the line's is not known
 }
 export type GuideLeg = GuideWalk | GuideRide;
 export interface Guide { key: string; legs: GuideLeg[]; dest: string; arrive: number | null }
@@ -103,6 +104,7 @@ export function guideFromPlan(it: Itinerary, r: PlanResponse, ix: TripIndex | nu
     };
     if (!ride.seq.length) ride.seq = [ride.board, ride.alight];
     if (l.headsign) ride.headsign = titleCase(placeNote(toward(l.headsign)).place);
+    if (l.shape?.length > 1) ride.shape = l.shape;
     rides.push(ride);
   }
   const from: Pt = [r.from.lat, r.from.lon], to: Pt = [r.to.lat, r.to.lon];

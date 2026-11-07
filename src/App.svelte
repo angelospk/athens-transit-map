@@ -30,6 +30,18 @@
   $effect(() => { document.documentElement.toggleAttribute("data-pick", !!app.start && !!app.pickFor); });
   $effect(() => { document.documentElement.toggleAttribute("data-start", !!app.start && !app.pickFor); });
   $effect(() => { document.documentElement.toggleAttribute("data-home", (app.tab === "now" || app.tab === "alerts") && !app.stack.length); });
+  // iOS leaves the page scrolled up after the keyboard closes (the screen is one fixed page): the top banner goes under
+  // the clock and a gap opens at the foot. Back to the top whenever no field has the keyboard.
+  $effect(() => {
+    const typing = () => { const a = document.activeElement; return !!a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA"); };
+    const back = () => { if (!typing() && (scrollY || document.documentElement.scrollTop)) scrollTo(0, 0); };
+    const later = () => setTimeout(back, 120);
+    addEventListener("scroll", back, { passive: true });
+    addEventListener("focusout", later);
+    visualViewport?.addEventListener("resize", later);
+    return () => { removeEventListener("scroll", back); removeEventListener("focusout", later); visualViewport?.removeEventListener("resize", later); };
+  });
+  $effect(() => { void app.start; void app.guide; setTimeout(() => { if (scrollY) scrollTo(0, 0); }, 150); });
   // Favourites only: at start (once the lines are loaded) and when it or the favourite bus lines change.
   $effect(() => {
     void app.favOnly; void app.favorites.join("|"); void app.lines;

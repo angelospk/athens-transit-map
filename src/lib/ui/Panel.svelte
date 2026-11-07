@@ -260,7 +260,6 @@
       <button type="button" aria-label="Κλείσιμο" onclick={() => app.dismissHit(h.id)}><Icon name="close" size={13} /></button>
     </div>
   {/each}
-  <StatusBanner {app} />
 
   {#snippet tail()}
     {#if app.selected.length}
@@ -285,17 +284,24 @@
     </button>
   {/snippet}
 </section>
-  <!-- Favourites only (B7): its first-time tip, on its own under the bar (no panel behind it). -->
-  {#if app.tab === "now" || app.tab === "alerts"}
-    <!-- «Τώρα» holds the favourites and the notices itself: the bar stays a search bar. -->
-  {:else if !app.favorites.length && !app.favHintSeen && !app.selected.length && !app.linked && !(pop && narrow.current)}
-    <!-- Not under the chips, nor on a shared link: on a phone that row would cover the map. Nor while a popover covers
-         the panel on a phone: the panel is inert then, and its «Εντάξει» could not be pressed. -->
-    <div class="favtip" role="note" style:top="calc(16px + env(safe-area-inset-top) + {panelH}px + 10px)" transition:fade={{ duration: 160 }}>
-      <span class="ftic"><Icon name="star-filled" size={15} /></span>
-      <span class="ftx"><b>Μόνο τα δικά σου.</b> Πάτα το αστέρι σε στάση ή γραμμή, και μετά εδώ, για να βλέπεις μόνο αυτά.</span>
-      <button type="button" onclick={() => app.dismissFavHint()}>Εντάξει</button>
-    </div>
+  <!-- Under the bar, each on its own (no panel behind them): the connection's state and notices, the favourites' first
+       tip. Not while a popover or a card stands under the bar: they would cover it. -->
+  {#if !pop && !app.stack.length}
+  <div class="under" style:top="calc(16px + env(safe-area-inset-top) + {panelH}px + 10px)">
+    <StatusBanner {app} />
+    <!-- Favourites only (B7): its first-time tip, on its own under the bar (no panel behind it). -->
+    {#if app.tab === "now" || app.tab === "alerts"}
+      <!-- «Τώρα» holds the favourites and the notices itself: the bar stays a search bar. -->
+    {:else if !app.favorites.length && !app.favHintSeen && !app.selected.length && !app.linked && !(pop && narrow.current)}
+      <!-- Not under the chips, nor on a shared link: on a phone that row would cover the map. Nor while a popover covers
+           the panel on a phone: the panel is inert then, and its «Εντάξει» could not be pressed. -->
+      <div class="favtip" role="note" transition:fade={{ duration: 160 }}>
+        <span class="ftic"><Icon name="star-filled" size={15} /></span>
+        <span class="ftx"><b>Μόνο τα δικά σου.</b> Πάτα το αστέρι σε στάση ή γραμμή, και μετά εδώ, για να βλέπεις μόνο αυτά.</span>
+        <button type="button" onclick={() => app.dismissFavHint()}>Εντάξει</button>
+      </div>
+    {/if}
+  </div>
   {/if}
 
 
@@ -394,7 +400,9 @@
   .favbtn.on:hover { background: color-mix(in srgb, var(--star) 26%, transparent); color: var(--star); }
   @media (pointer: coarse) { .favbtn { height: 44px; min-width: 44px; } }
   /* The first time: what the star does, once. */
-  .favtip { position: absolute; z-index: 5; left: 16px; width: 400px; max-width: calc(100% - 76px); box-sizing: border-box; display: flex; align-items: center; gap: 12px;
+  .under { position: absolute; z-index: 5; left: 16px; width: 400px; max-width: calc(100% - 76px); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+  .under > :global(*) { pointer-events: auto; }
+  .favtip { box-sizing: border-box; display: flex; align-items: center; gap: 12px;
     padding: 12px 12px 12px 14px; border-radius: 22px; background: color-mix(in srgb, var(--star) 13%, var(--surface));
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--star) 34%, transparent), 0 8px 24px rgba(0, 0, 0, .3); }
   .ftic { flex: none; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 50%;
@@ -537,7 +545,7 @@
     :global(:root[data-sheet]) .popwrap { left: 8px !important; right: 8px !important; width: auto; max-width: none; }
     :global(:root[data-sheet]) .rail { opacity: 0; pointer-events: none; transform: translateX(12px); }
     :global(:root[data-sheet]) .panel:not(.home) { right: 16px; max-width: none; }
-    .favtip { right: 68px; width: auto; max-width: none; }
+    .under { right: 68px; width: auto; max-width: none; }
     .rail { transition: opacity .2s, transform .25s cubic-bezier(.2, .8, .2, 1); }
   }
   @media (pointer: coarse) and (max-width: 719px) {

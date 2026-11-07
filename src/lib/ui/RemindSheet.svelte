@@ -24,6 +24,9 @@
   const armed = $derived(app.leaveRemind?.key === key ? app.leaveRemind : null);
   const firstPrep = () => (app.leaveRemind?.key === `${it.depart_at}-${it.arrive_at}` ? app.leaveRemind.prepMin : 2);
   let prep = $state(firstPrep());
+  // «Άλλο»: the user's own minutes, a step of one (1 to 60).
+  let own = $state(![0, 2, 5].includes(firstPrep()));
+  const setOwn = (m: number) => { prep = Math.max(1, Math.min(60, m)); };
   const leaveAt = $derived(armed && armed.prepMin === prep ? armed.leaveAt : (rideLeg?.depart_at ?? it.depart_at) - walkS - prep * 60);
   const live = $derived(isLiveMode(mode));
   const what = $derived(mode === "metro" ? "το μετρό" : mode === "tram" ? "το τραμ" : mode === "trolley" ? "το τρόλεϊ" : "το λεωφορείο");
@@ -47,8 +50,16 @@
       {:else}Το {label} δεν έχει ζωντανή θέση: μετράω με το πρόγραμμα και πόσο περπατάς ως τον σταθμό ({walkMin} {walkMin === 1 ? "λεπτό" : "λεπτά"}).{/if}</p>
     <p class="sq">Πόση ώρα θες για να ετοιμαστείς;</p>
     <div class="seg" role="radiogroup" aria-label="Πόση ώρα θες για να ετοιμαστείς">
-      {#each [0, 2, 5] as m (m)}<button type="button" role="radio" aria-checked={prep === m} class:on={prep === m} onclick={() => (prep = m)}>{m === 0 ? "Καθόλου" : `${m} λεπτά`}</button>{/each}
+      {#each [0, 2, 5] as m (m)}<button type="button" role="radio" aria-checked={!own && prep === m} class:on={!own && prep === m} onclick={() => { own = false; prep = m; }}>{m === 0 ? "Καθόλου" : `${m} λεπτά`}</button>{/each}
+      <button type="button" role="radio" aria-checked={own} class:on={own} onclick={() => { own = true; if ([0, 2, 5].includes(prep)) prep = 10; }}>Άλλο</button>
     </div>
+    {#if own}
+      <div class="step" role="group" aria-label="Δικά σου λεπτά">
+        <button type="button" class="sb" aria-label="Λιγότερα" disabled={prep <= 1} onclick={() => setOwn(prep - (prep > 10 ? 5 : 1))}>−</button>
+        <span class="sv"><b>{prep}</b> λεπτά</span>
+        <button type="button" class="sb" aria-label="Περισσότερα" disabled={prep >= 60} onclick={() => setOwn(prep + (prep >= 10 ? 5 : 1))}>+</button>
+      </div>
+    {/if}
     <p class="sp small">Η ειδοποίηση έρχεται όσο η σελίδα είναι ανοιχτή{typeof Notification !== "undefined" ? ", και στην οθόνη κλειδώματος αν το επιτρέψεις" : ""}.</p>
     <div class="sacts">
       {#if armed}
@@ -68,4 +79,11 @@
 <style>
   .when { color: var(--fg); font-size: 17px; }
   .small { font-size: 13px; }
+  .step { margin-top: 10px; height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 6px; border-radius: 14px;
+    background: color-mix(in srgb, var(--fg) 7%, var(--surface)); }
+  .sb { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    background: color-mix(in srgb, var(--fg) 12%, var(--surface)); color: var(--fg); font: inherit; font-size: 24px; font-weight: 500; line-height: 1; cursor: pointer; }
+  .sb:disabled { opacity: .35; cursor: default; }
+  .sv { font-size: 16px; color: var(--muted); line-height: 1; }
+  .sv b { font-size: 20px; color: var(--fg); font-weight: 700; }
 </style>

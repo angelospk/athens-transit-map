@@ -21,8 +21,11 @@
 {/if}
 
 <style>
-  .warn { margin-top: 10px; padding: 6px 10px; border-radius: 8px; background: var(--warn-bg); font-size: 12px; }
-  p { margin: 2px 0; }
+  /* On its own under the bar (Panel's .under): rounded like it, solid, not on a panel. */
+  .warn { padding: 12px 16px; border-radius: 22px; background: color-mix(in srgb, var(--warn-fg, #f0ae45) 13%, var(--surface)); color: var(--fg);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn-fg, #f0ae45) 30%, transparent), 0 8px 24px rgba(0, 0, 0, .3); font-size: 13.5px; line-height: 1.4; }
+  p { margin: 0; }
+  p + p { margin-top: 4px; }
   a, .link { color: inherit; font-weight: 600; }
   .link { padding: 0; border: 0; background: none; font: inherit; text-decoration: underline; cursor: pointer; }
 </style>

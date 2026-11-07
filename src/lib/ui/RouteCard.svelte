@@ -126,7 +126,10 @@
         </li>
       {/each}
     </ol>
-    {#if onmap}<button type="button" class="onmap" onclick={onmap}><Icon name="map" size={15} /><span>Δες τη στον χάρτη</span></button>{/if}
+    <div class="foot">
+      {#if onmap}<button type="button" class="onmap" onclick={onmap}><Icon name="map" size={15} /><span>Δες τη στον χάρτη</span></button>{/if}
+      <button type="button" class="onmap" onclick={onpick}><span class="chev up"><Icon name="chevron" size={14} /></span><span>Κλείσε</span></button>
+    </div>
   {/if}
 </div>
 
@@ -175,7 +178,8 @@
   .sx { flex: 1; min-width: 0; min-height: 36px; display: flex; flex-direction: column; justify-content: center; gap: 4px; }
   .sx b { font-size: 16px; font-weight: 600; line-height: 1.25; }
   .sx small { font-size: 13px; color: var(--muted); line-height: 1.3; }
-  .onmap { margin: 0 16px 14px; height: 40px; padding: 0 14px; display: inline-flex; align-items: center; gap: 8px; border: 0; border-radius: 12px;
+  .foot { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 14px; }
+  .onmap { height: 40px; padding: 0 14px; display: inline-flex; align-items: center; gap: 8px; border: 0; border-radius: 12px;
     background: color-mix(in srgb, var(--fg) 8%, transparent); color: var(--fg); font: inherit; font-size: 14px; font-weight: 600; line-height: 1; cursor: pointer; }
   @media (prefers-reduced-motion: reduce) { .veh, .chev { transition: none; } }
 </style>

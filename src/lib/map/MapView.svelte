@@ -951,7 +951,7 @@
       me.marker.setLngLat(r.pos);
       if (me.mover.fixing) fixing = true;
       if (follow && (!app.tripPlan || app.guide) && !m.isMoving()) {   // not during the fly-to or a gesture; a trip framed stays, unless followed
-        const fr = app.guide ? app.guideFrame : null;
+        const fr = app.guide && !app.headingUp ? app.guideFrame : null;   // the phone turned: the user ahead, not an overview
         if (fr?.length) frameGuide(m, r.pos, fr);
         else {
           if (framedGuide) { framedGuide = false; m.easeTo({ center: r.pos, zoom: Math.max(m.getZoom(), 17), padding: padNow(), duration: reducedMotion.matches ? 0 : 700 }); }
@@ -1592,6 +1592,8 @@
     app.followMe = () => {
       if (locState === "off" || locState === "denied") { follow = true; flyOnFix = false; cityOnFix = true; locator.start(); }
       follow = true;
+      // The guide keeps its frame (the stop, the bus): the next frame step fits it at once, no jump to the user first.
+      if (app.guide && app.guideFrame?.length && !app.headingUp && me) { frameAt = 0; return; }
       if (me) m.easeTo({ center: me.mover.pos, zoom: Math.max(m.getZoom(), 17), padding: padNow(), duration: reducedMotion.matches ? 0 : 800 });
       else if (app.guide?.legs[0]) { const l = app.guide.legs[0], at = l.kind === "walk" ? l.from : l.board.at; m.easeTo({ center: [at[1], at[0]], zoom: 17, duration: 0 }); }
     };

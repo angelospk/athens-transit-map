@@ -413,7 +413,7 @@
     const cur = app.guideStep, wl = app.guideWalk;
     const features = gg.legs.map((l, k) => {
       const pts: Pt[] = l.kind === "walk" ? (k === cur && wl ? wl : [l.from, l.to])
-        : shapes[`${l.line}|${l.variant}|${l.board.id}|${l.alight.id}`] ?? l.seq.map(s => s.at);
+        : shapes[`${l.line}|${l.variant}|${l.board.id}|${l.alight.id}`] ?? (l.shape && l.shape.length > 1 ? l.shape : l.seq.map(s => s.at));
       return { type: "Feature" as const, properties: { kind: l.kind, color: l.kind === "walk" ? "#5b9dff" : app.lineColor(l.line).bg },
         geometry: { type: "LineString" as const, coordinates: pts.map(p => [p[1], p[0]]) } };
     });
@@ -640,12 +640,11 @@
     <!-- On the map: the bus (and the stop) in view; the map turned with the phone. Just above the sheet. -->
     <div class="mapbtns" hidden={app.stack.length > 0} style:bottom="{(sheetH || 0) + 12}px">
       {#if bus && ride && !(rideIsNow && app.guideOn)}
-        <button type="button" class="mb" class:on={peeking} onclick={peek} aria-pressed={peeking}><Icon name={peeking ? "locate" : "bus"} size={18} /><span>{peeking ? "Σε εμένα" : `Πού είναι το ${ride.line}`}</span></button>
+        <button type="button" class="mb" class:on={peeking} onclick={peek} aria-pressed={peeking} aria-label={peeking ? "Πίσω σε εμένα" : `Πού είναι το ${ride.line}`} title={peeking ? "Πίσω σε εμένα" : `Πού είναι το ${ride.line}`}><Icon name={peeking ? "locate" : "bus"} size={20} /></button>
       {/if}
       <button type="button" class="mb round2" class:on={app.headingUp} aria-pressed={app.headingUp} onclick={headingUp}
         aria-label={app.headingUp ? "Ο χάρτης με τον βορρά πάνω" : "Γύρνα τον χάρτη με το κινητό"} title={app.headingUp ? "Βορράς πάνω" : "Γύρνα τον χάρτη με το κινητό"}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 5.5l2.6 6.5H9.4z" fill="currentColor" stroke="none" /><path d="M9.4 12h5.2L12 18.5z" opacity=".35" fill="currentColor" stroke="none" /></svg>
-        {#if !app.headingUp}<span>Γύρνα το κινητό</span>{/if}
       </button>
     </div>
 
@@ -800,10 +799,9 @@
   .sheet.dragging { max-height: none; overflow: hidden; }
   .mapbtns { position: absolute; right: 12px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; z-index: 2; pointer-events: none; }
   .mapbtns[hidden] { display: none; }
-  .mb { pointer-events: auto; height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 14px 0 12px; border: 1px solid var(--border); border-radius: 22px;
-    background: var(--surface); color: var(--fg); font: inherit; font-size: 14px; font-weight: 600; line-height: 1; cursor: pointer; box-shadow: 0 6px 18px rgba(0, 0, 0, .3); white-space: nowrap; }
+  .mb { pointer-events: auto; width: 48px; height: 48px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 50%;
+    background: var(--surface); color: var(--fg); cursor: pointer; box-shadow: 0 6px 18px rgba(0, 0, 0, .3); }
   .mb.on { background: var(--accent); color: var(--on-accent, #fff); border-color: transparent; }
-  .mb.round2:not(:has(span)) { width: 44px; padding: 0; justify-content: center; }
   .minbtn { position: absolute; top: 8px; right: 8px; z-index: 1; }
   .muted { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
   .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding-right: 40px; }
