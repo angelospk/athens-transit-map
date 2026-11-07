@@ -5,7 +5,6 @@ import type { TripIndex } from "./trip";
 import { bearingDeg } from "./heading";
 import { distanceM } from "./glide";
 import { fold } from "./search";
-import { titleCase } from "./nearby";
 
 // n: the unique cleaned terminus names; s: per stop, [] or [bearing, ...indexes into n].
 export interface StopDirs { n: string[]; s: (number | null)[][] }
@@ -98,11 +97,15 @@ export function stopDirections(ix: TripIndex): StopDirs {
   return { n, s };
 }
 
+// OASA writes names in capitals without accents, which is correct Greek; a name in small letters is put in
+// capitals too ("el" drops the accents). Abbreviations (ΠΛ., ΑΓ.) stay as they are.
+const caps = (s: string) => s.toLocaleUpperCase("el");
+
 // The direction of a stop of the index, ready to show; nothing for an index without directions.
 export function towardsOf(ix: TripIndex, i: number): { bearing: number | null; towards: string[] } {
   const e = ix.d?.s[i];
   if (!e || !e.length) return { bearing: null, towards: [] };
-  return { bearing: typeof e[0] === "number" ? e[0] : null, towards: e.slice(1).map(x => titleCase(ix.d!.n[x as number])) };
+  return { bearing: typeof e[0] === "number" ? e[0] : null, towards: e.slice(1).map(x => caps(ix.d!.n[x as number])) };
 }
 
 const byId = new WeakMap<TripIndex, Map<string, number>>();
@@ -121,5 +124,5 @@ export function towardsOfId(ix: TripIndex | null, id: string): { bearing: number
   return k == null ? null : towardsOf(ix, k);
 }
 
-// The directions as one line: «προς Μουσειο · Πολυγωνο», empty with no names.
+// The directions as one line: «προς ΜΟΥΣΕΙΟ · ΠΟΛΥΓΩΝΟ», empty with no names.
 export const towardsText = (names: string[]) => (names.length ? `προς ${names.join(" · ")}` : "");

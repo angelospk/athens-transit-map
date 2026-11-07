@@ -71,8 +71,8 @@ describe("stopDirections", () => {
   });
 
   it("names the two busiest termini, by lines (not variants), noise skipped, ties by name", () => {
-    expect(towardsOf(ix, 0).towards).toEqual(["Μουσειο", "Πολυγωνο"]);
-    expect(towardsOf(ix, 1).towards).toEqual(["Πλ. Πλατανου", "Πλ. Χαλανδριου"]);
+    expect(towardsOf(ix, 0).towards).toEqual(["ΜΟΥΣΕΙΟ", "ΠΟΛΥΓΩΝΟ"]);
+    expect(towardsOf(ix, 1).towards).toEqual(["ΠΛ. ΠΛΑΤΑΝΟΥ", "ΠΛ. ΧΑΛΑΝΔΡΙΟΥ"]);
   });
 
   it("gives the bearing to the next stop, so the two sides of the road point opposite ways", () => {
@@ -97,7 +97,7 @@ describe("stopDirections", () => {
       l: { X: { v: [0, 1] }, Y: { v: [0, 1] }, Z: { v: [0, 2] } },
     };
     t.d = stopDirections(t);
-    expect(towardsOf(t, 0).towards).toEqual(["Πολυγωνο"]);
+    expect(towardsOf(t, 0).towards).toEqual(["ΠΟΛΥΓΩΝΟ"]);
   });
 
   it("an arrow only when a clear majority of lines leave the same way", () => {
@@ -140,12 +140,22 @@ describe("stopDirections", () => {
       l: { R: { v: [0, 1, 2, 3, 0] } },
     };
     t.d = stopDirections(t);
-    expect(towardsOf(t, 1).towards).toEqual(["Στροφη"]);
-    expect(towardsOf(t, 3).towards).toEqual(["Αρχη"]);
+    expect(towardsOf(t, 1).towards).toEqual(["ΣΤΡΟΦΗ"]);
+    expect(towardsOf(t, 3).towards).toEqual(["ΑΡΧΗ"]);
   });
 });
 
 describe("towardsOf / towardsOfId / towardsText", () => {
+  it("names stay in capitals, without accents (capitals take none in Greek), abbreviations as they are", () => {
+    const t: TripIndex = {
+      v: "t",
+      s: [["Κ", 37.98, 23.75, "0"], ["Μουσείο Ακρόπολης", 37.97, 23.75, "1"], ["ΑΓ. ΠΑΡΑΣΚΕΥΗ", 37.99, 23.75, "2"]],
+      l: { a: { v: [0, 1] }, b: { v: [0, 1] }, c: { v: [0, 2] } },
+    };
+    t.d = stopDirections(t);
+    expect(towardsOf(t, 0).towards).toEqual(["ΜΟΥΣΕΙΟ ΑΚΡΟΠΟΛΗΣ", "ΑΓ. ΠΑΡΑΣΚΕΥΗ"]);
+  });
+
   it("an index without directions (an older trips.json) gives nothing", () => {
     const old: TripIndex = { v: "t", s: ix.s, l: ix.l };
     expect(towardsOf(old, 0)).toEqual({ bearing: null, towards: [] });
@@ -159,8 +169,8 @@ describe("towardsOf / towardsOfId / towardsText", () => {
   });
 
   it("writes «προς X · Y», empty with no names", () => {
-    expect(towardsText(["Μουσειο", "Πολυγωνο"])).toBe("προς Μουσειο · Πολυγωνο");
-    expect(towardsText(["Μουσειο"])).toBe("προς Μουσειο");
+    expect(towardsText(["ΜΟΥΣΕΙΟ", "ΕΡΥΘΡΟΣ ΣΤΑΥΡΟΣ"])).toBe("προς ΜΟΥΣΕΙΟ · ΕΡΥΘΡΟΣ ΣΤΑΥΡΟΣ");
+    expect(towardsText(["ΜΟΥΣΕΙΟ"])).toBe("προς ΜΟΥΣΕΙΟ");
     expect(towardsText([])).toBe("");
   });
 });
