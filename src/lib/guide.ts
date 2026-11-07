@@ -46,13 +46,19 @@ function rideOf(ix: TripIndex, line: string, variant: string, i: number, j: numb
   };
 }
 
+// The metro (M1–M3) and the tram (T6, T7) board at a station, under or beside the street: «ως τον σταθμό», and
+// down to the platform.
+export const isRail = (line: string) => /^[MΜTΤ]\d/.test(line);
+/** «τη στάση Χ» or «τον σταθμό Χ», for a walk's end. */
+export const toThe = (name: string) => (name.startsWith("σταθμό") ? `τον ${name}` : name.startsWith("στάση") ? `τη ${name}` : name);
+
 // Walks round the rides: from the start to the first stop, between the rides when their stops differ, and from the
 // last stop to the end. A walk of under 20 m is left out.
 function withWalks(rides: GuideRide[], from: Pt, to: Pt, dest: string): GuideLeg[] {
   const legs: GuideLeg[] = [];
   let at = from;
   for (const r of rides) {
-    if (metres(at, r.board.at) >= 20) legs.push({ kind: "walk", from: at, to: r.board.at, toName: `στάση ${r.board.name}`, final: false });
+    if (metres(at, r.board.at) >= 20) legs.push({ kind: "walk", from: at, to: r.board.at, toName: `${isRail(r.line) ? "σταθμό" : "στάση"} ${r.board.name}`, final: false });
     legs.push(r);
     at = r.alight.at;
   }
@@ -180,7 +186,7 @@ const onto = (name: string) => (name ? ` στην ${name}` : "");
 
 /** One step said as a sentence. `end`: where the walk goes ("στάση Σύνταγμα", or the place). */
 export function stepText(st: WalkStep, end: string): string {
-  if (st.type === "arrive") return end.startsWith("στάση") ? `Φτάνεις στη ${end}` : `Φτάνεις: ${end}`;
+  if (st.type === "arrive") return end.startsWith("στάση") ? `Φτάνεις στη ${end}` : end.startsWith("σταθμό") ? `Φτάνεις στον ${end}: κατέβα στο μετρό` : `Φτάνεις: ${end}`;
   if (st.type === "depart") return `Ξεκίνα${onto(st.name)}`;
   if (st.type === "roundabout" || st.type === "rotary") return `Στον κόμβο, πάρε την ${st.exit ?? 1}η έξοδο${onto(st.name)}`;
   if (st.type === "continue" || st.type === "new name") return `Συνέχισε${onto(st.name)}`;

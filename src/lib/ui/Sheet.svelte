@@ -7,12 +7,38 @@
 
   let { title, onclose, children }: { title: string; onclose: () => void; children: Snippet } = $props();
   const id = `sheet-${Math.random().toString(36).slice(2, 8)}`;
+  // While it is open the page under it stays still: its scrolling panels are held (html.sheet-open, app.css), and a
+  // drag on the dim part or on a sheet with nothing to scroll is not passed on to them (iOS hands it to the page).
+  $effect(() => {
+    const h = document.documentElement;
+    h.dataset.sheets = String((+(h.dataset.sheets ?? 0)) + 1);
+    h.classList.add("sheet-open");
+    return () => {
+      const n = Math.max(0, +(h.dataset.sheets ?? 1) - 1);
+      h.dataset.sheets = String(n);
+      if (!n) h.classList.remove("sheet-open");
+    };
+  });
+  function still(node: HTMLElement, own: boolean) {
+    let y = 0;
+    const start = (e: TouchEvent) => { y = e.touches[0]?.clientY ?? 0; };
+    const move = (e: TouchEvent) => {
+      if (!own) { e.preventDefault(); return; }
+      // The sheet scrolls itself; at its top pulling down, at its foot pushing up, or with nothing to scroll: held.
+      const dy = (e.touches[0]?.clientY ?? 0) - y, el = node;
+      const none = el.scrollHeight <= el.clientHeight + 1;
+      if (none || (dy > 0 && el.scrollTop <= 0) || (dy < 0 && el.scrollTop + el.clientHeight >= el.scrollHeight - 1)) e.preventDefault();
+    };
+    node.addEventListener("touchstart", start, { passive: true });
+    node.addEventListener("touchmove", move, { passive: false });
+    return { destroy() { node.removeEventListener("touchstart", start); node.removeEventListener("touchmove", move); } };
+  }
 </script>
 
 <svelte:window onkeydown={e => { if (e.key === "Escape") { e.stopPropagation(); onclose(); } }} />
 
-<div class="shade" role="presentation" onclick={onclose} transition:soft></div>
-<div class="sheet" role="dialog" aria-modal="true" aria-labelledby={id} transition:rise={{ y: 60, duration: 260 }}>
+<div class="shade" role="presentation" onclick={onclose} use:still={false} transition:soft></div>
+<div class="sheet" use:still={true} role="dialog" aria-modal="true" aria-labelledby={id} transition:rise={{ y: 60, duration: 260 }}>
   <i class="sgrip" aria-hidden="true"></i>
   <h2 {id}>{title}</h2>
   {@render children()}

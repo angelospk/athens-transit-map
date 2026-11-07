@@ -349,6 +349,17 @@
     else inputs[f]?.blur();
   }
 
+  // «Η θέση μου» stays where the user is: a move of over 80 m (the location the map follows) moves the start with it.
+  const meAcc = $derived(app.myFix ? Math.round(app.myFix.acc) : null);
+  $effect(() => {
+    const at = app.myPos;
+    untrack(() => {
+      for (const f of ["from", "to"] as Field[]) {
+        const p = ends[f].place;
+        if (p?.kind === "me" && at && distM(p.pts[0], at) > 80) ends[f] = { text: ends[f].text, place: { ...p, pts: [at] } };
+      }
+    });
+  });
   let quietPick = false;
   function locate(f: Field, quiet = false) {
     ends[f] = { text: ME, place: null };
@@ -791,7 +802,10 @@
 {:else if app.start}
   <div class="start" class:side={wide} role="dialog" aria-modal={!wide} aria-labelledby="start-h" transition:soft>
     <div class="box" bind:this={boxEl} in:rise={{ y: 32, duration: 360 }}>
-      <p class="brand" in:item={{ i: 1 }}><span class="logo" aria-hidden="true"><Icon name="bus" size={15} /></span>Στάσεις</p>
+      <div class="brandrow">
+        <p class="brand" in:item={{ i: 1 }}><span class="logo" aria-hidden="true"><Icon name="bus" size={15} /></span>Στάσεις</p>
+        {#if !wide}<button type="button" class="xclose" aria-label="Κλείσιμο" title="Κλείσιμο" onclick={() => { app.savingPlace = null; app.pickFor = null; app.start = false; }}><Icon name="close" size={16} /></button>{/if}
+      </div>
       {#if app.savingPlace}
         <h1 id="start-h" in:item={{ i: 2 }}>{app.savingPlace === "home" ? "Πού είναι το Σπίτι;" : "Πού είναι η Δουλειά;"}</h1>
       {:else if wide}
@@ -826,7 +840,7 @@
           <div class="field end {f}" class:open={open === f} class:set={!!ends[f].place} class:swapped class:search={intro}>
             {#if intro}<label class="fs" for="start-{f}"><Icon name="search" size={20} /><span class="sr">Πού πας;</span></label>
             {:else if wide || app.savingPlace}<span class="mk {f}" aria-hidden="true"></span><label class="fl" for="start-{f}">{f === "from" ? "Από" : "Πού"}</label>
-            {:else}<label class="sr" for="start-{f}">{f === "from" ? "Από πού ξεκινάς" : "Πού θέλεις να πας"}</label>{#if !ends[f].place}<span class="fs2" aria-hidden="true"><Icon name="search" size={19} /></span>{/if}{/if}
+            {:else}<label class="sr" for="start-{f}">{f === "from" ? "Από πού ξεκινάς" : "Πού θέλεις να πας"}</label>{#if ends[f].place?.kind === "me"}<span class="mearr" aria-hidden="true"><svg class="arr" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5 3.8 10.6a.6.6 0 0 0 .05 1.12l6.6 2.03 2.03 6.6a.6.6 0 0 0 1.12.05z" fill="currentColor" /></svg></span>{:else if !ends[f].place}<span class="fs2" aria-hidden="true"><Icon name="search" size={19} /></span>{/if}{/if}
             <input id="start-{f}" bind:this={inputs[f]} value={ends[f].text} autocomplete="off" spellcheck="false"
               placeholder={f === "from" ? (wide ? "Από πού ξεκινάς;" : "Γράψε από πού ξεκινάς") : intro ? "Πού πας; Διεύθυνση, στάση ή γραμμή" : wide ? "Στάση, περιοχή, οδός" : "Γράψε μέρος, στάση ή γραμμή"} role="combobox" aria-expanded={open === f} aria-controls="start-{f}-list"
               onfocus={e => { open = f; menu = null; if (ends[f].place) e.currentTarget.select(); }} oninput={e => edit(f, e.currentTarget.value)}
@@ -835,6 +849,7 @@
               <button type="button" class="clear" aria-label="Καθάρισμα" title="Καθάρισμα" onclick={() => { ends[f] = { text: "", place: null }; inputs[f]?.focus(); }}><Icon name="close" size={13} /></button>
             {/if}
             {#if ends[f].place}
+              {#if ends[f].place?.kind === "me" && !wide}<span class="melive">{meAcc != null ? `ζωντανά · ±${meAcc} μ` : (ends[f].place?.hint ?? "").replace(/\.$/, "")}</span>{/if}
               <button type="button" class="chg" onclick={() => { ends[f] = { text: "", place: null }; inputs[f]?.focus(); }}>Αλλαγή</button>
             {:else if intro && !ends[f].text}
               <kbd class="slash" aria-hidden="true">/</kbd>
@@ -1157,7 +1172,7 @@
             <span class="oi"><Icon name="stop" size={17} /></span>
             <span class="ot"><b>{r.muniStop.name}</b><small>Δημοτική στάση · {town(r.muniStop.municipality)}</small></span>
           {:else if r.me}
-            <span class="oi"><Icon name="locate" size={17} /></span><span class="ot"><b>{ME}</b><small>Από την τοποθεσία της συσκευής σου</small></span>
+            <span class="oi meoi"><svg class="arr" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5 3.8 10.6a.6.6 0 0 0 .05 1.12l6.6 2.03 2.03 6.6a.6.6 0 0 0 1.12.05z" fill="currentColor" /></svg></span><span class="ot"><b>{ME}</b><small>{app.myFix ? `Ζωντανά, εδώ που είσαι τώρα · ±${Math.round(app.myFix.acc)} μ` : "Από την τοποθεσία της συσκευής σου"}</small></span>
           {:else if r.map}
             <span class="oi"><Icon name="map" size={17} /></span><span class="ot"><b>Διάλεξε στον χάρτη</b>{#if !ends[f].text.trim()}<small class="phone">Μετακίνησε τον χάρτη και πάτα «Εδώ»</small><small class="pc">Κάνε κλικ στο σημείο</small>{/if}</span>
           {:else if r.place}
@@ -1540,6 +1555,10 @@
   .ends.asks .field.end input::placeholder { font-size: 17px; font-weight: 500; }
   .ends.asks .field.end.open { border-color: var(--pc-acc, var(--accent)); }
   .fs2 { flex: none; display: flex; color: var(--muted); }
+  .mearr { flex: none; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    background: color-mix(in srgb, var(--pc-acc, var(--accent)) 18%, transparent); color: var(--pc-acc, var(--accent)); }
+  .melive { flex: none; font-size: 12px; font-weight: 500; color: var(--muted); line-height: 1; white-space: nowrap; }
+  .meoi { color: var(--pc-acc, var(--accent)); }
   .ends.asks .sugg { padding: 10px 0 0; }
   .ends.asks .sc { height: 40px; padding: 0 14px 0 12px; border-radius: 12px; font-size: 15px; }
   .chg { flex: none; height: 40px; padding: 0 14px; display: flex; align-items: center; border: 0; border-radius: 12px; font: inherit; font-size: 14px; font-weight: 600; line-height: 1;
@@ -1582,5 +1601,8 @@
     background: color-mix(in srgb, var(--fg) 10%, transparent); color: var(--fg); font: inherit; font-size: 15px; font-weight: 600; line-height: 1; cursor: pointer; white-space: nowrap; }
   .ghost2.on { background: color-mix(in srgb, var(--pc-acc, var(--accent)) 18%, transparent); color: var(--fg); }
   .ghost2:disabled { opacity: .5; cursor: default; }
+  .brandrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 40px; margin: -8px 0; }
+  .xclose { flex: none; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 50%;
+    background: color-mix(in srgb, var(--fg) 10%, transparent); color: var(--fg); cursor: pointer; }
   .actrow .link :global(svg) { flex: none; }
 </style>

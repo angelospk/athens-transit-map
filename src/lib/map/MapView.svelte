@@ -788,6 +788,33 @@
     locator.start();
   }
 
+  // The navigator, following: the user and the frame's points (the stop walked to, the bus when it is close) in view,
+  // eased there every couple of seconds; turned with the phone when «Γύρνα το κινητό» is on.
+  let framedGuide = false, frameAt = 0;
+  function frameGuide(m: MlMap, at: LngLat, pts: [number, number][]) {
+    const t = performance.now();
+    if (t - frameAt < 2500) return;
+    frameAt = t;
+    const b = pts.reduce((b, p) => b.extend(p), new LngLatBounds(at, at));
+    m.setPadding({ top: 0, bottom: 0, left: 0, right: 0 });
+    const pad = padNow();
+    m.fitBounds(b, { padding: { top: (pad.top ?? 0) + 40, bottom: (pad.bottom ?? 0) + 40, left: (pad.left ?? 0) + 40, right: (pad.right ?? 0) + 40 },
+      maxZoom: 17.5, bearing: app.headingUp && app.compass != null ? app.compass : m.getBearing(), duration: framedGuide && !reducedMotion.matches ? 1200 : 0, absolutePadding: true });
+    framedGuide = true;
+  }
+  // The phone's compass turns the map (heading-up); off again, north is up.
+  let lastBearing = 0;
+  $effect(() => {
+    const on = app.headingUp, c = app.compass, m = map;
+    if (!m) return;
+    if (!on) { if (lastBearing) { lastBearing = 0; m.rotateTo(0, { duration: 400 }); } return; }
+    if (c == null || m.isMoving()) return;
+    const d = Math.abs(((c - m.getBearing() + 540) % 360) - 180);
+    if (d < 3) return;
+    lastBearing = c;
+    m.rotateTo(c, { duration: 250 });
+  });
+
   // One frame loop for every moving dot (buses and trains). It runs as often as needed for steps of under half a
   // pixel at 20 m/s (zoomed out: once a second), faster during corrections and trails; nothing while
   // the tab is hidden. Off-screen city vehicles are not stepped: they snap when they come back.
@@ -923,7 +950,14 @@
       const r = me.mover.step(Date.now() / 1000);
       me.marker.setLngLat(r.pos);
       if (me.mover.fixing) fixing = true;
-      if (follow && !app.tripPlan && !m.isMoving()) m.setCenter(r.pos, { follow: true });   // not during the fly-to or a gesture
+      if (follow && (!app.tripPlan || app.guide) && !m.isMoving()) {   // not during the fly-to or a gesture; a trip framed stays, unless followed
+        const fr = app.guide ? app.guideFrame : null;
+        if (fr?.length) frameGuide(m, r.pos, fr);
+        else {
+          if (framedGuide) { framedGuide = false; m.easeTo({ center: r.pos, zoom: Math.max(m.getZoom(), 17), padding: padNow(), duration: reducedMotion.matches ? 0 : 700 }); }
+          else m.setCenter(r.pos, { follow: true });
+        }
+      }
     }
     // Corrections and trails: 30 fps close up; zoomed out, where they are a few pixels and every frame
     // steps the whole city, 4 fps.

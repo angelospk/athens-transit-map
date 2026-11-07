@@ -233,7 +233,7 @@
         <span class="livedot" class:warn={busAge > 90} title={ageLabel(busAge)}></span>
       {:else}
         <span class="ht"><h2 class="wrap">{busHead ? `Προς ${busHead}` : titleCase(app.lineInfo.get(line)?.name ?? "")}</h2>
-          <small>{app.lineInfo.get(line)?.kind === "trolley" ? "Τρόλεϊ" : "Λεωφορείο"}{bus ? ` · όχημα ${bus.v.id}` : ""}</small></span>
+          <small>{app.lineInfo.get(line)?.kind === "trolley" ? "Τρόλεϊ" : "Λεωφορείο"}{ahead[0] ? ` · επόμενη στάση ${titleCase(ahead[0].name)}` : ""}</small></span>
       {/if}
     {/snippet}
     {#if bus}
@@ -242,10 +242,18 @@
         {#if waitMin != null && waitMin >= 1}<p class="meta">Στην αφετηρία · φεύγει σε {waitMin}′</p>{/if}
         {@const d = bus.v.delay_s}
         {@const end = ahead.length ? ahead[ahead.length - 1].at : null}
+        <!-- The trip being followed rides this line: when it reaches the user's stop; else when it ends. -->
+        {@const gb = app.guide?.legs.find(x => x.kind === "ride" && x.line === line)}
+        {@const mine = gb && gb.kind === "ride" ? ahead.find(a => a.id === gb.board.id || a.name.toLowerCase() === gb.board.name.toLowerCase()) : undefined}
         <div class="facts">
           <span><small>ΚΑΘΥΣΤΕΡΗΣΗ</small><b class:late={(d ?? 0) >= 120} class:ok={d != null && d < 120 && d > -120}>{d == null ? "—" : d >= 120 ? `+${Math.round(d / 60)}′` : d <= -120 ? `−${Math.round(-d / 60)}′` : "Στην ώρα"}</b></span>
           <span><small>ΘΕΣΗ</small><b class:warn={busAge > 90}>πριν {ageLabel(busAge)}</b></span>
-          <span><small>{end ? "ΤΕΡΜΑ" : "ΟΧΗΜΑ"}</small><b>{end ? clockHM(end) : bus.v.id}</b></span>
+          {#if mine}
+            {@const mm = Math.max(0, Math.round((mine.at * 1000 - app.serverNow) / 60_000))}
+            <span><small>ΣΤΗ ΣΤΑΣΗ ΣΟΥ</small><b class="ok">{mm === 0 ? "τώρα" : `σε ${mm}′`}</b></span>
+          {:else if end}
+            <span><small>ΤΕΡΜΑ</small><b>{clockHM(end)}</b></span>
+          {/if}
         </div>
         {#if headNote}
           <p class="detour"><Icon name="warn" size={15} /><span><b>{headNote}</b>{busHead ? `: η διαδρομή προς ${busHead} μπορεί να διαφέρει.` : ""}</span></p>

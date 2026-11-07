@@ -385,6 +385,12 @@ export class AppState {
   lineHubs = $state.raw<{ id: string; name: string; at: [number, number]; badges: { label: string; color: string; round: boolean }[]; more: number }[]>([]);
   // That bus where it is now ([lat, lon]), for its marker on the map while the rider walks or waits.
   guideBus = $state.raw<{ at: [number, number]; line: string; vehicle: string } | null>(null);   // vehicle: its OASA id
+  // The navigator's frame: points ([lon, lat]) kept in view with the user while following (the stop walked to, and the
+  // bus once it is close); null: the map just keeps the user in the middle.
+  guideFrame = $state.raw<[number, number][] | null>(null);
+  // «Γύρνα το κινητό»: the map turns with the phone (its compass, degrees from north), so up is where the user faces.
+  headingUp = $state(false);
+  compass = $state<number | null>(null);
   startGuide(g: Guide) {
     this.closeCards();
     this.start = false;
@@ -398,6 +404,8 @@ export class AppState {
   }
   endGuide() {
     this.guide = null;
+    this.guideFrame = null;
+    this.headingUp = false;
     this.guideWalk = null;
     this.guideApproach = null;
     this.guideBus = null;

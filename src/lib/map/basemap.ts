@@ -105,7 +105,8 @@ const PLACES: Record<string, { font: string; size: unknown; spacing: number }> =
 
 
 interface BaseMap {
-  getStyle(): { layers: { id: string; type?: string; "source-layer"?: string }[] };
+  getStyle(): { layers: { id: string; type?: string; "source-layer"?: string; filter?: unknown }[] };
+  setFilter?(id: string, filter: unknown): unknown;
   getLayer(id: string): unknown;
   setPaintProperty(id: string, prop: string, value: unknown): unknown;
   setLayoutProperty(id: string, prop: string, value: unknown): unknown;
@@ -134,6 +135,21 @@ function hidePois(m: BaseMap) {
   for (const l of m.getStyle().layers) if (l["source-layer"] === "poi") m.setLayoutProperty(l.id, "visibility", "none");
 }
 
+// Driveways, parking aisles and alleys (OSM's service=driveway, parking_aisle, alley): the stubs into a yard, a car park or behind a block drawn as
+// streets that lead nowhere a passenger walks. Off, in every road line of the style.
+const NOT_STREETS = ["driveway", "parking_aisle", "alley"];
+function hideDriveways(m: BaseMap) {
+  if (!m.setFilter) return;
+  for (const l of m.getStyle().layers) {
+    if (l["source-layer"] !== "transportation" || l.type !== "line") continue;
+    const f = l.filter;
+    // The style's filters are the old kind (["all", ["in", "class", …]]); one written as an expression gets one too.
+    const legacy = !f || !JSON.stringify(f).includes('["get"');
+    const off = legacy ? ["!in", "service", ...NOT_STREETS] : ["!", ["in", ["coalesce", ["get", "service"], ""], ["literal", NOT_STREETS]]];
+    m.setFilter(l.id, f ? (Array.isArray(f) && f[0] === "all" ? [...f, off] : ["all", f, off]) : off);
+  }
+}
+
 // Call on `style.load`, before its tiles draw.
 export function paintBase(m: BaseMap, dark: boolean) {
   const c = PALETTE[dark ? "dark" : "light"], paints = basePaint(c);
@@ -160,4 +176,5 @@ export function paintBase(m: BaseMap, dark: boolean) {
   }
   addGreen(m, c);
   hidePois(m);
+  hideDriveways(m);
 }

@@ -385,3 +385,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 @media (max-width: 719px) {
   :root { --radius: 40px; --sheet-r: 40px; }
 }
+
+/* A sheet open (Sheet.svelte): the panels under it do not scroll. */
+html.sheet-open .start, html.sheet-open .now, html.sheet-open .card, html.sheet-open .popwrap { overflow: hidden !important; }
+/* The navigator minimised to its bar at the foot (NavGuide): a card opened on the map sits above the bar. */
+@media (max-width: 719px) { html[data-guidemini] .card { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 92px) !important; max-height: calc(100dvh - 200px) !important; } }

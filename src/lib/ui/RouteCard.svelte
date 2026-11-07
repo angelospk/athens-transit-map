@@ -36,9 +36,12 @@
   // Its bus, every 20 s while the card shows (the first few cards only: `live`), when it leaves within the hour.
   let bus = $state.raw<BusNow | null>(null);
   let asked = $state(false);
+  // The last answer stays while the next is asked (the card keeps its height); a new ride clears it.
+  let busFor = "";
   $effect(() => {
     const rd = ride, at = rideLeg?.depart_at ?? 0;
-    bus = null; asked = false;
+    const k = rd ? `${rd.line}|${rd.board.id}|${at}` : "";
+    if (k !== busFor) { busFor = k; bus = null; asked = false; }
     if (!live || !rd || at - untrack(() => nowS) > 3600) return;
     let dead = false;
     const tick = async () => {
@@ -107,10 +110,10 @@
         <li>
           {#if st.kind === "walk"}
             <span class="si"><Icon name="walk" size={16} /></span>
-            <span class="sx"><b>Περπάτα {mins(st.min)}</b><small>ως {st.to === "στον προορισμό" ? "τον προορισμό" : `${stationAfter(k) ? "τον σταθμό" : "τη στάση"}${st.to === "στη στάση" ? "" : ` ${name(st.to)}`}`}</small></span>
+            <span class="sx"><b>Περπάτα {mins(st.min)}</b><small>ως {st.to === "στον προορισμό" ? "τον προορισμό" : `${stationAfter(k) ? "τον σταθμό" : "τη στάση"}${st.to === "στη στάση" ? "" : ` ${name(st.to)}`}`}{stationAfter(k) ? ", και κατέβα στο μετρό" : ""}</small></span>
           {:else if st.kind === "change"}
             <span class="si"><Icon name="walk" size={16} /></span>
-            <span class="sx"><b>{st.m < 20 && !st.gate ? `Κατέβα και περίμενε ${mins(Math.max(1, st.spare))}` : `Άλλαξε: περπάτα ${mins(st.min)}`}</b><small>{st.m < 20 && !st.gate ? `στη στάση ${name(st.stop)}` : `ως ${st.mode === "metro" || st.mode === "tram" ? "τον σταθμό" : "τη στάση"} ${st.next ? name(st.next) : ""}`}</small></span>
+            <span class="sx"><b>{st.m < 20 && !st.gate ? `Κατέβα και περίμενε ${mins(Math.max(1, st.spare))}` : `Άλλαξε: περπάτα ${mins(st.min)}`}</b><small>{st.m < 20 && !st.gate ? `στη στάση ${name(st.stop)}` : `ως ${st.mode === "metro" || st.mode === "tram" ? "τον σταθμό" : "τη στάση"} ${st.next ? name(st.next) : ""}${st.mode === "metro" ? ", και κατέβα στο μετρό (σκάλες, ακυρωτικά)" : ""}`}</small></span>
           {:else if st.kind === "ride"}
             {@const md = legMode(st.leg)}
             <span class="si badge" style:background={st.color} style:color={st.text}>{st.label.length > 4 ? "" : st.label}{#if st.label.length > 4}<Icon name={md === "metro" ? "metro" : md === "tram" ? "tram" : "bus"} size={15} />{/if}</span>

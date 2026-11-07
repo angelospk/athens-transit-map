@@ -6,7 +6,7 @@
   // the device has a voice, with a vibration at the moments that matter.
   import { tick, untrack } from "svelte";
   import { fetchLineStatic, fetchV2LineVehicles, fetchV2Stop } from "../api";
-  import { along, distSaid, fetchFoot, lengthOf, metres, ridePassed, stepArrow, stepText, walkNow, WALK_MPS,
+  import { toThe, along, distSaid, fetchFoot, lengthOf, metres, ridePassed, stepArrow, stepText, walkNow, WALK_MPS,
     type GuideRide, type GuideWalk, type Pt, type WalkRoute } from "../guide";
   import { fold } from "../search";
   import { placeNote, toward } from "../stops";
@@ -16,6 +16,7 @@
   import Icon from "./Icon.svelte";
   import { durText } from "../format";
   import { rise } from "../anim";
+  import { settleSnap, sheetDrag, type SheetDrag } from "../sheetDrag";
   import { euro, fareOf, priceOf } from "../fares";
 
   let { app }: { app: AppState } = $props();
@@ -37,6 +38,8 @@
   let arrived = $state(false);
 
   $effect(() => { document.documentElement.toggleAttribute("data-guide", !!g); });
+  // Minimised, its bar sits at the foot: a card opened on the map (a bus, a stop) rises above it (app.css).
+  $effect(() => { document.documentElement.toggleAttribute("data-guidemini", !!g && mini); return () => document.documentElement.removeAttribute("data-guidemini"); });
   $effect(() => { void g?.key; arrived = false; });
 
   // ---- The voice and the vibration.
@@ -356,7 +359,7 @@
     const l = leg, step = app.guideStep;
     if (!l || !g) return;
     untrack(() => {
-      if (l.kind === "walk") say(l.final ? `Περπάτα ως τον προορισμό, ${distSaid(metres(l.from, l.to))}.` : `Περπάτα ως τη ${l.toName}.`);
+      if (l.kind === "walk") say(l.final ? `Περπάτα ως τον προορισμό, ${distSaid(metres(l.from, l.to))}.` : `Περπάτα ως ${toThe(l.toName)}.`);
       else say(`Περίμενε το ${l.line} προς ${l.headsign}, στη στάση ${l.board.name}.`, step ? [150] : undefined);
     });
   });
@@ -431,7 +434,7 @@
 
   // ---- The steps, for the list and the bar.
   const legMin = (l: GuideWalk | GuideRide) => Math.max(1, Math.round(l.kind === "walk" ? metres(l.from, l.to) * 1.25 / WALK_MPS / 60 : lengthOf(l.seq.map(s => s.at)) / mps(l) / 60));
-  const legText = (l: GuideWalk | GuideRide) => (l.kind === "walk" ? (l.final ? `Περπάτα ως τον προορισμό` : `Περπάτα ως τη ${l.toName}`)
+  const legText = (l: GuideWalk | GuideRide) => (l.kind === "walk" ? (l.final ? `Περπάτα ως τον προορισμό` : `Περπάτα ως ${toThe(l.toName)}`)
     : `${l.line} από ${l.board.name} ως ${l.alight.name} · ${l.seq.length - 1} στάσεις`);
   let list = $state(false);
   // Minimised to one bar at the foot (kept on the device).
@@ -442,7 +445,7 @@
     const l = leg;
     if (arrived || !l || !g) return { main: "Έφτασες", sub: g?.dest ?? "" };
     if (l.kind === "walk") {
-      const main = walk?.next ? `${distSaid(walk.toNext)} · ${stepText(walk.next, l.toName)}` : l.final ? `Ως τον προορισμό · ${distSaid(walkLeftM)}` : `Ως τη ${l.toName} · ${distSaid(walkLeftM)}`;
+      const main = walk?.next ? `${distSaid(walk.toNext)} · ${stepText(walk.next, l.toName)}` : l.final ? `Ως τον προορισμό · ${distSaid(walkLeftM)}` : `Ως ${toThe(l.toName)} · ${distSaid(walkLeftM)}`;
       const sub = !ride || l.final ? g.dest : plan === "run" ? `Τρέξε για το ${ride.line}: φτάνει σε ${busMin}′`
         : plan === "next" ? (nextMin != null ? `Πάρε το επόμενο ${ride.line}, σε ${nextMin}′` : `Δεν προλαβαίνεις το ${ride.line}`)
         : busMin != null ? `Το ${ride.line} σε ${busMin}′ · προλαβαίνεις` : `Το ${ride.line}`;
@@ -451,9 +454,74 @@
     if (!app.guideOn) return { main: busMin == null ? `Περίμενε το ${l.line}` : busMin === 0 ? `Το ${l.line} φτάνει τώρα` : `Το ${l.line} σε ${busMin}′`, sub: `στάση ${l.board.name}` };
     return { main: left === 1 ? "Πάτα STOP τώρα" : left <= 0 ? "Κατέβα εδώ" : `Κατέβα σε ${left} στάσεις`, sub: `στη στάση ${l.alight.name}` };
   });
+  // ---- The map in view while walking or waiting: the stop with the user, and the bus too once it is close (5 stops or
+  // 6′); on the bus, the user alone. «Δες το λεωφορείο» looks at the bus, the stop and the user together.
+  $effect(() => {
+    const l = leg, r = ride, b = bus;
+    if (!g || !l || peeking) { app.guideFrame = null; return; }
+    const ll = (p: Pt): [number, number] => [p[1], p[0]];
+    if (l.kind === "ride" && app.guideOn) { app.guideFrame = null; return; }
+    const pts: [number, number][] = [ll(l.kind === "walk" ? l.to : l.board.at)];
+    const close = !!b && ((b.away != null && b.away <= 5) || (busMin != null && busMin <= 6));
+    if (r && b && close && (l.kind === "ride" || (!l.final && g.legs[app.guideStep + 1] === r))) pts.push(ll(b.at));
+    app.guideFrame = pts;
+  });
+  $effect(() => () => { app.guideFrame = null; });
+  // «Γύρνα το κινητό»: the map turns with the phone (its compass), up is where the user faces. iOS asks first.
+  async function headingUp() {
+    if (app.headingUp) { app.headingUp = false; app.compass = null; return; }
+    const D = (globalThis as unknown as { DeviceOrientationEvent?: { requestPermission?: () => Promise<string> } }).DeviceOrientationEvent;
+    try { if (D?.requestPermission && (await D.requestPermission()) !== "granted") { app.notify("Χωρίς πρόσβαση στην πυξίδα το κινητό δεν μπορεί να γυρίσει τον χάρτη."); return; } } catch { /* no compass */ }
+    app.headingUp = true;
+    app.followMe();
+  }
+  $effect(() => {
+    if (!app.headingUp) return;
+    let last = 0, seen = false;
+    const on = (e: DeviceOrientationEvent) => {
+      const w = (e as DeviceOrientationEvent & { webkitCompassHeading?: number }).webkitCompassHeading;
+      const h = w != null ? w : e.absolute && e.alpha != null ? 360 - e.alpha : null;
+      if (h == null) return;
+      seen = true;
+      const turn = (screen.orientation?.angle ?? 0);
+      const deg = (h + turn + 360) % 360, t = performance.now();
+      if (t - last < 120) return;
+      last = t;
+      app.compass = deg;
+    };
+    const abs = "ondeviceorientationabsolute" in window;
+    const ev = (abs ? "deviceorientationabsolute" : "deviceorientation") as "deviceorientation";
+    addEventListener(ev, on);
+    const t = setTimeout(() => { if (!seen) { app.notify("Αυτή η συσκευή δεν δίνει πυξίδα στη σελίδα."); app.headingUp = false; } }, 4000);
+    return () => { removeEventListener(ev, on); clearTimeout(t); app.compass = null; };
+  });
+
+  // ---- The sheet by its handle (a phone): half, all of it, or down to the bar.
+  type NSnap = "mini" | "half" | "full";
+  let nsnap = $state<"half" | "full">("half");
+  let sheetEl = $state<HTMLElement>();
+  let dragH = $state<number | null>(null);
+  let sheetH = $state(0);
+  let h0 = 0;
+  const clampH = (h: number) => Math.max(80, Math.min(innerHeight * 0.9, h));
+  const tops = (): Record<NSnap, number> => ({ mini: innerHeight - 90, half: innerHeight * 0.54, full: innerHeight * 0.12 });
+  const navDrag = $derived<SheetDrag>({
+    ignore: "button",
+    start: () => { h0 = sheetEl?.getBoundingClientRect().height ?? 0; },
+    move: dy => { dragH = clampH(h0 - dy); },
+    end: (dy, v) => {
+      const at = innerHeight - clampH(h0 - dy);
+      const next = settleSnap<NSnap>(["mini", "half", "full"], nsnap, at, tops(), v, "up");
+      dragH = null;
+      if (next === "mini") setMini(true); else nsnap = next;
+    },
+    tap: () => { nsnap = nsnap === "half" ? "full" : "half"; },
+  });
+  const miniDrag: SheetDrag = { ignore: "button", start: () => {}, move: () => {}, end: (dy, v) => { if (dy < -30 || v < -0.4) setMini(false); }, tap: () => setMini(false) };
+
   // The map keeps the user clear of the panel: again when it changes (a step, minimised or not).
   $effect(() => {
-    void mini; void app.guideStep; void app.guideOn; void app.stack.length;
+    void mini; void nsnap; void app.guideStep; void app.guideOn; void app.stack.length;
     if (g) void tick().then(() => app.followMe());
   });
 
@@ -473,7 +541,7 @@
       const tone: Tone = plan === "run" ? "hurry" : plan === "next" ? "late" : ride2 && g.legs[app.guideStep - 1]?.kind === "ride" && !l.final ? "change" : "go";
       const then = walk?.then ? stepText(walk.then, l.toName) : l.final ? g.dest : l.toName;
       if (walk?.next) return { tone, arrow: ARROW[stepArrow(walk.next)], icon: "walk" as const, big: distSaid(walk.toNext), small: stepText(walk.next, l.toName), thenL: "ΜΕΤΑ", then };
-      return { tone, arrow: "", icon: "walk" as const, big: distSaid(walkLeftM), small: l.final ? `Ως τον προορισμό: ${g.dest}` : `Ως τη ${l.toName}`, thenL: "ΜΕΤΑ", then: l.final ? "" : "η στάση" };
+      return { tone, arrow: "", icon: "walk" as const, big: distSaid(walkLeftM), small: l.final ? `Ως τον προορισμό: ${g.dest}` : `Ως ${toThe(l.toName)}`, thenL: "ΜΕΤΑ", then: l.final ? "" : l.toName.startsWith("σταθμό") ? "κατέβα στο μετρό, στην αποβάθρα" : "η στάση" };
     }
     if (!app.guideOn) {
       const big = busMin == null ? `Περίμενε το ${l.line}` : busMin === 0 ? `Το ${l.line} φτάνει τώρα` : `Το ${l.line} σε ${busMin}′`;
@@ -493,7 +561,7 @@
     if (l.kind === "walk") {
       const rows: NowRow[] = turns.map((t, i) => ({ icon: "", arrow: ARROW[t.icon], t: t.t, s: i === 0 ? "Η επόμενη στροφή" : "", v: t.d > 5 ? distSaid(t.d) : "" }));
       if (!ride || l.final)
-        return { tone: "go" as Tone, tag: `ΠΕΡΠΑΤΗΜΑ · ${step}`, chip: "", title: l.final ? `Ως τον προορισμό` : `Ως τη ${l.toName}`, big: `${walkMin}′`, bar: null as number | null, note: l.final ? g.dest : distSaid(walkLeftM), rows };
+        return { tone: "go" as Tone, tag: `ΠΕΡΠΑΤΗΜΑ · ${step}`, chip: "", title: l.final ? `Ως τον προορισμό` : `Ως ${toThe(l.toName)}`, big: `${walkMin}′`, bar: null as number | null, note: l.final ? g.dest : distSaid(walkLeftM), rows };
       const spare = busMin != null ? busMin - walkMin : null;
       const note = busMin == null ? `Ψάχνω το ${ride.line}…`
         : plan === "easy" ? `Το ${ride.line} φτάνει σε ${busMin}′: έχεις ${spare}′ περιθώριο. Περπάτα κανονικά.`
@@ -501,7 +569,7 @@
         : plan === "run" ? `Τρέξε: με τα πόδια ${walkMin}′, τρέχοντας ${runMin}′. Το ${ride.line} φτάνει σε ${busMin}′.`
         : nextMin != null ? `Το ${ride.line} σε ${busMin}′ δεν το προλαβαίνεις. Πάρε το επόμενο, σε ${nextMin}′.` : `Το ${ride.line} σε ${busMin}′ δεν το προλαβαίνεις.`;
       return { tone: (plan === "run" ? "hurry" : plan === "next" ? "late" : "go") as Tone, tag: `ΠΕΡΠΑΤΗΜΑ · ${step} · ${distSaid(walkLeftM)}`,
-        chip: times[0] ? (times[0].live ? "Ζωντανά" : "Πρόγραμμα") : "", title: `Ως τη ${l.toName}`, big: `${walkMin}′`,
+        chip: times[0] ? (times[0].live ? "Ζωντανά" : "Πρόγραμμα") : "", title: `Ως ${toThe(l.toName)}`, big: `${walkMin}′`,
         bar: busMin != null && busMin > 0 ? Math.min(1, walkMin / busMin) : null, note, rows };
     }
     if (!app.guideOn) {
@@ -550,7 +618,7 @@
   <div class="guide" class:carded={app.stack.length > 0} role="region" aria-label="Πλοήγηση">
     {#if mini}
       <!-- Minimised: one bar at the foot, what to do now, the trip's progress, the arrival. -->
-      <div class="minibar" class:alert={ban.tone === "stop"} role="status" aria-live="polite" in:rise={{ y: 12 }}>
+      <div class="minibar" class:alert={ban.tone === "stop"} role="status" aria-live="polite" use:sheetDrag={miniDrag} in:rise={{ y: 12 }}>
         <span class="mi">{#if arrived}<Icon name="check" size={18} />{:else if l?.kind === "ride"}<b class="chip sm" style:--lb={app.lineColor(l.line).bg} style:--lf={app.lineColor(l.line).fg}>{l.line}</b>{:else}<Icon name="walk" size={18} />{/if}</span>
         <span class="mt"><b>{miniText.main}</b><small>{miniText.sub}</small></span>
         <span class="mp">{@render legsBar(false)}</span>
@@ -569,8 +637,22 @@
     {/key}
     {#if ban.then}<div class="then"><span>{ban.thenL === "ΜΕΤΑ" ? "Μετά" : ban.thenL === "ΕΠΟΜΕΝΗ" ? "Επόμενη" : "Κατεβαίνεις"}</span>{ban.then}</div>{/if}
 
-    <section class="sheet" aria-label="Η διαδρομή" hidden={app.stack.length > 0}>
-      <i class="grip" aria-hidden="true"></i>
+    <!-- On the map: the bus (and the stop) in view; the map turned with the phone. Just above the sheet. -->
+    <div class="mapbtns" hidden={app.stack.length > 0} style:bottom="{(sheetH || 0) + 12}px">
+      {#if bus && ride && !(rideIsNow && app.guideOn)}
+        <button type="button" class="mb" class:on={peeking} onclick={peek} aria-pressed={peeking}><Icon name={peeking ? "locate" : "bus"} size={18} /><span>{peeking ? "Σε εμένα" : `Πού είναι το ${ride.line}`}</span></button>
+      {/if}
+      <button type="button" class="mb round2" class:on={app.headingUp} aria-pressed={app.headingUp} onclick={headingUp}
+        aria-label={app.headingUp ? "Ο χάρτης με τον βορρά πάνω" : "Γύρνα τον χάρτη με το κινητό"} title={app.headingUp ? "Βορράς πάνω" : "Γύρνα τον χάρτη με το κινητό"}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 5.5l2.6 6.5H9.4z" fill="currentColor" stroke="none" /><path d="M9.4 12h5.2L12 18.5z" opacity=".35" fill="currentColor" stroke="none" /></svg>
+        {#if !app.headingUp}<span>Γύρνα το κινητό</span>{/if}
+      </button>
+    </div>
+
+    <section class="sheet" class:full={nsnap === "full"} class:dragging={dragH != null} aria-label="Η διαδρομή" hidden={app.stack.length > 0} bind:this={sheetEl} bind:offsetHeight={sheetH}
+      style:height={dragH != null ? `${dragH}px` : undefined}>
+      <div class="grip" role="button" tabindex="0" aria-label={nsnap === "full" ? "Μικρότερο" : "Μεγαλύτερο"} use:sheetDrag={navDrag}
+        onkeydown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); nsnap = nsnap === "half" ? "full" : "half"; } }}></div>
       <button type="button" class="round sm minbtn" aria-label="Σμίκρυνση πλοήγησης" title="Σμίκρυνση" onclick={() => setMini(true)}><Icon name="chevron" size={18} /></button>
       <!-- Where to, when, and the trip to scale with the user on it -->
       <header class="head">
@@ -623,7 +705,7 @@
             {#each later as x (x.k)}
               <button type="button" class="lrow" onclick={() => { app.guideStep = x.k; app.guideOn = false; arrived = false; }}>
                 {#if x.l.kind === "ride"}<b class="chip sm" style:--lb={app.lineColor(x.l.line).bg} style:--lf={app.lineColor(x.l.line).fg}>{x.l.line}</b>{:else}<span class="chip sm walkchip"><Icon name="walk" size={13} /></span>{/if}
-                <span class="lt">{x.l.kind === "ride" ? `Ως ${x.l.alight.name} · ${x.l.seq.length - 1} στάσεις` : x.l.final ? `Ως τον προορισμό · ${Math.round(metres(x.l.from, x.l.to) * 1.25 / 10) * 10} μ.` : `Ως τη ${x.l.toName} · ${Math.round(metres(x.l.from, x.l.to) * 1.25 / 10) * 10} μ.`}</span>
+                <span class="lt">{x.l.kind === "ride" ? `Ως ${x.l.alight.name} · ${x.l.seq.length - 1} στάσεις` : x.l.final ? `Ως τον προορισμό · ${Math.round(metres(x.l.from, x.l.to) * 1.25 / 10) * 10} μ.` : `Ως ${toThe(x.l.toName)} · ${Math.round(metres(x.l.from, x.l.to) * 1.25 / 10) * 10} μ.`}</span>
                 <span class="lat">{Number.isFinite(x.at) ? clockHM(x.at) : ""}</span>
               </button>
             {/each}
@@ -712,7 +794,16 @@
     display: flex; flex-direction: column; gap: 12px; padding: 8px 14px max(16px, env(safe-area-inset-bottom)); border-radius: var(--sheet-r) var(--sheet-r) 0 0;
     background: var(--surface); border-top: 1px solid var(--border); box-shadow: 0 -18px 40px rgba(0, 0, 0, .35); scrollbar-width: none; }
   .sheet::-webkit-scrollbar { display: none; }
-  .grip { align-self: center; width: 38px; height: 5px; border-radius: 3px; background: var(--border); }
+  .grip { align-self: stretch; height: 22px; margin: -8px -14px -10px; display: flex; align-items: center; justify-content: center; cursor: grab; }
+  .grip::after { content: ""; width: 40px; height: 5px; border-radius: 3px; background: var(--border); }
+  .sheet.full { max-height: 88dvh; }
+  .sheet.dragging { max-height: none; overflow: hidden; }
+  .mapbtns { position: absolute; right: 12px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; z-index: 2; pointer-events: none; }
+  .mapbtns[hidden] { display: none; }
+  .mb { pointer-events: auto; height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 14px 0 12px; border: 1px solid var(--border); border-radius: 22px;
+    background: var(--surface); color: var(--fg); font: inherit; font-size: 14px; font-weight: 600; line-height: 1; cursor: pointer; box-shadow: 0 6px 18px rgba(0, 0, 0, .3); white-space: nowrap; }
+  .mb.on { background: var(--accent); color: var(--on-accent, #fff); border-color: transparent; }
+  .mb.round2:not(:has(span)) { width: 44px; padding: 0; justify-content: center; }
   .minbtn { position: absolute; top: 8px; right: 8px; z-index: 1; }
   .muted { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
   .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding-right: 40px; }
@@ -839,6 +930,7 @@
   /* A computer: a column at the left with everything (the steps after this one too), the banner over the map's
      middle with what comes after it in it. */
   @media (min-width: 720px) {
+    .mapbtns { bottom: 24px !important; right: 64px; }
     .guide.carded .sheet { display: none; }
     .sheet { left: 16px; right: auto; top: 16px; bottom: auto; width: 372px; max-height: calc(100dvh - 32px); padding: 14px 14px 12px; border-radius: 24px; border: 1px solid var(--border);
       box-shadow: 0 20px 50px rgba(0, 0, 0, .35); gap: 12px; }

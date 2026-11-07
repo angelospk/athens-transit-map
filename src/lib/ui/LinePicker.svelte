@@ -93,7 +93,7 @@
   .picker:not(.chipped) .find { grid-column: 1; grid-row: 1; }
   .chipped .find { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; }
   .find { display: flex; align-items: center; justify-self: stretch; gap: 10px; min-height: 44px; padding: 0 10px 0 14px;
-    border: 0; border-radius: 14px; background: var(--control); color: var(--muted); font: inherit; font-size: 15px; font-weight: 600; line-height: 1; cursor: pointer; }
+    border: 0; border-radius: max(14px, calc(var(--radius) - 12px)); background: var(--control); color: var(--muted); font: inherit; font-size: 15px; font-weight: 600; line-height: 1; cursor: pointer; }
   .find svg { color: var(--accent); }
   .find kbd { flex: none; margin-left: auto; min-width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;
     border: 1px solid var(--border); border-radius: 7px; font: inherit; font-size: 12px; font-weight: 700; color: var(--muted); }
