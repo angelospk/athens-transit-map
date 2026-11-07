@@ -210,7 +210,8 @@
   const lineRow = (l: V2Line, head?: string): Row => ({ key: `line|${l.id}`, line: l, head });
   const rows = $derived.by((): Row[] => {
     if (!open) return [];
-    if (!ends[open].text.trim()) {
+    // Nothing typed, or a field already set (tapped to change it): the ways to choose without typing.
+    if (!ends[open].text.trim() || ends[open].place) {
       const near = [...nearStations, ...nearStops].map((p, k): Row => ({ key: `near|${p.kind}|${p.label}|${p.pts[0].join()}`, place: p, head: k === 0 ? (app.myPos ? "Κοντά σου" : "Κοντά") : undefined }));
       return [{ key: "me", me: true }, ...(app.savingPlace ? [] : savedPlaces(app.places).map(p => ({ key: p.kind!, place: p }))), ...near, { key: "map", map: true }];
     }
@@ -828,7 +829,7 @@
             {:else}<label class="sr" for="start-{f}">{f === "from" ? "Από πού ξεκινάς" : "Πού θέλεις να πας"}</label>{#if !ends[f].place}<span class="fs2" aria-hidden="true"><Icon name="search" size={19} /></span>{/if}{/if}
             <input id="start-{f}" bind:this={inputs[f]} value={ends[f].text} autocomplete="off" spellcheck="false"
               placeholder={f === "from" ? (wide ? "Από πού ξεκινάς;" : "Γράψε από πού ξεκινάς") : intro ? "Πού πας; Διεύθυνση, στάση ή γραμμή" : wide ? "Στάση, περιοχή, οδός" : "Γράψε μέρος, στάση ή γραμμή"} role="combobox" aria-expanded={open === f} aria-controls="start-{f}-list"
-              onfocus={() => { open = f; menu = null; }} oninput={e => edit(f, e.currentTarget.value)}
+              onfocus={e => { open = f; menu = null; if (ends[f].place) e.currentTarget.select(); }} oninput={e => edit(f, e.currentTarget.value)}
               aria-activedescendant={open === f && active >= 0 ? `start-opt-${active}` : undefined} onkeydown={e => key(f, e)} />
             {#if ends[f].text && locating !== f && !ends[f].place}
               <button type="button" class="clear" aria-label="Καθάρισμα" title="Καθάρισμα" onclick={() => { ends[f] = { text: "", place: null }; inputs[f]?.focus(); }}><Icon name="close" size={13} /></button>
@@ -841,6 +842,7 @@
               <span class="fi"><span class="spin" aria-hidden="true"></span></span>
             {/if}
           </div>
+          {#if !wide && open === f}{@render list(f)}{/if}
           {#if f === "from" && !ends.from.place && !ends.from.text && open !== "from"}
             <div class="sugg" role="group" aria-label="Από πού ξεκινάς" transition:reveal>
               {#each fromChips as c, k (c.key)}
@@ -853,7 +855,7 @@
           <button type="button" class="swap" class:turned aria-label="Αντιστροφή αφετηρίας και προορισμού" title="Αντιστροφή" onclick={swap} transition:soft><Icon name="swap" size={16} /></button>
         {/if}
         </div>
-        {#if open}{@render list(open)}{/if}
+        {#if open && wide}{@render list(open)}{/if}
         {#if err}<p class="err" role="status" transition:reveal>{err}</p>{/if}
 
         {#if !wide && !app.savingPlace && !ends.to.place && open === null}
@@ -1114,7 +1116,7 @@
 
 {#snippet list(f: Field)}
   <ul class="opts" id="start-{f}-list" role="listbox" aria-label={f === "from" ? "Από" : "Πού"} transition:reveal>
-    {#if ends[f].text.trim() && !opts.length && !lineHits.first.length && !lineHits.last.length && !asks.length && !muniLines.length && !muniStops.length}
+    {#if ends[f].text.trim() && !ends[f].place && !opts.length && !lineHits.first.length && !lineHits.last.length && !asks.length && !muniLines.length && !muniStops.length}
       <li class="nothing" role="status">
         {#if busy}<span class="spin small" aria-hidden="true"></span>Αναζήτηση…
         {:else if ends[f].text.trim().length < 2}Γράψε λίγο ακόμα
@@ -1124,7 +1126,7 @@
     {#each rows as r, k (r.key)}
       {#if r.head}<li class="oh" role="presentation">{r.head}</li>{/if}
       <li in:item={{ i: k }}>
-        <button type="button" id="start-opt-{k}" class="opt" class:quiet={r.map && !!ends[f].text.trim()} class:active={k === active} role="option"
+        <button type="button" id="start-opt-{k}" class="opt" class:quiet={r.map && !!ends[f].text.trim() && !ends[f].place} class:active={k === active} role="option"
           aria-selected={k === active} tabindex="-1" onpointerenter={() => (active = k)} onclick={() => run(f, r)}>
           {#if r.ask}
             {#if r.ask.kind === "lineAt"}
