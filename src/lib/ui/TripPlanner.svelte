@@ -18,7 +18,7 @@
   import Icon, { type IconName } from "./Icon.svelte";
   import { walkUrl } from "../maps";
   import { alertTargets, anyMetro, boardings, centre, distM, findTransfers, findTrips, geocode, legTrip, loadTripIndex, metroDirect, metroPlaces, nearestStation, places, searchPlaces,
-    suggest, termini, toggleTripLine, type Pt, type TripIndex, type TripLine, type TripTransfer } from "../trip";
+    staleIndex, suggest, termini, toggleTripLine, type Pt, type TripIndex, type TripLine, type TripTransfer } from "../trip";
 
   let { app, onclose }: { app: AppState; onclose: () => void } = $props();
 
@@ -55,7 +55,7 @@
     app.loadMetro();   // stations to start or end at (once; again after a failure)
     try {
       const [ix, lines] = await Promise.all([loadTripIndex(), fetchLines()]);
-      data = { ix, places: places(ix), known: new Set(lines.lines.map(l => l.id)), stale: ix.v === lines.gtfs_version ? null : ix.v };
+      data = { ix, places: places(ix), known: new Set(lines.lines.map(l => l.id)), stale: staleIndex(ix.v, lines.gtfs_version) ? ix.v : null };
     } catch {
       failed = true;
     }

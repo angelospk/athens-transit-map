@@ -5,10 +5,14 @@
 //   VITE_STATIC_BASE=<instance>/static/v1 TRIPS_OUT=public/trips-thessaloniki.json bun scripts/trips.ts
 //     → another city's index (no stop corrections: they are Athens stop ids)
 //
+// The index carries the GTFS version (v) of the line list; a city whose GTFS has no feed_info (Thessaloniki's
+// OSETH slices) has none there, so v is the version /v1/status names (the slice's first day). No version: no file.
+// .github/workflows/thess-stops.yml rebuilds Thessaloniki's index every day.
+//
 // Stop positions found wrong (scripts/stop-corrections.json, proposed by scripts/stopfix.ts and committed
 // by hand) replace the GTFS ones.
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { TripIndex } from "../src/lib/trip";
 import { applyCorrections, type Correction } from "../src/lib/stopfix";
 import type { LineStatic, LinesIndex } from "../src/lib/types";
@@ -28,7 +32,9 @@ for (let i = 0; i < ix.lines.length; i += 8)   // 8 at a time: a polite load on 
 
 const OUT = process.env.TRIPS_OUT || "public/trips.json";
 const fixes: Record<string, Correction> = OUT === "public/trips.json" ? JSON.parse(readFileSync("scripts/stop-corrections.json", "utf8")) : {};
-const data: TripIndex = { v: ix.gtfs_version, s: [], l: {} };
+const v = ix.gtfs_version || (await get<{ gtfs_version: string }>(BASE.replace(/\/static\/v1$/, "/v1/status"))).gtfs_version;
+if (!v) throw new Error("no GTFS version in lines.json or /v1/status");
+const data: TripIndex = { v, s: [], l: {} };
 const at = new Map<string, number>();
 for (const f of files) {
   const variants: Record<string, number[]> = {};
@@ -47,5 +53,8 @@ for (const f of files) {
     });
   data.l[f.id] = variants;
 }
+// An instance that lost most of its lines (a half-loaded feed) would empty the map: keep the old file.
+const old: TripIndex | null = existsSync(OUT) ? JSON.parse(readFileSync(OUT, "utf8")) : null;
+if (old && data.s.length < old.s.length / 2) throw new Error(`${data.s.length} stops, was ${old.s.length}: not written`);
 writeFileSync(OUT, JSON.stringify(data));
 console.log(`${files.length} lines, ${data.s.length} stops, ${Object.values(data.l).reduce((n, v) => n + Object.keys(v).length, 0)} variants`);

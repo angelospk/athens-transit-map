@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MetroData } from "../src/lib/metro";
-import { alertTargets, anyMetro, legTrip, metroDirect, boardings, findTransfers, findTrips, metroPlaces, nearestStation, parsePhoton, places, searchPlaces, suggest, termini, type Place, type Pt, type TripIndex } from "../src/lib/trip";
+import { alertTargets, anyMetro, legTrip, metroDirect, boardings, findTransfers, findTrips, metroPlaces, nearestStation, parsePhoton, places, searchPlaces, staleIndex, suggest, termini, type Place, type Pt, type TripIndex } from "../src/lib/trip";
 
 // ~111 m per 0.001° of latitude: stops on a north-south street, 0.001° apart.
 const at = (k: number): Pt => [38 + k * 0.001, 23.7];
@@ -312,5 +312,19 @@ describe("metro places", () => {
     expect(nearestStation(data, [37.9691, 23.7291])).toMatchObject({ name: "ΑΚΡΟΠΟΛΗ" });
     expect(nearestStation(data, [37.9691, 23.7291])!.d).toBeLessThan(20);
     expect(nearestStation({ ...data, stations: [] }, [37.97, 23.73])).toBeNull();
+  });
+});
+
+describe("staleIndex", () => {
+  it("is stale when the index and the line list name different GTFS versions", () => {
+    expect(staleIndex("2026-10-27", "2026-11-10")).toBe(true);
+    expect(staleIndex("2026-07-08", "2026-07-08")).toBe(false);
+  });
+  it("is stale when the index has no version and the line list has one", () => {
+    expect(staleIndex("", "2026-07-08")).toBe(true);
+  });
+  it("cannot tell, so is not stale, when the line list has no version", () => {
+    expect(staleIndex("2026-10-27", "")).toBe(false);
+    expect(staleIndex("", "")).toBe(false);
   });
 });

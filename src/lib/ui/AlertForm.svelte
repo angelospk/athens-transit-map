@@ -10,7 +10,7 @@
   import { canPush, startPush, stopPush } from "../push";
   import { stopBack } from "../stops";
   import { encodeAlert, MAX_N, type Rep } from "../tglink";
-  import { loadTripIndex, type BoardAt, type TripIndex } from "../trip";
+  import { loadTripIndex, staleIndex, type BoardAt, type TripIndex } from "../trip";
   import type { AppState } from "../state.svelte";
 
   // A stop alert, set up in one place for the trip planner, a stop's card and a vehicle's next stops: how
@@ -33,7 +33,7 @@
     failed = false;
     try {
       const [ix, ls] = await Promise.all([app.stopIx ? Promise.resolve(app.stopIx) : loadTripIndex(), fetchLines()]);
-      data = { ix, stale: ix.v !== ls.gtfs_version };
+      data = { ix, stale: staleIndex(ix.v, ls.gtfs_version) };
     } catch { failed = true; }
   }
   load();
