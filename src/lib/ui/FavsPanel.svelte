@@ -12,8 +12,13 @@
   import type { AppState } from "../state.svelte";
   import CardSheet, { whenText } from "./CardSheet.svelte";
   import Icon from "./Icon.svelte";
+  import Toward from "./Toward.svelte";
+  import { towardsOfId } from "../towards";
+  import { PAGE_CITY } from "../config";
 
   let { app }: { app: AppState } = $props();
+  // The stop index, for which way each starred bus stop goes (Toward).
+  $effect(() => { if (PAGE_CITY === "athens" && app.favs.stops.some(s => s.id.startsWith("oasa:"))) void app.loadStops(); });
 
   const POLL_MS = 30_000, PARALLEL = 8, OTHERS = 3;
   const open = $derived(app.favsOpen && app.stack.length === 0);
@@ -106,7 +111,7 @@
         {@const quiet = (boards[s.id]?.lines ?? []).filter(l => favLines.has(l.id) && !rows.some(r => r.line === l.id))}
         <section class="stop" aria-label="Στάση {s.name}">
           <div class="shead">
-            <button type="button" class="name" onclick={() => app.push({ kind: "stop", id: s.id, title: s.name })}>{s.name}</button>
+            <button type="button" class="name" onclick={() => app.push({ kind: "stop", id: s.id, title: s.name })}>{s.name}<Toward dir={towardsOfId(app.stopIx, s.id)} sep /></button>
             <button type="button" class="unstar" title="Αφαίρεση από τα αγαπημένα" aria-label="Αφαίρεση της στάσης {s.name} από τα αγαπημένα"
               onclick={() => app.toggleFavStop(s)}><Icon name="star-filled" size={20} /></button>
           </div>

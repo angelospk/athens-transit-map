@@ -2,6 +2,7 @@
 // only (dynamic import), as is public/trips.json, its stop index (scripts/trips.ts).
 
 import type { MetroData } from "./metro";
+import type { StopDirs } from "./towards";
 import { fold, greeklish, greeklishKeys, hasLatin } from "./search";
 import type { AppState } from "./state.svelte";
 import type { CityId } from "./cities";
@@ -10,8 +11,8 @@ import { PAGE_CITY } from "./config";
 export type Pt = [number, number];   // [lat, lon]
 
 // s: every stop [name, lat, lon, GTFS stop_id] (files before the id lack it); l: line → variant → its
-// stops, as indexes into s.
-export interface TripIndex { v: string; s: [string, number, number, string?][]; l: Record<string, Record<string, number[]>> }
+// stops, as indexes into s; d: which way each line leaves a stop (older files lack it).
+export interface TripIndex { v: string; s: [string, number, number, string?][]; l: Record<string, Record<string, number[]>>; d?: StopDirs }
 
 // A place to start or end at: stops of one name close together, an area or street (geocoder), or the
 // user's location.

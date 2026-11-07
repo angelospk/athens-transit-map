@@ -1,0 +1,135 @@
+import { describe, expect, it } from "vitest";
+import { cleanTerminus, stopDirections, towardsOf, towardsOfId, towardsText } from "../src/lib/towards";
+import type { TripIndex } from "../src/lib/trip";
+
+// Two stops of one name on both sides of a road (0 runs south-west, 1 north-east), the next stop each way
+// (7, 8) and the termini. Lines count once, whatever their variants.
+const ix: TripIndex = {
+  v: "t",
+  s: [
+    ["ΚΑΤΕΧΑΚΗ", 37.99, 23.76, "770021"],        // 0
+    ["ΚΑΤΕΧΑΚΗ", 37.9902, 23.7605, "60605"],     // 1
+    ["ΜΟΥΣΕΙΟ", 37.98, 23.75, "2"],              // 2
+    ["ΠΟΛΥΓΩΝΟ", 37.981, 23.749, "3"],           // 3
+    ["ΠΛ. ΧΑΛΑΝΔΡΙΟΥ", 38.0, 23.77, "4"],         // 4
+    ["ΠΛ. ΠΛΑΤΑΝΟΥ", 38.001, 23.771, "5"],        // 5
+    ["ΑΦΕΤΗΡΙΑ 602", 37.979, 23.751, "6"],        // 6
+    ["Σ1", 37.985, 23.755, "7"],                 // 7
+    ["Σ2", 37.995, 23.765, "8"],                 // 8
+    ["ΖΩΓΡΑΦΟΥ", 37.982, 23.748, "9"],           // 9
+  ],
+  l: {
+    L1: { v1: [4, 0, 7, 2], v2: [4, 0, 7, 2], v3: [2, 7, 1, 8, 4] },
+    L2: { v: [5, 0, 7, 3], w: [3, 7, 1, 8, 5] },
+    L3: { v: [0, 7, 2] },
+    L4: { v: [0, 7, 6] },                         // to a noise name: skipped
+    L5: { a: [0, 7, 9], b: [0, 7, 9], c: [0, 7, 9] },   // three variants, still one line
+    L6: { v: [0, 7, 3] },
+  },
+};
+ix.d = stopDirections(ix);
+
+describe("cleanTerminus", () => {
+  it.each([
+    ["ΑΦΕΤΗΡΙΑ 602", ""],
+    ["ΤΕΡΜΑ", ""],
+    ["ΣΑΡΩΝΙΔΑ 122- 123", "ΣΑΡΩΝΙΔΑ"],
+    ["ΑΦΕΤΗΡΙΑ - ΡΗΓΑ ΦΕΡΑΙΟΥ", "ΡΗΓΑ ΦΕΡΑΙΟΥ"],
+    ["ΑΓ. ΒΑΡΒΑΡΑ - ΑΦΕΤΗΡΙΑ 830", "ΑΓ. ΒΑΡΒΑΡΑ"],
+    ["ΑΦΕΤΗΡΙΑ  ΑΓ. ΑΝΤΩΝΙΟΣ", "ΑΓ. ΑΝΤΩΝΙΟΣ"],
+    ["ΤΕΡΜΑ - ΕΡΥΘΡΕΣ", "ΕΡΥΘΡΕΣ"],
+    ["ΤΕΡΜΑ ΦΥΛΗΣ", "ΤΕΡΜΑ ΦΥΛΗΣ"],            // a place name, kept
+    ["ΣΤ. ΚΗΦΙΣΙΑ (ΤΑΤΟΪΟΥ) 543-543Α", "ΣΤ. ΚΗΦΙΣΙΑ (ΤΑΤΟΪΟΥ)"],
+    ["ΠΕΙΡΑΙΑΣ ΔΡΑΠΕΤΣΩΝΑ Χ96", "ΠΕΙΡΑΙΑΣ ΔΡΑΠΕΤΣΩΝΑ"],
+    ["ΣΤ.  ΛΑΡΙΣΗΣ", "ΣΤ. ΛΑΡΙΣΗΣ"],
+    ["ΠΛ. ΧΑΛΑΝΔΡΙΟΥ", "ΠΛ. ΧΑΛΑΝΔΡΙΟΥ"],
+  ])("%s → %s", (raw, out) => expect(cleanTerminus(raw)).toBe(out));
+});
+
+describe("stopDirections", () => {
+  it("has one entry per stop and a table of unique names", () => {
+    expect(ix.d!.s).toHaveLength(ix.s.length);
+    expect(new Set(ix.d!.n).size).toBe(ix.d!.n.length);
+    expect(JSON.parse(JSON.stringify(ix.d))).toEqual(ix.d);
+  });
+
+  it("names the two busiest termini, by lines (not variants), noise skipped, ties by name", () => {
+    expect(towardsOf(ix, 0).towards).toEqual(["Μουσειο", "Πολυγωνο"]);
+    expect(towardsOf(ix, 1).towards).toEqual(["Πλ. Πλατανου", "Πλ. Χαλανδριου"]);
+  });
+
+  it("gives the bearing to the next stop, so the two sides of the road point opposite ways", () => {
+    const a = towardsOf(ix, 0).bearing!, b = towardsOf(ix, 1).bearing!;
+    expect(a).toBeGreaterThan(210);
+    expect(a).toBeLessThan(226);
+    expect(b).toBeGreaterThan(30);
+    expect(b).toBeLessThan(45);
+    expect(Number.isInteger(a)).toBe(true);
+  });
+
+  it("a stop where every pattern ends shows nothing", () => {
+    expect(towardsOf(ix, 9)).toEqual({ bearing: null, towards: [] });
+    expect(towardsOf(ix, 6)).toEqual({ bearing: null, towards: [] });
+    expect(ix.d!.s[9]).toEqual([]);
+  });
+
+  it("skips a terminus of the stop's own name", () => {
+    const t: TripIndex = {
+      v: "t",
+      s: [["ΜΟΥΣΕΙΟ", 37.9805, 23.7505, "a"], ["ΜΟΥΣΕΙΟ", 37.98, 23.75, "b"], ["ΠΟΛΥΓΩΝΟ", 37.981, 23.749, "c"]],
+      l: { X: { v: [0, 1] }, Y: { v: [0, 1] }, Z: { v: [0, 2] } },
+    };
+    t.d = stopDirections(t);
+    expect(towardsOf(t, 0).towards).toEqual(["Πολυγωνο"]);
+  });
+
+  it("an arrow only when a clear majority of lines leave the same way", () => {
+    // 0 in the middle; 1-3 east, 4-5 north.
+    const s: TripIndex["s"] = [
+      ["Κ", 37.98, 23.75, "0"], ["Α1", 37.98, 23.752, "1"], ["Α2", 37.9801, 23.752, "2"], ["Α3", 37.9799, 23.752, "3"],
+      ["Β1", 37.982, 23.75, "4"], ["Β2", 37.982, 23.7501, "5"],
+    ];
+    const most: TripIndex = { v: "t", s, l: { a: { v: [0, 1] }, b: { v: [0, 2] }, c: { v: [0, 3] }, d: { v: [0, 4] } } };
+    most.d = stopDirections(most);
+    const b = towardsOf(most, 0).bearing!;
+    expect(b).toBeGreaterThanOrEqual(85);
+    expect(b).toBeLessThanOrEqual(95);
+    const split: TripIndex = { v: "t", s, l: { a: { v: [0, 1] }, b: { v: [0, 2] }, c: { v: [0, 4] }, d: { v: [0, 5] } } };
+    split.d = stopDirections(split);
+    expect(towardsOf(split, 0).bearing).toBeNull();
+  });
+
+  it("on a loop: towards the turn before it, back to the start after it", () => {
+    const t: TripIndex = {
+      v: "t",
+      s: [
+        ["ΑΡΧΗ", 37.98, 23.75, "0"], ["ΠΗΓΑΙΝΕΙ", 37.985, 23.75, "1"], ["ΣΤΡΟΦΗ", 37.99, 23.751, "2"],
+        ["ΓΥΡΙΖΕΙ", 37.985, 23.752, "3"],
+      ],
+      l: { R: { v: [0, 1, 2, 3, 0] } },
+    };
+    t.d = stopDirections(t);
+    expect(towardsOf(t, 1).towards).toEqual(["Στροφη"]);
+    expect(towardsOf(t, 3).towards).toEqual(["Αρχη"]);
+  });
+});
+
+describe("towardsOf / towardsOfId / towardsText", () => {
+  it("an index without directions (an older trips.json) gives nothing", () => {
+    const old: TripIndex = { v: "t", s: ix.s, l: ix.l };
+    expect(towardsOf(old, 0)).toEqual({ bearing: null, towards: [] });
+  });
+
+  it("finds a stop by its /v2 id (oasa:<GTFS id>); other ids and no index: null", () => {
+    expect(towardsOfId(ix, "oasa:770021")).toEqual(towardsOf(ix, 0));
+    expect(towardsOfId(ix, "oasa:nope")).toBeNull();
+    expect(towardsOfId(ix, "stasy:770021")).toBeNull();
+    expect(towardsOfId(null, "oasa:770021")).toBeNull();
+  });
+
+  it("writes «προς X · Y», empty with no names", () => {
+    expect(towardsText(["Μουσειο", "Πολυγωνο"])).toBe("προς Μουσειο · Πολυγωνο");
+    expect(towardsText(["Μουσειο"])).toBe("προς Μουσειο");
+    expect(towardsText([])).toBe("");
+  });
+});
