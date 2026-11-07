@@ -5,9 +5,14 @@
   // (app.myFix) from leg to leg by itself; with no location the steps list moves it by hand. Spoken in Greek where
   // the device has a voice, with a vibration at the moments that matter.
   import { tick, untrack } from "svelte";
-  import { fetchLineStatic, fetchV2LineVehicles, fetchV2Stop } from "../api";
-  import { toThe, along, distSaid, fetchFoot, lengthOf, metres, ridePassed, stepArrow, stepText, walkNow, WALK_MPS,
-    type GuideRide, type GuideWalk, type Pt, type WalkRoute } from "../guide";
+  import { fetchLineStatic, fetchV2Line, fetchV2LineVehicles, fetchV2Run, fetchV2Stop } from "../api";
+  import { toThe, along, distSaid, fetchFoot, isMetro, lengthOf, metres, railSeq, ridePassed, stepArrow, stepText, walkNow, WALK_MPS,
+    type ChangeStep, type GuideRide, type GuideWalk, type Pt, type WalkRoute } from "../guide";
+  import { metroRide } from "../metroRide.svelte";
+  import { titleCase } from "../nearby";
+  import { changeLine, levelM, transferLook } from "../transfer";
+  import TransferBox from "./TransferBox.svelte";
+  import type { LineDetail, V2Run } from "../v2";
   import { fold } from "../search";
   import { placeNote, toward } from "../stops";
   import { clockHM } from "../trains";
@@ -107,6 +112,8 @@
   $effect(() => {
     const key = waitKey, r = untrack(() => ride);
     times = []; bus = null; app.guideApproach = null; app.guideBus = null;
+    // A metro train: no stop board for it here; its time in the plan.
+    if (key && r && isMetro(r.line)) { times = r.dep ? [{ at: r.dep, live: false, vehicle: null }] : []; return; }
     if (!key || !r?.board.id) return;
     let dead = false;
     const tick = async () => {
@@ -191,8 +198,54 @@
     });
   });
 
-  // ---- On the bus: the stops passed, from the location.
-  const passed = $derived(leg?.kind === "ride" && app.guideOn && pos ? ridePassed(leg, pos) : 0);
+  // ---- A metro ride (mockup 48): its stations and their times from the train's run, so it is followed under the
+  // street, where GPS is not, by the train's stops (the phone's motion) and the timetable (metroRide).
+  const tried = new Set<string>();
+  $effect(() => {
+    const gg = g;
+    if (!gg) return;
+    untrack(() => gg.legs.forEach((l, k) => {
+      const id = `${gg.key}:${k}`;
+      if (l.kind !== "ride" || !isMetro(l.line) || !l.run || !l.lineId || tried.has(id)) return;
+      tried.add(id);
+      void Promise.all([fetchV2Run(l.run), fetchV2Line(l.lineId)]).then(([rr, lr]) => {
+        const run = (rr.body as { run?: V2Run } | null)?.run, stops = (lr.body as LineDetail | null)?.stops;
+        const seq = run && stops && !Array.isArray(stops) ? railSeq(run, stops, l.board.id, l.alight.id) : null;
+        const cur = app.guide;
+        if (!seq || seq.length < 2 || !cur || cur.key !== gg.key) return;
+        const legs = cur.legs.slice();
+        legs[k] = { ...(legs[k] as GuideRide), seq };
+        app.guide = { ...cur, legs };
+      }, () => {});
+    }));
+  });
+  // A line's colours: the metro's own (its lines are not in the bus list), else the app's.
+  const METRO_C: Record<string, string> = { M1: "#098b4a", M2: "#d7171f", M3: "#1b388c" };
+  const colorOf = (line: string) => { const m = METRO_C[line.replace(/^Μ/, "M")]; return m ? { bg: m, fg: "#fff" } : app.lineColor(line); };
+  const railCard = $derived(g && leg?.kind === "ride" && isMetro(leg.line) ? `guide:${g.key}:${app.guideStep}` : null);
+  function railStart() {
+    const l = leg, card = railCard;
+    if (!g || l?.kind !== "ride" || !card) return;
+    const n = l.seq.length, t0 = l.dep ?? nowS, t1 = l.arr ?? t0 + (n - 1) * 120;
+    const stops = l.seq.map((x, i) => ({ stop: x.id ?? `${i}`, name: x.name, at: x.t ?? t0 + ((t1 - t0) * i) / Math.max(1, n - 1), lat: x.at[0], lon: x.at[1] }));
+    void metroRide.start({ card, label: l.line, stops, now: () => app.serverNow / 1000, pos: () => app.myPos, notify: t => say(t, [200, 100, 200]) });
+    metroRide.setOff(n - 1);
+  }
+  // The stations passed so far, kept once seen (the ride ends itself a minute after the last station).
+  let railPassed = $state(0), railFor = "";
+  $effect(() => {
+    const c = railCard, r = c && metroRide.card === c ? metroRide.ride : null, t = nowS;
+    untrack(() => {
+      if ((c ?? "") !== railFor) { railFor = c ?? ""; railPassed = 0; }
+      // At a station, or past its time (the moment at it can fall between two looks): passed.
+      if (r) railPassed = Math.max(railPassed, r.at || t >= r.stops[r.i].at + r.offset + 20 ? r.i : Math.max(0, r.i - 1));
+    });
+  });
+  // Off the train (another step, or the guide ended): its following ends.
+  $effect(() => { const c = railCard; if (metroRide.card?.startsWith("guide:") && metroRide.card !== c) untrack(() => metroRide.end()); });
+
+  // ---- On the bus: the stops passed, from the location; on a metro train, from the ride above.
+  const passed = $derived(leg?.kind === "ride" && app.guideOn ? (railCard ? Math.min(leg.seq.length - 1, railPassed) : pos ? ridePassed(leg, pos) : 0) : 0);
   const left = $derived(leg?.kind === "ride" ? leg.seq.length - 1 - passed : 0);
 
   // ---- The panel: is the bus about to come; on the bus, the minutes left to the stop to get off.
@@ -211,6 +264,7 @@
   $effect(() => {
     const key = key2, r = untrack(() => ride2?.r);
     times2 = [];
+    if (key && r && isMetro(r.line)) { times2 = r.dep ? [{ at: r.dep, live: false }] : []; return; }
     if (!key || !r?.board.id) return;
     let dead = false;
     const tick = async () => {
@@ -239,6 +293,12 @@
         t += (k === app.guideStep ? walkLeftM : metres(l.from, l.to) * 1.25) / WALK_MPS;
       } else {
         const riding = k === app.guideStep && app.guideOn;
+        // A timed plan's train: its own times (a metro ride is not timed from the map's distances).
+        if (isMetro(l.line) && l.dep && l.arr) {
+          starts.push(riding ? t : Math.max(t, l.dep));
+          t = riding ? Math.max(t, l.arr) : Math.max(t, l.dep) + (l.arr - l.dep);
+          continue;
+        }
         if (!riding) {
           if (ride === l && times[0]) t = Math.max(t, plan === "next" && times[1] ? times[1].at : times[0].at);
           else if (ride2?.r === l && times2.length) t = (times2.find(x => x.at >= t - 30) ?? { at: t + 240 }).at;
@@ -294,10 +354,32 @@
     return out;
   });
 
-  // ---- After this leg: the rest, each with the time it starts.
-  const later = $derived.by(() => {
-    if (!g || !timeline) return [];
-    return g.legs.map((l, k) => ({ l, k, at: timeline.starts[k] })).filter(x => x.k > app.guideStep);
+  // ---- All the steps (mockup 48 Δ): done ones struck through, the one now marked, the rest with the time each starts;
+  // a change between two rides as a row of its own. A tap moves there (the location may be wrong, or not there).
+  type StepRow = { key: string; k: number; kind: "walk" | "ride" | "change"; line?: string; t: string; s: string; at: string; done: boolean; now: boolean };
+  const allSteps = $derived.by(() => {
+    if (!g) return [] as StepRow[];
+    const out: StepRow[] = [];
+    g.legs.forEach((l, k) => {
+      const st = l.kind === "ride" ? g.changes?.[rideOrd(k)] : null;
+      if (st) {
+        const lk = transferLook(levelM(st.prev.mode, st.prev.label, st.where, st.prev.line, st.stop), levelM(st.mode, st.label, st.to, st.line, st.next || st.stop));
+        const xk = g.legs[k - 1]?.kind === "walk" ? k - 1 : k;
+        const now = !arrived && xchg?.k === k;
+        out.push({ key: `x${k}`, k: xk, kind: "change", t: `Αλλαγή · ${titleCase(placeNote(st.stop).place)}`, s: now ? "Τώρα" : changeLine(lk, st.label, st.mode, st.min, st.m),
+          at: "", done: arrived || (app.guideStep >= k && !now), now });
+      }
+      if (st && g.legs[k - 1]?.kind === "walk" && out.length >= 2 && out[out.length - 2].kind === "walk" && out[out.length - 2].k === k - 1) out.splice(out.length - 2, 1);
+      const done = arrived || k < app.guideStep;
+      // Changing, the change's row is the one now (also while still on the train at its station).
+      const now = !arrived && k === app.guideStep && !(xchg && (xchg.k === k || xchg.k === k + 1 || xchg.phase === "off"));
+      const at = timeline && Number.isFinite(timeline.starts[k]) ? clockHM(timeline.starts[k]) : "";
+      out.push(l.kind === "ride"
+        ? { key: `l${k}`, k, kind: "ride", line: l.line, t: `${l.line} προς ${l.headsign}`, s: `${l.seq.length - 1} ${isMetro(l.line) ? "σταθμοί" : "στάσεις"} ως ${l.alight.name}`, at, done, now }
+        : { key: `l${k}`, k, kind: "walk", t: l.final ? "Περπάτα ως τον προορισμό" : `Περπάτα ως ${toThe(l.toName)}`, s: `${Math.round(metres(l.from, l.to) * 1.25 / 10) * 10} μ`, at, done, now });
+    });
+    out.push({ key: "end", k: g.legs.length - 1, kind: "walk", t: "Έφτασες", s: g.dest, at: arriveAt ? clockHM(arriveAt) : "", done: arrived, now: arrived });
+    return out;
   });
 
   // ---- «Μοίρασε άφιξη»: the arrival, to send.
@@ -323,7 +405,7 @@
       } else if (cur && x.kind === "ride" && app.guideOn) fill = passed / Math.max(1, x.seq.length - 1);
       const min = legMin(x);
       return { flex: Math.max(min, 2), fill, cur, past, walk: x.kind === "walk", label: x.kind === "walk" ? (min >= 4 ? `${min}′` : "") : `${x.line} · ${min}′`,
-        color: x.kind === "ride" ? app.lineColor(x.line) : null };
+        color: x.kind === "ride" ? colorOf(x.line) : null };
     });
     const total = parts.reduce((t, x) => t + x.flex, 0), k = parts.findIndex(x => x.cur);
     const at = k < 0 || !total ? null : ((parts.slice(0, k).reduce((t, x) => t + x.flex, 0) + parts[k].flex * parts[k].fill) / total) * 100;
@@ -339,7 +421,8 @@
   }
   function boarded() {
     app.guideOn = true;
-    if (leg?.kind === "ride") say(`Κατεβαίνεις σε ${leg.seq.length - 1} στάσεις, στη στάση ${leg.alight.name}.`);
+    if (railCard) railStart();
+    if (leg?.kind === "ride") say(`Κατεβαίνεις σε ${leg.seq.length - 1} ${railCard ? "σταθμούς, στον σταθμό" : "στάσεις, στη στάση"} ${leg.alight.name}.`);
   }
   $effect(() => {
     const l = leg, p = pos;
@@ -347,11 +430,29 @@
     untrack(() => {
       if (l.kind === "walk") {
         if (metres(p, l.to) < 25 || (walk && walk.left < 15)) next();
+      } else if (railCard) {
+        // A metro train: no GPS underground; the timetable and the train's stops lead (the effect below).
       } else if (!app.guideOn) {
         // On the bus once the user has left the stop along the route: over 120 m away and close to the line.
         const a = along(l.seq.map(s => s.at), p);
         if (metres(p, l.board.at) > 120 && a.off < 40 && a.s > 100) boarded();
       } else if (metres(p, l.alight.at) < 35 || ridePassed(l, p) >= l.seq.length - 1) next();
+    });
+  });
+  // A metro train: on it half a minute after it leaves (no tap: the clock follows it, the motion sensors need one);
+  // at the last station «Κατέβα τώρα», and on after a minute and a half there (or «Βγήκα από το τρένο»).
+  $effect(() => {
+    const l = leg, t = nowS;
+    if (!railCard || l?.kind !== "ride" || arrived) return;
+    untrack(() => { if (!app.guideOn && l.dep && t > l.dep + 30) boarded(); });
+  });
+  let offSince: number | null = null;
+  $effect(() => {
+    const t = nowS, on = !!railCard && app.guideOn && left <= 0;
+    untrack(() => {
+      if (!on) { offSince = null; return; }
+      offSince ??= t;
+      if (t - offSince > 90) { offSince = null; next(); }
     });
   });
   // What each leg says when it starts.
@@ -360,7 +461,7 @@
     if (!l || !g) return;
     untrack(() => {
       if (l.kind === "walk") say(l.final ? `Περπάτα ως τον προορισμό, ${distSaid(metres(l.from, l.to))}.` : `Περπάτα ως ${toThe(l.toName)}.`);
-      else say(`Περίμενε το ${l.line} προς ${l.headsign}, στη στάση ${l.board.name}.`, step ? [150] : undefined);
+      else say(isMetro(l.line) ? `Πάρε το ${l.line} προς ${l.headsign}, στον σταθμό ${l.board.name}.` : `Περίμενε το ${l.line} προς ${l.headsign}, στη στάση ${l.board.name}.`, step ? [150] : undefined);
     });
   });
   // The turns: said when a new one is next, and again 30 m before it.
@@ -384,7 +485,7 @@
   });
   $effect(() => {
     const l = leg;
-    if (l?.kind !== "ride" || !app.guideOn || left !== 1) return;
+    if (l?.kind !== "ride" || !app.guideOn || left !== 1 || railCard) return;   // a train: metroRide says it
     const id = `${app.guideStep}`;
     untrack(() => { if (saidStop !== id) { saidStop = id; say(`Πάτα STOP. Κατεβαίνεις στην επόμενη, ${l.alight.name}.`, [300, 120, 300, 120, 300]); } });
   });
@@ -414,7 +515,7 @@
     const features = gg.legs.map((l, k) => {
       const pts: Pt[] = l.kind === "walk" ? (k === cur && wl ? wl : [l.from, l.to])
         : shapes[`${l.line}|${l.variant}|${l.board.id}|${l.alight.id}`] ?? (l.shape && l.shape.length > 1 ? l.shape : l.seq.map(s => s.at));
-      return { type: "Feature" as const, properties: { kind: l.kind, color: l.kind === "walk" ? "#5b9dff" : app.lineColor(l.line).bg },
+      return { type: "Feature" as const, properties: { kind: l.kind, color: l.kind === "walk" ? "#5b9dff" : colorOf(l.line).bg },
         geometry: { type: "LineString" as const, coordinates: pts.map(p => [p[1], p[0]]) } };
     });
     app.tripPlan = { type: "FeatureCollection", features };
@@ -425,11 +526,62 @@
 
   function end() {
     speechSynthesis?.cancel();
+    if (metroRide.card?.startsWith("guide:")) metroRide.end();
     app.endGuide();
     app.tripPlan = null;
     app.tripStops = [];
     app.tripEnds = null;
     app.setTab("now");
+  }
+
+  // ---- A change (mockup 48 B, Γ): the station from the side with the rider on it, the step being done, and the time
+  // to the next ride. «off»: still on the train at the change's station; «walk»: on the way; «wait»: at its platform.
+  const rideOrd = (k: number) => (g ? g.legs.slice(0, k + 1).filter(l => l.kind === "ride").length - 1 : -1);
+  const nextRideK = $derived(g ? g.legs.findIndex((l, k) => k > app.guideStep && l.kind === "ride") : -1);
+  const xchg = $derived.by<{ st: ChangeStep; phase: "off" | "walk" | "wait"; k: number } | null>(() => {
+    const l = leg, k = app.guideStep, ch = g?.changes;
+    if (!g || !ch || !l || arrived) return null;
+    const at = (kk: number, phase: "off" | "walk" | "wait") => { const st = ch[rideOrd(kk)]; return st ? { st, phase, k: kk } : null; };
+    const prev = g.legs[k - 1], prev2 = g.legs[k - 2];
+    if (l.kind === "ride" && app.guideOn && railCard && left <= 0 && nextRideK > 0) return at(nextRideK, "off");
+    if (l.kind === "walk" && !l.final && prev?.kind === "ride" && nextRideK > 0) return at(nextRideK, "walk");
+    if (l.kind === "ride" && !app.guideOn && (prev?.kind === "ride" || (prev?.kind === "walk" && prev2?.kind === "ride"))) return at(k, "wait");
+    return null;
+  });
+  // How far along the walk: the GPS on the street, else the minutes it takes since it began; «Είμαι …»: there.
+  let xFrom = $state(0), xKey = "", xDone = $state(false);
+  $effect(() => {
+    const x = xchg, key = x ? `${g?.key}:${x.k}:${x.phase === "off" ? "off" : "on"}` : "";
+    untrack(() => { if (key !== xKey) { xKey = key; xFrom = nowS; if (x?.phase !== "wait") xDone = false; } });
+  });
+  // Off a train with no walk step after it (the two platforms in one station): «on the way» until the minutes the
+  // change takes have gone, or «Είμαι στην αποβάθρα».
+  const xPhase = $derived(!xchg ? null : xchg.phase === "wait" && !xDone && g?.legs[app.guideStep - 1]?.kind === "ride"
+    && nowS - xFrom < Math.max(60, xchg.st.min * 60) ? "walk" as const : xchg.phase);
+  const xF = $derived.by(() => {
+    const x = xchg;
+    if (!x) return 0;
+    if (xPhase === "off") return 0;
+    if (xPhase === "wait" || xDone) return 1;
+    const l = leg, fresh = !!app.myFix && Date.now() - app.myFix.t < 20_000;
+    if (l?.kind === "walk" && fresh && route?.step === app.guideStep) return Math.max(0, Math.min(0.95, 1 - walkLeftM / Math.max(1, route.r.length)));
+    return Math.max(0, Math.min(0.95, (nowS - xFrom) / Math.max(60, x.st.min * 60)));
+  });
+  const xLook = $derived(xchg ? transferLook(levelM(xchg.st.prev.mode, xchg.st.prev.label, xchg.st.where, xchg.st.prev.line, xchg.st.stop),
+    levelM(xchg.st.mode, xchg.st.label, xchg.st.to, xchg.st.line, xchg.st.next || xchg.st.stop)) : null);
+  const xCount = $derived.by(() => {
+    const x = xchg;
+    if (!x || !g) return null;
+    const r = g.legs[x.k] as GuideRide;
+    const at = (x.phase === "wait" ? times[0]?.at : ride2?.k === x.k ? change?.at : null) ?? r.dep ?? null;
+    if (at == null) return null;
+    const mins = Math.max(0, Math.round((at - nowS) / 60)), walkLeft = xPhase === "wait" ? 0 : Math.ceil(x.st.min * (1 - xF));
+    const ok = mins >= walkLeft + 1;
+    return { big: mins === 0 ? "τώρα" : `${mins}′`, small: `Το ${r.line} φεύγει ${clockHM(at)}${ok && xPhase !== "wait" ? ": προλαβαίνεις" : ""}`, tone: (ok ? "ok" : "tight") as "ok" | "tight" };
+  });
+  function atPlatform() {
+    xDone = true;
+    if (leg?.kind === "walk") next();
   }
 
   // ---- The steps, for the list and the bar.
@@ -537,6 +689,12 @@
   const ban = $derived.by(() => {
     const l = leg;
     if (arrived || !l || !g) return { tone: "done" as Tone, arrow: "", icon: "check" as const, big: "Έφτασες", small: g?.dest ?? "", thenL: "", then: "" };
+    if ((l.kind === "walk" || xPhase === "walk") && xchg && xLook?.under) {
+      const st = xchg.st, way = xLook.way, to = st.label, place = (n: string) => titleCase(placeNote(n).place);
+      const big = xLook.to === 0 ? "Βγες στον δρόμο" : way === "down" ? `Κατέβα στο ${to}` : way === "up" ? `Ανέβα στο ${to}` : `Πήγαινε στο ${to}`;
+      const small = xLook.to === 0 ? `Στάση ${place(st.next || st.stop)} · το ${st.label}` : st.headsign ? `Αποβάθρα προς ${place(toward(st.headsign))}` : place(st.stop);
+      return { tone: "change" as Tone, arrow: "", icon: (way === "up" ? "chevron-up" : "down") as "down", big, small, thenL: "", then: "" };
+    }
     if (l.kind === "walk") {
       const tone: Tone = plan === "run" ? "hurry" : plan === "next" ? "late" : ride2 && g.legs[app.guideStep - 1]?.kind === "ride" && !l.final ? "change" : "go";
       const then = walk?.then ? stepText(walk.then, l.toName) : l.final ? g.dest : l.toName;
@@ -545,14 +703,17 @@
     }
     if (!app.guideOn) {
       const big = busMin == null ? `Περίμενε το ${l.line}` : busMin === 0 ? `Το ${l.line} φτάνει τώρα` : `Το ${l.line} σε ${busMin}′`;
-      const where = bus?.away === 0 ? "στη στάση" : bus?.away === 1 ? "1 στάση πριν" : bus?.away != null ? `${bus.away} στάσεις πριν` : `στάση ${l.board.name}`;
+      const where = bus?.away === 0 ? "στη στάση" : bus?.away === 1 ? "1 στάση πριν" : bus?.away != null ? `${bus.away} στάσεις πριν` : `${railCard ? "σταθμός" : "στάση"} ${l.board.name}`;
       return { tone: (near ? "hurry" : "wait") as Tone, arrow: "", icon: "clock" as const, big, small: `προς ${l.headsign} · ${where}`, thenL: "ΚΑΤΕΒΑΙΝΕΙΣ", then: l.alight.name };
     }
+    const xNext = xchg?.phase === "off" ? ` · μετά, ${lineWordOf(xchg.st)}` : "";
+    if (left === 1 && railCard) return { tone: "stop" as Tone, arrow: "", icon: "metro" as const, big: "Κατεβαίνεις στην επόμενη", small: `${l.alight.name}`, thenL: "", then: "" };
     if (left === 1) return { tone: "stop" as Tone, arrow: "", icon: "bus" as const, big: "Πάτα STOP τώρα", small: `Κατεβαίνεις στην επόμενη, ${l.alight.name}`, thenL: "", then: "" };
-    if (left <= 0) return { tone: "stop" as Tone, arrow: "", icon: "down" as const, big: "Κατέβα εδώ", small: l.alight.name, thenL: "", then: "" };
-    return { tone: "ride" as Tone, arrow: "", icon: "bus" as const, big: `Κατέβα σε ${left} στάσεις`, small: `${l.alight.name} · σε ${rideLeftMin}′, ${clockHM(nowS + rideLeftMin * 60)}`,
+    if (left <= 0) return { tone: "stop" as Tone, arrow: "", icon: "down" as const, big: railCard ? "Κατέβα τώρα" : "Κατέβα εδώ", small: `${l.alight.name}${xNext}`, thenL: "", then: "" };
+    return { tone: "ride" as Tone, arrow: "", icon: (railCard ? "metro" : "bus") as "bus", big: railCard ? `Κατέβα σε ${left} ${left === 1 ? "σταθμό" : "σταθμούς"}` : `Κατέβα σε ${left} στάσεις`, small: `${l.alight.name} · σε ${rideLeftMin}′, ${clockHM(nowS + rideLeftMin * 60)}`,
       thenL: "ΕΠΟΜΕΝΗ", then: l.seq[passed + 1]?.name ?? "" };
   });
+  const lineWordOf = (st: ChangeStep) => (st.mode === "metro" ? `${st.label}` : `το ${st.label}`);
   type NowRow = { icon: string; arrow?: string; strong?: boolean; t: string; s: string; v: string; tone?: "ok" | "warn" | "bad" };
   const now = $derived.by(() => {
     const l = leg;
@@ -575,10 +736,11 @@
     if (!app.guideOn) {
       const rows: NowRow[] = [];
       if (busWhere) rows.push({ icon: "bus", strong: true, t: busWhere, s: times[0] ? `${clockHM(times[0].at)} · ${times[0].live ? "ζωντανά" : "από το πρόγραμμα"}` : "", v: "" });
+      else if (railCard) rows.push({ icon: "clock", t: times[0] ? `Φεύγει ${clockHM(times[0].at)}` : "Από το πρόγραμμα", s: "Από το πρόγραμμα: το μετρό δεν δίνει ζωντανές θέσεις", v: "" });
       else rows.push({ icon: "bus", t: times[0] ? "Η θέση του δεν φαίνεται ακόμα" : "Ψάχνω το λεωφορείο…", s: times[0] ? `${clockHM(times[0].at)} · από το πρόγραμμα` : "", v: "" });
       if (nextMin != null) rows.push({ icon: "clock", t: `Μετά από αυτό: σε ${nextMin}′`, s: times[1] ? clockHM(times[1].at) : "", v: "" });
       const approach = bus?.away != null ? Math.max(0.08, Math.min(1, 1 - bus.away / (l.before.length + 1))) : busMin != null ? Math.max(0.08, 1 - busMin / 20) : null;
-      return { tone: (near ? "hurry" : "wait") as Tone, tag: `ΑΝΑΜΟΝΗ · ΣΤΑΣΗ ${l.board.name.toLocaleUpperCase("el")}`, chip: times[0] ? (times[0].live ? "Ζωντανά" : "Πρόγραμμα") : "",
+      return { tone: (near ? "hurry" : "wait") as Tone, tag: `ΑΝΑΜΟΝΗ · ${railCard ? "ΣΤΑΘΜΟΣ" : "ΣΤΑΣΗ"} ${l.board.name.toLocaleUpperCase("el")}`, chip: times[0] ? (times[0].live ? "Ζωντανά" : "Πρόγραμμα") : "",
         title: near ? `Ετοιμάσου: το ${l.line} έρχεται` : busMin == null ? `Περίμενε το ${l.line}` : `Το ${l.line} προς ${l.headsign}`,
         big: busMin == null ? "…" : busMin === 0 ? "τώρα" : `${busMin}′`, bar: approach, note: "", rows };
     }
@@ -619,7 +781,7 @@
     {#if mini}
       <!-- Minimised: one bar at the foot, what to do now, the trip's progress, the arrival. -->
       <div class="minibar" class:alert={ban.tone === "stop"} role="status" aria-live="polite" use:sheetDrag={miniDrag} in:rise={{ y: 12 }}>
-        <span class="mi">{#if arrived}<Icon name="check" size={18} />{:else if l?.kind === "ride"}<b class="chip sm" style:--lb={app.lineColor(l.line).bg} style:--lf={app.lineColor(l.line).fg}>{l.line}</b>{:else}<Icon name="walk" size={18} />{/if}</span>
+        <span class="mi">{#if arrived}<Icon name="check" size={18} />{:else if l?.kind === "ride"}<b class="chip sm" style:--lb={colorOf(l.line).bg} style:--lf={colorOf(l.line).fg}>{l.line}</b>{:else}<Icon name="walk" size={18} />{/if}</span>
         <span class="mt"><b>{miniText.main}</b><small>{miniText.sub}</small></span>
         <span class="mp">{@render legsBar(false)}</span>
         {#if !arrived}<span class="meta"><b>{arriveAt ? clockHM(arriveAt) : "–"}</b><small>άφιξη</small></span>{/if}
@@ -630,7 +792,7 @@
     <!-- What to do now, and what comes after it -->
     {#key `${app.guideStep}:${app.guideOn}:${ban.tone}`}
       <div class="banner t-{ban.tone}" aria-live={ban.tone === "stop" ? "assertive" : "polite"} in:rise={{ y: -10 }}>
-        <span class="bi">{#if ban.arrow}<svg class="arrow" width="32" height="32" viewBox="0 0 24 24" aria-hidden="true"><path d={ban.arrow} /></svg>{:else if ban.tone === "stop"}<b class="stopkey">STOP</b>{:else}<Icon name={ban.icon} size={26} />{/if}</span>
+        <span class="bi">{#if ban.arrow}<svg class="arrow" width="32" height="32" viewBox="0 0 24 24" aria-hidden="true"><path d={ban.arrow} /></svg>{:else if ban.tone === "stop" && !railCard}<b class="stopkey">STOP</b>{:else}<Icon name={ban.icon} size={26} />{/if}</span>
         <span class="bt"><b>{ban.big}</b><span>{ban.small}</span></span>
         {#if ban.then}<span class="bthen"><small>{ban.thenL}</small><span>{ban.then}</span></span>{/if}
       </div>
@@ -662,6 +824,10 @@
 
       {#if arrived}
         <p class="muted">Καλό σου δρόμο.</p>
+      {:else if xchg && l}
+        <!-- A change (mockup 48): the station from the side, the rider on it, the step now, the time to the next ride -->
+        <TransferBox st={xchg.st} live={{ f: xF, phase: xPhase ?? xchg.phase, count: xCount }} />
+        {#if xPhase === "walk"}<button type="button" class="primary wide deskonly" onclick={atPlatform}><Icon name="check" size={18} /><span>{xLook && xLook.to > 0 ? "Είμαι στην αποβάθρα" : "Είμαι στη στάση"}</span></button>{/if}
       {:else if now && l}
         <!-- The leg now -->
         <article class="legnow t-{now.tone}">
@@ -686,6 +852,7 @@
           {#if l.kind === "ride" && !app.guideOn}
             <button type="button" class="primary wide" onclick={boarded}><Icon name="check" size={18} /><span>Μπήκα</span></button>
           {/if}
+          {#if railCard && app.guideOn}<p class="note">Κάτω από τη γη χωρίς GPS: από τις στάσεις που κάνει το τρένο (κίνηση του κινητού) και το πρόγραμμα.</p>{/if}
         </article>
 
         <!-- Two things good to know: the change, the ticket, the next bus if this one is missed -->
@@ -697,19 +864,21 @@
           </div>
         {/if}
 
-        <!-- After it: the rest of the trip, each with its time (a tap moves there, with no location) -->
-        {#if later.length}
-          <div class="later" hidden={!list}>
-            <span class="lh">ΜΕΤΑ</span>
-            {#each later as x (x.k)}
-              <button type="button" class="lrow" onclick={() => { app.guideStep = x.k; app.guideOn = false; arrived = false; }}>
-                {#if x.l.kind === "ride"}<b class="chip sm" style:--lb={app.lineColor(x.l.line).bg} style:--lf={app.lineColor(x.l.line).fg}>{x.l.line}</b>{:else}<span class="chip sm walkchip"><Icon name="walk" size={13} /></span>{/if}
-                <span class="lt">{x.l.kind === "ride" ? `Ως ${x.l.alight.name} · ${x.l.seq.length - 1} στάσεις` : x.l.final ? `Ως τον προορισμό · ${Math.round(metres(x.l.from, x.l.to) * 1.25 / 10) * 10} μ.` : `Ως ${toThe(x.l.toName)} · ${Math.round(metres(x.l.from, x.l.to) * 1.25 / 10) * 10} μ.`}</span>
-                <span class="lat">{Number.isFinite(x.at) ? clockHM(x.at) : ""}</span>
-              </button>
-            {/each}
-          </div>
-        {/if}
+        <!-- All the steps (mockup 48 Δ): done, now, next; a tap moves there (the location may be wrong) -->
+        <div class="later" hidden={!list}>
+          <span class="lh">ΒΗΜΑΤΑ</span>
+          {#each allSteps as x (x.key)}
+            <button type="button" class="lrow" class:done={x.done} class:here={x.now} aria-current={x.now ? "step" : undefined}
+              onclick={() => { if (x.key === "end") return; app.guideStep = x.k; app.guideOn = false; arrived = false; xDone = false; }}>
+              {#if x.done}<span class="chip sm okchip"><Icon name="check" size={13} /></span>
+              {:else if x.kind === "ride"}<b class="chip sm" style:--lb={colorOf(x.line ?? "").bg} style:--lf={colorOf(x.line ?? "").fg}>{x.line}</b>
+              {:else if x.kind === "change"}<span class="chip sm xchip"><Icon name="swap" size={13} /></span>
+              {:else}<span class="chip sm walkchip"><Icon name={x.key === "end" ? "pin" : "walk"} size={13} /></span>{/if}
+              <span class="lt"><span>{x.t}</span><small>{x.s}</small></span>
+              <span class="lat">{x.now ? "τώρα" : x.at}</span>
+            </button>
+          {/each}
+        </div>
       {/if}
 
       <div class="acts">
@@ -718,11 +887,15 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M4 9v6h4l5 4V5L8 9z" />{#if voice}<path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11" />{:else}<path d="M17 9l5 6M22 9l-5 6" />{/if}</svg>
           </button>
-          <button type="button" class="round listbtn" aria-expanded={list} aria-label="Τα επόμενα βήματα" title="Τα επόμενα βήματα" onclick={() => (list = !list)}>
+          <button type="button" class="round listbtn" aria-expanded={list} aria-label="Τα επόμενα βήματα" title="Τα επόμενα βήματα" onclick={() => { list = !list; if (list) nsnap = "full"; }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" /></svg>
           </button>
           <button type="button" class="sharebtn" onclick={share}><Icon name="share" size={16} /><span>{shared ? "Αντιγράφηκε" : "Μοίρασε άφιξη"}</span></button>
-          {#if l?.kind === "ride" && app.guideOn}
+          {#if xchg?.phase === "off"}
+            <button type="button" class="cta blue phoneonly" onclick={next}>Βγήκα από το τρένο</button>
+          {:else if xPhase === "walk"}
+            <button type="button" class="cta blue phoneonly" onclick={atPlatform}>{xLook && xLook.to > 0 ? "Είμαι στην αποβάθρα" : "Είμαι στη στάση"}</button>
+          {:else if l?.kind === "ride" && app.guideOn}
             <button type="button" class="cta phoneonly" onclick={next}>Κατέβηκα</button>
           {:else if l?.kind === "ride"}
             <button type="button" class="cta blue phoneonly" onclick={boarded}>Μπήκα</button>
@@ -883,7 +1056,14 @@
   .lrow { display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 0 4px; border: 0; border-radius: 12px; background: none; color: var(--fg);
     font: inherit; text-align: left; cursor: pointer; }
   .lrow:hover { background: var(--control); }
-  .lt { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; line-height: 1.3; }
+  .lt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 6px 0; font-size: 13.5px; font-weight: 600; line-height: 1.25; }
+  .lt small { font-size: 12px; font-weight: 500; color: var(--muted); line-height: 1.2; }
+  .lrow.done { opacity: .5; }
+  .lrow.done .lt > span { text-decoration: line-through; }
+  .lrow.here { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+  @media (max-width: 719px) { .deskonly { display: none; } }
+  .okchip { background: color-mix(in srgb, var(--ontime) 18%, transparent); color: var(--ontime); }
+  .xchip { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
   .lat { flex: none; font-size: 12.5px; font-weight: 700; color: var(--muted); line-height: 1; font-variant-numeric: tabular-nums; }
   .chip { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 44px; height: 24px; padding: 0 7px; box-sizing: border-box;
     border-radius: 8px; background: var(--lb); color: var(--lf); font-size: 11.5px; font-weight: 800; line-height: 1; }

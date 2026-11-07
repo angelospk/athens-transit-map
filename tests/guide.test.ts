@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { along, distSaid, guideFromTrip, metres, parseFoot, ridePassed, stepArrow, stepText, walkNow, type GuideRide } from "../src/lib/guide";
+import { along, distSaid, guideFromPlan, guideFromTrip, isMetro, metres, parseFoot, railSeq, ridePassed, stepArrow, stepText, walkNow, type GuideRide } from "../src/lib/guide";
+import type { Itinerary, PlanResponse } from "../src/lib/plan";
+import type { V2Run, V2Stop } from "../src/lib/v2";
 import type { TripIndex } from "../src/lib/trip";
 
 // Four stops 200 m apart on a line north (about 0.0018° of latitude each).
@@ -80,5 +82,36 @@ describe("helpers", () => {
     const a = along([[37.97, 23.73], [37.9718, 23.73]], [37.9709, 23.7301]);
     expect(Math.abs(a.s - 100)).toBeLessThan(2);
     expect(a.off).toBeLessThan(10);
+  });
+});
+
+describe("a timed plan with a metro change", () => {
+  const T = 1_794_000_000;
+  const pt = (lat: number, lon: number, stop?: string) => ({ lat, lon, ...(stop ? { stop } : {}) });
+  const it_ = {
+    depart_at: T, arrive_at: T + 1500, duration_s: 1500, transfers: 1, walk_m: 0, modes: ["metro"],
+    legs: [
+      { kind: "ride" as const, from: pt(37.9409, 23.7413, "stasy:AD"), to: pt(37.9755, 23.7353, "stasy:SY2"), depart_at: T, arrive_at: T + 600, shape: [], line: "stasy:M2", mode: "metro", headsign: "ΑΝΘΟΥΠΟΛΗ", run: "r2" },
+      { kind: "ride" as const, from: pt(37.9755, 23.7353, "stasy:SY3"), to: pt(38.0047, 23.7946, "stasy:XO"), depart_at: T + 840, arrive_at: T + 1500, shape: [], line: "stasy:M3", mode: "metro", headsign: "ΔΟΥΚΙΣΣΗΣ ΠΛΑΚΕΝΤΙΑΣ", run: "r3" },
+    ],
+  };
+  const r = { from: pt(37.9409, 23.7413), to: pt(38.0047, 23.7946), itineraries: [it_], lines: { "stasy:M2": { label: "M2", mode: "metro" }, "stasy:M3": { label: "M3", mode: "metro" } },
+    stops: { "stasy:SY2": { name: "ΣΥΝΤΑΓΜΑ" }, "stasy:SY3": { name: "ΣΥΝΤΑΓΜΑ" }, "stasy:AD": { name: "ΑΓ. ΔΗΜΗΤΡΙΟΣ" }, "stasy:XO": { name: "ΧΟΛΑΡΓΟΣ" } } } as unknown as PlanResponse;
+  const g = guideFromPlan(it_ as unknown as Itinerary, r, null, "Χολαργός");
+  it("keeps each ride's times and run, and the change before the second", () => {
+    const rides = g.legs.filter((l): l is GuideRide => l.kind === "ride");
+    expect(rides.map(x => [x.dep, x.arr, x.run])).toEqual([[T, T + 600, "r2"], [T + 840, T + 1500, "r3"]]);
+    expect(g.changes?.[0]).toBeNull();
+    expect(g.changes?.[1]).toMatchObject({ kind: "change", stop: "ΣΥΝΤΑΓΜΑ", label: "M3", prev: { label: "M2" } });
+    expect(isMetro(rides[0].line)).toBe(true);
+  });
+  it("takes a train's stations and times from its run, board to alight", () => {
+    const run = { id: "r2", line: "stasy:M2", headsign: "", pattern: null, vehicle: null, vehicle_label: null, status: "", stops: [
+      { stop: "stasy:X", at: T - 120 }, { stop: "stasy:AD", at: T }, { stop: "stasy:MID", at: T + 300 }, { stop: "stasy:SY2", at: T + 600 }, { stop: "stasy:Z", at: T + 700 },
+    ] } as unknown as V2Run;
+    const stops = { "stasy:AD": { name: "ΑΓ. ΔΗΜΗΤΡΙΟΣ", lat: 1, lon: 2 }, "stasy:MID": { name: "ΔΑΦΝΗ", lat: 3, lon: 4 }, "stasy:SY2": { name: "ΣΥΝΤΑΓΜΑ", lat: 5, lon: 6 } } as unknown as Record<string, V2Stop>;
+    const seq = railSeq(run, stops, "AD", "SY2");
+    expect(seq?.map(s => [s.id, s.name, s.t])).toEqual([["AD", "Αγ. Δημητριος", T], ["MID", "Δαφνη", T + 300], ["SY2", "Συνταγμα", T + 600]]);
+    expect(railSeq(run, stops, "SY2", "AD")).toBeNull();
   });
 });

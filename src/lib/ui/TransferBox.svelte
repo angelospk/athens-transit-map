@@ -9,13 +9,25 @@
   import { clockHM } from "../trains";
   import Icon from "./Icon.svelte";
 
-  let { st, compact = false }: { st: Extract<PlanStep, { kind: "change" }>; compact?: boolean } = $props();
+  // `live` (the navigator, mockup 48): where the rider is on the walk (0 off the train … 1 at the next platform), the
+  // phase (still on the train, on the way, at the next one), and the time to the next ride in place of the margin.
+  type Live = { f: number; phase: "off" | "walk" | "wait"; count: { big: string; small: string; tone: "ok" | "tight" } | null };
+  let { st, compact = false, live = null }: { st: Extract<PlanStep, { kind: "change" }>; compact?: boolean; live?: Live | null } = $props();
 
   const name = (s: string) => titleCase(placeNote(s).place) || s;
   const look = $derived(transferLook(levelM(st.prev.mode, st.prev.label, st.where, st.prev.line, st.stop), levelM(st.mode, st.label, st.to, st.line, st.next || st.stop)));
   const towardName = $derived(st.headsign ? name(toward(st.headsign)) : "");
   const words = $derived(changeWords({ stop: name(st.stop), next: st.next ? name(st.next) : "", toward: towardName, m: st.m, min: st.min,
     prev: st.prev, label: st.label, mode: st.mode }, look));
+  // The step being done: on the train, the first; on the way, by how far along (off a train its first step, «get
+  // out», is behind already); at the next platform or stop, the last.
+  const step = $derived.by(() => {
+    if (!live) return -1;
+    const n = words.length, fromTrain = st.prev.mode === "metro" && look.from > 0;
+    if (live.phase === "off") return 0;
+    if (live.phase === "wait" || live.f >= 1) return n - 1;
+    return fromTrain ? Math.min(n - 1, 1 + Math.floor(live.f * (n - 1))) : Math.min(n - 1, Math.floor(live.f * n));
+  });
   const WHAT: Record<string, string> = { bus: "Το λεωφορείο", trolley: "Το τρόλεϊ", metro: "Το τρένο", tram: "Το τραμ", suburban: "Ο Προαστιακός" };
   const margin = $derived(changeMargin(st.spare, RISK_MIN, st.missed, { what: WHAT[st.mode] ?? "Το λεωφορείο", at: clockHM(st.leaves),
     rail: ["metro", "tram", "suburban", "rail"].includes(st.mode) }, clockHM));
@@ -34,7 +46,19 @@
   });
   const ya = $derived(yy[0]), yb = $derived(yy[1]);
   const short = (l: string) => (l.length > 4 ? l.slice(0, 4) : l);
-  const path = $derived(look.from > 0 && look.to > 0 ? `M136 ${ya} L182 ${yb}` : look.to > 0 ? `M50 ${STREET} H118 L182 ${yb}` : `M136 ${ya} L200 ${STREET} H266`);
+  const pts = $derived<[number, number][]>(look.from > 0 && look.to > 0 ? [[136, ya], [182, yb]] : look.to > 0 ? [[50, STREET], [118, STREET], [182, yb]]
+    : [[136, ya], [200, STREET], [266, STREET]]);
+  const path = $derived(`M${pts.map(p => p.join(" ")).join(" L")}`);
+  // The rider on the walk, `f` of its length along.
+  const me = $derived.by<[number, number]>(() => {
+    const f = Math.max(0, Math.min(1, live?.f ?? 0)), seg = pts.slice(1).map((p, i) => Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]));
+    let d = f * seg.reduce((a, b) => a + b, 0);
+    for (let i = 0; i < seg.length; i++) {
+      if (d <= seg[i] || i === seg.length - 1) { const t = seg[i] ? Math.min(1, d / seg[i]) : 0; return [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t]; }
+      d -= seg[i];
+    }
+    return pts[0];
+  });
 </script>
 
 <section class="xb" class:compact aria-label="Η αλλαγή">
@@ -60,8 +84,9 @@
       {:else}
         <g transform="translate(270 {STREET - 11})"><rect width="42" height="22" rx="6" fill={st.color}></rect><text class="bd" x="21" y="15">{short(st.label)}</text></g>
       {/if}
-      <path class="walk" d={path} marker-end="url(#xarrow)"></path>
-      {#if look.from > 0}<circle class="me" cx="136" cy={ya} r="6"></circle>{/if}
+      <path class="walk" class:done={live && live.f >= 1} d={path} marker-end="url(#xarrow)"></path>
+      {#if live}<circle class="halo" cx={me[0]} cy={me[1]} r="13"></circle><circle class="me" cx={me[0]} cy={me[1]} r="7"></circle>
+      {:else if look.from > 0}<circle class="me" cx="136" cy={ya} r="6"></circle>{/if}
       <defs><marker id="xarrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1l8 4-8 4z" class="arrow"></path></marker></defs>
     </svg>
   {:else}
@@ -74,13 +99,21 @@
     </svg>
   {/if}
 
-  <ol class="xsteps">
-    {#each words as w, k (k)}<li><b>{k + 1}</b><span>{w.t}{#if w.b}<strong>{w.b}</strong>{/if}{w.after ?? ""}</span></li>{/each}
+  <ol class="xsteps" class:live={!!live}>
+    {#each words as w, k (k)}
+      {@const state = !live ? "" : k < step ? "done" : k === step ? "here" : "next"}
+      <li class={state} aria-current={state === "here" ? "step" : undefined}>
+        <b>{#if state === "done"}<Icon name="check" size={13} />{:else}{k + 1}{/if}</b><span>{w.t}{#if w.b}<strong>{w.b}</strong>{/if}{w.after ?? ""}</span></li>
+    {/each}
   </ol>
 
-  <div class="mg {margin.tone}">
-    <i></i><span><b>{margin.big}</b>{#if margin.small}<small>{margin.small}</small>{/if}</span>
-  </div>
+  {#if live?.count}
+    <div class="count {live.count.tone}" role="status"><b class="cs">{live.count.small}</b><b class="cb">{live.count.big}</b></div>
+  {:else if !live}
+    <div class="mg {margin.tone}">
+      <i></i><span><b>{margin.big}</b>{#if margin.small}<small>{margin.small}</small>{/if}</span>
+    </div>
+  {/if}
 </section>
 
 <style>
@@ -100,7 +133,23 @@
   .bd { fill: #fff; font: 800 10px/1 var(--font, Commissioner, system-ui, sans-serif); text-anchor: middle; }
   .walk { fill: none; stroke: var(--fg); stroke-width: 2.4; stroke-dasharray: 1 6; stroke-linecap: round; }
   .arrow { fill: var(--fg); }
-  .me { fill: var(--accent); stroke: #fff; stroke-width: 2.5; }
+  .me { fill: var(--accent); stroke: #fff; stroke-width: 2.5; transition: cx .8s linear, cy .8s linear; }
+  .halo { fill: var(--accent); opacity: .22; transition: cx .8s linear, cy .8s linear; }
+  .walk.done { stroke: var(--ontime); }
+  .xsteps.live li { align-items: center; }
+  .xsteps.live li > span { padding-top: 0; }
+  .xsteps li.done { opacity: .55; }
+  .xsteps li.done > span { text-decoration: line-through; }
+  .xsteps li.done > b { background: color-mix(in srgb, var(--ontime) 18%, transparent); color: var(--ontime); }
+  .xsteps li.here { margin: 0 -10px; padding: 10px; border-radius: 14px; background: color-mix(in srgb, var(--accent) 16%, transparent); font-weight: 600; }
+  .xsteps li.here > b { background: var(--accent); color: #fff; }
+  .xsteps li.next { opacity: .8; }
+  .count { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 14px;
+    background: color-mix(in srgb, var(--ontime) 14%, transparent); color: var(--ontime); }
+  .count.tight { background: color-mix(in srgb, var(--late1, #f0ae45) 16%, transparent); color: var(--late1, #f0ae45); }
+  .cs { font-size: 14px; line-height: 1.25; }
+  .cb { font-size: 26px; line-height: 1; font-variant-numeric: tabular-nums; }
+  @media (prefers-reduced-motion: reduce) { .me, .halo { transition: none; } }
   .flat { display: block; width: 100%; height: 70px; }
   .fbg { fill: var(--surface); }
   .road { stroke: var(--border); stroke-width: 12; fill: none; }

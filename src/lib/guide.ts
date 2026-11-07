@@ -3,14 +3,15 @@
 // through them. Here: building a guide, the walking route and its spoken instructions (a public OSRM foot router),
 // and where on a leg the user is. No DOM, no state.
 
-import type { Itinerary, PlanResponse } from "./plan";
+import { planSteps, type Itinerary, type PlanResponse, type PlanStep } from "./plan";
+import type { V2Run, V2Stop } from "./v2";
 import type { TripIndex, TripLeg, TripVariant } from "./trip";
 import { titleCase } from "./nearby";
 import { placeNote, toward } from "./stops";
 
 export type Pt = [number, number];   // [lat, lon]
 
-export interface GStop { id: string | null; name: string; at: Pt }
+export interface GStop { id: string | null; name: string; at: Pt; t?: number }   // t: its time in the timetable (s), a train's stations
 export interface GuideWalk { kind: "walk"; from: Pt; to: Pt; toName: string; final: boolean }
 export interface GuideRide {
   kind: "ride"; line: string; variant: string | null; headsign: string;
@@ -18,9 +19,13 @@ export interface GuideRide {
   seq: GStop[];           // the stops ridden, board first and alight last
   before: GStop[];        // up to 4 stops before the board stop (where the bus comes from)
   shape?: Pt[];           // the plan's own way for the ride ([lat, lon]), drawn when the line's is not known
+  dep?: number; arr?: number;   // a timed plan: when it leaves the board stop and reaches the alight stop
+  run?: string; lineId?: string; // a train's run and line ids (/v2), for its stations and their times
 }
+export type ChangeStep = Extract<PlanStep, { kind: "change" }>;
 export type GuideLeg = GuideWalk | GuideRide;
-export interface Guide { key: string; legs: GuideLeg[]; dest: string; arrive: number | null }
+export interface Guide { key: string; legs: GuideLeg[]; dest: string; arrive: number | null;
+  changes?: (ChangeStep | null)[] }   // a timed plan: the change before each ride (by its order, the first null)
 
 const R = 6371000, rad = Math.PI / 180;
 export function metres(a: Pt, b: Pt): number {
@@ -105,11 +110,30 @@ export function guideFromPlan(it: Itinerary, r: PlanResponse, ix: TripIndex | nu
     if (!ride.seq.length) ride.seq = [ride.board, ride.alight];
     if (l.headsign) ride.headsign = titleCase(placeNote(toward(l.headsign)).place);
     if (l.shape?.length > 1) ride.shape = l.shape;
+    ride.dep = l.depart_at; ride.arr = l.arrive_at;
+    if (l.run) ride.run = l.run;
+    if (l.line) ride.lineId = l.line;
     rides.push(ride);
   }
   const from: Pt = [r.from.lat, r.from.lon], to: Pt = [r.to.lat, r.to.lon];
-  return { key: `p:${it.depart_at}:${it.arrive_at}`, legs: withWalks(rides, from, to, dest), dest, arrive: it.arrive_at };
+  const changes: (ChangeStep | null)[] = [null, ...planSteps(it, r).filter((x): x is ChangeStep => x.kind === "change")];
+  return { key: `p:${it.depart_at}:${it.arrive_at}`, legs: withWalks(rides, from, to, dest), dest, arrive: it.arrive_at, changes };
 }
+
+/** A train's stations from the board one to the alight one, with their times, from its run (/v2/runs) and its line's
+ *  stops (/v2/lines); null when either end is not in the run. */
+export function railSeq(run: V2Run, stops: Record<string, V2Stop>, board: string | null, alight: string | null): GStop[] | null {
+  const own = (id: string) => id.slice(id.indexOf(":") + 1);
+  const i = run.stops.findIndex(s => own(s.stop) === board), j = i < 0 ? -1 : run.stops.findIndex((s, k) => k > i && own(s.stop) === alight);
+  if (i < 0 || j < 0) return null;
+  return run.stops.slice(i, j + 1).map(s => {
+    const st = stops[s.stop] ?? stops[own(s.stop)];
+    return { id: own(s.stop), name: titleCase(st?.name ?? own(s.stop)), at: [st?.lat ?? 0, st?.lon ?? 0] as Pt, t: s.at };
+  });
+}
+
+/** A metro line (M1–M3): a ride followed without GPS, by the train's stops and the timetable (metroRide). */
+export const isMetro = (line: string) => /^[MΜ]\d/.test(line);
 
 // ---- Where on a line of points the user is.
 
