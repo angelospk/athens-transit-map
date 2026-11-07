@@ -26,6 +26,7 @@
   import AlertForm from "./AlertForm.svelte";
   import Bell from "./Bell.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
+  import TransferBox from "./TransferBox.svelte";
   import { item } from "../anim";
   import { distText, titleCase } from "../nearby";
   import { fetchFoot, guideFromPlan, guideFromTrip, guideFromXfer } from "../guide";
@@ -819,28 +820,8 @@
                           {/if}
                         {/if}
                       {:else if st.kind === "change"}
-                        {@const rail = st.mode === "metro" || st.mode === "rail" || st.mode === "tram" || st.mode === "suburban"}
                         <b class="sname">Κατέβα: {titleCase(st.stop)}</b>
-                        <section class="xbox" aria-label="Η αλλαγή">
-                          <span class="xtop"><span class="xt"><Icon name="swap" size={16} />Αλλαγή</span>
-                            <span class="xspare" class:tight={st.spare < RISK_MIN} class:ok={st.spare >= 3}><i></i>Περιθώριο {Math.max(0, st.spare)}′</span></span>
-                          <svg class="xmap" viewBox="0 0 300 70" role="img" aria-label={st.m ? `${distText(st.m)} με τα πόδια, από το ${st.prev.label} στο ${st.label}` : `Το ${st.label} από την ίδια στάση`}>
-                            <rect width="300" height="70" rx="10" class="xbg"></rect>
-                            <path d="M0 46 H300" class="xroad"></path>
-                            {#if st.m}<path d="M40 46 C90 46 110 22 170 22 L248 22" class="xwalk"></path>{/if}
-                            <g transform={st.m ? "translate(40 46)" : "translate(120 46)"}><circle r="12" fill={st.prev.color} stroke="#fff" stroke-width="2"></circle>
-                              <text y="4" text-anchor="middle" class="xlbl">{st.prev.label.length > 3 ? st.prev.label.slice(0, 3) : st.prev.label}</text></g>
-                            <g transform={st.m ? "translate(260 22)" : "translate(180 46)"}><circle r="12" fill={st.color} stroke="#fff" stroke-width="2"></circle>
-                              <text y="4" text-anchor="middle" class="xlbl">{st.label.length > 3 ? st.label.slice(0, 3) : st.label}</text></g>
-                            <text x="150" y="64" text-anchor="middle" class="xm">{st.m ? `${distText(st.m)} · ${st.min}′` : "ίδια στάση"}</text>
-                          </svg>
-                          {#if st.gate}<span class="xgate"><Icon name="metro" size={14} />Μαζί {st.gate}′ για τον σταθμό: σκάλες, ακυρωτικά, αποβάθρα</span>{/if}
-                          <ol class="xsteps">
-                            <li><b>1</b><span>{st.m ? `Περπάτα ${distText(st.m)} ως ${rail ? "την είσοδο του σταθμού" : "τη στάση"}${st.next && !rail ? ` ${titleCase(st.next)}` : ""}` : "Μείνε στην ίδια στάση"}</span></li>
-                            <li><b>2</b><span>{rail ? "Αποβάθρα" : `Πάρε το ${st.label}`}{st.headsign ? " " : ""}{#if st.headsign}<b class="xto">προς {titleCase(placeNote(toward(st.headsign)).place)}</b>{/if}</span></li>
-                          </ol>
-                          {#if st.missed}<span class="xmiss"><Icon name="clock" size={14} />Αν το χάσεις, το επόμενο σε {st.missed.in_min}′: φτάνεις {clockHM(st.missed.arrive_at)}</span>{/if}
-                        </section>
+                        <TransferBox {st} />
                       {:else}
                         <b class="sname">{titleCase(to?.label ?? st.name)}</b>
                       {/if}
@@ -1191,7 +1172,6 @@
   .midacts { display: flex; gap: 6px; padding: 4px 8px 6px 25px; }
   .midgo { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 0; border-radius: 16px; background: var(--accent); color: #fff;
     font: inherit; font-size: 13px; font-weight: 700; line-height: 1; cursor: pointer; }
-  .xgate { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; line-height: 1.3; }
   .rvfoot { flex: none; padding: 12px 14px 14px; box-shadow: 0 -1px 0 var(--border); }
   /* The sheet's handle (a phone): the header drags it too; at «peek» only the options and «Ξεκίνα» show. */
   .grip { display: block; width: 100%; height: 18px; margin: -8px 0 -4px; padding: 0; border: 0; background: none; cursor: grab; touch-action: none; }
@@ -1333,28 +1313,6 @@
   .schip { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 7px; box-sizing: border-box; border-radius: 6px;
     background: var(--lb); color: var(--lf); font-size: 11px; font-weight: 800; line-height: 1; }
   .schip.round { border-radius: 11px; }
-  .xbox { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 16px; background: var(--card); border: 1px solid var(--card-border); }
-  .xtop { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .xt { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 800; line-height: 1; }
-  .xt :global(svg) { color: var(--accent); }
-  .xspare { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 13px; background: color-mix(in srgb, var(--late1) 16%, transparent);
-    color: var(--late1); font-size: 12px; font-weight: 700; line-height: 1; }
-  .xspare i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-  .xspare.ok { background: color-mix(in srgb, var(--ontime) 14%, transparent); color: var(--ontime); }
-  .xspare.tight { background: var(--bad-bg); color: var(--late3); }
-  .xmap { display: block; width: 100%; height: 70px; }
-  .xbg { fill: var(--surface); }
-  .xroad { stroke: var(--border); stroke-width: 12; fill: none; }
-  .xwalk { stroke: var(--accent); stroke-width: 3; stroke-dasharray: 2 6; stroke-linecap: round; fill: none; }
-  .xlbl { fill: #fff; font: 800 10px/1 var(--font); }
-  .xm { fill: var(--muted); font: 600 11px/1 var(--font); }
-  .xsteps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: 13px; line-height: 1.3; }
-  .xsteps li { display: flex; align-items: flex-start; gap: 10px; }
-  .xsteps li > b { flex: none; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: var(--control);
-    font-size: 11px; font-weight: 800; line-height: 1; }
-  .xsteps li > span { padding-top: 2px; }
-  .xto { font-weight: 800; }
-  .xmiss { display: flex; align-items: center; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; line-height: 1.3; }
   .startbtn { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; height: 50px; margin-top: 8px; border: 0; border-radius: 25px;
     background: var(--accent); color: var(--on-accent); font: inherit; font-size: 16px; font-weight: 800; line-height: 1; cursor: pointer; }
   .go:focus-visible, .startbtn:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }

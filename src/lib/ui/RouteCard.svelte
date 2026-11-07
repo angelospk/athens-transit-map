@@ -5,22 +5,31 @@
   import { untrack } from "svelte";
   import { guideFromPlan, type GuideRide } from "../guide";
   import { busNow, isLiveMode, type BusNow } from "../liveRide";
-  import { planSteps, type Itinerary, type PlanResponse, type ScaledLeg } from "../plan";
+  import { planSteps, RISK_MIN, type Itinerary, type PlanResponse, type ScaledLeg } from "../plan";
   import type { TripIndex } from "../trip";
   import { titleCase } from "../nearby";
   import { placeNote, toward } from "../stops";
   import { clockHM } from "../trains";
   import { durText } from "../format";
   import Icon from "./Icon.svelte";
+  import TransferBox from "./TransferBox.svelte";
+  import { changeLine, levelM, transferLook } from "../transfer";
 
-  let { it, r, ix, legs, nowS, tag = "", open = false, sel = false, live = false, others = [], logos = false, onpick, onmap }: {
+  let { it, r, ix, legs, nowS, tag = "", open = false, sel = false, live = false, clock = false, target = null, others = [], logos = false, onpick, onmap }: {
     it: Itinerary; r: PlanResponse; ix: TripIndex | null; legs: ScaledLeg[]; nowS: number; tag?: string; open?: boolean; sel?: boolean;
     live?: boolean; others?: Itinerary[]; logos?: boolean; onpick: () => void; onmap?: () => void;
+    // Not now (mockup 46): the time to leave on the clock; arriving by a time, how much before it (or after).
+    clock?: boolean; target?: { at: number; margin: number; tone: "ok" | "tight" | "late" } | null;
   } = $props();
 
   // Mockup 44: closed, two lines; a tap opens where its bus is and three figures; «Βήματα» opens the steps.
   let stepsOpen = $state(false);
   $effect(() => { if (!open) stepsOpen = false; });
+  // A change in the steps opens to the station seen from the side (mockup 47 Γ → A).
+  let xOpen = $state<number | null>(null);
+  $effect(() => { if (!stepsOpen) xOpen = null; });
+  // The little side view's levels: the street at the top, then M1, M2, M3, each deeper.
+  const gy = (d: number) => (d <= 0 ? 8 : Math.min(29, 10 + d * 0.27));
   // The operators' marks on the line chips (Athens: ΟΑΣΑ for buses and trolleys, the metro's and the tram's own).
   const LOGO: Record<string, string> = { bus: "icons/oasa.png", trolley: "icons/oasa.png", metro: "icons/metro-logo.svg", tram: "icons/tram-logo.svg" };
   const logoOf = (m: string) => (logos && LOGO[m] ? `${import.meta.env.BASE_URL}${LOGO[m]}` : "");
@@ -65,7 +74,9 @@
 
   const leaveIn = $derived(Math.max(0, Math.floor(((bus?.live ? bus.at - walkS : it.depart_at) - nowS) / 60)));
   const leaveText = $derived(leaveIn === 0 ? "Φύγε τώρα" : leaveIn < 60 ? `Φύγε σε ${mins(leaveIn)}` : `Φύγε στις ${clockHM(nowS + leaveIn * 60)}`);
-  const leaveShort = $derived(leaveIn === 0 ? "Φύγε τώρα" : leaveIn < 60 ? `Φύγε σε ${leaveIn}′` : `Φύγε στις ${clockHM(nowS + leaveIn * 60)}`);
+  const leaveShort = $derived(clock ? `Φύγε ${clockHM(it.depart_at)}` : leaveIn === 0 ? "Φύγε τώρα" : leaveIn < 60 ? `Φύγε σε ${leaveIn}′` : `Φύγε στις ${clockHM(nowS + leaveIn * 60)}`);
+  const targetText = $derived(!target ? "" : target.tone === "late" ? `Φτάνεις ${-target.margin}′ μετά τις ${clockHM(target.at)}`
+    : `${target.tone === "tight" ? "Σφιχτό: " : ""}${target.margin}′ πριν τις ${clockHM(target.at)}`);
   const busMin = $derived(bus ? Math.max(0, Math.round((bus.at - nowS) / 60)) : null);
 
   // The line: dots for the stops before yours, the bus among them, yours at the right end.
@@ -98,6 +109,7 @@
       </span>
       <span class="tms">{clockHM(it.depart_at)} → {clockHM(it.arrive_at)}</span>
     </span>
+    {#if target}<span class="r3 {target.tone}"><i></i>{targetText}</span>{/if}
   </button>
 
   {#if open}
@@ -144,8 +156,23 @@
                 <span class="si"><Icon name="walk" size={14} /></span>
                 <span class="sx"><span class="s1"><b>Περπάτα {mins(st.min)}</b></span><small>ως {st.to === "στον προορισμό" ? "τον προορισμό" : `${stationAfter(k) ? "τον σταθμό" : "τη στάση"}${st.to === "στη στάση" ? "" : ` ${name(st.to)}`}`}{stationAfter(k) ? ", και κατέβα στο μετρό" : ""}</small></span>
               {:else if st.kind === "change"}
-                <span class="si"><Icon name="walk" size={14} /></span>
-                <span class="sx"><span class="s1"><b>{st.m < 20 && !st.gate ? `Κατέβα και περίμενε ${mins(Math.max(1, st.spare))}` : `Άλλαξε: περπάτα ${mins(st.min)}`}</b></span><small>{st.m < 20 && !st.gate ? `στη στάση ${name(st.stop)}` : `ως ${st.mode === "metro" || st.mode === "tram" ? "τον σταθμό" : "τη στάση"} ${st.next ? name(st.next) : ""}${st.mode === "metro" ? ", και κατέβα στο μετρό (σκάλες, ακυρωτικά)" : ""}`}</small></span>
+                {@const lk = transferLook(levelM(st.prev.mode, st.prev.label, st.where, st.prev.line), levelM(st.mode, st.label, st.to, st.line))}
+                {@const tone = st.spare < RISK_MIN ? "tight" : st.spare >= 3 ? "ok" : "mid"}
+                <span class="si"><Icon name="swap" size={14} /></span>
+                <span class="sx xc">
+                  <button type="button" class="xrow" aria-expanded={xOpen === k} onclick={() => (xOpen = xOpen === k ? null : k)}>
+                    <svg class="glyph" viewBox="0 0 44 36" aria-hidden="true">
+                      <rect width="44" height="36" rx="10" class="gbg"></rect>
+                      <rect x="5" y={gy(lk.from) - 2} width="16" height="4" rx="2" fill={st.prev.color}></rect>
+                      <rect x="23" y={gy(lk.to) - 2} width="16" height="4" rx="2" fill={st.color}></rect>
+                      <path d="M19 {gy(lk.from)} L26 {gy(lk.to)}" class="gw"></path>
+                    </svg>
+                    <span class="xtx"><b>Αλλαγή · {name(st.stop)}</b><small>{changeLine(lk, st.label, st.mode, st.min, st.m)}</small></span>
+                    <span class="xsp {tone}">{tone === "tight" ? "σφιχτό" : tone === "ok" ? "άνετα" : `${st.spare}′`}</span>
+                    <span class="chev" class:up={xOpen === k} aria-hidden="true"><Icon name="chevron" size={15} /></span>
+                  </button>
+                  {#if xOpen === k}<TransferBox {st} compact />{/if}
+                </span>
               {:else if st.kind === "ride"}
                 {@const md = legMode(st.leg)}
                 <span class="si badge" style:background={st.color} style:color={st.text}>{st.label.length > 4 ? "" : st.label}{#if st.label.length > 4}<Icon name={md === "metro" ? "metro" : md === "tram" ? "tram" : "bus"} size={14} />{/if}</span>
@@ -237,5 +264,22 @@
   .s1 b { font-size: 15px; font-weight: 600; line-height: 1.1; }
   .tm { flex: none; font-size: 13px; font-weight: 700; color: var(--muted); line-height: 1; }
   .sx small { font-size: 13px; color: var(--muted); line-height: 1.3; }
+  .r3 { height: 16px; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; line-height: 1; color: var(--ontime); }
+  .r3 i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .r3.tight { color: var(--late1, #f0ae45); }
+  .r3.late { color: var(--late3, #ff8a8a); }
+  .sx.xc { padding-top: 0; gap: 10px; }
+  .xrow { width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 14px; border: 1px dashed color-mix(in srgb, var(--fg) 22%, transparent);
+    background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+  .xrow:hover { background: color-mix(in srgb, var(--fg) 5%, transparent); }
+  .glyph { flex: none; width: 44px; height: 36px; display: block; }
+  .gbg { fill: var(--control); }
+  .gw { stroke: var(--fg); stroke-width: 1.6; stroke-dasharray: 1 3; stroke-linecap: round; fill: none; }
+  .xtx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+  .xtx b { font-size: 14.5px; font-weight: 700; line-height: 1.15; }
+  .xtx small { font-size: 12.5px; color: var(--muted); line-height: 1.2; }
+  .xsp { flex: none; font-size: 12.5px; font-weight: 700; line-height: 1; color: var(--muted); }
+  .xsp.tight { color: var(--late3, #ff8a8a); }
+  .xsp.ok { color: var(--ontime); }
   @media (prefers-reduced-motion: reduce) { .veh, .chev { transition: none; } }
 </style>

@@ -35,6 +35,7 @@
   import { withMetro } from "../metroBridge";
   import { euro, tripFare } from "../fares";
   import { parsePlan, planFC, planSummary, planUrl, scaledLegs, type Itinerary, type PlanResponse } from "../plan";
+  import { arriveOrder, athensAt, dayOf, hhmm, quick, slots, wall, whenLabel, type When } from "../when";
 
   let { app }: { app: AppState } = $props();
 
@@ -58,6 +59,43 @@
   const WHEN = [{ value: 0, label: "Τώρα", hint: "Με τα ζωντανά δρομολόγια" }, { value: 15, label: "Σε 15 λεπτά", hint: "" },
     { value: 30, label: "Σε 30 λεπτά", hint: "" }, { value: 60, label: "Σε 1 ώρα", hint: "Με το πρόγραμμα" }] as const;
   let later = $state(0);
+  // A phone's «Πότε» (mockup 46 Γ): now, leaving at, or arriving by a time; a list under its chip sets it.
+  let when = $state.raw<When>({ kind: "now" });
+  let whenOpen = $state(false);
+  let dKind = $state<When["kind"]>("now"), dMin = $state(0), dEarly = $state(5);
+  function openWhen() {
+    if (whenOpen) { whenOpen = false; return; }
+    const now = untrack(() => app.serverNow) / 1000, w = when;
+    dKind = w.kind;
+    dMin = w.kind === "now" ? quick(now)[0] ?? slots(now)[0] ?? 0 : wall(w.at).min + (dayOf(now, w.at) > 0 ? 24 * 60 : 0);
+    dEarly = w.kind === "arrive" ? w.early : 5;
+    whenOpen = true;
+  }
+  function setKind(k: When["kind"]) {
+    dKind = k;
+    if (k === "now") { when = { kind: "now" }; whenOpen = false; }
+  }
+  // A time picked that has gone by meanwhile: the first one left.
+  $effect(() => {
+    const s = slots(app.serverNow / 1000);
+    if (whenOpen && s.length && !s.includes(dMin)) untrack(() => { dMin = s.find(m => m >= dMin) ?? s[0]; });
+  });
+  function applyWhen() {
+    const at = athensAt(app.serverNow / 1000, 0, dMin);
+    when = dKind === "leave" ? { kind: "leave", at } : dKind === "arrive" ? { kind: "arrive", at, early: dEarly } : { kind: "now" };
+    whenOpen = false;
+  }
+  // A time that has gone by is now again.
+  $effect(() => { const w = when; if (w.kind !== "now" && w.at < app.serverNow / 1000 - 300) untrack(() => { when = { kind: "now" }; }); });
+  // The selected time in the middle of its list (the list scrolls, not the panel under it).
+  function inView(node: HTMLElement, _key: number) {
+    const show = () => requestAnimationFrame(() => {
+      const el = node.querySelector<HTMLElement>("[aria-selected='true']");
+      if (el) node.scrollTop = el.offsetTop - (node.clientHeight - el.offsetHeight) / 2;
+    });
+    show();
+    return { update: show };
+  }
   // Under «Πότε», two chips (mockup 27): which means the trip may use (their badges, overlapped; a list to tick them
   // in, one at least), and which routes come first: the earliest there, the cheapest, the shortest.
   const MEANS: { m: TripMode; label: string; icon: IconName; color: string }[] = [
@@ -642,17 +680,22 @@
   const MODE_OF: Record<string, TripMode> = { bus: "bus", trolley: "trolley", metro: "metro", tram: "tram" };
   let plan = $state.raw<{ key: string; r: PlanResponse | null } | null>(null);
   const pKey = $derived(ends.from.place && ends.to.place && !app.savingPlace
-    ? JSON.stringify([centre(ends.from.place.pts), centre(ends.to.place.pts), later]) : null);
+    ? JSON.stringify([centre(ends.from.place.pts), centre(ends.to.place.pts), later, when]) : null);
   $effect(() => {
     const k = pKey;
     if (!k || !app.start) return;
-    const [a, b, off] = JSON.parse(k) as [[number, number], [number, number], number];
+    const [a, b, off, w] = JSON.parse(k) as [[number, number], [number, number], number, When];
     const c = new AbortController();
-    const t = setTimeout(() => getJSON(planUrl(API_BASE, a, b, off ? untrack(() => app.serverNow) / 1000 + off * 60 : undefined, 5), c.signal).then(
+    // When to ask from: now (or «σε 15′»), the time to leave, or, arriving by a time, an hour and a quarter before it
+    // (then again from just the time the quickest route needs, below).
+    const nowAsk = untrack(() => app.serverNow) / 1000;
+    const after = w.kind === "leave" ? w.at : w.kind === "arrive" ? Math.max(nowAsk, w.at - 75 * 60) : off ? nowAsk + off * 60 : undefined;
+    const t = setTimeout(() => getJSON(planUrl(API_BASE, a, b, after, 5), c.signal).then(
       async res => {
         if (c.signal.aborted) return;
         const r0 = res.status === 200 ? parsePlan(res.body) : null;
-        // No route from the server: the app finds some itself (fallbackPlan.ts), timed from the live boards.
+        // No route from the server: the app finds some itself (fallbackPlan.ts), timed from the live boards: only now.
+        if (w.kind !== "now" && (!r0 || !r0.itineraries.length)) { plan = { key: k, r: r0 }; return; }
         if (!r0 || !r0.itineraries.length) {
           const fb = await fallback(a, b, c.signal);
           if (!c.signal.aborted) plan = { key: k, r: fb ?? r0 };
@@ -673,8 +716,14 @@
         // The next ones too (the server gives 5 at a time): after the last, for the list.
         const last = r.itineraries.at(-1);
         if (last && !r.last) void ask(a, b, last.depart_at + 60).then(add);
+        // Arriving by a time: again from as late as the quickest route allows, so the latest that make it are there.
+        if (w.kind === "arrive") {
+          const quickest = Math.min(...r.itineraries.map(x => x.arrive_at - x.depart_at));
+          const late = Math.max(nowAsk, w.at - w.early * 60 - quickest - 10 * 60);
+          if (Number.isFinite(late) && Math.abs(late - (after ?? 0)) > 5 * 60) void ask(a, b, late).then(add);
+        }
         // A metro option, when the server gave none (metroBridge.ts).
-        void withMetro(r, a, b, off ? untrack(() => app.serverNow) / 1000 + off * 60 : undefined, untrack(() => app.serverNow) / 1000, ask)
+        void withMetro(r, a, b, after, untrack(() => app.serverNow) / 1000, ask)
           .then(m => { if (m !== r) add(m); }, () => {});
       },
       async () => { const fb = c.signal.aborted ? null : await fallback(a, b, c.signal); if (!c.signal.aborted) plan = { key: k, r: fb }; }), 120);
@@ -706,7 +755,14 @@
     const eur = (it: Itinerary) => { const f = tripFare(it, r); return f ? f.total[app.fareReduced ? 1 : 0] : 0; };
     const km = (it: Itinerary) => it.legs.reduce((t, l) => t + (l.distance_m ?? lineM(l.shape)), 0) / 1000;
     const key = sortId === "price" ? eur : sortId === "dist" ? km : (it: Itinerary) => it.arrive_at;
-    return its.map(it => ({ it, k: key(it) })).sort((x, y) => x.k - y.k || x.it.arrive_at - y.it.arrive_at).map(({ it }) => ({
+    // Arriving by a time: the latest to leave that still makes it first (when.ts); by price or length, among those.
+    const w = when;
+    const fits = w.kind === "arrive" ? arriveOrder(its, w.at, w.early) : null;
+    const fitOf = new Map(fits?.map(f => [f.it, f]) ?? []);
+    const order = fits && sortId === "time" ? fits.map(f => f.it)
+      : (fits ? (fits.some(f => f.tone !== "late") ? fits.filter(f => f.tone !== "late").map(f => f.it) : fits.map(f => f.it)) : its)
+        .map(it => ({ it, k: key(it) })).sort((x, y) => x.k - y.k || x.it.arrive_at - y.it.arrive_at).map(({ it }) => it);
+    return order.map(it => ({ it, ft: fitOf.get(it) ?? null })).map(({ it, ft }) => ({ fit: ft,
       key: `${it.depart_at}-${it.arrive_at}-${sortId}`, at: [it.depart_at, it.arrive_at] as [number, number], it,
       ...planSummary(it, r, nowS), legs: scaledLegs(it, r), ignored: !fit.length,
       metric: sortId === "price" ? euro(eur(it)) : sortId === "dist" ? `${km(it).toFixed(1).replace(".", ",")} χλμ` : "" }));
@@ -756,8 +812,9 @@
   const planR = $derived(plan && plan.key === pKey ? plan.r : null);
   const allIts = $derived(planR?.itineraries ?? []);
   const shownRoutes = $derived(routes ? (allShown ? routes : routes.slice(0, 5)) : []);
-  const bestTag = $derived(!top ? "" : sortId === "price" ? `Η φθηνότερη · ${top.metric}` : sortId === "dist" ? `Η πιο σύντομη · ${top.metric}` : later ? `Η καλύτερη σε ${later}′` : "Η καλύτερη τώρα");
-  const whenWord = $derived(later ? (later === 60 ? "σε 1 ώρα" : `σε ${later} λεπτά`) : "τώρα");
+  const bestTag = $derived(!top ? "" : sortId === "price" ? `Η φθηνότερη · ${top.metric}` : sortId === "dist" ? `Η πιο σύντομη · ${top.metric}`
+    : when.kind === "arrive" ? (top.fit?.tone === "ok" ? "Η καλύτερη" : "") : when.kind === "leave" ? "Η καλύτερη" : later ? `Η καλύτερη σε ${later}′` : "Η καλύτερη τώρα");
+  const whenWord = $derived(when.kind !== "now" ? whenLabel(when, nowS) : later ? (later === 60 ? "σε 1 ώρα" : `σε ${later} λεπτά`) : "τώρα");
   const meansWord = $derived(meansOn.length === MEANS.length ? "όλα τα μέσα" : meansOn.map(x => x.label.toLowerCase()).join(" και "));
   const SORT_WORD: Record<Sort, string> = { time: "Να φτάσω γρήγορα", price: "Να πληρώσω λιγότερο", dist: "Να περπατήσω λιγότερο" };
   const capital = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
@@ -826,6 +883,7 @@
 }} onpointerdown={e => {
   const t = e.target as Element;
   if (menu && !t.closest?.(".pickf, .opts")) menu = null;
+  if (whenOpen && !t.closest?.(".whenpop, .tchip.when")) whenOpen = false;
 }} />
 <!-- A computer: «/» or ⌘K opens «Πού πας;», the one search; Escape leaves the map pick, goes a step back, or leaves for the map. -->
 <svelte:window onkeydown={e => {
@@ -834,6 +892,7 @@
   else if (e.key === "/" && !typing && !app.start) { e.preventDefault(); app.start = true; }
   else if (e.key === "Escape" && app.start && app.pickFor) app.pickFor = null;
   else if (e.key === "Escape" && app.start && menu) menu = null;
+  else if (e.key === "Escape" && app.start && whenOpen) whenOpen = false;
   else if (e.key === "Escape" && app.start && !open && !typing) explore();
   else if (e.key === "Enter" && app.start && !typing && !app.pickFor && !menu && ready) go();
 }} />
@@ -883,11 +942,40 @@
             </div>
           </div>
           <div class="tchips">
-            <button type="button" class="tchip" aria-haspopup="dialog" onclick={() => (sheet = "opts")}><Icon name="clock" size={16} /><span>{capital(whenWord)}</span><span class="tcv" aria-hidden="true"><Icon name="chevron" size={14} /></span></button>
+            <button type="button" class="tchip when" class:set={when.kind !== "now"} aria-haspopup="listbox" aria-expanded={whenOpen} onclick={openWhen}><Icon name="clock" size={16} /><span>{capital(whenWord)}</span><span class="tcv" class:up={whenOpen} aria-hidden="true"><Icon name="chevron" size={14} /></span></button>
             <button type="button" class="tchip" aria-haspopup="dialog" onclick={() => (sheet = "opts")}><Icon name={meansOn.length === 1 ? meansOn[0].icon : "bus"} size={16} /><span>{capital(meansWord)}</span><span class="tcv" aria-hidden="true"><Icon name="chevron" size={14} /></span></button>
             {#if sortId !== "time"}<button type="button" class="tchip" aria-haspopup="dialog" onclick={() => (sheet = "opts")}><Icon name={sort.icon} size={16} /><span>{sort.label}</span><span class="tcv" aria-hidden="true"><Icon name="chevron" size={14} /></span></button>{/if}
             <button type="button" class="xclose tclose" aria-label="Κλείσιμο" title="Κλείσιμο" onclick={() => { app.savingPlace = null; app.pickFor = null; app.start = false; }}><Icon name="close" size={16} /></button>
           </div>
+          {#if whenOpen}
+            <!-- «Πότε» (mockup 46 Γ): now, leave at, arrive by; the day and the time as two lists; arriving, how early. -->
+            <div class="whenpop" role="dialog" aria-label="Πότε" transition:reveal>
+              <div class="wseg" role="radiogroup" aria-label="Πότε">
+                {#each [["now", "Τώρα"], ["leave", "Φεύγω"], ["arrive", "Φτάνω"]] as [k, t] (k)}
+                  <button type="button" role="radio" aria-checked={dKind === k} class:on={dKind === k} onclick={() => setKind(k as When["kind"])}>{t}</button>
+                {/each}
+              </div>
+              {#if dKind !== "now"}
+                {@const qs = quick(nowS)}
+                {#if qs.length}
+                  <div class="wquick">{#each qs as m (m)}<button type="button" class:on={dMin === m} onclick={() => (dMin = m)}>{hhmm(m)}</button>{/each}</div>
+                {/if}
+                <ul class="wlist" role="listbox" aria-label="Ώρα" use:inView={dMin}>
+                  {#each slots(nowS) as m (m)}<li><button type="button" role="option" aria-selected={dMin === m} class:on={dMin === m} onclick={() => (dMin = m)}>{hhmm(m)}{#if m >= 24 * 60}<small>αύριο</small>{/if}</button></li>{/each}
+                </ul>
+                <p class="wnote">Ως τις 03:00: τόσο μπροστά βλέπει το πρόγραμμα των διαδρομών.</p>
+                {#if dKind === "arrive"}
+                  <span class="wl">Να είμαι εκεί</span>
+                  <div class="wseg small" role="radiogroup" aria-label="Να είμαι εκεί">
+                    {#each [[0, "στην ώρα"], [5, "~5′ νωρίτερα"], [10, "~10′ νωρίτερα"]] as [e, t] (e)}
+                      <button type="button" role="radio" aria-checked={dEarly === e} class:on={dEarly === e} onclick={() => (dEarly = e as number)}>{t}</button>
+                    {/each}
+                  </div>
+                {/if}
+                <button type="button" class="wok" onclick={applyWhen}>Εντάξει</button>
+              {/if}
+            </div>
+          {/if}
         </div>
       {:else}
         {@render brandRow()}
@@ -1129,10 +1217,13 @@
           <!-- Every route as a compact card: when to leave, how long, the means, where its bus is now; a tap opens it
                step by step and makes it the one «Ξεκίνα» follows. -->
           {#if answer}<p class="rcount">{routes.length} {routes.length === 1 ? "διαδρομή" : "διαδρομές"}</p>{/if}
+          {#if when.kind === "arrive" && top.fit?.tone === "late"}<p class="pvn solo">Δεν προλαβαίνεις ως τις {clockHM(when.at)}. Αυτές φτάνουν όσο πιο νωρίς γίνεται.</p>{/if}
           <div class="cards" aria-live="polite" data-peek="Διαδρομές" data-peek-icon="route">
             {#each shownRoutes as o, k (o.key)}
               <RouteCard it={o.it} r={planR} {ix} legs={o.legs} {nowS} tag={k === 0 ? bestTag : ""} open={openKey === o.key}
-                sel={best?.key === o.key && (chosen != null || openKey != null)} live={k < 3} others={allIts} logos={app.cityId === "athens"} onpick={() => pickCard(o.key)} onmap={go} />
+                sel={best?.key === o.key && (chosen != null || openKey != null)} live={k < 3 && when.kind === "now"} clock={when.kind !== "now"}
+                target={when.kind === "arrive" && o.fit ? { at: when.at, margin: o.fit.margin, tone: o.fit.tone } : null}
+                others={allIts} logos={app.cityId === "athens"} onpick={() => pickCard(o.key)} onmap={go} />
             {/each}
           </div>
           {#if routes.length > shownRoutes.length}
@@ -1146,7 +1237,7 @@
               <div class="sk" aria-label="Αναζήτηση διαδρομής"><i></i><i></i><i></i></div>
             {:else}
               <p class="pvh"><span class="pvi warn"><Icon name="warn" size={17} /></span>
-                <span>{walkOnly ? `Δεν βρέθηκε μέσο ${later ? "για τότε" : "τώρα"}. Με τα πόδια: ${durText(walkOnly.duration_s / 60)}.` : `Δεν βρέθηκε διαδρομή ${later ? "για τότε" : "τώρα"}. Δοκίμασε άλλη ώρα.`}</span></p>
+                <span>{walkOnly ? `Δεν βρέθηκε μέσο ${later || when.kind !== "now" ? "για τότε" : "τώρα"}. Με τα πόδια: ${durText(walkOnly.duration_s / 60)}.` : `Δεν βρέθηκε διαδρομή ${later || when.kind !== "now" ? "για τότε" : "τώρα"}. Δοκίμασε άλλη ώρα.`}</span></p>
             {/if}
           </section>
         {/if}
@@ -1183,10 +1274,6 @@
     </div>
     {#if sheet === "opts"}
       <Sheet title="Επιλογές" onclose={() => (sheet = null)}>
-        <p class="sq">Πότε φεύγεις;</p>
-        <div class="seg" role="radiogroup" aria-label="Πότε φεύγεις">
-          {#each WHEN as w (w.value)}<button type="button" role="radio" aria-checked={later === w.value} class:on={later === w.value} onclick={() => (later = w.value)}>{w.value === 0 ? "Τώρα" : w.value === 60 ? "Σε 1 ώρα" : `Σε ${w.value}′`}</button>{/each}
-        </div>
         <p class="sq">Με τι θέλεις να πας;</p>
         <div class="slist">
           {#each MEANS as x (x.m)}
@@ -1727,8 +1814,39 @@
   .tchip { min-width: 0; height: 40px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border: 0; border-radius: 12px;
     background: var(--tf-bg); color: var(--fg); font: inherit; font-size: 15px; font-weight: 600; line-height: 1; cursor: pointer; }
   .tchip > :global(svg:first-child) { color: var(--muted); }
-  .tcv { display: flex; color: var(--muted); }
+  .tcv { display: flex; color: var(--muted); transition: transform .2s; }
+  .tcv.up { transform: rotate(180deg); }
+  .tchip.set { background: color-mix(in srgb, var(--accent) 18%, var(--tf-bg)); color: color-mix(in srgb, var(--accent) 55%, var(--fg));
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 60%, transparent); }
+  .tchip.set > :global(svg:first-child), .tchip.set .tcv { color: inherit; }
+  /* «Πότε» under its chip (mockup 46 Γ): over the routes, inside the band's width. */
+  .whenpop { position: absolute; z-index: 30; left: 38px; right: 14px; top: calc(100% - 8px); max-width: 330px; display: flex; flex-direction: column; gap: 12px;
+    padding: 12px; border-radius: 20px; box-sizing: border-box; background: color-mix(in srgb, var(--fg) 12%, var(--bg));
+    box-shadow: 0 18px 50px rgba(0, 0, 0, .45), inset 0 0 0 1px color-mix(in srgb, var(--fg) 10%, transparent); }
+  .wseg { height: 40px; display: flex; gap: 4px; padding: 4px; border-radius: 12px; box-sizing: border-box; background: color-mix(in srgb, var(--fg) 6%, var(--bg)); }
+  .wseg button { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; padding: 0 4px; border: 0; border-radius: 9px;
+    background: none; color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; line-height: 1; white-space: nowrap; cursor: pointer; }
+  .wseg button.on { background: color-mix(in srgb, var(--fg) 16%, var(--bg)); color: var(--fg); font-weight: 700; box-shadow: 0 2px 6px rgba(0, 0, 0, .25); }
+  .wseg.small button { font-size: 13px; }
+  .wquick { display: flex; gap: 6px; }
+  .wquick button { flex: 1; height: 34px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 17px;
+    background: color-mix(in srgb, var(--fg) 8%, var(--bg)); color: var(--fg); font: inherit; font-size: 14px; font-weight: 600; line-height: 1;
+    font-variant-numeric: tabular-nums; cursor: pointer; }
+  .wquick button.on, .wlist button.on { background: color-mix(in srgb, var(--accent) 22%, var(--bg)); color: color-mix(in srgb, var(--accent) 55%, var(--fg)); }
+  .wl { height: 16px; display: flex; align-items: center; padding-left: 2px; font-size: 12.5px; font-weight: 600; color: var(--muted); line-height: 1; }
+  /* The times: three rows show, the picked one in the middle; a thin scrollbar of its own, inside the list. */
+  .wlist { position: relative; height: 132px; list-style: none; margin: 0; padding: 0; border-radius: 12px; overflow-y: auto; overscroll-behavior: contain;
+    background: color-mix(in srgb, var(--fg) 5%, var(--bg)); scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--fg) 25%, transparent) transparent; }
+  .wlist::-webkit-scrollbar { width: 4px; }
+  .wlist::-webkit-scrollbar-thumb { border-radius: 2px; background: color-mix(in srgb, var(--fg) 25%, transparent); }
+  .wlist button { width: 100%; height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 12px; border: 0;
+    background: none; color: var(--fg); font: inherit; font-size: 16px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; cursor: pointer; }
+  .wlist button.on { font-weight: 800; font-size: 17px; }
+  .wlist small { font-size: 12px; font-weight: 600; color: var(--muted); }
+  .wnote { margin: -4px 2px 0; font-size: 12px; line-height: 1.35; color: var(--muted); }
+  .wok { height: 44px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 12px; background: var(--accent); color: #fff;
+    font: inherit; font-size: 15px; font-weight: 700; line-height: 1; cursor: pointer; }
   .rcount { margin: 0 0 -6px; height: 20px; display: flex; align-items: center; font-size: 16px; font-weight: 700; line-height: 1; color: var(--fg); }
   .box.ans .acts { border-top: 1px solid var(--pc-edge, var(--glass-line)); margin: auto -16px -4px; padding: 12px 16px 4px; background: var(--acts-bg, var(--surface)); }
-  @media (prefers-reduced-motion: reduce) { .tswap { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .tswap, .tcv { transition: none; } }
 </style>

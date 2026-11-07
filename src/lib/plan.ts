@@ -229,7 +229,8 @@ export type PlanStep =
   | { kind: "walk"; at: number; m: number; min: number; to: string }
   | { kind: "ride"; at: number; leg: number; from: string; to: string; line: string; label: string; color: string; text: string; headsign: string; hops: number | null; min: number }
   | { kind: "change"; at: number; stop: string; m: number; min: number; gate: number; spare: number; label: string; headsign: string; missed: { in_min: number; arrive_at: number } | null;
-      next: string; mode: string; color: string; text: string; prev: { label: string; color: string; mode: string } }
+      next: string; mode: string; color: string; text: string; prev: { label: string; color: string; mode: string; line: string }; line: string;
+      where: [number, number]; to: [number, number]; leaves: number }   // where the first ride ends and the next starts ([lon, lat]), when it leaves
   | { kind: "end"; at: number; name: string };
 export function planSteps(it: Itinerary, r: PlanResponse, others: Itinerary[] = []): PlanStep[] {
   const name = (p: PlanPoint, fallback: string) => (p.stop ? r.stops[p.stop]?.name ?? fallback : fallback);
@@ -262,7 +263,8 @@ export function planSteps(it: Itinerary, r: PlanResponse, others: Itinerary[] = 
       out.push({ kind: "change", at: prevRide.arrive_at, stop: name(prevRide.to, "τη στάση"), m: walk ? legM(walk) : 0,
         min: (walk ? Math.max(1, Math.round((walk.arrive_at - walk.depart_at) / 60)) : 0) + gate, gate, spare: Math.round((l.depart_at - ready) / 60) - gate,
         label, headsign: l.headsign ?? "", missed, next: name(l.from, ""), mode: l.mode ?? known?.mode ?? "bus", color: known?.color || COLOR, text: known?.text_color || TEXT,
-        prev: { label: pk?.label || (prevRide.line ?? "").slice((prevRide.line ?? "").indexOf(":") + 1), color: pk?.color || COLOR, mode: prevRide.mode ?? pk?.mode ?? "bus" } });
+        prev: { label: pk?.label || (prevRide.line ?? "").slice((prevRide.line ?? "").indexOf(":") + 1), color: pk?.color || COLOR, mode: prevRide.mode ?? pk?.mode ?? "bus", line: prevRide.line ?? "" },
+        line: l.line ?? "", where: [prevRide.to.lon, prevRide.to.lat], to: [l.from.lon, l.from.lat], leaves: l.depart_at });
     }
     out.push({ kind: "ride", at: l.depart_at, leg: k, from: name(l.from, ""), to: name(l.to, ""), line: l.line ?? "", label, color: known?.color || COLOR,
       text: known?.text_color || TEXT, headsign: l.headsign ?? "", hops: l.hops ?? null, min: Math.max(1, Math.round((l.arrive_at - l.depart_at) / 60)) });
