@@ -2,33 +2,17 @@
 //   bun lab/eta/score.ts <data dir> [from YYYY-MM-DD] [to YYYY-MM-DD]
 // Writes <dir>/report.json next to the printed table.
 
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { passesFor, score, type Fix, type Pred } from "./eta";
+import { passesFor, score } from "./eta";
+import { dates, load } from "./load";
 
 const [dir, fromArg, toArg] = process.argv.slice(2);
 if (!dir) throw new Error("usage: bun lab/eta/score.ts <data dir> [from YYYY-MM-DD] [to YYYY-MM-DD]");
 
-const files = readdirSync(dir).filter(f => /^(preds|fixes)-\d{4}-\d\d-\d\d\.jsonl$/.test(f));
-const dates = files.map(f => f.slice(6, 16)).sort();
-const from = fromArg || dates[0] || "", to = toArg || dates[dates.length - 1] || "";
-const read = files.filter(f => f.slice(6, 16) >= from && f.slice(6, 16) <= to).sort();
-
-const preds: Pred[] = [], fixesByVehicle: Record<string, Fix[]> = {};
-for (const f of read) {
-  for (const l of readFileSync(join(dir, f), "utf8").split("\n")) {
-    if (!l.trim()) continue;
-    const r = JSON.parse(l);
-    if (f.startsWith("preds-")) preds.push({ q: r.q, stop: String(r.stop), vehicle: String(r.vehicle), at: r.at });
-    else (fixesByVehicle[r.vehicle] ??= []).push({ t: r.t, lat: r.lat, lon: r.lon });
-  }
-}
-
-let stops: Record<string, { lat: number; lon: number }> = {};
-try { stops = JSON.parse(readFileSync(join(dir, "stops.json"), "utf8")); } catch { /* no stop list yet */ }
-
-let end = 0;
-for (const fx of Object.values(fixesByVehicle)) for (const f of fx) end = Math.max(end, f.t);
+const all = dates(dir);
+const from = fromArg || all[0] || "", to = toArg || all[all.length - 1] || "";
+const { preds, fixesByVehicle, stops, end } = load(dir, from, to);
 
 const res = score(preds, passesFor(preds, fixesByVehicle, stops), end);
 

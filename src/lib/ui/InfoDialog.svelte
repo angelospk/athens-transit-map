@@ -4,6 +4,7 @@
   import { PAGE_CITY } from "../config";
   import SourcesView from "./SourcesView.svelte";
   import LongTermView from "./LongTermView.svelte";
+  import EtaAccuracy from "./EtaAccuracy.svelte";
   import StatsView from "./StatsView.svelte";
   import FeedbackForm from "./FeedbackForm.svelte";
   import AboutView from "./AboutView.svelte";
@@ -102,7 +103,7 @@
       </div>
       <!-- Mounted only while shown, so each visit asks for the days again (cached for an hour). -->
       <div role="tabpanel" id="stats-panel-long" aria-labelledby="stats-tab-long" hidden={sub !== "long"}>
-        {#if open && tab === "stats" && sub === "long"}<LongTermView />{/if}
+        {#if open && tab === "stats" && sub === "long"}<LongTermView /><EtaAccuracy />{/if}
       </div>
     </div>
     {/if}

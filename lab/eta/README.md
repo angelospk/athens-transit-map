@@ -12,9 +12,22 @@ bunx vitest run tests/eta-lab.test.ts
 ```
 
 Buckets are by the real time to arrival (0-5′, 5-10′, 10-20′, 20′+), because the error grows
-with the horizon. `phantom`: no pass within 90 min of the prediction. `unresolved`: the data
-ends before the answer is known, so the first hour of a run is mostly this.
+with the horizon. A bus stays in a stop's list until it passes, so a pred's pass must come
+before 5 min after the last time that bus was listed (a later pass is its next lap).
+`phantom`: no pass seen in that window, which also counts a pass the GPS missed.
+`unresolved`: the data ends before the answer is known.
+
+A bus that waits inside 40 m for 2 min or more (a terminus) passes when it leaves, because
+the prediction there is the departure. Termini are still noisy: a parked bus drifts in and
+out of the 40 m circle, so score them apart (ΠΕΙΡΑΙΑΣ 10183 is one).
 
 Caveats: the stop coordinates come from the API, not GTFS, and a fix is a GPS point up to 30 s
 old, so a pass can be off by tens of seconds on its own. Vehicles predicted before the sampler
 started have no fixes; a bus that passes with no fix nearby (a tunnel, a gap) reads as phantom.
+
+## Weekly publish (web#27)
+
+`lab/eta/publish.sh` scores the last 7 complete days without termini and pushes `v1/latest.json` to the
+`eta` branch; the ⓘ sheet (`src/lib/eta-accuracy.ts`) reads it from raw.githubusercontent.com. Only the
+buckets under 20′ are published. It runs from the mini PC as the systemd user timer `eta-publish`
+(Mondays 06:00), from the `~/athens-transit-map` checkout.

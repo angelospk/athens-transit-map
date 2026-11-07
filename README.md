@@ -187,6 +187,22 @@ too-small age for about 30 s; a fast device clock and a stopped feed together ca
 
 Static files (`lines.json`, `lines/{id}.json`) are fetched once per page load.
 
+## Arrival accuracy
+
+How close the arrival times are, measured against the real passes (GPS) for 31/10 to 6/11/2026, 5 stops in
+Athens, about 236,000 predictions with the bus up to 20 min away. "Typical" is the median error: half the
+predictions were closer. For 12% of predictions we saw no pass (mostly a gap in the GPS); they are left out.
+
+| Bus due in | Typical error | Within 2 min |
+|---|---|---|
+| up to 5 min | 37 s | 87% |
+| 5 to 10 min | 65 s | 74% |
+| 10 to 20 min | 1.7 min | 57% |
+
+Further out the time is rougher, because the bus has often not left its start yet. The ⓘ sheet (Στατιστικά →
+Μακροχρόνια) shows the latest week: `lab/eta/publish.sh` scores it each Monday and pushes it to the `eta`
+branch. Method and caveats: `lab/eta/README.md`.
+
 ## Known limits
 
 - The city layer can be up to ~2.5 min behind for lines nobody watches (backend polls them less often);
