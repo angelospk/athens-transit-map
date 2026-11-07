@@ -9,7 +9,7 @@
   import { MAX_LINES } from "../selection";
   import { canPush, startPush, stopPush } from "../push";
   import { stopBack } from "../stops";
-  import { encodeAlert, MAX_N, type Rep } from "../tglink";
+  import { encodeAlert, MAX_N, tgStart, type Rep } from "../tglink";
   import { loadTripIndex, staleIndex, type BoardAt, type TripIndex } from "../trip";
   import type { AppState } from "../state.svelte";
 
@@ -68,7 +68,8 @@
   let repH = $state(h0), repM = $state(m0);
   let repLen = $state(60);
   const rep = $derived.by((): Rep | undefined => (repDays ? { days: repDays, start: repH * 60 + repM, len: repLen } : undefined));
-  const tgPayload = $derived(repDays ? (rep && data && !data.stale ? encodeAlert(data.ix, n, targets, rep) : null) : payload);
+  // The start parameter: the city's prefix (none in Athens) and the payload (tglink.ts).
+  const tgPayload = $derived(data && !data.stale && (!repDays || rep) ? tgStart(app.cityId, data.ix, n, targets, rep) : null);
   // Telegram only where the bot reads the city's links (cities.ts).
   const tg = $derived(app.cityInfo.telegram);
   const tgLink = $derived(tg && tgPayload ? `https://t.me/${BOT}?start=${tgPayload}` : null);
