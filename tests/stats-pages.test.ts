@@ -212,7 +212,7 @@ describe("buildStats", () => {
   it("links the live map on the city's own path (web#47)", () => {
     expect(cityStatsPage(athens, [day("2026-11-05")])).toContain('<a class="cta" href="/athens/">');
     expect(cityStatsPage(thess, [day("2026-11-05")])).toContain('<a class="cta" href="/thessaloniki/">');
-    expect(cityStatsPage(thess, [day("2026-11-05")])).toContain('<a href="/thessaloniki/">Στάσεις</a>');
+    expect(cityStatsPage(thess, [day("2026-11-05")])).toContain('<footer><a href="/thessaloniki/">Στάσεις</a>');
   });
 
   it("skips a city whose index lists no day, and a day file that is missing or malformed", async () => {

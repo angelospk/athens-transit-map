@@ -175,6 +175,8 @@ describe("homePage and linesPage", () => {
     expect(html).toMatch(/<h2>Μετρό<\/h2>/);
     expect(html).toContain('href="/athens/"');
     expect(html).not.toContain('src="/src/main.ts"');
+    expect(html).toContain('<footer><a href="/athens/">Στάσεις</a>');
+    expect(html).toMatch(/<meta name="description" content="Οι 3 γραμμές στην Αθήνα/);
   });
 });
 
