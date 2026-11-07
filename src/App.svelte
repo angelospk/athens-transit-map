@@ -12,6 +12,7 @@
   import FavsPanel from "./lib/ui/FavsPanel.svelte";
   import NearbyPanel from "./lib/ui/NearbyPanel.svelte";
   import NowPanel from "./lib/ui/NowPanel.svelte";
+  import LeaveReminder from "./lib/ui/LeaveReminder.svelte";
   import TabBar from "./lib/ui/TabBar.svelte";
   import AlertsPanel from "./lib/ui/AlertsPanel.svelte";
   import RideBar from "./lib/ui/RideBar.svelte";
@@ -58,6 +59,7 @@
 <RideBar {app} />
 <StartScreen {app} />
 <NavGuide {app} />
+<LeaveReminder {app} />
 <PinSheet {app} />
 <FaresSheet {app} />
 {#if app.muniTimes.length}<MuniReport {app} />{/if}

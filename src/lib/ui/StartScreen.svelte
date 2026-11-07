@@ -11,6 +11,10 @@
   import type { AppState, TripMode, TripPrefs } from "../state.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
   import MoreHint from "./MoreHint.svelte";
+  import RouteCard from "./RouteCard.svelte";
+  import RemindSheet from "./RemindSheet.svelte";
+  import Sheet from "./Sheet.svelte";
+  import { guideFromPlan } from "../guide";
   import { loadMetro } from "../metro";
   import { loadSuburban } from "../suburban";
   import { CITIES, type CityId } from "../cities";
@@ -43,7 +47,7 @@
   let locating = $state<Field | null>(null);
   let err = $state<string | null>(null);
   let own = $state.raw<Place[]>([]);
-  let ix: TripIndex | null = null;
+  let ix = $state.raw<TripIndex | null>(null);
   let boxEl = $state<HTMLElement>();
   const inputs = $state<Record<Field, HTMLInputElement | undefined>>({ from: undefined, to: undefined });
 
@@ -92,7 +96,7 @@
     if (!app.start || app.pickFor) return;
     untrack(() => {
       menu = null;
-      if (!ends.to.place) setTimeout(() => inputs.to?.focus(), 60);
+      if (!ends.to.place && wide) setTimeout(() => inputs.to?.focus(), 60);
       // Whether the browser would give the location without asking (it is offered first then), or never (not offered).
       navigator.permissions?.query({ name: "geolocation" }).then(r => { geoPerm = r.state; r.onchange = () => (geoPerm = r.state); }, () => {});
     });
@@ -340,10 +344,11 @@
     // the user's location is on its way there.
     const other: Field = f === "from" ? "to" : "from";
     // The start is not typed for the user: its field offers the likely ones (suggestions under it) to tap.
-    if (other === "to" && !ends.to.place) setTimeout(() => inputs.to?.focus(), 80);
+    if (other === "to" && !ends.to.place && !quietPick) setTimeout(() => inputs.to?.focus(), 80);
     else inputs[f]?.blur();
   }
 
+  let quietPick = false;
   function locate(f: Field, quiet = false) {
     ends[f] = { text: ME, place: null };
     if (!quiet) open = null;
@@ -353,7 +358,9 @@
       p => {
         if (locating !== f) return;
         locating = null;
+        quietPick = quiet;
         choose(f, { label: ME, hint: `±${Math.round(p.coords.accuracy)} μ.`, pts: [[p.coords.latitude, p.coords.longitude]], lines: [], kind: "me" });
+        quietPick = false;
       },
       e => {
         if (locating !== f) return;
@@ -488,7 +495,7 @@
   let endTrip = $state.raw<Record<string, EndTrip>>({});
   $effect(() => {
     // From the start set, else from where the user is (the intro's start is the user).
-    const from = intro && app.start ? (ends.from.place ? centre(ends.from.place.pts) : app.myPos) : null;
+    const from = (intro || !wide) && app.start ? (ends.from.place ? centre(ends.from.place.pts) : app.myPos) : null;
     if (!from) return;
     const a = from, c = new AbortController();
     for (const p of savedPlaces(app.places)) {
@@ -644,7 +651,7 @@
     const km = (it: Itinerary) => it.legs.reduce((t, l) => t + (l.distance_m ?? lineM(l.shape)), 0) / 1000;
     const key = sortId === "price" ? eur : sortId === "dist" ? km : (it: Itinerary) => it.arrive_at;
     return its.map(it => ({ it, k: key(it) })).sort((x, y) => x.k - y.k || x.it.arrive_at - y.it.arrive_at).map(({ it }) => ({
-      key: `${it.depart_at}-${it.arrive_at}-${sortId}`, at: [it.depart_at, it.arrive_at] as [number, number],
+      key: `${it.depart_at}-${it.arrive_at}-${sortId}`, at: [it.depart_at, it.arrive_at] as [number, number], it,
       ...planSummary(it, r, nowS), legs: scaledLegs(it, r), ignored: !fit.length,
       metric: sortId === "price" ? euro(eur(it)) : sortId === "dist" ? `${km(it).toFixed(1).replace(".", ",")} χλμ` : "" }));
   });
@@ -668,6 +675,43 @@
   });
   const best = $derived(routes?.find(x => x.key === chosen) ?? top);
   const others = $derived(routes ? routes.slice(1) : []);
+
+  // ---- Not a wide window (mockup 39): two questions, «Από πού ξεκινάς;» then «Πού θέλεις να πας;», with home, work
+  // and the last trips under them; both answered, the answer: the trip in one card (each half with its «Αλλαγή»), the
+  // routes as compact cards (where each one's bus is now), one opened step by step; «Ξεκίνα» starts the navigator.
+  let asking = $state(true);
+  let wasReady = false;
+  $effect(() => { const r = ready; untrack(() => { if (r && !wasReady) asking = false; wasReady = r; }); });
+  $effect(() => { if (!app.start) untrack(() => { asking = !ready; }); });
+  const answer = $derived(!wide && ready && !asking && !app.savingPlace);
+  let openKey = $state<string | null>(null);
+  let allShown = $state(false);
+  $effect(() => { void pKey; void sortId; void modes; openKey = null; allShown = false; });
+  let sheet = $state<"opts" | "remind" | null>(null);
+  $effect(() => { if (!app.start) sheet = null; });
+  // The start, found by itself where the browser gives the location without asking (once per opening).
+  let autoFrom = false;
+  $effect(() => {
+    if (!app.start) { autoFrom = false; return; }
+    if (wide || app.savingPlace || geoPerm !== "granted") return;
+    untrack(() => { if (!autoFrom && !ends.from.place && !ends.from.text) { autoFrom = true; locate("from", true); } });
+  });
+  const planR = $derived(plan && plan.key === pKey ? plan.r : null);
+  const allIts = $derived(planR?.itineraries ?? []);
+  const shownRoutes = $derived(routes ? (allShown ? routes : routes.slice(0, 5)) : []);
+  const bestTag = $derived(!top ? "" : sortId === "price" ? `Η φθηνότερη · ${top.metric}` : sortId === "dist" ? `Η πιο σύντομη · ${top.metric}` : later ? `Η καλύτερη σε ${later}′` : "Η καλύτερη τώρα");
+  const whenWord = $derived(later ? (later === 60 ? "σε 1 ώρα" : `σε ${later} λεπτά`) : "τώρα");
+  const meansWord = $derived(meansOn.length === MEANS.length ? "όλα τα μέσα" : meansOn.map(x => x.label.toLowerCase()).join(" και "));
+  const SORT_WORD: Record<Sort, string> = { time: "Να φτάσω γρήγορα", price: "Να πληρώσω λιγότερο", dist: "Να περπατήσω λιγότερο" };
+  const fromWord = (p: Place | null) => !p ? "" : p.kind === "me" ? "εδώ που είσαι" : p.kind === "home" ? "το σπίτι" : p.kind === "work" ? "τη δουλειά" : titleCase(p.label);
+  const armed = $derived(!!best && app.leaveRemind?.key === `${best.at[0]}-${best.at[1]}` ? app.leaveRemind : null);
+  function pickCard(k: string) { chosen = k; openKey = openKey === k ? null : k; }
+  function startNow() {
+    const r = planR, b = best, to = ends.to.place, from = ends.from.place;
+    if (!r || !b || !to || !from) return;
+    remember(from, to);
+    app.startGuide(guideFromPlan(b.it, r, ix, titleCase(to.label)));
+  }
   // The other options light up as they scroll into the panel: each card's --v goes from 0 (just in at the foot,
   // small and faint, tucked under the one above) to 1 (well inside: full size). Scripted, so every browser does it.
   function stack(node: HTMLElement) {
@@ -751,26 +795,46 @@
         <h1 id="start-h" in:item={{ i: 2 }}>{app.savingPlace === "home" ? "Πού είναι το Σπίτι;" : "Πού είναι η Δουλειά;"}</h1>
       {:else if wide}
         <h1 id="start-h" class="hero" in:item={{ i: 2 }}>Κάθε λεωφορείο<br />{OF_CITY[app.cityId]},<br /><span>εκεί που είναι.</span></h1>
-      {:else}
+      {:else if !answer}
         <h1 id="start-h" in:item={{ i: 2 }}>Θέλω να πάω</h1>
+      {:else}
+        <h1 id="start-h" class="sr">Οι διαδρομές</h1>
       {/if}
 
+      {#if answer}
+        <!-- The trip asked, in one card: where (and from where), and when and with what; each half changes with the
+             same «Αλλαγή». -->
+        <div class="sum" in:item={{ i: 2, y: 12 }}>
+          <div class="srow top">
+            <span class="stx"><small>Από {fromWord(ends.from.place)}</small><b>Προς {ends.to.place ? titleCase(ends.to.place.label) : ""}</b></span>
+            <button type="button" class="chg" onclick={() => { asking = true; }}>Αλλαγή</button>
+          </div>
+          <div class="srow">
+            <span class="stx line"><Icon name="clock" size={18} /><span>Φεύγω <b>{whenWord}</b>, με <b>{meansWord}</b>{#if sortId !== "time"}, <b>{sortId === "price" ? "φθηνά" : "με λίγο περπάτημα"}</b>{/if}</span></span>
+            <button type="button" class="chg" onclick={() => (sheet = "opts")}>Αλλαγή</button>
+          </div>
+        </div>
+      {:else}
       <div class="fields" class:raised={menu !== null}>
-        <div class="ends" class:group={!intro} in:item={{ i: 3, y: 12 }}>
-        {#each (app.savingPlace || intro ? ["to"] : askFrom ? ["to", "from"] : ["to"]) as Field[] as f (f)}
+        <div class="ends" class:group={!intro && wide} class:asks={!wide && !app.savingPlace} in:item={{ i: 3, y: 12 }}>
+        {#each (app.savingPlace || intro ? ["to"] : !wide ? ["from", "to"] : askFrom ? ["to", "from"] : ["to"]) as Field[] as f (f)}
+          {#if !wide && !app.savingPlace}
+            {@const n = f === "from" ? 1 : 2}
+            <p class="qq" class:on={f === "from" ? !ends.from.place : !!ends.from.place && !ends.to.place}><span class="qn" aria-hidden="true">{n}</span>{f === "from" ? "Από πού ξεκινάς;" : "Πού θέλεις να πας;"}</p>
+          {/if}
           <div class="field end {f}" class:open={open === f} class:set={!!ends[f].place} class:swapped class:search={intro}>
             {#if intro}<label class="fs" for="start-{f}"><Icon name="search" size={20} /><span class="sr">Πού πας;</span></label>
-            {:else}<span class="mk {f}" aria-hidden="true"></span><label class="fl" for="start-{f}">{f === "from" ? "Από" : "Πού"}</label>{/if}
+            {:else if wide || app.savingPlace}<span class="mk {f}" aria-hidden="true"></span><label class="fl" for="start-{f}">{f === "from" ? "Από" : "Πού"}</label>
+            {:else}<label class="sr" for="start-{f}">{f === "from" ? "Από πού ξεκινάς" : "Πού θέλεις να πας"}</label>{#if !ends[f].place}<span class="fs2" aria-hidden="true"><Icon name="search" size={19} /></span>{/if}{/if}
             <input id="start-{f}" bind:this={inputs[f]} value={ends[f].text} autocomplete="off" spellcheck="false"
-              placeholder={f === "from" ? "Από πού ξεκινάς;" : intro ? "Πού πας; Διεύθυνση, στάση ή γραμμή" : "Στάση, περιοχή, οδός"} role="combobox" aria-expanded={open === f} aria-controls="start-{f}-list"
+              placeholder={f === "from" ? (wide ? "Από πού ξεκινάς;" : "Γράψε από πού ξεκινάς") : intro ? "Πού πας; Διεύθυνση, στάση ή γραμμή" : wide ? "Στάση, περιοχή, οδός" : "Γράψε μέρος, στάση ή γραμμή"} role="combobox" aria-expanded={open === f} aria-controls="start-{f}-list"
               onfocus={() => { open = f; menu = null; }} oninput={e => edit(f, e.currentTarget.value)}
               aria-activedescendant={open === f && active >= 0 ? `start-opt-${active}` : undefined} onkeydown={e => key(f, e)} />
             {#if ends[f].text && locating !== f && !ends[f].place}
               <button type="button" class="clear" aria-label="Καθάρισμα" title="Καθάρισμα" onclick={() => { ends[f] = { text: "", place: null }; inputs[f]?.focus(); }}><Icon name="close" size={13} /></button>
             {/if}
             {#if ends[f].place}
-              <button type="button" class="fi done" aria-label="Αλλαγή" title="Αλλαγή" onclick={() => { ends[f] = { text: "", place: null }; inputs[f]?.focus(); }}>
-                {#key ends[f].place}<span class="pop"><Icon name="check" size={16} /></span>{/key}</button>
+              <button type="button" class="chg" onclick={() => { ends[f] = { text: "", place: null }; inputs[f]?.focus(); }}>Αλλαγή</button>
             {:else if intro && !ends[f].text}
               <kbd class="slash" aria-hidden="true">/</kbd>
             {:else if locating === f}
@@ -785,12 +849,35 @@
             </div>
           {/if}
         {/each}
-        {#if askFrom && !intro && !app.savingPlace && open === null}
+        {#if askFrom && !intro && !app.savingPlace && open === null && wide}
           <button type="button" class="swap" class:turned aria-label="Αντιστροφή αφετηρίας και προορισμού" title="Αντιστροφή" onclick={swap} transition:soft><Icon name="swap" size={16} /></button>
         {/if}
         </div>
         {#if open}{@render list(open)}{/if}
         {#if err}<p class="err" role="status" transition:reveal>{err}</p>{/if}
+
+        {#if !wide && !app.savingPlace && !ends.to.place && open === null}
+          <!-- Where most trips go: home and work as big tiles (with how long it takes now), and the last trips. -->
+          <div class="mine two" data-peek="Σπίτι" data-peek-icon="home" in:item={{ i: 4, y: 12 }}>
+            {#each mine as m (m.k)}
+              <button type="button" class="ptile" onclick={() => goMine(m.k, m.place)}>
+                <span class="pic"><Icon name={m.k} size={18} /></span>
+                <span class="ptx"><b>{m.label}</b><small>{!m.place ? "Όρισέ το" : m.trip ? `${m.trip.mins} λεπτά` : m.trip === null ? "Είσαι εκεί" : m.place.label}</small></span>
+              </button>
+            {/each}
+          </div>
+          {#if recent.length}
+            <p class="qh" data-peek="Πρόσφατα" data-peek-icon="clock">Πήγες πρόσφατα</p>
+            <div class="rlist" in:item={{ i: 5, y: 12 }}>
+              {#each recent as x (x.at)}
+                <button type="button" class="rr" onclick={() => again(x)}>
+                  <span class="ric"><Icon name="clock" size={17} /></span><span class="rtx">{x.to.label}{#if x.from.label !== ME}<small>από {x.from.label}</small>{/if}</span>
+                  <span class="rch" aria-hidden="true"><Icon name="chevron" size={15} /></span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+        {/if}
 
         {#if intro}
           <div class="ways" in:item={{ i: 4, y: 12 }}>
@@ -818,7 +905,7 @@
               {#each favCards as f (f.s.id)}
                 <button type="button" class="fcard" onclick={() => openFav(f.s)}>
                   <span class="fst" aria-hidden="true"><img src="{import.meta.env.BASE_URL}icons/oasa.png" alt="" /></span>
-                  <span class="fmid"><b>{titleCase(f.s.name)}</b>
+                  <span class="fmid"><b>{app.stopLabel(f.s.id, titleCase(f.s.name))}</b>
                     <span class="fdeps">{#each f.deps as d, k (k)}{@const c = app.lineColor(d.line)}<span class="fdep"><i style:background={c.bg} style:color={c.fg}>{d.line}</i>{d.to}{#if d.min != null && k > 0}<small>{d.min}′</small>{/if}</span>{/each}
                       {#if f.loading}<span class="fdep dim">Φόρτωση…</span>{:else if !f.deps.length}<span class="fdep dim">Κανένα τώρα</span>{/if}</span></span>
                   {#if f.first}
@@ -863,7 +950,7 @@
             </div>
           </div>
           {/if}
-        {:else if !app.savingPlace}
+        {:else if !app.savingPlace && wide}
           <div class="pair one">
           <div class="pickf">
             <button type="button" class="field pick" class:open={menu === "when"} aria-haspopup="listbox" aria-expanded={menu === "when"} onclick={() => toggleMenu("when")} in:item={{ i: 5, y: 12 }}>
@@ -930,6 +1017,7 @@
           </div>
         {/if}
       </div>
+      {/if}
 
       {#if intro}
         {#if !favCards.length && !recent.length}
@@ -939,52 +1027,31 @@
           <li><i></i>Χωρίς λογαριασμό: ανοίγεις και βλέπεις</li>
         </ul>
         {/if}
-      {:else if !app.savingPlace}
-        <section class="pv" class:live={!!top && best === top} class:off={!!top && best !== top} aria-live="polite" in:item={{ i: 7, y: 14 }}>
-          {#if !pKey}
-            <p class="pvh"><span class="pvi"><Icon name="route" size={17} /></span><span>{ends.to.place ? "Διάλεξε από πού ξεκινάς, και η καλύτερη διαδρομή εμφανίζεται εδώ αμέσως." : "Πες πού πας, και η καλύτερη διαδρομή εμφανίζεται εδώ αμέσως."}</span></p>
-          {:else if waiting}
-            <div class="sk" aria-label="Αναζήτηση διαδρομής"><i></i><i></i><i></i></div>
-          {:else if top}
-            {#key top.key}
-              <!-- The best by «Πώς»: green while it is the one «Πάμε» opens; another picked below, it steps back (a tap
-                   picks it again). -->
-              <button type="button" class="pvb" aria-pressed={best === top} onclick={() => (chosen = null)} in:item={{ y: 10 }}>
-                <span class="pvt">
-                  <span>{sortId === "price" ? `Η φθηνότερη · ${top.metric}` : sortId === "dist" ? `Η πιο σύντομη · ${top.metric}` : later ? `Η καλύτερη σε ${later}′` : "Η καλύτερη τώρα"}</span>
-                  <span class="leave"><i></i>{top.leaveIn === 0 ? "Φύγε τώρα" : `Φύγε σε ${top.leaveIn}′`}</span>
-                </span>
-                <span class="pvm"><b>{top.depart} → {top.arrive}</b><b class="dur">{durText(top.mins)}</b></span>
-                <span class="legs">
-                  {#each top.legs as l, k (k)}
-                    <span class="leg" class:walk={l.walk} style:--lb={l.color || undefined} style:--lt={l.text || undefined} in:item={{ i: k, y: 6 }}>{#if l.walk}<span class="lwi" aria-label="Πόδια"><Icon name="walk" size={12} /></span>{/if}{l.label}</span>
-                  {/each}
-                </span>
-                {#if top.ignored}<span class="pvn">Με {meansOn.length === 1 ? meansOn[0].label.toLowerCase() : "αυτά τα μέσα"} δεν βγαίνει τώρα: αυτή είναι η καλύτερη με όλα.</span>{/if}
-              </button>
-            {/key}
-          {:else}
-            <p class="pvh"><span class="pvi warn"><Icon name="warn" size={17} /></span>
-              <span>{walkOnly ? `Δεν βρέθηκε μέσο ${later ? "για τότε" : "τώρα"}. Με τα πόδια: ${durText(walkOnly.duration_s / 60)}.` : `Δεν βρέθηκε διαδρομή ${later ? "για τότε" : "τώρα"}. Δοκίμασε άλλη ώρα.`}</span></p>
-          {/if}
-        </section>
-        {#if best && others.length}
-          <!-- Every other option, each its own card, stacked under the chosen one: each a little smaller and fainter than
-               the one above, they settle into place as the panel scrolls; a tap makes one the route «Πάμε» opens. -->
-          <p class="alth" data-peek="Άλλες διαδρομές · {others.length}" data-peek-icon="route">Άλλες διαδρομές · {others.length}</p>
-          <ul class="alts" use:stack>
-            {#each others as o, k (o.key)}
-              {@const sel = best?.key === o.key}
-              <li style:z-index={others.length - k} class:sel>
-                <button type="button" class="alt" class:sel aria-pressed={sel} onclick={() => (chosen = sel ? null : o.key)} aria-label="Διάλεξε τη διαδρομή {o.depart} – {o.arrive}">
-                  {#if sel}<span class="seltag" in:item={{ y: 4 }}><Icon name="check" size={13} />Η επιλογή σου</span>{/if}
-                  <span class="am"><b>{o.depart} → {o.arrive}</b><b class="dur">{durText(o.mins)}</b></span>
-                  <span class="legs">{#each o.legs as l, j (j)}<span class="leg" class:walk={l.walk} style:--lb={l.color || undefined} style:--lt={l.text || undefined}>{#if l.walk}<span class="lwi" aria-label="Πόδια"><Icon name="walk" size={12} /></span>{/if}{l.label}</span>{/each}</span>
-                  <span class="al">{o.leaveIn === 0 ? "Φύγε τώρα" : `Φύγε σε ${o.leaveIn}′`}{o.transfers ? ` · ${o.transfers} ${o.transfers === 1 ? "αλλαγή" : "αλλαγές"}` : " · χωρίς αλλαγή"}{o.metric ? ` · ${o.metric}` : ""}</span>
-                </button>
-              </li>
+      {:else if !app.savingPlace && (wide || answer)}
+        {#if routes?.length && top && planR}
+          {#if top.ignored}<p class="pvn solo">Με {meansOn.length === 1 ? meansOn[0].label.toLowerCase() : "αυτά τα μέσα"} δεν βγαίνει τώρα: αυτές είναι οι καλύτερες με όλα.</p>{/if}
+          <!-- Every route as a compact card: when to leave, how long, the means, where its bus is now; a tap opens it
+               step by step and makes it the one «Ξεκίνα» follows. -->
+          <div class="cards" aria-live="polite" data-peek="Διαδρομές" data-peek-icon="route">
+            {#each shownRoutes as o, k (o.key)}
+              <RouteCard it={o.it} r={planR} {ix} legs={o.legs} {nowS} tag={k === 0 ? bestTag : ""} open={openKey === o.key}
+                sel={best?.key === o.key && (chosen != null || openKey != null)} live={k < 3} others={allIts} onpick={() => pickCard(o.key)} onmap={go} />
             {/each}
-          </ul>
+          </div>
+          {#if routes.length > shownRoutes.length}
+            <button type="button" class="morer" onclick={() => (allShown = true)}>Δες κι άλλες {routes.length - shownRoutes.length} διαδρομές</button>
+          {/if}
+        {:else}
+          <section class="pv" aria-live="polite" in:item={{ i: 7, y: 14 }}>
+            {#if !pKey}
+              <p class="pvh"><span class="pvi"><Icon name="route" size={17} /></span><span>{ends.to.place ? "Διάλεξε από πού ξεκινάς, και η καλύτερη διαδρομή εμφανίζεται εδώ αμέσως." : "Πες πού πας, και η καλύτερη διαδρομή εμφανίζεται εδώ αμέσως."}</span></p>
+            {:else if waiting}
+              <div class="sk" aria-label="Αναζήτηση διαδρομής"><i></i><i></i><i></i></div>
+            {:else}
+              <p class="pvh"><span class="pvi warn"><Icon name="warn" size={17} /></span>
+                <span>{walkOnly ? `Δεν βρέθηκε μέσο ${later ? "για τότε" : "τώρα"}. Με τα πόδια: ${durText(walkOnly.duration_s / 60)}.` : `Δεν βρέθηκε διαδρομή ${later ? "για τότε" : "τώρα"}. Δοκίμασε άλλη ώρα.`}</span></p>
+            {/if}
+          </section>
         {/if}
       {/if}
 
@@ -994,6 +1061,17 @@
       <div class="acts">
         {#if app.savingPlace}
           <button type="button" class="link" onclick={() => { app.savingPlace = null; app.start = false; }}><span>Άκυρο</span><kbd class="pc">Esc</kbd></button>
+        {:else if answer}
+          <div class="duo">
+            <button type="button" class="ghost2" class:on={!!armed} disabled={!best} onclick={() => (sheet = "remind")}><Icon name="bell" size={17} /><span>{armed ? `Στις ${clockHM(Math.max(armed.leaveAt, nowS))}` : "Θύμισέ μου"}</span></button>
+            <button type="button" class="primary big" disabled={!best} onclick={startNow}><span>{openKey ? "Ξεκίνα με αυτή" : "Ξεκίνα"}</span></button>
+          </div>
+        {:else if !wide}
+          {#if ready}<button type="button" class="primary big" onclick={() => (asking = false)}><span>Δες τις διαδρομές</span></button>{/if}
+          <div class="actrow">
+            <button type="button" class="link" onclick={explore}><Icon name="map" size={17} /><span>Θέλω μόνο να δω τον χάρτη</span></button>
+            <MoreHint box={boxEl} inline />
+          </div>
         {:else}
           <button type="button" class="primary big" class:ready disabled={!ready} onclick={go} in:item={{ i: 8 }}><span>Πάμε</span></button>
           <div class="actrow">
@@ -1004,6 +1082,33 @@
       </div>
       {/if}
     </div>
+    {#if sheet === "opts"}
+      <Sheet title="Επιλογές" onclose={() => (sheet = null)}>
+        <p class="sq">Πότε φεύγεις;</p>
+        <div class="seg" role="radiogroup" aria-label="Πότε φεύγεις">
+          {#each WHEN as w (w.value)}<button type="button" role="radio" aria-checked={later === w.value} class:on={later === w.value} onclick={() => (later = w.value)}>{w.value === 0 ? "Τώρα" : w.value === 60 ? "Σε 1 ώρα" : `Σε ${w.value}′`}</button>{/each}
+        </div>
+        <p class="sq">Με τι θέλεις να πας;</p>
+        <div class="slist">
+          {#each MEANS as x (x.m)}
+            {@const on = means.includes(x.m)}
+            <button type="button" class="srow" aria-pressed={on} disabled={on && means.length === 1} onclick={() => toggleMean(x.m)}>
+              <span class="ic"><Icon name={x.icon} size={20} /></span><span class="tx">{x.label}</span>
+              <span class="tick" class:on aria-hidden="true">{#if on}<svg viewBox="0 0 20 20" width="15" height="15"><path d="M4.5 10.5l3.5 3.5 7.5-8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>{/if}</span>
+            </button>
+          {/each}
+        </div>
+        <p class="sq">Τι σε νοιάζει πιο πολύ;</p>
+        <div class="slist" role="radiogroup" aria-label="Τι σε νοιάζει πιο πολύ">
+          {#each SORTS as o (o.id)}
+            <button type="button" class="srow" role="radio" aria-checked={sortId === o.id} onclick={() => (sortId = o.id)}><span class="tx">{SORT_WORD[o.id]}</span><span class="radio" class:on={sortId === o.id} aria-hidden="true"></span></button>
+          {/each}
+        </div>
+        <div class="sacts"><button type="button" class="sdone" onclick={() => (sheet = null)}>Έτοιμο</button></div>
+      </Sheet>
+    {:else if sheet === "remind" && best && planR && ends.to.place}
+      <RemindSheet {app} it={best.it} r={planR} {ix} to={ends.to.place} onclose={() => (sheet = null)} />
+    {/if}
   </div>
 {/if}
 
@@ -1088,7 +1193,6 @@
   .fields { display: flex; flex-direction: column; gap: 10px; }
   /* A list open under «Πότε» or a chip: the form over the routes and «Πάμε» (their cards are stacked with z-index). */
   .fields.raised { position: relative; z-index: 31; }
-  .alts { position: relative; z-index: 0; }
   .field { position: relative; width: 100%; min-height: 60px; display: flex; align-items: center; gap: 12px; padding: 0 10px 0 16px; box-sizing: border-box;
     border-radius: 16px; border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent); background: color-mix(in srgb, var(--accent) 9%, var(--glass-fill));
     color: var(--fg); font: inherit; text-align: left; transition: border-color .2s, background-color .2s, transform .12s; }
@@ -1104,9 +1208,6 @@
   input::placeholder { color: var(--muted); font-weight: 600; font-size: 17px; letter-spacing: 0; }
   .fi { flex: none; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 50%;
     background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); cursor: pointer; transition: background-color .2s, color .2s, transform .12s; }
-  button.fi:hover { background: color-mix(in srgb, var(--accent) 26%, transparent); }
-  button.fi:active { transform: scale(.92); }
-  .fi.done { background: var(--accent); color: var(--on-accent); }
   .field.pick .fi { transition: transform .25s cubic-bezier(.34, 1.56, .64, 1), background-color .2s; }
   .field.pick.open .fi { transform: rotate(180deg); }
   .pop { display: flex; animation: pop .35s cubic-bezier(.34, 1.56, .64, 1); }
@@ -1248,55 +1349,18 @@
   /* The best route, live: what «Πάμε» opens on. */
   .pv { min-height: 120px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; align-items: stretch; padding: 16px; border-radius: 20px;
     background: var(--glass-fill); border: 1px solid var(--glass-line); transition: border-color .3s; }
-  .pv.live { border-color: color-mix(in srgb, var(--ontime) 35%, var(--glass-line)); }
   .pvh { margin: 0; display: flex; align-items: center; gap: 12px; font-size: 14px; line-height: 1.4; color: var(--muted); }
   .pvi { flex: none; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--control); color: var(--muted); }
   .pvi.warn { background: var(--warn-bg); color: var(--warn-fg); }
-  .pvb { display: flex; flex-direction: column; gap: 12px; }
-  .pvt { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; font-weight: 700; line-height: 1; color: var(--muted); }
-  .leave { display: flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 800; color: var(--ontime); }
-  .leave i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: beat 1.8s ease-in-out infinite; }
   @keyframes beat { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--ontime) 22%, transparent); } }
-  .pvm { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-  .pvm b { font-size: 26px; font-weight: 900; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
-  .pvm .dur { font-size: 22px; font-weight: 800; }
-  .legs { display: flex; flex-wrap: wrap; gap: 6px; }
-  .leg { height: 26px; display: inline-flex; align-items: center; padding: 0 8px; border-radius: 7px; background: var(--lb, var(--accent)); color: var(--lt, #fff);
-    font-size: 12px; font-weight: 800; line-height: 1; }
-  .leg.walk { background: var(--control); color: var(--muted); }
   .pvn { margin: 0; font-size: 12px; line-height: 1.4; color: var(--warn-fg); }
   /* The other options: a card each, stacked under the chosen one, each smaller and fainter than the one above.
      Where the browser has scroll-driven animations, a card still below sits tucked under the one above it and
      settles into place as it scrolls into view. */
-  .alth { margin: 4px 0 -8px 4px; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); line-height: 1; }
-  .alts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-  .alts li { --v: 0; position: relative; transform-origin: 50% 0; opacity: calc(.3 + var(--v) * .7);
-    transform: translateY(calc((1 - var(--v)) * -26px)) scale(calc(.9 + var(--v) * .1)); transition: opacity .12s linear, transform .12s linear; will-change: transform; }
-  .alts li.sel { opacity: 1; transform: none; }
-  .alt { width: 100%; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; box-sizing: border-box; border: 1px solid var(--glass-line);
-    border-radius: 18px; background: var(--glass-fill); color: var(--fg); font: inherit; text-align: left; cursor: pointer; opacity: .78;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, .08); transition: opacity .18s, border-color .18s, background-color .18s; }
-  .alt:hover, .alt:focus-visible { opacity: 1; border-color: color-mix(in srgb, var(--accent) 40%, var(--glass-line)); outline: none; }
   /* Picked: green, as the best one is while it is the one «Πάμε» opens. */
-  .alt.sel { opacity: 1; border-color: color-mix(in srgb, var(--ontime) 55%, transparent); background: color-mix(in srgb, var(--ontime) 9%, var(--glass-fill)); }
-  .alt.sel .am b { color: var(--ontime); }
-  .seltag { align-self: flex-start; height: 16px; display: inline-flex; align-items: center; gap: 4px;
-    color: var(--ontime); font-size: 12px; font-weight: 600; line-height: 1; }
-  .am { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-  .am b { font-size: 18px; font-weight: 800; letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; }
-  .am .dur { font-size: 16px; }
-  .alt .leg { height: 22px; font-size: 11px; }
-  .al { font-size: 12px; line-height: 1.2; color: var(--muted); }
   /* The best one, as a button: plain while it is the pick; another picked, it steps back. */
-  .pvb { width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-  .pvb:focus-visible { outline: 2px solid var(--accent); outline-offset: 6px; border-radius: 12px; }
   .pvn { display: block; }
   .pv { transition: opacity .2s, border-color .3s; }
-  .pv.off { opacity: .55; }
-  .pv.off:hover { opacity: .85; }
-  .pv.off .leave { color: var(--muted); }
-  .pv.off .leave i { animation: none; }
-  @media (prefers-reduced-motion: reduce) { .alt, .alts li { transition: none; } }
   .sk { display: flex; flex-direction: column; gap: 12px; }
   .sk i { display: block; height: 14px; border-radius: 7px; background: linear-gradient(90deg, var(--control) 0%, var(--control-hover) 50%, var(--control) 100%);
     background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
@@ -1343,7 +1407,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .field, .fi, .swap, .opt, .primary, .link, .pv { transition: none; }
-    .pop, .field.swapped input, .drop, .shadow, .leave i, .sk i { animation: none; }
+    .pop, .field.swapped input, .drop, .shadow, .sk i { animation: none; }
     .swap.turned, .field.pick.open .fi { transform: none; }
   }
 
@@ -1439,7 +1503,6 @@
       box-shadow: none; background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: none; --acts-bg: var(--bg); }
     .acts { margin-top: auto; }
   }
-  .lwi { display: flex; margin-right: 3px; }   /* a walk: the walking figure left of its minutes */
 
   /* ---- A phone: the same screen in quieter colours. Neutral surfaces with a fine neutral edge instead of blue-tinted
      boxes, the values in the text colour, one flat blue for «Πάμε», the means and the best route without loud
@@ -1453,20 +1516,69 @@
     .ends.group .field.from { border-top-color: var(--pc-edge); }
     input, .fv { color: var(--fg); }
     .mk.from { background: var(--pc-acc); box-shadow: none; }
-    .fi.done { background: color-mix(in srgb, var(--fg) 12%, var(--bg)); color: var(--fg); }
     .chip { border-color: var(--pc-edge); background: var(--pc-surf); }
     .chip.open, .chip:hover { border-color: color-mix(in srgb, var(--fg) 22%, var(--bg)); }
     .sb { background: color-mix(in srgb, var(--fg) 14%, var(--bg)); color: var(--fg); border-color: var(--bg); }
     .sg, .sortc .sg { background: color-mix(in srgb, var(--fg) 10%, var(--bg)); color: var(--fg); }
     .pv { border-color: var(--pc-edge); background: var(--pc-surf); }
-    .pv.live { color: var(--fg); border-color: var(--pc-edge); }
-    .leave i { animation: none; }
-    .leg.walk { background: color-mix(in srgb, var(--fg) 10%, var(--bg)); }
-    .alt { border-color: var(--pc-edge); background: var(--pc-surf); box-shadow: none; }
-    .alt.sel { border-color: color-mix(in srgb, var(--pc-acc) 60%, transparent); background: var(--pc-surf); }
-    .alt.sel .am b { color: var(--fg); }
-    .seltag { color: var(--pc-acc); }
     .primary { background: var(--pc-acc); color: #fff; }
     .primary:disabled { background: var(--pc-surf); color: var(--muted); }
   }
+  /* ---- Not wide (mockup 39): the two numbered questions, home and work as tiles, the last trips; the answer's card
+     with its two «Αλλαγή», the route cards, «Θύμισέ μου» beside «Ξεκίνα». */
+  .ends.asks { gap: 0; }
+  .qq { margin: 18px 0 8px; display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; line-height: 1; color: var(--muted); }
+  .qq:first-child { margin-top: 4px; }
+  .qq.on { color: var(--fg); }
+  .qn { flex: none; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; line-height: 1;
+    background: color-mix(in srgb, var(--fg) 12%, transparent); color: var(--fg); }
+  .qq.on .qn { background: var(--pc-acc, var(--accent)); color: #fff; }
+  .ends.asks .field.end { min-height: 60px; border-radius: 16px; }
+  .ends.asks .field.end input { height: 56px; font-size: 18px; font-weight: 700; letter-spacing: 0; }
+  .ends.asks .field.end input::placeholder { font-size: 17px; font-weight: 500; }
+  .ends.asks .field.end.open { border-color: var(--pc-acc, var(--accent)); }
+  .fs2 { flex: none; display: flex; color: var(--muted); }
+  .ends.asks .sugg { padding: 10px 0 0; }
+  .ends.asks .sc { height: 40px; padding: 0 14px 0 12px; border-radius: 12px; font-size: 15px; }
+  .chg { flex: none; height: 40px; padding: 0 14px; display: flex; align-items: center; border: 0; border-radius: 12px; font: inherit; font-size: 14px; font-weight: 600; line-height: 1;
+    background: color-mix(in srgb, var(--fg) 10%, transparent); color: var(--fg); cursor: pointer; }
+  .chg:hover { background: color-mix(in srgb, var(--fg) 16%, transparent); }
+
+  .mine.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .ptile { min-width: 0; height: 72px; display: flex; align-items: center; gap: 12px; padding: 0 14px; border: 1px solid var(--pc-edge, var(--glass-line)); border-radius: 16px;
+    background: var(--pc-surf, var(--glass-fill)); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+  .ptile .pic { flex: none; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--fg) 10%, transparent); }
+  .ptx { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+  .ptx b { font-size: 17px; font-weight: 700; line-height: 1; }
+  .ptx small { font-size: 13px; color: var(--muted); line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .qh { margin: 22px 0 8px; font-size: 15px; font-weight: 600; color: var(--muted); line-height: 1; }
+  .rlist { border-radius: 16px; border: 1px solid var(--pc-edge, var(--glass-line)); background: var(--pc-surf, var(--glass-fill)); overflow: hidden; }
+  .rr { width: 100%; min-height: 56px; display: flex; align-items: center; gap: 12px; padding: 8px 14px 8px 16px; box-sizing: border-box; border: 0; background: none; color: var(--fg);
+    font: inherit; text-align: left; cursor: pointer; }
+  .rr + .rr { border-top: 1px solid var(--pc-edge, var(--glass-line)); }
+  .ric, .rch { flex: none; display: flex; color: var(--muted); }
+  .rch { rotate: -90deg; }
+  .rtx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; font-size: 17px; font-weight: 500; line-height: 1.2; }
+  .rtx small { font-size: 13px; color: var(--muted); }
+
+  .sum { border-radius: 16px; border: 1px solid var(--pc-edge, var(--glass-line)); background: var(--pc-surf, var(--glass-fill)); }
+  .srow { min-height: 56px; display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 16px; box-sizing: border-box; }
+  .srow.top { min-height: 70px; }
+  .srow + .srow { border-top: 1px solid var(--pc-edge, var(--glass-line)); }
+  .stx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .stx small { font-size: 14px; color: var(--muted); line-height: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stx b { font-size: 19px; font-weight: 700; line-height: 1.15; }
+  .stx.line { flex-direction: row; align-items: center; gap: 10px; font-size: 16px; color: var(--muted); line-height: 1.3; }
+  .stx.line :global(svg) { flex: none; }
+  .stx.line b { font-size: inherit; font-weight: 600; color: var(--fg); }
+  .cards { display: flex; flex-direction: column; gap: 10px; }
+  .pvn.solo { margin: -4px 4px 0; }
+  .morer { align-self: center; height: 44px; padding: 0 16px; border: 0; border-radius: 22px; background: none; color: var(--muted); font: inherit; font-size: 15px; font-weight: 600; line-height: 1; cursor: pointer; }
+  .duo { display: flex; gap: 10px; }
+  .duo .primary { flex: 1.5; }
+  .ghost2 { flex: 1; min-width: 0; height: 52px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 12px; border: 0; border-radius: 16px;
+    background: color-mix(in srgb, var(--fg) 10%, transparent); color: var(--fg); font: inherit; font-size: 15px; font-weight: 600; line-height: 1; cursor: pointer; white-space: nowrap; }
+  .ghost2.on { background: color-mix(in srgb, var(--pc-acc, var(--accent)) 18%, transparent); color: var(--fg); }
+  .ghost2:disabled { opacity: .5; cursor: default; }
+  .actrow .link :global(svg) { flex: none; }
 </style>

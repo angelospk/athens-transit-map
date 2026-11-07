@@ -18,6 +18,13 @@
   import type { AppState } from "../state.svelte";
   import Icon from "./Icon.svelte";
   import { item, rise } from "../anim";
+  import RouteCard from "./RouteCard.svelte";
+  import RemindSheet from "./RemindSheet.svelte";
+  import { linesToward, pickWay, type Way } from "../ways";
+  import { getJSON } from "../api";
+  import { parsePlan, planUrl, scaledLegs, type PlanResponse } from "../plan";
+  import { API_BASE } from "../config";
+  import { guideFromPlan } from "../guide";
 
   let { app }: { app: AppState } = $props();
 
@@ -115,6 +122,48 @@
   // Notices about the favourite lines (route changes, works): one row each, newest first.
   const notices = $derived(!app.notifyPrefs.changes ? [] : app.favs.lines.flatMap(l => forLine(app.disruptions, l.id, app.serverNow).map(d => ({ line: l, d }))).slice(0, 2));
 
+  // ---- The user's way now (mockup 40, B1): to work in the morning at home, home in the evening (ways.ts), or the one
+  // they flip to; the best route there from where they are, as a compact card (where its bus is now), «Ξεκίνα» and
+  // «Θύμισέ μου». At a stop they named for that way, only the lines that go there.
+  let wayPick = $state<Way | null>(null);
+  const auto = $derived(pickWay(app.places, app.myPos, athensNow(app.serverNow).hour));
+  const way = $derived<Way | null>(wayPick && app.places[wayPick] ? wayPick : auto?.way ?? null);
+  const target = $derived(way ? app.places[way] ?? null : null);
+  const bothSet = $derived(!!app.places.home && !!app.places.work);
+  let wayPlan = $state.raw<{ key: string; r: PlanResponse } | null>(null);
+  const wayKey = $derived(shown && target && app.myPos && metresBetween(app.myPos, target.at) > 300
+    ? JSON.stringify([app.myPos.map(x => +x.toFixed(4)), target.at]) : "");
+  $effect(() => {
+    const k = wayKey;
+    if (!k) return;
+    const [a, b] = JSON.parse(k) as [[number, number], [number, number]];
+    const c = new AbortController();
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const load = () => getJSON(planUrl(API_BASE, a, b, undefined, 3), c.signal).then(res => {
+      const r = res.status === 200 ? parsePlan(res.body) : null;
+      if (!c.signal.aborted && r) wayPlan = { key: k, r };
+      if (!c.signal.aborted) t = setTimeout(load, 60_000);
+    }, () => {});
+    void load();
+    return () => { c.abort(); clearTimeout(t); };
+  });
+  const wayR = $derived(wayPlan && wayPlan.key === wayKey ? wayPlan.r : null);
+  const wayIt = $derived(wayR?.itineraries.find(x => x.depart_at > nowS - 60) ?? null);
+  let wayOpen = $state(false);
+  let wayRemind = $state(false);
+  function wayGo() {
+    if (!wayIt || !wayR || !target || !way) return;
+    app.startGuide(guideFromPlan(wayIt, wayR, app.stopIx, way === "home" ? "Σπίτι" : "Δουλειά"));
+  }
+  // A stop named for this way: only the lines from it that go there (the rest behind «Δείξε»).
+  let showAll = $state(false);
+  const wayLines = (id: string): Set<string> | null => {
+    const sid = native(id), n = app.stopNames[sid];
+    if (!way || !target || !app.stopIx || !n?.ways?.includes(way)) return null;
+    return linesToward(app.stopIx, sid, target.at);
+  };
+  const WAY_TO: Record<Way, string> = { home: "στο σπίτι", work: "στη δουλειά" };
+
   // The stop's board: its next departures in time order (a line twice when its next two come soon), three on a phone,
   // five on a computer; each live, late or from the timetable, in its colour.
   let wide = $state(typeof matchMedia === "function" && matchMedia("(min-width: 720px)").matches);
@@ -124,8 +173,11 @@
     return () => q.removeEventListener("change", on);
   });
   // One card per line and way (mockup 33), soonest first, with its next three times: not the same line twice.
-  const deps = $derived(plan[0] ? rowsOf(plan[0].id).filter(r => r.times.length).map(r => ({ r, t: r.times[0] }))
-    .sort((a, b) => a.t.at - b.t.at).slice(0, wide ? 4 : 3) : []);
+  const keep = $derived(plan[0] ? wayLines(plan[0].id) : null);
+  const allDeps = $derived(plan[0] ? rowsOf(plan[0].id).filter(r => r.times.length).map(r => ({ r, t: r.times[0] })).sort((a, b) => a.t.at - b.t.at) : []);
+  const wayDeps = $derived(keep && !showAll ? allDeps.filter(d => keep.has(native(d.r.line))) : allDeps);
+  const hidden = $derived(keep && !showAll ? new Set(allDeps.filter(d => !keep.has(native(d.r.line))).map(d => d.r.line)).size : 0);
+  const deps = $derived(wayDeps.slice(0, wide ? 4 : 3));
   const tone = (t: StopRow["times"][number]) => (!t.live ? "sched" : (t.delay_s ?? 0) >= 120 ? "late" : "ok");
   const rowNote = (t: StopRow["times"][number]) => (!t.live ? `Πρόγραμμα · ${clock(t.at).slice(0, 5)}` : (t.delay_s ?? 0) >= 120 ? `Ζωντανά · αργεί ${Math.round((t.delay_s ?? 0) / 60)}′` : "Ζωντανά · στην ώρα του");
   const metres = $derived(plan[0] && app.myPos ? Math.round(metresBetween(app.myPos, [plan[0].lat, plan[0].lon]) / 10) * 10 : null);
@@ -242,6 +294,10 @@
 
 <svelte:window bind:innerHeight={vh} />
 
+{#if wayRemind && wayIt && wayR && target}
+  <RemindSheet {app} it={wayIt} r={wayR} ix={app.stopIx} to={{ label: way === "home" ? "Σπίτι" : "Δουλειά", pts: [target.at], lines: [], kind: way ?? "home" }} onclose={() => (wayRemind = false)} />
+{/if}
+
 {#if shown}
   <!-- One notice on the map, under the search: a strike first, else the newest about a favourite line. -->
   {#if strike}
@@ -278,6 +334,30 @@
       {/each}
     </div>
 
+    {#if way && target && wayKey}
+      <div class="way">
+        {#if bothSet}
+          <div class="wseg" role="radiogroup" aria-label="Προς τα πού">
+            {#each [["work", "Προς δουλειά"], ["home", "Προς σπίτι"]] as const as [k, label] (k)}
+              <button type="button" role="radio" aria-checked={way === k} class:on={way === k} onclick={() => { wayPick = k; wayOpen = false; }}><Icon name={k} size={16} /><span>{label}</span></button>
+            {/each}
+          </div>
+          {#if !wayPick && auto?.why}<p class="why">{auto.why}</p>{/if}
+        {:else}
+          <h2>{way === "work" ? "Προς δουλειά" : "Προς σπίτι"}</h2>
+        {/if}
+        {#if wayIt && wayR}
+          <RouteCard it={wayIt} r={wayR} ix={app.stopIx} legs={scaledLegs(wayIt, wayR)} {nowS} tag="" open={wayOpen} live onpick={() => (wayOpen = !wayOpen)} />
+          <div class="wacts">
+            <button type="button" class="wgo" onclick={wayGo}>Ξεκίνα</button>
+            <button type="button" class="wrm" class:on={app.leaveRemind?.key === `${wayIt.depart_at}-${wayIt.arrive_at}`} onclick={() => (wayRemind = true)}><Icon name="bell" size={16} /><span>Θύμισέ μου</span></button>
+          </div>
+        {:else}
+          <p class="muted">Ψάχνω διαδρομή…</p>
+        {/if}
+      </div>
+    {/if}
+
     <!-- The stop to plan from (the nearest, a routine's or a favourite) and its board, as a station's: the next
          departures in time, each live, late or from the timetable. -->
     <div class="sec">
@@ -297,7 +377,7 @@
         {@const on = app.isFavStop(st.id)}
         <div class="stophead">
           <button type="button" class="sh" onclick={() => openStop(st)}>
-            <span class="sn">{st.name}</span>
+            <span class="sn">{app.stopLabel(st.id, st.name)}</span>
             <small>{routine && st.id === routine.stop.id ? "Η στάση της διαδρομής σου" : st.id === nearest?.id ? "Η πιο κοντινή σου στάση" : "Αγαπημένη στάση"}{metres != null ? ` · ${metres} μ` : ""}{w != null ? ` · ${w}′ με τα πόδια` : ""}</small>
           </button>
           <button type="button" class="star" class:on aria-pressed={on} aria-label={on ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
@@ -325,6 +405,7 @@
               </li>
             {/each}
           </ul>
+          {#if hidden && way}<button type="button" class="hid" onclick={() => (showAll = true)}><span>{hidden === 1 ? "Άλλη 1 γραμμή δεν πάει" : `Άλλες ${hidden} γραμμές δεν πάνε`} {WAY_TO[way]}</span><b>Δείξε</b></button>{/if}
         {:else}
           <p class="muted">{loaded ? `Κανένα λεωφορείο τώρα στη στάση ${st.name}.` : "Φόρτωση…"}</p>
         {/if}
@@ -337,7 +418,7 @@
         <div class="tiles">
           {#each others as o, k (o.s.id)}
             <button type="button" class="tile near" in:item={{ i: k + 4 }} onclick={() => openStop(o.s)}>
-              <span class="sname strong">{o.s.name}</span>
+              <span class="sname strong">{app.stopLabel(o.s.id, o.s.name)}</span>
               <span class="trow">
                 {#if o.first}{@const b = badge(o.first.r.line)}<span class="badge" style:--lb={b.bg} style:--lf={b.fg}>{b.label}</span>
                   <b class="om {tone(o.first.t)}">{o.min === 0 ? "τώρα" : o.min! < 60 ? `${o.min}′` : clock(o.first.t.at).slice(0, 5)}</b>{:else}<b class="om sched">–</b>{/if}
@@ -382,7 +463,7 @@
             <button type="button" class="tile" in:item={{ i: k + 5 }} onclick={() => openStop(t.s)}>
               <span class="trow">
                 {#if t.r}{@const b = badge(t.r.line)}<span class="badge" style:--lb={b.bg} style:--lf={b.fg}>{b.label}</span>{/if}
-                <span class="sname">{t.s.name}</span>
+                <span class="sname">{app.stopLabel(t.s.id, t.s.name)}</span>
               </span>
               <span class="tmin">
                 {#if t.min != null}<b>{t.min === 0 ? "τώρα" : `${t.min}′`}</b>{#if t.next != null}<small>και {t.next}′</small>{/if}
@@ -410,6 +491,22 @@
     background: var(--control); color: var(--muted); font: inherit; font-size: 17px; font-weight: 600; line-height: 1; cursor: pointer; }
   .where :global(svg) { color: var(--accent); stroke-width: 2.2; }
   .where:hover { background: var(--control-hover); color: var(--fg); }
+
+  /* The way now: «Προς δουλειά» or «Προς σπίτι», the best route there */
+  .way { display: flex; flex-direction: column; gap: 10px; }
+  .wseg { height: 46px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; box-sizing: border-box; border-radius: 14px; background: var(--card); }
+  .wseg button { display: flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-radius: 11px; background: none; color: var(--muted);
+    font: inherit; font-size: 15px; font-weight: 500; line-height: 1; cursor: pointer; }
+  .wseg button.on { background: color-mix(in srgb, var(--fg) 14%, var(--card)); color: var(--fg); font-weight: 600; }
+  .why { margin: -2px 2px 0; font-size: 13px; color: var(--muted); line-height: 1.3; }
+  .wacts { display: flex; gap: 8px; }
+  .wgo, .wrm { flex: 1; height: 44px; display: flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-radius: 12px; font: inherit; font-size: 15px; line-height: 1; cursor: pointer; }
+  .wgo { background: var(--accent); color: var(--on-accent, #fff); font-weight: 700; }
+  .wrm { background: var(--card); color: var(--fg); font-weight: 600; }
+  .wrm.on { background: color-mix(in srgb, var(--accent) 18%, var(--card)); }
+  .hid { width: 100%; height: 40px; margin-top: 6px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 12px; border: 0; border-radius: 12px;
+    background: none; color: var(--muted); font: inherit; font-size: 13px; line-height: 1; cursor: pointer; }
+  .hid b { color: var(--fg); font-weight: 600; }
 
   /* Home and work */
   .saved { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; gap: 8px 6px; align-items: center; }

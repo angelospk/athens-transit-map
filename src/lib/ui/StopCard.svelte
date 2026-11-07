@@ -6,6 +6,7 @@
   import type { AppState } from "../state.svelte";
   import type { FetchResult } from "../poller";
   import Back from "./Back.svelte";
+  import NameSheet from "./NameSheet.svelte";
   import Icon from "./Icon.svelte";
   import DisruptionRows from "./DisruptionRows.svelte";
   import { forStop } from "../disruptions";
@@ -40,6 +41,7 @@
   // The star: the stop's /v2 id is oasa:<GTFS id>; an index from before the ids has none.
   const favId = $derived(id ? `oasa:${id}` : null);
   const starred = $derived(!!favId && app.isFavStop(favId));
+  let naming = $state(false);
   // The OASA notices about the stop or its lines (/v2 ids: oasa:<GTFS stop id>, oasa:<line>).
   const lineIds = $derived(lines.map(l => `oasa:${l.line}`));
   const disruptions = $derived(favId ? forStop(app.disruptions, favId, lineIds, app.serverNow) : []);
@@ -255,6 +257,9 @@
   <b class="chip" style:--lb={c.bg} style:--lf={c.fg}>{line}</b>
 {/snippet}
 
+{#if naming && id}
+  <div use:portal><NameSheet {app} {id} official={name} onclose={() => (naming = false)} /></div>
+{/if}
 {#if fixing}
   <StopFixBar {app} ondone={() => (sent = !!id && reportedStops().includes(id))} />
 {:else if stop || early}
@@ -263,8 +268,9 @@
     <header>
       <Back {app} />
       <div class="t">
-        <h2>{name}</h2>
-        <p class="sub">{lines.some(l => app.lineInfo.get(l.line)?.kind === "trolley") && lines.every(l => app.lineInfo.get(l.line)?.kind === "trolley") ? "Στάση τρόλεϊ" : "Στάση λεωφορείου"}</p>
+        <h2>{app.stopLabel(id, name)}</h2>
+        <p class="sub">{#if id && app.stopNames[id]?.name}{name} · {/if}{lines.some(l => app.lineInfo.get(l.line)?.kind === "trolley") && lines.every(l => app.lineInfo.get(l.line)?.kind === "trolley") ? "Στάση τρόλεϊ" : "Στάση λεωφορείου"}
+          {#if id}<button type="button" class="nm" onclick={() => (naming = true)}>{app.stopNames[id]?.name ? "Άλλαξε όνομα" : "Δώσε της όνομα"}</button>{/if}</p>
       </div>
       {#if favId && (stop || board)}
         <button type="button" class="circle star" class:starred aria-pressed={starred} title={starred ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
@@ -510,6 +516,7 @@
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
   p { margin: 0; color: var(--muted); font-size: 12px; }
   .sub { font-size: 13px; font-weight: 500; line-height: 1.2; }
+  .nm { margin-left: 6px; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; font-weight: 600; line-height: 1.2; cursor: pointer; }
   .back { font-weight: 500; color: var(--muted); }
   .circle { flex: none; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0;
     border-radius: 50%; background: var(--card); color: var(--fg); cursor: pointer; }

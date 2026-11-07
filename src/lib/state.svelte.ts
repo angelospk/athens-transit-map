@@ -68,6 +68,7 @@ function stored<T>(key: string, fallback: T, ok: (v: unknown) => boolean): T {
   } catch { return fallback; }
 }
 export interface SavedPlace { label: string; at: [number, number] }
+export interface StopName { name?: string; ways?: ("home" | "work")[] }
 const isPlace = (v: unknown): v is SavedPlace => {
   const p = v as SavedPlace | null;
   return !!p && typeof p.label === "string" && Array.isArray(p.at) && p.at.length === 2 && p.at.every(Number.isFinite);
@@ -369,6 +370,8 @@ export class AppState {
   // «Ξεκίνα»: the trip being followed step by step (guide.ts, NavGuide), the leg the user is on, and whether the bus
   // of a ride leg was boarded. The walking route of the leg, for the map (MapView draws it).
   guide = $state.raw<Guide | null>(null);
+  // «Θύμισέ μου»: the trip whose bus is watched to say when to leave (liveRide.ts, LeaveReminder), while the page is open.
+  leaveRemind = $state.raw<import("./liveRide").LeaveRemind | null>(null);
   guideStep = $state(0);
   guideOn = $state(false);    // on the bus of the current ride leg
   guideWalk = $state.raw<[number, number][] | null>(null);   // [lat, lon]
@@ -405,6 +408,21 @@ export class AppState {
   followMe: () => void = () => {};
   // Set by MapView: the map off the user for a look at these points ([lon, lat]), until followMe again.
   peekAt: (pts: [number, number][]) => void = () => {};
+
+  // A stop's own name, as the user calls it («Η στάση του φούρνου»), and which of their ways it is for (home, work):
+  // there the home screen shows only the lines that go that way. Kept on this device, by the stop's OASA id.
+  stopNames = $state.raw<Record<string, StopName>>(stored("stopNames", {}, v => typeof v === "object" && v !== null && !Array.isArray(v)));
+  setStopName(id: string, v: StopName | null) {
+    const next = { ...this.stopNames };
+    if (v && (v.name?.trim() || v.ways?.length)) next[id] = { ...(v.name?.trim() ? { name: v.name.trim().slice(0, 40) } : {}), ...(v.ways?.length ? { ways: v.ways } : {}) };
+    else delete next[id];
+    this.stopNames = next;
+    store("stopNames", next);
+  }
+  /** The name to show for a stop (by its OASA id, with or without «oasa:»): the user's own, else the official. */
+  stopLabel(id: string | null | undefined, official: string): string {
+    return (id && this.stopNames[id.replace(/^oasa:/, "")]?.name) || official;
+  }
 
   // «Σπίτι» and «Δουλειά» on the home screen: a place each, kept on this device.
   places = $state.raw<{ home?: SavedPlace; work?: SavedPlace }>(stored("places", {}, isPlaces));
