@@ -12,12 +12,15 @@ describe("transfer", () => {
     expect(metroId("bus", "M3")).toBeNull();
     expect(metroId("metro", "Τ6")).toBeNull();
   });
-  it("puts M3 under M2 at Syntagma, and the bus on the street", () => {
-    const m2 = levelM("metro", "M2", SYNTAGMA), m3 = levelM("metro", "M3", SYNTAGMA);
-    expect(m3).toBeGreaterThan(m2);
+  it("puts M3 under M2 at Syntagma (the published depths), M1 above M3 at Monastiraki, and the bus on the street", () => {
+    const m2 = levelM("metro", "M2", SYNTAGMA, "", "ΣΥΝΤΑΓΜΑ"), m3 = levelM("metro", "M3", SYNTAGMA, "", "Σύνταγμα (Κέντρο)");
+    expect([m2, m3]).toEqual([17, 28]);
+    expect(levelM("metro", "M1", [23.7257, 37.9767], "", "Μοναστηράκι")).toBeLessThan(levelM("metro", "M3", [23.7257, 37.9767], "", "ΜΟΝΑΣΤΗΡΑΚΙ"));
+    expect(levelM("metro", "M1", [23.79, 38.06], "", "ΜΑΡΟΥΣΙ")).toBe(0);
+    expect(levelM("metro", "M3", [23.78, 37.99], "", "ΠΑΝΟΡΜΟΥ")).toBeGreaterThan(0);
     expect(levelM("bus", "309", SYNTAGMA)).toBe(0);
     const l = transferLook(m2, m3);
-    expect(l).toMatchObject({ way: "down", under: true, diff: 20 });
+    expect(l).toMatchObject({ way: "down", under: true });
     expect(changeLine(l, "M3", "metro", 3)).toBe("Κατεβαίνεις στο M3 · 3′");
     expect(changeLine(transferLook(0, 0), "309", "bus", 0, 0)).toBe("Ίδια στάση");
   });

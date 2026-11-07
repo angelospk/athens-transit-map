@@ -2,6 +2,7 @@
 // metro line's level under it), which way the rider goes (down, up), and in words what to do. The levels are the 3D
 // view's (map/metroDepth.ts): approximate, so only their order is told («πιο κάτω»), never metres.
 import { depthAt } from "./map/metroDepth";
+import { fold } from "./search";
 
 /** M1, M2 or M3 from a metro line's label or id («M3», «Μ3», "stasy:M3", "3"); null for anything else. */
 export function metroId(mode: string, label: string, id = ""): string | null {
@@ -13,10 +14,30 @@ export function metroId(mode: string, label: string, id = ""): string | null {
   return null;
 }
 
-/** How far under the street a ride is boarded or left (metres, 0 on the street: buses, trolleys, the tram). */
-export function levelM(mode: string, label: string, at: [number, number], id = ""): number {
+// Station depths, where published (metres under the street; some are the dig's depth, not the platform's, so only
+// their order is ever shown). Gathered by the project's owner from STASY, Elliniko Metro, FCC and the press. M1 is on
+// the street but for a few stations just under it (no figures: a small depth keeps it above M2 and M3 there).
+const SHALLOW = 8;
+const DEPTHS: Record<string, Record<string, number>> = {
+  M1: { "μοναστηρακι": SHALLOW, "ομονοια": SHALLOW, "βικτωρια": SHALLOW, "αττικη": SHALLOW, "κατωπατησια": SHALLOW },
+  M2: { "ανθουπολη": 36, "περιστερι": 24, "αγιοσαντωνιοσ": 19, "συνταγμα": 17, "αργυρουπολη": 23, "ελληνικο": 26 },
+  M3: { "δημοτικοθεατρο": 28, "πειραιασ": 27, "μανιατικα": 27, "νικαια": 22, "κορυδαλλοσ": 26, "αγιαβαρβαρα": 20, "αγιαμαρινα": 19,
+    "αιγαλεω": 20, "ελαιωνασ": 26, "κεραμεικοσ": 21, "κεραμικοσ": 21, "μοναστηρακι": 32, "συνταγμα": 28, "χολαργοσ": 22, "χαλανδρι": 22,
+    "δπλακεντιασ": SHALLOW, "δουκισσησπλακεντιασ": SHALLOW, "παλληνη": 0, "καντζα": 0, "παιανιακαντζα": 0, "κορωπι": 0, "αεροδρομιο": 0 },
+};
+// A station not in the list: M2 and M3 run deep (a usual depth); M1 and M3's airport branch on the street.
+const USUAL = 24;
+const key = (name: string) => fold(name.replace(/\(.*?\)/g, "")).replace(/[^\p{L}]/gu, "");
+
+/** How far under the street a ride is boarded or left (metres, 0 on the street: buses, trolleys, the tram): the
+ *  station's published depth, else the line's usual one. */
+export function levelM(mode: string, label: string, at: [number, number], id = "", station = ""): number {
   const m = metroId(mode, label, id);
-  return m ? Math.round(depthAt(m, at[0], at[1])) : 0;
+  if (!m) return 0;
+  const k = key(station), known = DEPTHS[m]?.[k];
+  if (known != null) return known;
+  if (m === "M1") return 0;
+  return depthAt(m, at[0], at[1]) > 0 ? USUAL : 0;
 }
 
 export interface TransferLook {

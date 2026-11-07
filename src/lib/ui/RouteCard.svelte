@@ -28,8 +28,8 @@
   // A change in the steps opens to the station seen from the side (mockup 47 Γ → A).
   let xOpen = $state<number | null>(null);
   $effect(() => { if (!stepsOpen) xOpen = null; });
-  // The little side view's levels: the street at the top, then M1, M2, M3, each deeper.
-  const gy = (d: number) => (d <= 0 ? 8 : Math.min(29, 10 + d * 0.27));
+  // The little side view's levels: the street at the top, a platform lower the deeper its station.
+  const gy = (d: number) => (d <= 0 ? 8 : Math.min(29, 14 + d * 0.45));
   // The operators' marks on the line chips (Athens: ΟΑΣΑ for buses and trolleys, the metro's and the tram's own).
   const LOGO: Record<string, string> = { bus: "icons/oasa.png", trolley: "icons/oasa.png", metro: "icons/metro-logo.svg", tram: "icons/tram-logo.svg" };
   const logoOf = (m: string) => (logos && LOGO[m] ? `${import.meta.env.BASE_URL}${LOGO[m]}` : "");
@@ -156,7 +156,7 @@
                 <span class="si"><Icon name="walk" size={14} /></span>
                 <span class="sx"><span class="s1"><b>Περπάτα {mins(st.min)}</b></span><small>ως {st.to === "στον προορισμό" ? "τον προορισμό" : `${stationAfter(k) ? "τον σταθμό" : "τη στάση"}${st.to === "στη στάση" ? "" : ` ${name(st.to)}`}`}{stationAfter(k) ? ", και κατέβα στο μετρό" : ""}</small></span>
               {:else if st.kind === "change"}
-                {@const lk = transferLook(levelM(st.prev.mode, st.prev.label, st.where, st.prev.line), levelM(st.mode, st.label, st.to, st.line))}
+                {@const lk = transferLook(levelM(st.prev.mode, st.prev.label, st.where, st.prev.line, st.stop), levelM(st.mode, st.label, st.to, st.line, st.next || st.stop))}
                 {@const tone = st.spare < RISK_MIN ? "tight" : st.spare >= 3 ? "ok" : "mid"}
                 <span class="si"><Icon name="swap" size={14} /></span>
                 <span class="sx xc">

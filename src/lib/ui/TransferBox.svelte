@@ -12,7 +12,7 @@
   let { st, compact = false }: { st: Extract<PlanStep, { kind: "change" }>; compact?: boolean } = $props();
 
   const name = (s: string) => titleCase(placeNote(s).place) || s;
-  const look = $derived(transferLook(levelM(st.prev.mode, st.prev.label, st.where, st.prev.line), levelM(st.mode, st.label, st.to, st.line)));
+  const look = $derived(transferLook(levelM(st.prev.mode, st.prev.label, st.where, st.prev.line, st.stop), levelM(st.mode, st.label, st.to, st.line, st.next || st.stop)));
   const towardName = $derived(st.headsign ? name(toward(st.headsign)) : "");
   const words = $derived(changeWords({ stop: name(st.stop), next: st.next ? name(st.next) : "", toward: towardName, m: st.m, min: st.min,
     prev: st.prev, label: st.label, mode: st.mode }, look));
@@ -20,20 +20,21 @@
   const margin = $derived(changeMargin(st.spare, RISK_MIN, st.missed, { what: WHAT[st.mode] ?? "Το λεωφορείο", at: clockHM(st.leaves),
     rail: ["metro", "tram", "suburban", "rail"].includes(st.mode) }, clockHM));
 
-  // The side view: the street on top (y 29). From the street, a line goes as deep as it is (M1 the highest, M3 the
-  // deepest); between two lines, the higher sits at 84 and the lower at 150. No metres: the order is what the eye
-  // needs, and the depths are approximate.
-  const yOf = (d: number) => (d <= 0 ? 29 : Math.min(150, 66 + d * 1.2));
-  const both = $derived(look.from > 0 && look.to > 0);
-  const ya = $derived(both ? (look.from === look.to ? 120 : look.from < look.to ? 84 : 150) : yOf(look.from));
-  const yb = $derived(both ? (look.from === look.to ? 120 : look.to < look.from ? 84 : 150) : yOf(look.to));
+  // The side view, left to right: where the rider gets off, the walk, where they get on. The street on top; each metro
+  // platform as deep as its station is, the deeper one at the bottom (published depths where there are some,
+  // transfer.ts). No words in it and no metres: the steps under it say what to do.
+  const STREET = 22, BOTTOM = 128;
+  const yOf = (d: number, max: number) => (d <= 0 ? STREET : 46 + (d / max) * (BOTTOM - 46));
+  const yy = $derived.by(() => {
+    const max = Math.max(look.from, look.to, 1);
+    let a = yOf(look.from, max), b = yOf(look.to, max);
+    // Two platforms close in depth: still far enough apart to see which is lower.
+    if (look.from > 0 && look.to > 0 && look.way !== "level" && Math.abs(a - b) < 28) { if (a < b) a = b - 28; else b = a - 28; }
+    return [a, b];
+  });
+  const ya = $derived(yy[0]), yb = $derived(yy[1]);
   const short = (l: string) => (l.length > 4 ? l.slice(0, 4) : l);
-  // The path walked: along, then down or up (from the end of one platform to the start of the other).
-  const path = $derived(look.from > 0 && look.to > 0 ? `M150 ${ya} H190 L246 ${yb + (yb > ya ? -8 : 8)}`
-    : look.to > 0 ? `M38 29 H188 L238 ${yb - 8}` : `M150 ${ya} H182 L234 33 H258`);
-  const mid = $derived(look.from > 0 && look.to > 0 ? [218, (ya + yb) / 2] : look.to > 0 ? [213, (29 + yb) / 2] : [208, (ya + 29) / 2]);
-  const bracket = $derived(look.from > 0 && look.to > 0 ? (look.way === "down" ? "πιο κάτω" : look.way === "up" ? "πιο πάνω" : "") : Math.max(look.from, look.to) >= 60 ? "βαθιά" : "κάτω");
-  const top = $derived(Math.min(ya, yb)), bottom = $derived(Math.max(ya, yb));
+  const path = $derived(look.from > 0 && look.to > 0 ? `M136 ${ya} L182 ${yb}` : look.to > 0 ? `M50 ${STREET} H118 L182 ${yb}` : `M136 ${ya} L200 ${STREET} H266`);
 </script>
 
 <section class="xb" class:compact aria-label="Η αλλαγή">
@@ -43,39 +44,24 @@
   {/if}
 
   {#if look.under}
-    <svg class="side" viewBox="0 0 326 190" role="img" aria-label="{look.way === 'down' ? 'Κατεβαίνεις' : look.way === 'up' ? 'Ανεβαίνεις' : 'Ίδιο επίπεδο'}{bracket ? `, ${bracket}` : ''}">
-      <rect class="earth" x="0" y="30" width="326" height="160" rx="14"></rect>
-      <rect class="ground" x="0" y="26" width="326" height="6" rx="3"></rect>
-      {#if look.from > 0 && look.to > 0}<text class="t mute" x="12" y="17">Δρόμος · {name(st.stop)}</text>{/if}
-      <path class="guide" d="M0 {ya}H326"></path>{#if yb !== ya}<path class="guide" d="M0 {yb}H326"></path>{/if}
-
-      <!-- the first ride's end -->
+    <svg class="side" viewBox="0 0 320 150" role="img" aria-label={look.way === "down" ? "Κατεβαίνεις" : look.way === "up" ? "Ανεβαίνεις" : "Ίδιο επίπεδο"}>
+      <rect class="earth" x="0" y="25" width="320" height="125" rx="12"></rect>
+      <rect class="ground" x="0" y={STREET - 3} width="320" height="6" rx="3"></rect>
+      {#if look.from > 0 && look.to > 0}<text class="t mute" x="308" y="12">δρόμος</text>{/if}
       {#if look.from > 0}
-        <rect x="38" y={ya - 6} width="132" height="12" rx="6" style:fill="color-mix(in srgb, {st.prev.color} 80%, #fff)"></rect>
-        <text class="t b" x="38" y={ya - 14} style:fill="color-mix(in srgb, {st.prev.color} 45%, var(--fg))">Φτάνεις εδώ · {st.prev.label}</text>
-        <g transform="translate(12 {ya})"><circle r="13" fill={st.prev.color} stroke="#fff" stroke-width="2"></circle><text class="bd" y="4">{short(st.prev.label)}</text></g>
+        <rect x="44" y={ya - 5} width="92" height="10" rx="5" style:fill="color-mix(in srgb, {st.prev.color} 80%, #fff)"></rect>
+        <g transform="translate(24 {ya})"><circle r="13" fill={st.prev.color} stroke="#fff" stroke-width="2"></circle><text class="bd" y="3.5">{short(st.prev.label)}</text></g>
       {:else}
-        <g transform="translate(20 4)"><rect width="36" height="20" rx="5" fill={st.prev.color}></rect><text class="bd" x="18" y="14">{short(st.prev.label)}</text></g>
-        <text class="t mute" x="62" y="18">κατεβαίνεις εδώ</text>
+        <g transform="translate(8 {STREET - 11})"><rect width="42" height="22" rx="6" fill={st.prev.color}></rect><text class="bd" x="21" y="15">{short(st.prev.label)}</text></g>
       {/if}
-
-      <!-- the next ride's start -->
       {#if look.to > 0}
-        <rect x="164" y={yb - 6} width="132" height="12" rx="6" style:fill="color-mix(in srgb, {st.color} 80%, #fff)"></rect>
-        <text class="t b end" x="296" y={yb + 22} style:fill="color-mix(in srgb, {st.color} 45%, var(--fg))">{towardName ? `Προς ${towardName}` : st.label}{towardName ? ` · ${st.label}` : ""}</text>
-        <g transform="translate(150 {yb})"><circle r="13" fill={st.color} stroke="#fff" stroke-width="2"></circle><text class="bd" y="4">{short(st.label)}</text></g>
+        <rect x="182" y={yb - 5} width="92" height="10" rx="5" style:fill="color-mix(in srgb, {st.color} 80%, #fff)"></rect>
+        <g transform="translate(296 {yb})"><circle r="13" fill={st.color} stroke="#fff" stroke-width="2"></circle><text class="bd" y="3.5">{short(st.label)}</text></g>
       {:else}
-        <g transform="translate(266 4)"><rect width="36" height="20" rx="5" fill={st.color}></rect><text class="bd" x="18" y="14">{short(st.label)}</text></g>
-        {#if towardName}<text class="t mute end" x="260" y="18">προς {towardName}</text>{/if}
+        <g transform="translate(270 {STREET - 11})"><rect width="42" height="22" rx="6" fill={st.color}></rect><text class="bd" x="21" y="15">{short(st.label)}</text></g>
       {/if}
-
       <path class="walk" d={path} marker-end="url(#xarrow)"></path>
-      <circle class="me" cx={look.from > 0 ? 150 : 38} cy={look.from > 0 ? ya : 29} r="7"></circle>
-      {#if look.way !== "level"}<text class="t w end" x={mid[0] - 10} y={mid[1] + 4}>{look.way === "down" ? "κατεβαίνεις" : "ανεβαίνεις"}</text>{/if}
-      {#if bracket && bottom - top > 12}
-        <path class="br" d="M312 {top}V{bottom}M308 {top}H316M308 {bottom}H316"></path>
-        <text class="t br2 end" x="304" y={(top + bottom) / 2 + 4}>{bracket}</text>
-      {/if}
+      {#if look.from > 0}<circle class="me" cx="136" cy={ya} r="6"></circle>{/if}
       <defs><marker id="xarrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1l8 4-8 4z" class="arrow"></path></marker></defs>
     </svg>
   {:else}
@@ -109,14 +95,8 @@
   .side { display: block; width: 100%; height: auto; }
   .earth { fill: color-mix(in srgb, var(--fg) 5%, transparent); }
   .ground { fill: color-mix(in srgb, var(--fg) 22%, transparent); }
-  .guide { stroke: color-mix(in srgb, var(--fg) 10%, transparent); stroke-dasharray: 3 5; }
   .t { font: 600 11px/1 var(--font, Commissioner, system-ui, sans-serif); }
-  .t.b { font-weight: 700; font-size: 11.5px; }
-  .t.end { text-anchor: end; }
-  .t.mute { fill: var(--muted); }
-  .t.w { fill: var(--fg); opacity: .8; }
-  .br { stroke: var(--muted); stroke-width: 1.5; fill: none; }
-  .br2 { fill: var(--muted); font-weight: 700; }
+  .t.mute { fill: var(--muted); text-anchor: end; }
   .bd { fill: #fff; font: 800 10px/1 var(--font, Commissioner, system-ui, sans-serif); text-anchor: middle; }
   .walk { fill: none; stroke: var(--fg); stroke-width: 2.4; stroke-dasharray: 1 6; stroke-linecap: round; }
   .arrow { fill: var(--fg); }
