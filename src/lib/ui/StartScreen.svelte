@@ -316,10 +316,12 @@
     const q = text.trim();
     if (q.length < 3) { busy = false; return; }
     busy = true;
+    // Near the trip's other end, else near the user (or the map's centre): of the many «Αγίας Μαρίνας» the near one first.
     const other = ends[f === "from" ? "to" : "from"].place;
+    const near = other ? centre(other.pts) : app.myPos ?? app.mapCenter ?? undefined;
     timer = setTimeout(() => {
       const c = (ctl = new AbortController());
-      geocode(q, c.signal, other ? centre(other.pts) : undefined).then(
+      geocode(q, c.signal, near).then(
         r => { if (ctl === c) geo = { text: q, places: r }; },
         () => {},
       ).finally(() => { if (ctl === c) busy = false; });

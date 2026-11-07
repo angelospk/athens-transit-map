@@ -477,6 +477,18 @@ export async function geocode(query: string, signal?: AbortSignal, near?: Pt): P
   let found = await ask(q);
   const num = /\s+\d+(?:\s*-\s*\d+)?(?:\s*[α-ωa-z])?$/i;   // "30", "30-32", "30Α", "30 Α"
   if (!found.length && num.test(q)) found = await ask(q.replace(num, ""));
+  // «Πάροδος Αγίας Μαρίνας 5»: OpenStreetMap often names only the main street, not its side streets (and has no
+  // number there); the full text then finds that number on streets of the name elsewhere. When no side street is
+  // found, the main street (near the point given) comes first: the nearest the map knows.
+  const side = /^(?:πάροδος|παροδος|παρ\.?|πάρ\.?)\s+/i;
+  if (side.test(q) && !found.some(p => fold(p.label).includes("παροδ"))) {
+    const main = q.replace(side, "").replace(num, "").trim();
+    if (main.length >= 3) {
+      const streets = await ask(main);
+      const same = (a: Place, b: Place) => a.label === b.label && a.hint === b.hint;
+      found = [...streets, ...found.filter(p => !streets.some(x => same(x, p)))].slice(0, 8);
+    }
+  }
   geocoded.set(key, found);
   return found;
 }

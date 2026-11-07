@@ -115,7 +115,7 @@
     if (q.length < 3) return;
     const g = gen;
     const other = ends[f === "from" ? "to" : "from"].place;
-    const near = other && other.kind !== "metro-any" ? centre(other.pts) : undefined;   // the nearest shop of a chain
+    const near = other && other.kind !== "metro-any" ? centre(other.pts) : app.myPos ?? app.mapCenter ?? undefined;   // the nearest shop of a chain
     geoBusy = true;
     timer = setTimeout(() => {
       ctl = new AbortController();
