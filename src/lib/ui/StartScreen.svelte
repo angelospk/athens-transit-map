@@ -847,8 +847,8 @@
         <!-- The trip asked (mockups 42 B, 44): a band of its own at the top, apart from the routes under it. «Από» and
              «Προς» are fields (a tap edits that end), the swap between them; when and with what, two chips. -->
         <div class="band" in:item={{ i: 2, y: 12 }}>
-          {@render brandRow()}
           <h1 id="start-h" class="sr">Οι διαδρομές</h1>
+          <div class="btop"><button type="button" class="xclose" aria-label="Κλείσιμο" title="Κλείσιμο" onclick={() => { app.savingPlace = null; app.pickFor = null; app.start = false; }}><Icon name="close" size={16} /></button></div>
           <div class="tends">
             <span class="trail" aria-hidden="true"><i class="tf"></i><i class="tl"></i><i class="tt"></i></span>
             <div class="tfields">
@@ -1661,10 +1661,10 @@
      than the page and pinned while the routes scroll under it; «Από» and «Προς» as fields on a dotted route line, the swap
      between them; when and with what as two chips that open the options. */
   .band { position: sticky; top: calc(10px + env(safe-area-inset-top)); z-index: 25; display: flex; flex-direction: column; gap: 16px;
-    margin: -18px -6px 0; padding: 18px 14px 16px; border-radius: 30px;
+    margin: -18px -6px 0; padding: 14px; border-radius: 30px;
     background: color-mix(in srgb, var(--fg) 9%, var(--bg)); box-shadow: 0 10px 30px rgba(0, 0, 0, .3);
     --tf-bg: color-mix(in srgb, var(--fg) 14%, var(--bg)); }
-  .band .brandrow { margin: -8px 0 -4px; }
+  .btop { height: 40px; margin-bottom: -6px; display: flex; align-items: center; justify-content: flex-end; }
   .tends { display: flex; gap: 10px; }
   .trail { flex: none; width: 14px; display: flex; flex-direction: column; align-items: center; padding: 19px 0; box-sizing: border-box; }
   .trail i { display: block; }
