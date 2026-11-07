@@ -31,6 +31,7 @@ export interface Fetched { status: number; body: unknown; date?: number }   // d
 export interface TgResult { ok: boolean; result?: unknown; error_code?: number; parameters?: { retry_after?: number } }
 export interface BotDeps {
   urls: { trips: string; static: string; api: string };
+  agency?: string;   // the bus operator the messages name (default ΟΑΣΑ: Athens)
   now(): number;
   sleep(ms: number): Promise<void>;
   save(s: BotState): void;
@@ -166,6 +167,7 @@ export class Bot {
   }
 
   private get rails(): SavedRail[] { return (this.state.rails ??= []); }
+  private get agency(): string { return this.d.agency ?? "ΟΑΣΑ"; }
   private get favs(): Record<string, FavStop[]> { return (this.state.favs ??= {}); }
 
   // The command menu, once at start.
@@ -475,7 +477,7 @@ export class Bot {
         data: "Δεν φορτώνουν τα δεδομένα των στάσεων. Δοκίμασε σε λίγο.",
         old: "Ο σύνδεσμος είναι από παλιότερα δεδομένα στάσεων. Φτιάξε νέο από τον χάρτη.",
         bad: "Ο σύνδεσμος δεν είναι σωστός. Φτιάξε νέο από τον χάρτη: 🧭 → «Στο Telegram».",
-        updating: "Τα δεδομένα του ΟΑΣΑ ενημερώνονται. Δοκίμασε ξανά αργότερα.",
+        updating: `Τα δεδομένα του ${this.agency} ενημερώνονται. Δοκίμασε ξανά αργότερα.`,
         busy: "Πολλές ειδοποιήσεις αυτή τη στιγμή. Δοκίμασε σε λίγο.",
         full: `Έχεις ήδη ${REP_PER_CHAT} επαναλαμβανόμενες ειδοποιήσεις. Δες τες με /list και σταμάτα μία.`,
       }[m.why]);
@@ -693,7 +695,7 @@ export class Bot {
       }
       if (old.length || carried) {
         this.remove(a => old.includes(a));
-        if (this.save()) for (const a of old) this.tell(a, `Τα δρομολόγια του ΟΑΣΑ άλλαξαν: η ειδοποίηση για ${lineList(a)} σταμάτησε. Φτιάξε νέα από τον χάρτη.`);
+        if (this.save()) for (const a of old) this.tell(a, `Τα δρομολόγια του ${this.agency} άλλαξαν: η ειδοποίηση για ${lineList(a)} σταμάτησε. Φτιάξε νέα από τον χάρτη.`);
       }
     })().catch(e => console.error("data:", (e as Error).message)).finally(() => (this.loading = null));
     return this.loading;

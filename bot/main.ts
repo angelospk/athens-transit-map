@@ -3,6 +3,8 @@
 //
 // Env: TELEGRAM_TOKEN (required), STATE_DIR (default ~/.local/state/oasa-bus-bot), and the data URLs
 // TRIPS_URL, STATIC_BASE, API_BASE. Never log the token: it is in every Telegram URL.
+// Thessaloniki (web push only, no Telegram): a second bot with its own state file and data, from its own
+// atrt instance (THESS_API_BASE, which serves its static/v1 too) and the map's THESS_TRIPS_URL; never OASTH itself.
 // Web push (off without the keys): VAPID_PUBLIC, VAPID_PRIVATE (`npx web-push generate-vapid-keys`),
 // PUSH_PORT (default 8188, on 127.0.0.1 behind the Cloudflare tunnel), ORIGINS (default the map's: staseis.gr and the old bus.haroldpoi.dev).
 
@@ -11,7 +13,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import webpush from "web-push";
-import { pushApi } from "./http";
+import { byCity, pushApi } from "./http";
 import { Bot, type BotState, type Fetched, type PushSub, type TgResult } from "./bot";
 
 const token = process.env.TELEGRAM_TOKEN?.trim();
@@ -23,15 +25,15 @@ const dir = process.env.STATE_DIR || join(homedir(), ".local/state/oasa-bus-bot"
 const file = join(dir, "state.json");
 mkdirSync(dir, { recursive: true, mode: 0o700 });
 
-function load(): BotState | undefined {
-  try { return JSON.parse(readFileSync(file, "utf8")); } catch { return undefined; }
+function load(f: string): BotState | undefined {
+  try { return JSON.parse(readFileSync(f, "utf8")); } catch { return undefined; }
 }
 
 // Written whole and renamed: a crash leaves the old file or the new one, never half of one.
-function save(s: BotState) {
-  writeFileSync(`${file}.tmp`, JSON.stringify(s), { mode: 0o600 });
-  renameSync(`${file}.tmp`, file);
-}
+const saver = (f: string) => (s: BotState) => {
+  writeFileSync(`${f}.tmp`, JSON.stringify(s), { mode: 0o600 });
+  renameSync(`${f}.tmp`, f);
+};
 
 async function tg(method: string, body: Record<string, unknown>): Promise<TgResult> {
   try {
@@ -79,12 +81,23 @@ const bot = new Bot({
     static: strip(process.env.STATIC_BASE || "https://angelospk.github.io/staseis-rt/static/v1"),
     api: strip(process.env.API_BASE || "https://transit.haroldpoi.dev"),
   },
-  now: Date.now, sleep, save, tg, get, push,
-}, load());
+  now: Date.now, sleep, save: saver(file), tg, get, push,
+}, load(file));
+
+// It never has a chat, so it never writes to Telegram.
+const thessFile = join(dir, "state-thessaloniki.json");
+const thessApi = strip(process.env.THESS_API_BASE || "https://transit-thess.haroldpoi.dev");
+const thess = new Bot({
+  urls: { trips: process.env.THESS_TRIPS_URL || "https://staseis.gr/trips-thessaloniki.json", static: `${thessApi}/static/v1`, api: thessApi },
+  agency: "ΟΑΣΘ", now: Date.now, sleep, save: saver(thessFile), tg: async () => ({ ok: false }), get, push,
+}, load(thessFile));
+const bots = [bot, thess];
+const flushAll = () => { for (const b of bots) void b.flush(); };
 
 const ORIGINS = (process.env.ORIGINS || "https://staseis.gr,https://bus.haroldpoi.dev").split(",").map(s => s.trim());
 if (vapid.pub && vapid.priv)
-  createServer(pushApi(bot, { key: vapid.pub, origins: ORIGINS }, () => void bot.flush())).listen(Number(process.env.PUSH_PORT) || 8188, "127.0.0.1");
+  createServer(pushApi(byCity({ athens: bot, thessaloniki: thess }, "athens"), { key: vapid.pub, origins: ORIGINS }, flushAll))
+    .listen(Number(process.env.PUSH_PORT) || 8188, "127.0.0.1");
 else console.log("web push off: no VAPID keys");
 
 async function updates() {
@@ -100,16 +113,19 @@ async function updates() {
   }
 }
 
-let ticking = false;
-setInterval(() => {
-  if (ticking) return;
-  ticking = true;
-  // Sending runs apart from the tick: a slow send or a Telegram wait must not pause polling.
-  bot.tick().catch(e => console.error("tick:", (e as Error).message)).finally(() => {
-    ticking = false;
-    void bot.flush();
-  });
-}, 1000);
+// One gate per city: a slow city does not pause the other.
+for (const [name, b] of [["athens", bot], ["thessaloniki", thess]] as const) {
+  let ticking = false;
+  setInterval(() => {
+    if (ticking) return;
+    ticking = true;
+    // Sending runs apart from the tick: a slow send or a Telegram wait must not pause polling.
+    b.tick().catch(e => console.error(`tick ${name}:`, (e as Error).message)).finally(() => {
+      ticking = false;
+      void b.flush();
+    });
+  }, 1000);
+}
 
 // Rail stops on their own gate: a slow /v2 board does not pause the bus lines.
 let railTicking = false;
@@ -122,6 +138,6 @@ setInterval(() => {
   });
 }, 1000);
 
-console.log(`oasa-bus-bot started, state in ${file}`);
+console.log(`oasa-bus-bot started, state in ${file} and ${thessFile}`);
 bot.init();
 void updates();

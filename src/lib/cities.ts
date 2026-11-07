@@ -15,15 +15,16 @@ export interface City {
   gtfsPage: string;           // its timetable (GTFS) on data.gov.gr
   stats: boolean;             // the daily network stats (stats branch) are of this city
   alerts: boolean;            // stop alerts: the bot and web push watch this city
+  telegram: boolean;          // and in Telegram (@oasa_bus_bot reads only Athens links and stops)
   hint: string;
 }
 
 export const CITIES: Record<CityId, City> = {
   athens: { id: "athens", name: "Αθήνα", center: [23.73, 37.98], zoom: 11.5, radiusKm: 70, ready: true, rail: true,
-    agency: "ΟΑΣΑ", gtfsPage: GTFS_PAGE, stats: true, alerts: true,
+    agency: "ΟΑΣΑ", gtfsPage: GTFS_PAGE, stats: true, alerts: true, telegram: true,
     hint: "ΟΑΣΑ · Μετρό · Τραμ · Προαστιακός" },
   thessaloniki: { id: "thessaloniki", name: "Θεσσαλονίκη", center: [22.94, 40.63], zoom: 12, radiusKm: 40, ready: true, rail: false,
-    agency: "ΟΑΣΘ", gtfsPage: "https://data.gov.gr/dataset/42c9a7da-c86c-48b1-914c-f340e8bef00d", stats: false, alerts: false,
+    agency: "ΟΑΣΘ", gtfsPage: "https://data.gov.gr/dataset/42c9a7da-c86c-48b1-914c-f340e8bef00d", stats: false, alerts: true, telegram: false,
     hint: "ΟΑΣΘ · λεωφορεία" },
 };
 

@@ -12,7 +12,7 @@ const lineStatic = { id: "622", variants: { A: { headsign: "", direction: 0, sha
   stops: Object.fromEntries(stops.map((id, k) => [id, { name: `ΣΤΑΣΗ ${k}`, lat: 38 + k / 100, lon: 23.7 }])) };
 const payload = encodeAlert(ix, 3, [{ line: "622", variants: [{ id: "A", i: 4 }] }])!;
 
-type Opts = { saved?: BotState; trips?: TripIndex; staticVer?: string; gate?: Promise<void>; failSave?: () => boolean };
+type Opts = { saved?: BotState; trips?: TripIndex; staticVer?: string; gate?: Promise<void>; failSave?: () => boolean; agency?: string };
 function setup(opts: Opts = {}) {
   let now = T0;
   const sent: { method: string; body: Record<string, unknown> }[] = [];
@@ -25,6 +25,7 @@ function setup(opts: Opts = {}) {
   let pushReply = () => 201;
   const deps: BotDeps = {
     urls: URLS,
+    ...(opts.agency && { agency: opts.agency }),
     now: () => now,
     sleep: async () => {},
     save: s => {
@@ -443,6 +444,23 @@ describe("Bot recurring alerts", () => {
     await t.bot.flush();
     expect(t.saved()!.alerts).toEqual([]);
     expect(t.texts().at(-1)).toMatch(/άλλαξαν/);
+  });
+});
+
+describe("Bot of another city", () => {
+  it("names its own operator when new stop data ends a push alert", async () => {
+    const opts: Opts = { agency: "ΟΑΣΘ" };
+    const t = setup(opts);
+    const sub = { endpoint: "https://fcm.googleapis.com/fcm/send/x", keys: { p256dh: "B".repeat(87), auth: "A".repeat(22) } };
+    expect((await t.bot.web({ method: "POST", path: "/alerts", body: { p: payload, sub } })).status).toBe(201);
+    const next: TripIndex = { ...ix, v: "2026-10-27" };   // a link from newer data makes the bot reload
+    opts.trips = next; opts.staticVer = next.v;
+    t.advance(3000);
+    const other = { ...sub, endpoint: "https://fcm.googleapis.com/fcm/send/y" };
+    const p2 = encodeAlert(next, 3, [{ line: "622", variants: [{ id: "A", i: 4 }] }])!;
+    expect((await t.bot.web({ method: "POST", path: "/alerts", body: { p: p2, sub: other } })).status).toBe(201);
+    await t.bot.flush();
+    expect(t.pushed.at(-1)?.data.body).toMatch(/Τα δρομολόγια του ΟΑΣΘ άλλαξαν/);
   });
 });
 

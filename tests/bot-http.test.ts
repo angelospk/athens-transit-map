@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { pushApi } from "../bot/http";
+import { byCity, pushApi } from "../bot/http";
 
 const ORIGIN = "https://bus.haroldpoi.dev";
 let server: Server, base = "", calls: { method: string; path: string; body: unknown }[] = [];
@@ -58,5 +58,51 @@ describe("push HTTP API", () => {
 
   it("refuses other methods", async () => {
     expect((await fetch(`${base}/alerts`, { method: "PUT", headers: { origin: ORIGIN } })).status).toBe(405);
+  });
+});
+
+describe("push API of several cities", () => {
+  type Req = { method: string; path: string; body: unknown };
+  const city = (name: string, del = 204) => {
+    const seen: Req[] = [];
+    return { seen, web: async (r: Req) => { seen.push(r); return r.method === "DELETE" ? { status: del } : { status: 201, body: { id: name, until: 1 } }; } };
+  };
+
+  it("sends a new alert to the city it names, Athens when it names none", async () => {
+    const ath = city("ath"), the = city("the");
+    const web = byCity({ athens: ath, thessaloniki: the }, "athens").web;
+    expect((await web({ method: "POST", path: "/alerts", body: { p: "1", sub: {} } })).body).toEqual({ id: "ath", until: 1 });
+    expect((await web({ method: "POST", path: "/alerts", body: { p: "1", sub: {}, city: "athens" } })).body).toEqual({ id: "ath", until: 1 });
+    expect((await web({ method: "POST", path: "/alerts", body: { p: "1", sub: {}, city: "thessaloniki" } })).body).toEqual({ id: "the", until: 1 });
+    expect(ath.seen).toHaveLength(2);
+    expect(the.seen).toHaveLength(1);
+  });
+
+  it("refuses an unknown city, and rail alerts outside the first city", async () => {
+    const ath = city("ath"), the = city("the");
+    const web = byCity({ athens: ath, thessaloniki: the }, "athens").web;
+    for (const c of ["patra", 3, "__proto__", "toString"])
+      expect((await web({ method: "POST", path: "/alerts", body: { p: "1", city: c } })).status).toBe(400);
+    expect((await web({ method: "POST", path: "/alerts", body: { rail: {}, sub: {}, city: "thessaloniki" } })).status).toBe(400);
+    expect((await web({ method: "POST", path: "/alerts", body: { rail: {}, tg: true, city: "thessaloniki" } })).status).toBe(400);
+    expect((await web({ method: "POST", path: "/alerts", body: { rail: {}, sub: {} } })).status).toBe(201);
+    expect(the.seen).toEqual([]);
+  });
+
+  it("stops an alert in every city (ids are random), and says when one could not save", async () => {
+    const ath = city("ath"), the = city("the");
+    const web = byCity({ athens: ath, thessaloniki: the }, "athens").web;
+    expect((await web({ method: "DELETE", path: "/alerts/x", body: null })).status).toBe(204);
+    expect(ath.seen).toHaveLength(1);
+    expect(the.seen).toHaveLength(1);
+    const bad = byCity({ athens: city("ath"), thessaloniki: city("the", 503) }, "athens").web;
+    expect((await bad({ method: "DELETE", path: "/alerts/x", body: null })).status).toBe(503);
+  });
+
+  it("leaves other requests to the first city", async () => {
+    const ath = city("ath"), the = city("the");
+    await byCity({ athens: ath, thessaloniki: the }, "athens").web({ method: "GET", path: "/nope", body: null });
+    expect(ath.seen).toHaveLength(1);
+    expect(the.seen).toEqual([]);
   });
 });

@@ -39,26 +39,32 @@ describe("startPush", () => {
   it("subscribes with the server's key and sends the link with the subscription", async () => {
     const reqs = fakeFetch({ status: 201, body: { id: "abc", until: 99 } });
     const { reg, calls } = fakeReg();
-    expect(await startPush(reg, "1xyz")).toEqual({ id: "abc", until: 99 });
+    expect(await startPush(reg, "1xyz", "athens")).toEqual({ id: "abc", until: 99 });
     expect(calls).toEqual(["subscribe true true"]);
-    expect(reqs.at(-1)).toMatchObject({ url: `${PUSH_URL}/alerts`, method: "POST", body: { p: "1xyz", sub: subJson } });
+    expect(reqs.at(-1)).toMatchObject({ url: `${PUSH_URL}/alerts`, method: "POST", body: { p: "1xyz", city: "athens", sub: subJson } });
+  });
+
+  it("names the city of the alert: the bot watches each city's own data", async () => {
+    const reqs = fakeFetch({ status: 201, body: { id: "abc", until: 99 } });
+    await startPush(fakeReg().reg, "1xyz", "thessaloniki");
+    expect(reqs.at(-1)?.body).toMatchObject({ p: "1xyz", city: "thessaloniki" });
   });
 
   it("keeps a subscription made with the same key, and replaces one made with another", async () => {
     fakeFetch({ status: 201, body: { id: "abc", until: 99 } });
     const same = fakeReg({ key: KEY });
-    await startPush(same.reg, "1xyz");
+    await startPush(same.reg, "1xyz", "athens");
     expect(same.calls).toEqual([]);
     const other = fakeReg({ key: "B" + KEY.slice(1, -2) + "AA" });
-    await startPush(other.reg, "1xyz");
+    await startPush(other.reg, "1xyz", "athens");
     expect(other.calls).toEqual(["unsubscribe", "subscribe true true"]);
   });
 
   it("gives null when the server refuses or is away", async () => {
     fakeFetch({ status: 409, body: { error: "old" } });
-    expect(await startPush(fakeReg().reg, "1xyz")).toBeNull();
+    expect(await startPush(fakeReg().reg, "1xyz", "athens")).toBeNull();
     vi.stubGlobal("fetch", async () => { throw new TypeError("offline"); });
-    expect(await startPush(fakeReg().reg, "1xyz")).toBeNull();
+    expect(await startPush(fakeReg().reg, "1xyz", "athens")).toBeNull();
   });
 });
 

@@ -13,13 +13,14 @@ describe("cities", () => {
     }
   });
 
-  it("each city names its operator; stats and stop alerts are Athens only (the bot watches OASA)", () => {
+  it("each city names its operator; stats are Athens only, stop alerts everywhere, Telegram Athens only", () => {
     expect(CITIES.athens.agency).toBe("ΟΑΣΑ");
     expect(CITIES.thessaloniki.agency).toBe("ΟΑΣΘ");
     expect(CITIES.athens.gtfsPage).toMatch(/^https:\/\/data\.gov\.gr\/dataset\//);
     expect(CITIES.thessaloniki.gtfsPage).toBe("https://data.gov.gr/dataset/42c9a7da-c86c-48b1-914c-f340e8bef00d");
     expect([CITIES.athens.stats, CITIES.athens.alerts]).toEqual([true, true]);
-    expect([CITIES.thessaloniki.stats, CITIES.thessaloniki.alerts]).toEqual([false, false]);
+    expect([CITIES.thessaloniki.stats, CITIES.thessaloniki.alerts]).toEqual([false, true]);
+    expect([CITIES.athens.telegram, CITIES.thessaloniki.telegram]).toEqual([true, false]);
   });
 
   it("isCityId accepts only known ids", () => {
