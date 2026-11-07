@@ -8,7 +8,6 @@
   import { placeSearch, type PlaceAnswer } from "../placeSearch";
   import { geocode, type Place } from "../trip";
   import { towardsOfId } from "../towards";
-  import { PAGE_CITY } from "../config";
   import Toward from "./Toward.svelte";
   import { chipOf, findLines, findMuniLines, findMuniStops, findStops, lineStopPoints, pushRecent, toggleChip, type Chip, type MuniStopHit, type Recent, type StopEntry } from "../finder";
   import type { MuniCard } from "../muniLine";
@@ -69,7 +68,7 @@
       shown = PAGE;
       if (!dialog!.open) dialog!.showModal();
       void load();
-      if (PAGE_CITY === "athens") void app.loadStops();   // the stop index: which way each bus stop goes
+      void app.loadStops();   // the city's stop index: which way each bus stop goes
       void tick().then(() => input?.focus());
     });
   });

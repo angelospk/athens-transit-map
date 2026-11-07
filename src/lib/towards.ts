@@ -13,11 +13,20 @@ export interface StopDirs { n: string[]; s: (number | null)[][] }
 const rad = Math.PI / 180;
 const circ = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
 
+// Latin capitals that look Greek, inside a word with Greek letters, made Greek.
+const LATIN: Record<string, string> = { A: "Α", B: "Β", E: "Ε", Z: "Ζ", H: "Η", I: "Ι", K: "Κ", M: "Μ", N: "Ν", O: "Ο", P: "Ρ", T: "Τ", X: "Χ", Y: "Υ" };
+const greek = (w: string) => (/\p{Script=Greek}/u.test(w) ? w.replace(/[ABEZHIKMNOPTXY]/g, c => LATIN[c]) : w);
+
 // A terminus name without its numbers and ΑΦΕΤΗΡΙΑ/ΤΕΡΜΑ words: the place a bus ends at.
+// OASTH also marks a terminus «Τ.Σ.», ends it with a platform letter («ΙΚΕΑ B») and slips Latin capitals
+// into Greek words («ΑΚΡΟΠΟΤΑΜΟY»).
 export function cleanTerminus(name: string): string {
-  return name.trim().replace(/\s+/g, " ").split(" - ").flatMap(seg => {
-    const words = seg.split(" ").filter(w => !/\d/.test(w));   // "122-", "543-543Α", "Χ96"
+  const s = name.replace(/(^|[\s\-\/])Τ\.Σ\.\s*/g, "$1").replace(/\s*\/\s*/g, " - ").replace(/\s+/g, " ").trim();
+  return s.split(" - ").flatMap(seg => {
+    const words = seg.split(" ").map(greek)   // "122-", "543-543Α", "Χ96" go; a leading "40" (40 ΕΚΚΛΗΣΙΩΝ) stays
+      .filter((w, i) => !/\d/.test(w) || (i === 0 && /^\d+$/.test(w)));
     if (words[0] === "ΑΦΕΤΗΡΙΑ") words.shift();
+    if (words.length > 1 && /^\p{L}$/u.test(words[words.length - 1])) words.pop();   // the platform
     const out = words.join(" ");
     return out && out !== "ΑΦΕΤΗΡΙΑ" && out !== "ΤΕΡΜΑ" ? [out] : [];
   }).join(" - ").trim();
@@ -98,7 +107,8 @@ export function towardsOf(ix: TripIndex, i: number): { bearing: number | null; t
 
 const byId = new WeakMap<TripIndex, Map<string, number>>();
 
-// The direction of a stop from a /v2 id (oasa:<GTFS stop id>); other ids and no index: null.
+// The direction of a stop from a /v2 id: oasa:<GTFS stop id>, the bus feed of every city instance (the
+// Thessaloniki instance keeps the source id); other ids (metro, municipal) and no index: null.
 export function towardsOfId(ix: TripIndex | null, id: string): { bearing: number | null; towards: string[] } | null {
   if (!ix || !id.startsWith("oasa:")) return null;
   let m = byId.get(ix);

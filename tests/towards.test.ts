@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readdirSync, readFileSync } from "node:fs";
 import { cleanTerminus, stopDirections, towardsOf, towardsOfId, towardsText } from "../src/lib/towards";
 import type { TripIndex } from "../src/lib/trip";
 
@@ -43,6 +44,20 @@ describe("cleanTerminus", () => {
     ["ΠΕΙΡΑΙΑΣ ΔΡΑΠΕΤΣΩΝΑ Χ96", "ΠΕΙΡΑΙΑΣ ΔΡΑΠΕΤΣΩΝΑ"],
     ["ΣΤ.  ΛΑΡΙΣΗΣ", "ΣΤ. ΛΑΡΙΣΗΣ"],
     ["ΠΛ. ΧΑΛΑΝΔΡΙΟΥ", "ΠΛ. ΧΑΛΑΝΔΡΙΟΥ"],
+    // Thessaloniki (OASTH): «Τ.Σ.» marks a terminus, a last letter is the platform
+    ["Τ.Σ. ΛΑΓΚΑΔΑ", "ΛΑΓΚΑΔΑ"],
+    ["Τ.Σ. ΣΤΑΥΡΟΥΠΟΛΗΣ Β", "ΣΤΑΥΡΟΥΠΟΛΗΣ"],
+    ["ΑΝΑΤΟΛΙΚΟΣ ΣΤΑΘΜΟΣ ΙΚΕΑ B", "ΑΝΑΤΟΛΙΚΟΣ ΣΤΑΘΜΟΣ ΙΚΕΑ"],
+    ["Τ.Σ. Ν.Σ. ΣΤΑΘΜΟΣ β", "Ν.Σ. ΣΤΑΘΜΟΣ"],
+    ["Τ.Σ. Κ.Τ.Ε.Λ  A", "Κ.Τ.Ε.Λ"],
+    ["ΧΑΝΙΑ - Τ.Σ.ΒΑΣΙΛΙΚΩΝ", "ΧΑΝΙΑ - ΒΑΣΙΛΙΚΩΝ"],
+    ["ΠΛΑΤΕΙΑ ΒΥΡΩΝΟΣ-Τ.Σ.ΜΕΣΗΜΕΡΙΟΥ", "ΠΛΑΤΕΙΑ ΒΥΡΩΝΟΣ-ΜΕΣΗΜΕΡΙΟΥ"],
+    ["ΑΠΟΘΗΚΕΣ /Τ.Σ.ΛΑΓΚΑΔΙΚΙΑ", "ΑΠΟΘΗΚΕΣ - ΛΑΓΚΑΔΙΚΙΑ"],
+    ["Τ.Σ. ΕΠΑΝΟΜΗΣ ΓΡ88Ε", "ΕΠΑΝΟΜΗΣ"],
+    ["Τ.Σ. 40 ΕΚΚΛΗΣΙΩΝ", "40 ΕΚΚΛΗΣΙΩΝ"],          // a leading number is part of the name
+    ["Τ.Σ. ΑΚΡΟΠΟΤΑΜΟY", "ΑΚΡΟΠΟΤΑΜΟΥ"],             // a Latin Y inside a Greek word
+    ["Τ.Σ. ΚΑΤΩ ΗΛΙΟΥΠΟΛΗΣ-ΕΥΟΣΜΟΥ", "ΚΑΤΩ ΗΛΙΟΥΠΟΛΗΣ-ΕΥΟΣΜΟΥ"],
+    ["MEDITERRANEAN COSMOS", "MEDITERRANEAN COSMOS"],
   ])("%s → %s", (raw, out) => expect(cleanTerminus(raw)).toBe(out));
 });
 
@@ -145,5 +160,17 @@ describe("towardsOf / towardsOfId / towardsText", () => {
     expect(towardsText(["Μουσειο", "Πολυγωνο"])).toBe("προς Μουσειο · Πολυγωνο");
     expect(towardsText(["Μουσειο"])).toBe("προς Μουσειο");
     expect(towardsText([])).toBe("");
+  });
+});
+
+// Every city's stop index (scripts/trips.ts writes public/trips*.json) carries the directions, one entry per stop.
+describe("public/trips*.json", () => {
+  const dir = new URL("../public/", import.meta.url);
+  const files = readdirSync(dir).filter(f => /^trips(-[a-z]+)?\.json$/.test(f));
+  it("finds the Athens and Thessaloniki files", () => expect(files).toEqual(expect.arrayContaining(["trips.json", "trips-thessaloniki.json"])));
+  it.each(files)("%s has directions for every stop", f => {
+    const ix: TripIndex = JSON.parse(readFileSync(new URL(f, dir), "utf8"));
+    expect(ix.d?.s).toHaveLength(ix.s.length);
+    expect(ix.s.filter((_, i) => towardsOf(ix, i).towards.length).length).toBeGreaterThan(ix.s.length * 0.8);
   });
 });

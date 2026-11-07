@@ -14,11 +14,10 @@
   import Icon from "./Icon.svelte";
   import Toward from "./Toward.svelte";
   import { towardsOfId } from "../towards";
-  import { PAGE_CITY } from "../config";
 
   let { app }: { app: AppState } = $props();
   // The stop index, for which way each starred bus stop goes (Toward).
-  $effect(() => { if (PAGE_CITY === "athens" && app.favs.stops.some(s => s.id.startsWith("oasa:"))) void app.loadStops(); });
+  $effect(() => { if (app.favs.stops.some(s => s.id.startsWith("oasa:"))) void app.loadStops(); });
 
   const POLL_MS = 30_000, PARALLEL = 8, OTHERS = 3;
   const open = $derived(app.favsOpen && app.stack.length === 0);
