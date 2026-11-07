@@ -139,7 +139,10 @@
 
 {#if shown}
   <section class="alerts" aria-labelledby="alerts-h" in:rise>
-    <h1 id="alerts-h">Ειδοποιήσεις</h1>
+    <div class="ahead">
+      <button type="button" class="aback" aria-label="Πίσω στην αρχική" title="Πίσω" onclick={() => app.setTab("now")}><Icon name="back" size={18} /></button>
+      <h1 id="alerts-h">Ειδοποιήσεις</h1>
+    </div>
 
     <!-- What is being watched now, as the notification it sends -->
     {#if app.alert}
@@ -253,6 +256,9 @@
     overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 16px; padding: 20px 16px; box-sizing: border-box;
     border-radius: var(--radius); background: var(--glass-strong); --card: var(--glass-fill); --card-border: var(--glass-line); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); text-shadow: var(--glass-text); }
   h1 { margin: 0; font-size: 26px; font-weight: 800; line-height: 1; letter-spacing: -.01em; }
+  .ahead { display: flex; align-items: center; gap: 12px; }
+  .aback { display: none; flex: none; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; align-items: center; justify-content: center;
+    background: var(--control); color: var(--fg); cursor: pointer; }
   h2 { margin: 0; font-size: 15px; font-weight: 700; line-height: 1; }
   .muted { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
   .sec { display: flex; flex-direction: column; gap: 10px; }
@@ -335,7 +341,8 @@
   @media (max-width: 719px) {
     .alerts { left: 0; right: 0; top: 0; width: auto; bottom: 0; max-height: none; background: var(--surface);
       -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: none;
-      padding: calc(20px + env(safe-area-inset-top)) 16px calc(max(12px, env(safe-area-inset-bottom)) + 92px); border-radius: 0; box-shadow: none; }
+      padding: calc(20px + env(safe-area-inset-top)) 16px calc(max(12px, env(safe-area-inset-bottom)) + 20px); border-radius: 0; box-shadow: none; }
+    .aback { display: flex; }
   }
   .sw i { transition: transform .25s cubic-bezier(.34, 1.56, .64, 1); }
   .day, .new, .fstop, .allow, .primary { transition: background-color .15s, color .15s, border-color .15s, transform .12s; }

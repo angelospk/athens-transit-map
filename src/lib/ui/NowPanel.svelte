@@ -271,7 +271,7 @@
   let top0 = 0;
   function tops(): Record<NSnap, number> {
     const { top: st, bottom: sb } = safeInsets();
-    const foot = vh - (Math.max(12, sb) + 88);
+    const foot = vh - Math.max(12, sb) - (narrow.current ? 0 : 88);   // a phone: no tab bar under it
     const peekH = nowEl && savedEl ? savedEl.getBoundingClientRect().bottom - nowEl.getBoundingClientRect().top + 16 : 190;
     return { full: st + 72, half: Math.max(220, vh * 0.32 + st), peek: Math.max(st + 72, foot - peekH) };
   }
@@ -281,6 +281,12 @@
     if (!narrow.current) { nowTop = null; return; }
     untrack(() => { nowTop = k === "half" ? null : tops()[k]; });
   });
+  const armed = $derived(!!app.alert || !!app.railAlert);
+  // «Χάρτης» (and «Θέλω μόνο να δω τον χάρτη»): the sheet down to its handle.
+  let seenPeek = 0;
+  $effect(() => { const n = app.homePeek; if (n !== seenPeek) { seenPeek = n; untrack(() => { nsnap = "peek"; }); } });
+  // Lowered to its handle on a phone, the map's own buttons come back over the map (app.css).
+  $effect(() => { const on = shown && narrow.current && nsnap === "peek"; document.documentElement.toggleAttribute("data-homepeek", on); return () => document.documentElement.removeAttribute("data-homepeek"); });
   const stepN = () => { nsnap = nsnap === "peek" ? "half" : nsnap === "half" ? "full" : "peek"; };
   const nowDrag = $derived<SheetDrag>({
     ignore: narrow.current ? undefined : "*",
@@ -320,9 +326,15 @@
       onkeydown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); stepN(); } }}></div>
 
     <!-- The one search: «Πού πας;» (StartScreen), for places, stops and lines, with our engine. -->
-    <button type="button" class="where" aria-haspopup="dialog" onclick={() => (app.start = true)}>
-      <Icon name="search" size={20} /><span>Πού πας;</span><kbd class="pc" aria-hidden="true">/</kbd>
-    </button>
+    <div class="whererow">
+      <button type="button" class="where" aria-haspopup="dialog" onclick={() => (app.start = true)}>
+        <Icon name="search" size={20} /><span>Πού πας;</span><kbd class="pc" aria-hidden="true">/</kbd>
+      </button>
+      <!-- A phone has no tab bar: the alerts are this bell (a dot while one is set). -->
+      <button type="button" class="bell" aria-label={armed ? "Ειδοποιήσεις, μία ενεργή" : "Ειδοποιήσεις"} title="Ειδοποιήσεις" onclick={() => app.setTab("alerts")}>
+        <Icon name="bell" size={21} />{#if armed}<i class="bdot" aria-hidden="true"></i>{/if}
+      </button>
+    </div>
 
     <!-- Home and work: one tap from here, set on first use -->
     <div class="saved" bind:this={savedEl}>
@@ -492,6 +504,14 @@
   .muted { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
   .hint { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.3; }
 
+  /* «Πού πας;» and, on a phone, the alerts' bell beside it */
+  .whererow { flex: none; display: flex; gap: 8px; align-items: center; }
+  .whererow .where { flex: 1; min-width: 0; }
+  .bell { display: none; position: relative; flex: none; width: 56px; height: 56px; padding: 0; border: 0; border-radius: 50%; align-items: center; justify-content: center;
+    background: var(--control); color: var(--fg); cursor: pointer; }
+  .bell:hover { background: var(--control-hover); }
+  .bdot { position: absolute; top: 14px; right: 15px; width: 9px; height: 9px; border-radius: 50%; background: var(--late2); box-shadow: 0 0 0 2px var(--control); }
+  @media (max-width: 719px) { .bell { display: flex; } .where { border-radius: 28px; } }
   /* «Πού πας;»: the one big field */
   .where { flex: none; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 18px; border: 0; border-radius: 16px;
     background: var(--control); color: var(--muted); font: inherit; font-size: 17px; font-weight: 600; line-height: 1; cursor: pointer; }
@@ -633,7 +653,7 @@
 
   @media (max-width: 719px) {
     .mapnote { left: 16px; top: calc(76px + env(safe-area-inset-top)); }
-    .now { left: 16px; right: 16px; width: auto; top: max(220px, calc(32dvh + env(safe-area-inset-top))); bottom: calc(max(12px, env(safe-area-inset-bottom)) + 88px); max-height: none;
+    .now { left: 10px; right: 10px; width: auto; top: max(220px, calc(32dvh + env(safe-area-inset-top))); bottom: max(10px, env(safe-area-inset-bottom)); max-height: none;
       padding: 10px 16px 16px; border-radius: var(--sheet-r); }
     /* The handle: a band across the top (an easy target), its bar in the middle. */
     .grip { display: block; position: relative; flex: none; height: 22px; margin: -10px -16px -10px; cursor: grab; }

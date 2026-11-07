@@ -242,7 +242,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* «Τώρα» and «Ειδοποιήσεις» on a phone: the sheet holds everything, so the map's buttons give way (App.svelte sets data-home). */
 @media (max-width: 719px) {
-  :root[data-home] .rail, :root[data-home] .maplibregl-ctrl-group, :root[data-home] .details-ctl { display: none; }
+  /* No tab bar (mockup 41, B): the map's tools stay at the top right; its zoom and locate buttons only while the
+     sheet is lowered to its handle (they would sit under it). */
+  :root[data-home]:not([data-homepeek]) .maplibregl-ctrl-group, :root[data-home]:not([data-homepeek]) .details-ctl { display: none; }
 }
 
 /* Following a bus in 3D on a phone: the street gets the screen. The top bar, the map's buttons and hints go; the card

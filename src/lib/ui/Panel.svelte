@@ -522,10 +522,10 @@
     .popwrap.tabbed { max-height: calc(100dvh - 44px - var(--ph, 60px) - env(safe-area-inset-top)); }
   }
   /* A phone: above the tab bar and the map's credits line over it. */
-  @media (max-width: 719px) { .popwrap.tabbed { max-height: calc(100dvh - 134px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important; } }
+  @media (max-width: 719px) { .popwrap.tabbed { max-height: calc(100dvh - 60px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important; } }   /* no tab bar */
   /* A phone, a trip's details open: a sheet at the foot, over the tab bar, so the route shows on the map above it. */
   @media (max-width: 719px) {
-    .popwrap.tabbed:has(:global(.rv)) { top: auto !important; bottom: calc(96px + env(safe-area-inset-bottom)); left: 8px; right: 8px; height: 46dvh;
+    .popwrap.tabbed:has(:global(.rv)) { top: auto !important; bottom: calc(8px + env(safe-area-inset-bottom)); left: 8px; right: 8px; height: 46dvh;
       max-height: 46dvh !important; animation: sheetUp .32s cubic-bezier(.2, .8, .2, 1); }
     @keyframes sheetUp { from { transform: translateY(40px); opacity: 0; } }
   }
