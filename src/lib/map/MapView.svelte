@@ -23,7 +23,8 @@
   import { municipalFC } from "../municipal";
     import { stitch } from "../muniLine";
   import { resolveDark } from "../theme";
-  import type { Variant } from "../types";
+  import { fetchLineStatic } from "../api";
+  import type { LineStatic, Variant } from "../types";
   import type { AppState } from "../state.svelte";
   import SpeedLegend from "../ui/SpeedLegend.svelte";
   import { lightenDark } from "./basemap";
@@ -79,16 +80,32 @@
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
   const STILL_TRAIL_S = 1;   // motion off: the trail of a move to a new fix fades over this
 
+  // City layer (contract rev 20): the static files of the lines of vehicles in view with along_m,
+  // loaded once each (the HTTP cache keeps them across loads), so those vehicles drive on along
+  // their whole shape. A failed file is asked again after a minute.
+  const cityStatics = new Map<string, LineStatic | number>();   // the file, or when its load started
+  const CITY_RETRY_MS = 60_000;
+  function cityRoute(line: string, variant: string | null): RouteGeom | null {
+    if (!variant) return null;
+    const got = cityStatics.get(line);
+    if (!app.statics[line] && (got === undefined || (typeof got === "number" && Date.now() - got > CITY_RETRY_MS))) {
+      cityStatics.set(line, Date.now());
+      fetchLineStatic(line).then(st => cityStatics.set(line, st), () => {});
+    }
+    return routeFor(line, variant);
+  }
+
   // Route geometry per variant, built once per static file.
   const routes = new WeakMap<Variant, RouteGeom>();
   function routeFor(line: string, variant: string | null): RouteGeom | null {
-    const st = variant ? app.statics[line] : undefined;
+    const file = cityStatics.get(line);
+    const st = variant ? app.statics[line] ?? (typeof file === "object" ? file : undefined) : undefined;
     const v = variant ? st?.variants[variant] : undefined;
     if (!st || !v || v.shape.length < 2) return null;
     let r = routes.get(v);
     if (!r) {
       const known = v.stops.filter(id => st.stops[id]);
-      r = routeGeom({ shape: v.shape, stopIds: known, endS: shapeLength(v.shape),
+      r = routeGeom({ shape: v.shape, stopIds: known, endS: shapeLength(v.shape), lengthM: v.length_m,
         stopS: stopOffsets(v.shape, known.map(id => [st.stops[id].lon, st.stops[id].lat] as LngLat)) });
       routes.set(v, r);
     }
@@ -1200,7 +1217,7 @@
     const city = app.city, on = app.cityOn, own = app.cityExclude;
     untrack(() => {
       owned = own;
-      fleet.city(on && city ? city.vehicles : [], own, app.serverMs() / 1000);
+      fleet.city(on && city ? city.vehicles : [], own, app.serverMs() / 1000, cityRoute);
       nextDue = 0;   // draw new fixes (and their trails) now
       if (loaded && !on) (map!.getSource("city") as GeoJSONSource).setData(EMPTY);
     });

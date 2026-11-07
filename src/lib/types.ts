@@ -18,6 +18,7 @@ export interface Vehicle {
   path_beyond?: [number, number][] | null;   // rev 4: on from path's end to the third stop
   path_stops?: number[] | null;              // rev 4: metres along path + path_beyond of each stop
   path_speeds?: (number | null)[] | null;    // rev 6: typical m/s per 200 m step ahead
+  along_m?: number | null;                   // rev 20: metres along the variant's static shape
 }
 
 export interface LineLive {
@@ -42,6 +43,7 @@ export interface CityVehicle {
   path_beyond?: [number, number][] | null;   // rev 4
   path_stops?: number[] | null;              // rev 4
   path_speeds?: (number | null)[] | null;    // rev 6: typical m/s per 200 m step ahead
+  along_m?: number | null;                   // rev 20: metres along the variant's static shape (z 13 only)
 }
 
 export interface CityLive {
@@ -77,6 +79,7 @@ export interface Variant {
   headsign: string;
   direction: number;
   shape: [number, number][];
+  length_m?: number;   // rev 20: the shape's length in the server's metres (along_m's unit)
   stops: string[];
 }
 

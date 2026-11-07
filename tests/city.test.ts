@@ -27,3 +27,22 @@ describe("city data", () => {
     expect(cityKey(veh())).not.toBe(cityKey(veh({ line: "550" })));
   });
 });
+
+describe("cleanCity motion fields (rev 4, 6, 20)", () => {
+  const base = { line: "040", id: "1", lat: 37.97, lon: 23.7, position_at: 5, bearing: null, variant: "v", delay_s: 0, speed: 3,
+    path: [[37.97, 23.7], [37.97, 23.71]] };
+  it("keeps along_m, path_beyond, path_stops and path_speeds", () => {
+    const [v] = cleanCity([{ ...base, along_m: 4210, path_beyond: [[37.97, 23.71], [37.97, 23.72]], path_stops: [300, 900],
+      path_speeds: [6.2, null, 4] }]);
+    expect(v.along_m).toBe(4210);
+    expect(v.path_beyond).toEqual([[37.97, 23.71], [37.97, 23.72]]);
+    expect(v.path_stops).toEqual([300, 900]);
+    expect(v.path_speeds).toEqual([6.2, null, 4]);
+  });
+  it("turns bad ones into null", () => {
+    const [v] = cleanCity([{ ...base, along_m: -3, path_beyond: [[1]], path_stops: ["x"], path_speeds: "fast" }]);
+    expect([v.along_m, v.path_beyond, v.path_stops, v.path_speeds]).toEqual([null, null, null, null]);
+    const [w] = cleanCity([base]);
+    expect([w.along_m, w.path_beyond, w.path_stops, w.path_speeds]).toEqual([null, null, null, null]);
+  });
+});
