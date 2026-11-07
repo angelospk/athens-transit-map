@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { CITYBUS, citybusUrls } from "../bot/cities";
 
@@ -20,5 +21,15 @@ describe("citybus cities in the bot", () => {
       static: "https://staseis-rt.haroldpoi.dev/pat/static/v1",
       trips: "https://staseis.gr/trips-patras.json",
     });
+  });
+
+  // No index yet: too many stops without a direction (tests/towards.test.ts), #57.
+  const NO_INDEX = ["kastoria", "ptolemaida", "skiathos"];
+  it("each have the map's stop index, rebuilt daily by citybus-stops.yml", () => {
+    const wf = readFileSync(".github/workflows/citybus-stops.yml", "utf8");
+    for (const c of CITYBUS.filter(c => !NO_INDEX.includes(c.slug))) {
+      expect(existsSync(`public/trips-${c.slug}.json`), c.slug).toBe(true);
+      expect(wf).toContain(`${c.slug}:${c.code}`);
+    }
   });
 });
