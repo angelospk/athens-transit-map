@@ -205,7 +205,7 @@
         <span><img class="ico" src="{import.meta.env.BASE_URL}icons/bus.png" alt="" />λεωφορείο</span>
         <span><img class="ico" src="{import.meta.env.BASE_URL}icons/trolley.png" alt="" />τρόλεϊ</span>
         <span><i class="disc" style:background="#7E57C2"><img src="{import.meta.env.BASE_URL}icons/glyph-metro.png" alt="" /></i>προαστιακός (GPS)</span>
-        <span><i class="disc" style:background="#e30613"><img src="{import.meta.env.BASE_URL}icons/glyph-metro.png" alt="" /></i>μετρό</span>
+        <span><i class="disc" style:background="#d7171f"><img src="{import.meta.env.BASE_URL}icons/glyph-metro.png" alt="" /></i>μετρό</span>
         <span><i class="disc" style:background="#dc137a"><img src="{import.meta.env.BASE_URL}icons/glyph-tram.png" alt="" /></i>τραμ (μετρό, τραμ: από πρόγραμμα)</span>
       </div>
     {/if}

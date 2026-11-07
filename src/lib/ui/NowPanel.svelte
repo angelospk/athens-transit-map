@@ -195,6 +195,7 @@
   // «Σπίτι» and «Δουλειά»: a trip there from where the user is; not set yet, the «Πού πας;» screen asks for it.
   const SAVED = [{ k: "home", label: "Σπίτι" }, { k: "work", label: "Δουλειά" }] as const;
   let waitingFor = $state<"home" | "work" | null>(null);
+  let editing = $state(false);
   function setPlace(k: "home" | "work") {
     app.savingPlace = k;
     app.start = true;
@@ -336,19 +337,22 @@
       </button>
     </div>
 
-    <!-- Home and work: one tap from here, set on first use -->
-    <div class="saved" bind:this={savedEl}>
+    <!-- Home and work: one tap from here, set on first use. «Επεξεργασία» beside the title (mockup 43 B): the tiles
+         turn blue, and a tap changes that place; «Τέλος» goes back. -->
+    {#if app.places.home || app.places.work}
+      <div class="phead">
+        <b>Τα μέρη σου</b>
+        <button type="button" class="pedit" class:on={editing} aria-pressed={editing} onclick={() => (editing = !editing)}>{editing ? "Τέλος" : "Επεξεργασία"}</button>
+      </div>
+    {/if}
+    <div class="saved" class:editing bind:this={savedEl}>
       {#each SAVED as p (p.k)}
         {@const at = app.places[p.k]}
-        <button type="button" class="place" onclick={() => goPlace(p.k)} aria-label={at ? `${p.label}: διαδρομή ως ${at.label}` : `Όρισε ${p.label.toLowerCase()}`}>
+        <button type="button" class="place" onclick={() => (editing ? (editing = false, setPlace(p.k)) : goPlace(p.k))}
+          aria-label={editing ? `Άλλαξε ${p.label.toLowerCase()}` : at ? `${p.label}: διαδρομή ως ${at.label}` : `Όρισε ${p.label.toLowerCase()}`}>
           <span class="pi {p.k}"><Icon name={p.k} size={17} /></span>
-          <span class="pt"><b>{p.label}</b><small>{at ? (waitingFor === p.k ? "Σε ψάχνω…" : at.label) : "Όρισε"}</small></span>
+          <span class="pt"><b>{p.label}</b><small>{editing ? "Πάτα για αλλαγή" : at ? (waitingFor === p.k ? "Σε ψάχνω…" : at.label) : "Όρισε"}</small></span>
         </button>
-        {#if at}
-          <button type="button" class="edit" aria-label="Άλλαξε {p.label.toLowerCase()}" title="Αλλαγή" onclick={() => setPlace(p.k)}>
-            <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.5 4.5l3 3L7 16H4v-3z" /></svg>
-          </button>
-        {/if}
       {/each}
     </div>
 
@@ -365,7 +369,7 @@
           <h2>{way === "work" ? "Προς δουλειά" : "Προς σπίτι"}</h2>
         {/if}
         {#if wayIt && wayR}
-          <RouteCard it={wayIt} r={wayR} ix={app.stopIx} legs={scaledLegs(wayIt, wayR)} {nowS} tag="" open={wayOpen} live onpick={() => (wayOpen = !wayOpen)} />
+          <RouteCard it={wayIt} r={wayR} ix={app.stopIx} legs={scaledLegs(wayIt, wayR)} {nowS} tag="" open={wayOpen} live logos={app.cityId === "athens"} onpick={() => (wayOpen = !wayOpen)} />
           <div class="wacts">
             <button type="button" class="wgo" onclick={wayGo}>Ξεκίνα</button>
             <button type="button" class="wrm" class:on={app.leaveRemind?.key === `${wayIt.depart_at}-${wayIt.arrive_at}`} onclick={() => (wayRemind = true)}><Icon name="bell" size={16} /><span>Θύμισέ μου</span></button>
@@ -535,10 +539,17 @@
   .hid b { color: var(--fg); font-weight: 600; }
 
   /* Home and work */
-  .saved { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; gap: 8px 6px; align-items: center; }
-  .saved:not(:has(.edit)) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .place { min-width: 0; display: flex; align-items: center; gap: 10px; height: 54px; padding: 0 12px; border: 0; border-radius: 14px;
-    background: var(--card); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+  .phead { height: 36px; margin-bottom: -4px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .phead b { font-size: 15px; line-height: 1; }
+  .pedit { height: 36px; display: flex; align-items: center; padding: 0 14px; margin-right: -8px; border: 0; border-radius: 18px; background: none;
+    color: var(--accent); font: inherit; font-size: 14px; font-weight: 600; line-height: 1; cursor: pointer; transition: background-color .15s, color .15s; }
+  .pedit:hover { background: var(--control); }
+  .pedit.on { margin-right: 0; background: var(--accent); color: var(--on-accent, #fff); }
+  .saved { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: center; }
+  .place { min-width: 0; display: flex; align-items: center; gap: 10px; height: 54px; padding: 0 12px; border: 1px solid transparent; border-radius: 14px; box-sizing: border-box;
+    background: var(--card); color: var(--fg); font: inherit; text-align: left; cursor: pointer; transition: background-color .2s, border-color .2s; }
+  .saved.editing .place { border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: color-mix(in srgb, var(--accent) 12%, var(--card)); }
+  .saved.editing .pt small { color: var(--accent); font-weight: 600; }
   .place:hover { background: var(--control-hover); }
   .pi { flex: none; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; }
   .pi.home { background: var(--accent-bg); color: var(--accent); }
@@ -546,9 +557,6 @@
   .pt { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
   .pt b { font-size: 14px; line-height: 1; }
   .pt small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 1.1; color: var(--muted); }
-  .edit { flex: none; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 50%;
-    background: none; color: var(--muted); cursor: pointer; }
-  .edit:hover { background: var(--control); color: var(--fg); }
 
   .sec { display: flex; flex-direction: column; gap: 10px; }
   .head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 30px; }

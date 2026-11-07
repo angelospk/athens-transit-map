@@ -9,7 +9,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { linkTransfers, type MetroData, type MetroLine, type MetroStation } from "../src/lib/metro";
 
-const COLORS: Record<string, string> = { M1: "#00a651", M2: "#e30613", M3: "#0072bc", T6: "#f39200", T7: "#f39200" };
+const COLORS: Record<string, string> = { M1: "#098b4a", M2: "#d7171f", M3: "#1b388c", T6: "#f39200", T7: "#f39200" };
 const MERGE_M = 500;   // platforms (one per direction) and interchanges of the same name within this
 
 const dir = process.argv[2];

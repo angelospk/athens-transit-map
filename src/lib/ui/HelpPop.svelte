@@ -27,7 +27,7 @@
     <span>Στάση της γραμμής που διάλεξες. Πάτα την για το όνομά της.</span></li>
   <li><span class="s"><span class="ico"><img src="{import.meta.env.BASE_URL}icons/stop.png" alt="" /></span></span>
     <span>Στάση λεωφορείου ή τρόλεϊ (όταν μεγεθύνεις). Πάτα την για τις αφίξεις.</span></li>
-  <li><span class="s"><img class="logo" src="{import.meta.env.BASE_URL}icons/metro-logo.svg" alt="" /><span class="disc" style:background="#e30613"><img src="{import.meta.env.BASE_URL}icons/glyph-metro.png" alt="" /></span><img class="logo tram" src="{import.meta.env.BASE_URL}icons/tram-logo.svg" alt="" /></span>
+  <li><span class="s"><img class="logo" src="{import.meta.env.BASE_URL}icons/metro-logo.svg" alt="" /><span class="disc" style:background="#d7171f"><img src="{import.meta.env.BASE_URL}icons/glyph-metro.png" alt="" /></span><img class="logo tram" src="{import.meta.env.BASE_URL}icons/tram-logo.svg" alt="" /></span>
     <span>Σταθμός μετρό ή ΗΣΑΠ, συρμός στο χρώμα της γραμμής του, στάση τραμ, με τα σήματά τους. Πάτα τον για τις γραμμές του.</span></li>
   <li><span class="s"><span class="me"><b></b></span></span>
     <span>Η θέση σου, από το κουμπί του στόχου στον χάρτη.</span></li>

@@ -14,8 +14,8 @@ describe("scaledLegs", () => {
   it("lists walks and rides with their minutes, dropping walks under a minute", () => {
     const legs = scaledLegs(itin([walk(0, 180), ride("oasa:224", 240, 780), walk(780, 800)]), r);
     expect(legs).toEqual([
-      { walk: true, min: 3, label: "3′", color: "", text: "", hops: null },
-      { walk: false, min: 9, label: "224", color: "#2f6fdc", text: "#fff", hops: 3 },
+      { walk: true, min: 3, label: "3′", color: "", text: "", hops: null, mode: "" },
+      { walk: false, min: 9, label: "224", color: "#2f6fdc", text: "#fff", hops: 3, mode: "bus" },
     ]);
   });
 });

@@ -183,14 +183,14 @@ export function planStops(it: Itinerary, r: PlanResponse): PlanPin[] {
 
 // The legs of an itinerary to draw to scale (TripPlanner's option cards): walks and rides in order, each with its
 // minutes (a walk of under a minute is left out); a ride with its line's badge and how many stops it rides.
-export interface ScaledLeg { walk: boolean; min: number; label: string; color: string; text: string; hops: number | null }
+export interface ScaledLeg { walk: boolean; min: number; label: string; color: string; text: string; hops: number | null; mode: string }
 export function scaledLegs(it: Itinerary, r: PlanResponse): ScaledLeg[] {
   return it.legs.flatMap((l): ScaledLeg[] => {
     const min = Math.max(0, Math.round((l.arrive_at - l.depart_at) / 60));
-    if (l.kind === "walk") return min >= 1 ? [{ walk: true, min, label: durText(min), color: "", text: "", hops: null }] : [];
+    if (l.kind === "walk") return min >= 1 ? [{ walk: true, min, label: durText(min), color: "", text: "", hops: null, mode: "" }] : [];
     const known = r.lines[l.line ?? ""];
     return [{ walk: false, min: Math.max(1, min), label: badgeLabel(known?.label || idLabel(l.line ?? ""), l.mode ?? known?.mode ?? ""), color: known?.color || COLOR,
-      text: known?.text_color || TEXT, hops: l.hops ?? null }];
+      text: known?.text_color || TEXT, hops: l.hops ?? null, mode: l.mode ?? known?.mode ?? "bus" }];
   });
 }
 

@@ -123,9 +123,9 @@ export async function mockTrains(kind: "metro" | "suburban"): Promise<FetchResul
   if (kind === "metro") {
     const place = (name: string, lat: number, lon: number, at: number) => ({ name, lat, lon, at });
     const vehicles = [
-      { trip: "m1", line: "M2", route_color: "#e30613", headsign: "ΕΛΛΗΝΙΚΟ",
+      { trip: "m1", line: "M2", route_color: "#d7171f", headsign: "ΕΛΛΗΝΙΚΟ",
         from: place("ΣΥΝΤΑΓΜΑ", 37.9755, 23.7355, t0), to: place("ΑΚΡΟΠΟΛΗ", 37.9686, 23.7295, t0 + 120) },
-      { trip: "m2", line: "M3", route_color: "#0072bc", headsign: "ΑΕΡΟΔΡΟΜΙΟ",
+      { trip: "m2", line: "M3", route_color: "#1b388c", headsign: "ΑΕΡΟΔΡΟΜΙΟ",
         from: place("ΣΥΝΤΑΓΜΑ", 37.9755, 23.7355, t0), to: place("ΕΥΑΓΓΕΛΙΣΜΟΣ", 37.9765, 23.7469, t0 + 120) },
     ];
     return { status: 200, body: { updated_at: now, indicative: false, vehicles } };
