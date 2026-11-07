@@ -148,7 +148,7 @@
     <div class="homebar">
       {#if app.tab === "now"}
         <!-- «Πού πας;» is in the home sheet: here only the search for a line or a stop. -->
-        <button type="button" class="round" aria-haspopup="dialog" aria-label="Πού πας; Διεύθυνση, στάση ή γραμμή" onclick={() => (app.start = true)}><Icon name="search" size={20} /></button>
+        <button type="button" class="round" aria-haspopup="dialog" aria-label="Βρες γραμμή, στάση ή μέρος" title="Βρες γραμμή, στάση ή μέρος" onclick={() => { app.finding = true; app.start = true; }}><Icon name="search" size={20} /></button>
       {:else}
         <button type="button" class="where" aria-haspopup="dialog" onclick={() => (app.start = true)}><Icon name="search" size={18} /><span>Πού πας;</span></button>
       {/if}

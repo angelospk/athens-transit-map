@@ -340,6 +340,7 @@
       open = null;
       return;
     }
+    if (find && f === "to") { open = null; showFound(p); return; }
     ends[f] = { text: titleCase(p.label), place: p };
     open = null;
     // The destination chosen: the start is asked right under it (the field appears; the cursor goes there), unless
@@ -470,7 +471,23 @@
     q.addEventListener("change", on);
     return () => q.removeEventListener("change", on);
   });
-  const intro = $derived(wide && !app.savingPlace && !ends.to.place);
+  const intro = $derived(wide && !app.savingPlace && !ends.to.place && !app.finding);
+  // The quick search (the map's top-left button): one field; a line opens live, a stop its card, a place the map on it.
+  const find = $derived(app.finding && !app.savingPlace);
+  $effect(() => { if (!app.start) app.finding = false; });
+  $effect(() => { if (find && app.start && !app.pickFor) untrack(() => setTimeout(() => inputs.to?.focus(), 80)); });
+  function showFound(p: Place) {
+    app.finding = false; app.start = false; app.pickFor = null;
+    const at = centre(p.pts);
+    app.setTab("map");
+    if (p.kind === "stop" && ix) {
+      // The stop's own card: the index's stop of that name nearest the place.
+      let k = -1, d = 60;
+      ix.s.forEach((s, i) => { if (s[3]) { const m = distM([s[1], s[2]], at); if (m < d) { d = m; k = i; } } });
+      if (k >= 0) { app.push(busStopCard(ix.s[k][3]!, titleCase(ix.s[k][0]))); return; }
+    }
+    app.flyTo([at[1], at[0]]);
+  }
   // The places most asked for, in the page's city (none for a city not listed here).
   const QUICK_BY: Partial<Record<CityId, Place[]>> = {
     athens: [
@@ -717,7 +734,7 @@
   let autoFrom = false;
   $effect(() => {
     if (!app.start) { autoFrom = false; return; }
-    if (wide || app.savingPlace || geoPerm !== "granted") return;
+    if (wide || app.savingPlace || app.finding || geoPerm !== "granted") return;
     untrack(() => { if (!autoFrom && !ends.from.place && !ends.from.text) { autoFrom = true; locate("from", true); } });
   });
   const planR = $derived(plan && plan.key === pKey ? plan.r : null);
@@ -820,6 +837,8 @@
       </div>
       {#if app.savingPlace}
         <h1 id="start-h" in:item={{ i: 2 }}>{app.savingPlace === "home" ? "Πού είναι το Σπίτι;" : "Πού είναι η Δουλειά;"}</h1>
+      {:else if find}
+        <h1 id="start-h" in:item={{ i: 2 }}>Βρες</h1>
       {:else if wide}
         <h1 id="start-h" class="hero" in:item={{ i: 2 }}>Κάθε λεωφορείο<br />{OF_CITY[app.cityId]},<br /><span>εκεί που είναι.</span></h1>
       {:else if !answer}
@@ -844,17 +863,18 @@
       {:else}
       <div class="fields" class:raised={menu !== null}>
         <div class="ends" class:group={!intro && wide} class:asks={!wide && !app.savingPlace} in:item={{ i: 3, y: 12 }}>
-        {#each (app.savingPlace || intro ? ["to"] : !wide ? ["from", "to"] : askFrom ? ["to", "from"] : ["to"]) as Field[] as f (f)}
-          {#if !wide && !app.savingPlace}
+        {#each (app.savingPlace || intro || find ? ["to"] : !wide ? ["from", "to"] : askFrom ? ["to", "from"] : ["to"]) as Field[] as f (f)}
+          {#if !wide && !app.savingPlace && !find}
             {@const n = f === "from" ? 1 : 2}
             <p class="qq" class:on={f === "from" ? !ends.from.place : !!ends.from.place && !ends.to.place}><span class="qn" aria-hidden="true">{n}</span>{f === "from" ? "Από πού ξεκινάς;" : "Πού θέλεις να πας;"}</p>
           {/if}
           <div class="field end {f}" class:open={open === f} class:set={!!ends[f].place} class:swapped class:search={intro}>
             {#if intro}<label class="fs" for="start-{f}"><Icon name="search" size={20} /><span class="sr">Πού πας;</span></label>
+            {:else if find}<label class="sr" for="start-{f}">Βρες γραμμή, στάση ή μέρος</label><span class="fs2" aria-hidden="true"><Icon name="search" size={19} /></span>
             {:else if wide || app.savingPlace}<span class="mk {f}" aria-hidden="true"></span><label class="fl" for="start-{f}">{f === "from" ? "Από" : "Πού"}</label>
             {:else}<label class="sr" for="start-{f}">{f === "from" ? "Από πού ξεκινάς" : "Πού θέλεις να πας"}</label>{#if ends[f].place?.kind === "me"}<span class="mearr" aria-hidden="true"><svg class="arr" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5 3.8 10.6a.6.6 0 0 0 .05 1.12l6.6 2.03 2.03 6.6a.6.6 0 0 0 1.12.05z" fill="currentColor" /></svg></span>{:else if !ends[f].place}<span class="fs2" aria-hidden="true"><Icon name="search" size={19} /></span>{/if}{/if}
             <input id="start-{f}" bind:this={inputs[f]} value={ends[f].text} autocomplete="off" spellcheck="false"
-              placeholder={f === "from" ? (wide ? "Από πού ξεκινάς;" : "Γράψε από πού ξεκινάς") : intro ? "Πού πας; Διεύθυνση, στάση ή γραμμή" : wide ? "Στάση, περιοχή, οδός" : "Γράψε μέρος, στάση ή γραμμή"} role="combobox" aria-expanded={open === f} aria-controls="start-{f}-list"
+              placeholder={find ? "Γραμμή, στάση ή μέρος" : f === "from" ? (wide ? "Από πού ξεκινάς;" : "Γράψε από πού ξεκινάς") : intro ? "Πού πας; Διεύθυνση, στάση ή γραμμή" : wide ? "Στάση, περιοχή, οδός" : "Γράψε μέρος, στάση ή γραμμή"} role="combobox" aria-expanded={open === f} aria-controls="start-{f}-list"
               onfocus={e => { open = f; menu = null; if (ends[f].place) e.currentTarget.select(); }} oninput={e => edit(f, e.currentTarget.value)}
               aria-activedescendant={open === f && active >= 0 ? `start-opt-${active}` : undefined} onkeydown={e => key(f, e)} />
             {#if ends[f].text && locating !== f && !ends[f].place}
@@ -885,7 +905,7 @@
         {#if open && wide}{@render list(open)}{/if}
         {#if err}<p class="err" role="status" transition:reveal>{err}</p>{/if}
 
-        {#if !wide && !app.savingPlace && !ends.to.place && open === null}
+        {#if !wide && !app.savingPlace && !find && !ends.to.place && open === null}
           <!-- Where most trips go: home and work as big tiles (with how long it takes now), and the last trips. -->
           <div class="mine two" data-peek="Σπίτι" data-peek-icon="home" in:item={{ i: 4, y: 12 }}>
             {#each mine as m (m.k)}
@@ -979,7 +999,7 @@
             </div>
           </div>
           {/if}
-        {:else if !app.savingPlace && wide}
+        {:else if !app.savingPlace && wide && !find}
           <div class="pair one">
           <div class="pickf">
             <button type="button" class="field pick" class:open={menu === "when"} aria-haspopup="listbox" aria-expanded={menu === "when"} onclick={() => toggleMenu("when")} in:item={{ i: 5, y: 12 }}>
@@ -1056,7 +1076,7 @@
           <li><i></i>Χωρίς λογαριασμό: ανοίγεις και βλέπεις</li>
         </ul>
         {/if}
-      {:else if !app.savingPlace && (wide || answer)}
+      {:else if !app.savingPlace && !find && (wide || answer)}
         {#if routes?.length && top && planR}
           {#if planR.estimate}<p class="est"><Icon name="warn" size={15} /><span>Ο server των διαδρομών δεν απαντά τώρα: αυτές τις βρήκε η εφαρμογή από τις στάσεις και τις ζωντανές αφίξεις. Οι ώρες είναι κατά προσέγγιση.</span></p>{/if}
           {#if top.ignored}<p class="pvn solo">Με {meansOn.length === 1 ? meansOn[0].label.toLowerCase() : "αυτά τα μέσα"} δεν βγαίνει τώρα: αυτές είναι οι καλύτερες με όλα.</p>{/if}
@@ -1091,6 +1111,8 @@
       <div class="acts">
         {#if app.savingPlace}
           <button type="button" class="link" onclick={() => { app.savingPlace = null; app.start = false; }}><span>Άκυρο</span><kbd class="pc">Esc</kbd></button>
+        {:else if find}
+          <p class="findnote">Γράψε τον αριθμό μιας γραμμής (π.χ. 308), μια στάση ή μια περιοχή.</p>
         {:else if answer}
           <div class="duo">
             <button type="button" class="ghost2" class:on={!!armed} disabled={!best} onclick={() => (sheet = "remind")}><Icon name="bell" size={17} /><span>{armed ? `Στις ${clockHM(Math.max(armed.leaveAt, nowS))}` : "Θύμισέ μου"}</span></button>
@@ -1622,4 +1644,5 @@
   .xclose { flex: none; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 50%;
     background: color-mix(in srgb, var(--fg) 10%, transparent); color: var(--fg); cursor: pointer; }
   .actrow .link :global(svg) { flex: none; }
+  .findnote { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.4; text-align: center; }
 </style>

@@ -392,3 +392,12 @@ button, input, select, textarea { font: inherit; color: inherit; }
 html.sheet-open .start, html.sheet-open .now, html.sheet-open .card, html.sheet-open .popwrap { overflow: hidden !important; }
 /* The navigator minimised to its bar at the foot (NavGuide): a card opened on the map sits above the bar. */
 @media (max-width: 719px) { html[data-guidemini] .card { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 92px) !important; max-height: calc(100dvh - 200px) !important; } }
+
+/* A phone: the map's compass and locate buttons under its tools at the top right (no tab bar, the home sheet at the
+   foot: down there they sat on the sheet). */
+@media (max-width: 719px) {
+  .maplibregl-ctrl-bottom-right .north-ctl,
+  .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group:has(> button.locate) { position: fixed; right: 16px; margin: 0 !important; }
+  .maplibregl-ctrl-bottom-right .north-ctl { top: calc(env(safe-area-inset-top) + 204px); }
+  .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group:has(> button.locate) { top: calc(env(safe-area-inset-top) + 256px); }
+}

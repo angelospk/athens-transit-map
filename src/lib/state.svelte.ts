@@ -157,6 +157,9 @@ export class AppState {
   // «Πού πας;» (StartScreen): the first screen of a visit, and again from the search pill of «Τώρα». pickFor: which end
   // is being chosen on the map (the screen steps aside for a crosshair); mapCenter: the map's centre, [lat, lon].
   start = $state(false);
+  // The search at the top left of the map (a phone): the same screen as one field, to find a line, a stop or a place and
+  // see it, no trip.
+  finding = $state(false);
   pickFor = $state<"from" | "to" | null>(null);
   mapCenter = $state.raw<[number, number] | null>(null);
   mapPick = $state.raw<[number, number] | null>(null);   // a click on the map while picking: that point
