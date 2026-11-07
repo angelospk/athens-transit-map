@@ -130,6 +130,7 @@ section{margin-top:1.5rem}
 
 function dataset(c: StatsCity, days: DayStats[], latest: DayStats) {
   const url = SITE + statsPath(c);
+  const modified = new Date(latest.generated_at * 1000); // invalid when missing or out of range
   return {
     "@context": "https://schema.org",
     "@type": "Dataset",
@@ -144,7 +145,7 @@ function dataset(c: StatsCity, days: DayStats[], latest: DayStats) {
     isBasedOn: "https://github.com/angelospk/athens-transit-rt",
     keywords: ["συγκοινωνίες", "λεωφορεία", c.agency, c.name, "GPS", "ταχύτητα", "public transport"],
     temporalCoverage: `${days[0].date}/${latest.date}`,
-    dateModified: new Date(latest.generated_at * 1000).toISOString(),
+    ...(Number.isNaN(modified.getTime()) ? {} : { dateModified: modified.toISOString() }),
     spatialCoverage: { "@type": "Place", name: c.name, geo: { "@type": "GeoCoordinates", latitude: c.center[1], longitude: c.center[0] } },
     variableMeasured: ["οχήματα ανά ώρα", "μέση ταχύτητα (km/h)", "ταχύτητα ανά γραμμή", "δρομολόγια που έγιναν", "καθυστέρηση εκκίνησης"],
     distribution: [
@@ -269,6 +270,14 @@ const parse = (text: string | null): unknown => {
   }
 };
 
+// A day file this page can render: validDay checks what the app reads; the trip counts are read
+// here too (the start delays are checked line by line in stats.ts).
+const usable = (d: unknown, date: string): d is DayStats => {
+  if (!validDay(d, date)) return false;
+  const t = d.trips;
+  return t == null || (Array.isArray(t.by_line) && t.by_line.every(l => typeof l?.line === "string"));
+};
+
 // Writes the page and the CSV files of every city whose index lists a readable day. base: the
 // v1 folder of the stats branch. A fetch failure rejects: the deploy then keeps the old site.
 export async function buildStats(outDir: string, get: GetText, base = RAW_BASE) {
@@ -280,7 +289,7 @@ export async function buildStats(outDir: string, get: GetText, base = RAW_BASE) 
     if (!index || !Array.isArray(index.days)) throw new Error(`stats ${c.id}: unknown index format`);
     const dates = index.days.filter((d): d is string => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
     const files = await mapLimit(dates, 6, d => get(`${base}${sub(c)}/days/${d}.json`).then(parse));
-    const days = files.filter((f, i): f is DayStats => validDay(f, dates[i]));
+    const days = files.filter((f, i): f is DayStats => usable(f, dates[i]));
     if (days.length) built.push({ c, days, bad: files.length - days.length });
   }
   // Pages last: each links the stats pages of the other cities that have one.

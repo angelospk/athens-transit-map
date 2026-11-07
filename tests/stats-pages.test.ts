@@ -124,6 +124,25 @@ describe("cityStatsPage", () => {
     expect(html).not.toContain("<x>"); // not ranked, and never raw
   });
 
+  it("escapes a line id from the data", () => {
+    const evil = day("2026-11-05", { lines: [
+      { line: "<b>x</b>", fixes: 900, vehicles: 9, dist_m: 1_200_000, time_s: 360_000 },
+      { line: "040", fixes: 900, vehicles: 9, dist_m: 2_400_000, time_s: 360_000 },
+    ] });
+    const page = cityStatsPage(athens, [evil]);
+    expect(page).toContain("&lt;b&gt;x&lt;/b&gt;");
+    expect(page).not.toContain("<b>x</b>");
+  });
+
+  it("builds without generated_at, leaving out dateModified", () => {
+    const d = day("2026-11-05") as Partial<DayStats>;
+    delete d.generated_at;
+    const page = cityStatsPage(athens, [d as DayStats]);
+    expect(page).not.toContain("dateModified");
+    const far = { ...day("2026-11-05"), generated_at: 1e20 };
+    expect(cityStatsPage(athens, [far])).not.toContain("dateModified");
+  });
+
   it("shows the share of scheduled trips that ran", () => {
     expect(html).toContain("80 από 100");
   });
@@ -193,13 +212,15 @@ describe("buildStats", () => {
   it("skips a city whose index lists no day, and a day file that is missing or malformed", async () => {
     const out = mkdtempSync(join(tmpdir(), "stats-"));
     const get = files({
-      "index.json": { version: 1, latest: "2026-11-05", days: ["2026-11-03", "2026-11-04", "2026-11-05", "../x"] },
+      "index.json": { version: 1, latest: "2026-11-05", days: ["2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06", "../x"] },
       "days/2026-11-04.json": "not json",
       "days/2026-11-05.json": day("2026-11-05"),
+      // Trip counts without a list of lines: the page and the CSV would throw on it.
+      "days/2026-11-06.json": { ...day("2026-11-06", { trips: true }), trips: { ...day("2026-11-06", { trips: true }).trips, by_line: null } },
       "thessaloniki/index.json": { version: 1, latest: "", days: [] },
     });
     const r = await buildStats(out, get, RAW);
-    expect(r.cities).toEqual([{ id: "athens", days: 1, bad: 2 }]);
+    expect(r.cities).toEqual([{ id: "athens", days: 1, bad: 3 }]);
     expect(existsSync(join(out, "athens/stats/data/2026-11-04-hours.csv"))).toBe(false);
     expect(existsSync(join(out, "thessaloniki"))).toBe(false);
   });
