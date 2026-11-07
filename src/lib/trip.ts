@@ -5,7 +5,7 @@ import type { MetroData } from "./metro";
 import type { StopDirs } from "./towards";
 import { fold, greeklish, greeklishKeys, hasLatin } from "./search";
 import type { AppState } from "./state.svelte";
-import type { CityId } from "./cities";
+import { CITIES, type CityId } from "./cities";
 import { PAGE_CITY } from "./config";
 
 export type Pt = [number, number];   // [lat, lon]
@@ -397,8 +397,13 @@ export const staleIndex = (indexV: string, linesV: string) => !!linesV && indexV
 
 // The stop index of each city (scripts/trips.ts): Athens keeps trips.json.
 export const tripsFile = (c: CityId) => (c === "athens" ? "trips.json" : `trips-${c}.json`);
-// Photon bbox (west,south,east,north) of each city's area.
-export const GEOCODE_BOX: Record<CityId, string> = { athens: "23.35,37.65,24.15,38.25", thessaloniki: "22.70,40.45,23.20,40.80" };
+// Photon bbox (west,south,east,north) of each city's area: Athens and Thessaloniki hand-set, a citybus.gr
+// city its tile box.
+export const GEOCODE_BOX = {
+  ...Object.fromEntries(Object.values(CITIES).map(c => [c.id, `${c.box.west},${c.box.south},${c.box.east},${c.box.north}`])),
+  athens: "23.35,37.65,24.15,38.25",
+  thessaloniki: "22.70,40.45,23.20,40.80",
+} as Record<CityId, string>;
 
 let index: Promise<TripIndex> | null = null;
 export function loadTripIndex(): Promise<TripIndex> {

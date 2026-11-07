@@ -1,7 +1,6 @@
 name: citybus.gr stop indexes
 
-# Daily: rebuild public/trips-<slug>.json (scripts/trips.ts) for the citybus.gr cities (not yet kastoria,
-# ptolemaida, skiathos: #57) from the
+# Daily: rebuild public/trips-<slug>.json (scripts/trips.ts) for the 28 citybus.gr cities from the
 # staseis-rt instance (https://staseis-rt.haroldpoi.dev/<code>/static/v1). Only the instance is read,
 # never citybus.gr. Its gtfs_version changes only when a city's data changes (staseis-rt#121), so a
 # file changes only then. The bot's web push alerts need these files (bot/cities.ts).
@@ -32,9 +31,9 @@ jobs:
       - name: Rebuild the indexes (a city that fails keeps its old file)
         run: |
           for pair in agrinio:agq alexandroupoli:axd arta:art veroia:ver volos:vol drama:dra heraklion:her \
-            ioannina:ioa kavala:kva katerini:kat corfu:cfu kozani:kzi komotini:kom lamia:lam \
-            larissa:lra mesologgi:mes mitilini:mjt naousa:nao xanthi:xan patras:pat serres:ser \
-            chalkida:cha chania:chq chios:jkh salamina:sal ; do
+            ioannina:ioa kavala:kva kastoria:kso katerini:kat corfu:cfu kozani:kzi komotini:kom lamia:lam \
+            larissa:lra mesologgi:mes mitilini:mjt naousa:nao xanthi:xan patras:pat ptolemaida:pto serres:ser \
+            chalkida:cha chania:chq chios:jkh salamina:sal skiathos:jsi ; do
             slug=${pair%%:*} code=${pair##*:}
             VITE_STATIC_BASE=https://staseis-rt.haroldpoi.dev/$code/static/v1 TRIPS_OUT=public/trips-$slug.json \
               bun scripts/trips.ts || echo "::warning::$slug: index not rebuilt"

@@ -102,7 +102,7 @@ const thessFile = join(dir, "state-thessaloniki.json");
 const thessApi = strip(process.env.THESS_API_BASE || "https://transit-thess.haroldpoi.dev");
 const thess = new Bot({
   urls: { trips: process.env.THESS_TRIPS_URL || "https://staseis.gr/trips-thessaloniki.json", static: `${thessApi}/static/v1`, api: thessApi },
-  agency: "ΟΑΣΘ", prefix: "skg", now: Date.now, sleep, save: saver(thessFile), tg: send, get, push,
+  agency: "ΟΣΕΘ", prefix: "skg", now: Date.now, sleep, save: saver(thessFile), tg: send, get, push,
 }, load(thessFile));
 const cityApi = process.env.CITYBUS_API_BASE || "https://staseis-rt.haroldpoi.dev";
 const mapBase = process.env.MAP_BASE || "https://staseis.gr";

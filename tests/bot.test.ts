@@ -449,7 +449,7 @@ describe("Bot recurring alerts", () => {
 
 describe("Bot of another city", () => {
   it("names its own operator when new stop data ends a push alert", async () => {
-    const opts: Opts = { agency: "ΟΑΣΘ" };
+    const opts: Opts = { agency: "ΟΣΕΘ" };
     const t = setup(opts);
     const sub = { endpoint: "https://fcm.googleapis.com/fcm/send/x", keys: { p256dh: "B".repeat(87), auth: "A".repeat(22) } };
     expect((await t.bot.web({ method: "POST", path: "/alerts", body: { p: payload, sub } })).status).toBe(201);
@@ -460,7 +460,7 @@ describe("Bot of another city", () => {
     const p2 = encodeAlert(next, 3, [{ line: "622", variants: [{ id: "A", i: 4 }] }])!;
     expect((await t.bot.web({ method: "POST", path: "/alerts", body: { p: p2, sub: other } })).status).toBe(201);
     await t.bot.flush();
-    expect(t.pushed.at(-1)?.data.body).toMatch(/Τα δρομολόγια του ΟΑΣΘ άλλαξαν/);
+    expect(t.pushed.at(-1)?.data.body).toMatch(/Τα δρομολόγια του ΟΣΕΘ άλλαξαν/);
   });
 });
 

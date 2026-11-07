@@ -1,6 +1,7 @@
 // Which way the buses leave a stop: the bearing to the next stop and the terminus names of the lines
 // that go through it. Built into trips.json (scripts/trips.ts), loaded with the planner only.
 
+import { BUS_NS, isBusId } from "./busNs";
 import type { TripIndex } from "./trip";
 import { bearingDeg } from "./heading";
 import { distanceM } from "./glide";
@@ -23,8 +24,10 @@ export function cleanTerminus(name: string): string {
   const s = name.replace(/(^|[\s\-\/])Τ\.Σ\.\s*/g, "$1").replace(/\s+\/\s*|\/\s+/g, " - ").replace(/\s+/g, " ").trim();
   return s.split(" - ").flatMap(seg => {
     const words = seg.split(" ").map(greek)   // "122-", "543-543Α", "Χ96" go; a leading "40" (40 ΕΚΚΛΗΣΙΩΝ) stays
+      .map(w => w.replace(/^\d+-(?=\p{L})/u, ""))   // citybus.gr numbers its stops: «26-ΚΟΥΚΟΥΝΑΡΙΕΣ»
       .filter((w, i) => !/\d/.test(w) || (i === 0 && /^\d+$/.test(w)));
     if (words[0] === "ΑΦΕΤΗΡΙΑ") words.shift();
+    if (words.length > 1 && words[words.length - 1] === "ΤΕΡΜΑ") words.pop();   // «ΛΙΜΑΝΙ ΤΕΡΜΑ»
     if (words.length > 1 && /^\p{L}$/u.test(words[words.length - 1])) words.pop();   // the platform
     const out = words.join(" ");
     return out && out !== "ΑΦΕΤΗΡΙΑ" && out !== "ΤΕΡΜΑ" ? [out] : [];
@@ -110,17 +113,17 @@ export function towardsOf(ix: TripIndex, i: number): { bearing: number | null; t
 
 const byId = new WeakMap<TripIndex, Map<string, number>>();
 
-// The direction of a stop from a /v2 id: oasa:<GTFS stop id>, the bus feed of every city instance (the
-// Thessaloniki instance keeps the source id); other ids (metro, municipal) and no index: null.
+// The direction of a stop from a /v2 id: <bus namespace>:<GTFS stop id>, the bus feed of every city instance
+// (the Thessaloniki instance keeps the source id); other ids (metro, municipal) and no index: null.
 export function towardsOfId(ix: TripIndex | null, id: string): { bearing: number | null; towards: string[] } | null {
-  if (!ix || !id.startsWith("oasa:")) return null;
+  if (!ix || !isBusId(id)) return null;
   let m = byId.get(ix);
   if (!m) {
     m = new Map();
     ix.s.forEach((x, k) => { if (x[3] && !m!.has(x[3])) m!.set(x[3], k); });
     byId.set(ix, m);
   }
-  const k = m.get(id.slice(5));
+  const k = m.get(id.slice(BUS_NS.length + 1));
   return k == null ? null : towardsOf(ix, k);
 }
 

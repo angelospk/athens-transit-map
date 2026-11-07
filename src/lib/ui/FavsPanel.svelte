@@ -7,6 +7,7 @@
   import { fetchV2LineVehicles, fetchV2Stop } from "../api";
   import { lineSummary, type FavStop } from "../favs";
   import { forLine } from "../disruptions";
+  import { isBusId } from "../busNs";
   import { busVehicleCard } from "../legacy";
   import { stopRows, type StopRow, type V2Arrival, type V2Line, type V2Stop, type V2Vehicle } from "../v2";
   import type { AppState } from "../state.svelte";
@@ -17,7 +18,7 @@
 
   let { app }: { app: AppState } = $props();
   // The stop index, for which way each starred bus stop goes (Toward).
-  $effect(() => { if (app.favs.stops.some(s => s.id.startsWith("oasa:"))) void app.loadStops(); });
+  $effect(() => { if (app.favs.stops.some(s => isBusId(s.id))) void app.loadStops(); });
 
   const POLL_MS = 30_000, PARALLEL = 8, OTHERS = 3;
   const open = $derived(app.favsOpen && app.stack.length === 0);
@@ -74,7 +75,7 @@
   const known = $derived(new Map(Object.values(boards).flatMap(b => b.lines.map(l => [l.id, l] as const))));
 
   function badge(id: string) {
-    if (id.startsWith("oasa:")) { const c = app.lineColor(native(id)); return { label: native(id), bg: c.bg, fg: c.fg }; }
+    if (isBusId(id)) { const c = app.lineColor(native(id)); return { label: native(id), bg: c.bg, fg: c.fg }; }
     const l = known.get(id);
     return { label: l?.label ?? l?.name ?? native(id), bg: l?.color ?? "#6b7280", fg: l?.text_color ?? "#ffffff" };
   }
@@ -86,7 +87,7 @@
   };
 
   function openRow(r: StopRow) {
-    if (r.vehicle && r.line.startsWith("oasa:")) app.push(busVehicleCard(native(r.line), native(r.vehicle)));
+    if (r.vehicle && isBusId(r.line)) app.push(busVehicleCard(native(r.line), native(r.vehicle)));
     else if (r.vehicle) app.push({ kind: "vehicle", id: r.vehicle, line: r.line });
     else app.push({ kind: "line", id: r.line, dir: r.dir ?? undefined });
   }
@@ -135,7 +136,7 @@
             {/each}
             {#if !rows.length}<p class="muted">Καμία άφιξη τώρα.</p>{/if}
             {#if quiet.length}<p class="muted">Χωρίς λεωφορείο κοντά τώρα: {quiet.map(l => l.label ?? l.name ?? native(l.id)).join(", ")}</p>{/if}
-            <button type="button" class="all" onclick={() => app.push({ kind: "stop", id: s.id, title: s.name, ...(s.id.startsWith("oasa:") ? { ref: "all" } : {}) })}>Όλες οι γραμμές εδώ ({boards[s.id].stop.lines.length}) ›</button>
+            <button type="button" class="all" onclick={() => app.push({ kind: "stop", id: s.id, title: s.name, ...(isBusId(s.id) ? { ref: "all" } : {}) })}>Όλες οι γραμμές εδώ ({boards[s.id].stop.lines.length}) ›</button>
           {/if}
         </section>
       {/each}

@@ -2,6 +2,7 @@
   // The card of a line, any mode, from /v2: its two directions, the vehicles now of the chosen one and,
   // for a bus line, today's runs. The vehicles are asked again every 20 s while it is open.
   import { untrack } from "svelte";
+  import { isBusId } from "../busNs";
   import { fetchV2Line, fetchV2LineVehicles, peekV2Line, peekV2LineVehicles } from "../api";
   import { fmtDelay } from "../format";
   import { busVehicleCard } from "../legacy";
@@ -66,7 +67,7 @@
   });
 
   const nativeLine = $derived(card ? native(card.id) : "");
-  const isBus = $derived(!!card && card.id.startsWith("oasa:"));
+  const isBus = $derived(!!card && isBusId(card.id));
   // A bus line's directions come from its /v1 direction groups (withDirections), with their termini as labels.
   const groups = $derived(isBus && app.statics[nativeLine] ? directionGroups(app.statics[nativeLine]) : []);
   const patterns = $derived(withDirections(detail?.patterns ?? [], groups));

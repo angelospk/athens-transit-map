@@ -11,7 +11,8 @@
   import type { AppState } from "../state.svelte";
   import CardSheet, { whenText } from "./CardSheet.svelte";
   import Icon from "./Icon.svelte";
-  import { CITIES, nearestCity, type CityId } from "../cities";
+  import { CITIES, findCities, MAIN_CITIES, nearestCity, type CityId } from "../cities";
+  import { busId, isBusId } from "../busNs";
 
   let { app }: { app: AppState } = $props();
 
@@ -19,6 +20,10 @@
     app.setCity(c);
     app.nearOpen = false;   // the map, not the empty list, is what to look at now
   }
+
+  // The picker's search over the citybus.gr cities (the two big buttons need no search).
+  let query = $state("");
+  const found = $derived(findCities(query));
 
   const POLL_MS = 30_000, PARALLEL = 6, ROWS = 2;
   const native = (id: string) => id.slice(id.indexOf(":") + 1);
@@ -47,7 +52,7 @@
         let next = 0;
         const worker = async () => {
           while (next < want.length && !ac.signal.aborted && document.visibilityState !== "hidden") {
-            const id = want[next++], r = await fetchV2Stop(`oasa:${id}`);
+            const id = want[next++], r = await fetchV2Stop(busId(id));
             if (ac.signal.aborted) return;
             const b = r.body as { arrivals?: V2Arrival[] } | null;
             if (r.status === 200 && b) boards = { ...boards, [id]: b.arrivals ?? [] };
@@ -77,12 +82,12 @@
 
 
   function badge(line: string) {
-    const c = app.lineColor(line.startsWith("oasa:") ? native(line) : line);
-    return { label: line.startsWith("oasa:") ? native(line) : line, bg: c.bg, fg: c.fg };
+    const c = app.lineColor(isBusId(line) ? native(line) : line);
+    return { label: isBusId(line) ? native(line) : line, bg: c.bg, fg: c.fg };
   }
 
   function openRow(r: StopRow) {
-    if (r.vehicle && r.line.startsWith("oasa:")) app.push(busVehicleCard(native(r.line), native(r.vehicle)));
+    if (r.vehicle && isBusId(r.line)) app.push(busVehicleCard(native(r.line), native(r.vehicle)));
     else if (r.vehicle) app.push({ kind: "vehicle", id: r.vehicle, line: r.line });
     else app.push({ kind: "line", id: r.line, dir: r.dir ?? undefined });
   }
@@ -91,12 +96,22 @@
 <!-- The city picker: without a location the user says where they are; a pick moves the map there. -->
 {#snippet cities()}
   <div class="cities" role="group" aria-label="Πόλη">
-    {#each Object.values(CITIES) as c (c.id)}
-      <button type="button" class="city" aria-pressed={app.cityId === c.id} onclick={() => pickCity(c.id)}>
-        <b>{c.name}</b><small>{c.hint}</small>
+    {#each MAIN_CITIES as id (id)}
+      <button type="button" class="city" aria-pressed={app.cityId === id} onclick={() => pickCity(id)}>
+        <b>{CITIES[id].name}</b><small>{CITIES[id].hint}</small>
       </button>
     {/each}
   </div>
+  <input type="search" class="find" placeholder="Βρες πόλη…" aria-label="Βρες πόλη" bind:value={query} />
+  {#if found.length}
+    <div class="picks" role="group" aria-label="Πόλεις">
+      {#each found as id (id)}
+        <button type="button" class="chip" aria-pressed={app.cityId === id} title={CITIES[id].name} onclick={() => pickCity(id)}>{CITIES[id].name}</button>
+      {/each}
+    </div>
+  {:else}
+    <p class="muted">Καμία πόλη.</p>
+  {/if}
 {/snippet}
 
 {#if app.nearShown}
@@ -137,7 +152,7 @@
         <section class="stop" aria-label="Στάση {name}">
           <div class="shead">
             <div class="who">
-              <button type="button" class="name" onclick={() => app.push({ kind: "stop", id: `oasa:${g.ids[0]}`, title: name })}>{name}<span class="go" aria-hidden="true">›</span></button>
+              <button type="button" class="name" onclick={() => app.push({ kind: "stop", id: busId(g.ids[0]), title: name })}>{name}<span class="go" aria-hidden="true">›</span></button>
               <div class="meta">στάση λεωφορείων · {distText(g.m)}</div>
             </div>
             <span class="walk" title="Περίπου {walkMin(g.m)}′ με τα πόδια"><Icon name="walk" size={15} /><span class="sr">Με τα πόδια περίπου</span>{walkMin(g.m)}′</span>
@@ -189,6 +204,12 @@
   .city b { font-size: 15px; font-weight: 700; }
   .city small { color: var(--muted); font-size: 11.5px; }
   .city[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .find { width: 100%; margin: 8px 0 6px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px;
+    background: none; color: var(--fg); font: inherit; font-size: 16px; }
+  .picks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 0 0 4px; }
+  .picks .chip { padding: 8px 2px; letter-spacing: -0.01em; border: 1px solid var(--border); border-radius: 9px; background: none; color: var(--fg); font: inherit;
+    font-size: 12.5px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+  .picks .chip[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
   .stop { margin: 0 0 10px; padding: 10px 12px 2px; border: 1px solid var(--border); border-radius: 14px; }
   .stop:last-child { margin-bottom: 2px; }
   .shead { display: flex; align-items: flex-start; gap: 10px; padding-bottom: 6px; }

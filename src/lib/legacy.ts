@@ -1,6 +1,7 @@
 // The bridge between the card stack (/v2 ids, cards.ts) and the cards of today, which still read /v1
 // data: the card for what the map taps, and the /v1 thing a card shows. It goes with the /v2 cards (web#11).
 
+import { busId, BUS_NS } from "./busNs";
 import type { Card } from "./cards";
 import { fold } from "./search";
 import type { TrainSel } from "./trains";
@@ -10,10 +11,10 @@ export type RailLine = { kind: "metro" | "suburban"; id: string };
 const native = (id: string) => id.slice(id.indexOf(":") + 1);
 
 export const busVehicleCard = (line: string, id: string): Card =>
-  ({ kind: "vehicle", id: `oasa:${id}`, line: `oasa:${line}`, title: `${line} · ${id}` });
+  ({ kind: "vehicle", id: busId(id), line: busId(line), title: `${line} · ${id}` });
 export const routeCard = (line: string, variant: string): Card =>
-  ({ kind: "line", id: `oasa:${line}`, pattern: `oasa:${variant}`, title: line });
-export const busStopCard = (code: string, name: string): Card => ({ kind: "stop", id: `oasa:${code}`, title: name });
+  ({ kind: "line", id: busId(line), pattern: busId(variant), title: line });
+export const busStopCard = (code: string, name: string): Card => ({ kind: "stop", id: busId(code), title: name });
 // A STASY stop id is its folded name and its mode (the backend's rail.Fold: lower case, no accents).
 export const stationCard = (name: string, lines: string[]): Card => ({
   kind: "stop", ref: name, title: name,
@@ -40,15 +41,15 @@ export type Legacy =
 export function legacyOf(c: Card): Legacy | null {
   const ns = c.id.slice(0, c.id.indexOf(":"));
   if (c.kind === "vehicle") {
-    if (ns === "oasa") return { kind: "bus-vehicle", line: native(c.line), id: native(c.id) };
+    if (ns === BUS_NS) return { kind: "bus-vehicle", line: native(c.line), id: native(c.id) };
     if (ns === "stasy") return { kind: "train", sel: { kind: "metro", id: c.ref ?? c.id.split(":")[2] ?? "" } };
     if (ns === "proastiakos") return { kind: "train", sel: { kind: "suburban", id: native(c.id) } };
   } else if (c.kind === "stop") {
-    if (ns === "oasa") return { kind: "bus-stop", code: native(c.id) };
+    if (ns === BUS_NS) return { kind: "bus-stop", code: native(c.id) };
     if (ns === "stasy") return { kind: "station", name: c.ref, folded: native(c.id).replace(/-(metro|tram)$/, "") };
     if (ns === "proastiakos") return { kind: "rail-station", id: native(c.id) };
   } else {
-    if (ns === "oasa") return { kind: "route", line: native(c.id), ...(c.pattern ? { variant: native(c.pattern) } : {}),
+    if (ns === BUS_NS) return { kind: "route", line: native(c.id), ...(c.pattern ? { variant: native(c.pattern) } : {}),
       ...(c.dir !== undefined ? { dir: c.dir } : {}) };
     if (ns === "stasy") return { kind: "rail-line", line: { kind: "metro", id: native(c.id) } };
     if (ns === "proastiakos") return { kind: "rail-line", line: { kind: "suburban", id: native(c.id) } };

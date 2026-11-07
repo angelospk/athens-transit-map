@@ -4,7 +4,7 @@
 import { cleanCity, isCityLive } from "./city";
 import type { FetchResult } from "./poller";
 import type { CityLive, CityVehicle } from "./types";
-import type { CityId } from "./cities";
+import { CITIES } from "./cities";
 import { PAGE_CITY } from "./config";
 
 export interface Tile { z: number; x: number; y: number }
@@ -13,12 +13,9 @@ export interface View { north: number; south: number; east: number; west: number
 export interface TileData { updated_at: number; next_update_at: number; vehicles: CityVehicle[] }
 export type TileGet = (t: Tile, signal?: AbortSignal) => Promise<FetchResult>;
 
-// The only area with tiles, per city: the backend's TileBox (athens-transit-rt internal/server/city.go).
-const BOXES: Record<CityId, { south: number; north: number; west: number; east: number }> = {
-  athens: { south: 37.5, north: 38.5, west: 22.9, east: 24.5 },
-  thessaloniki: { south: 40.3, north: 41.0, west: 22.6, east: 23.4 },
-};
-const BOX = BOXES[PAGE_CITY];
+// The only area with tiles, per city (cities.ts): Athens and Thessaloniki use the backend's TileBox
+// (staseis-rt internal/server/city.go); a citybus.gr city its stops' extent.
+const BOX = CITIES[PAGE_CITY].box;
 // The tiles of the box at both zooms, as the backend computes them (tileRange).
 const rangeAt = (z: number) => {
   const nw = tileOf(BOX.north, BOX.west, z), se = tileOf(BOX.south, BOX.east, z);

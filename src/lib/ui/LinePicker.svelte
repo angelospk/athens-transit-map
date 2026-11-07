@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import { busId } from "../busNs";
   import type { AppState } from "../state.svelte";
   import Icon from "./Icon.svelte";
 
@@ -16,7 +17,7 @@
   // Only the starred lines not on the map: the chips above already show the others.
   const favsOff = $derived(favs.filter(id => !app.selected.includes(id)));
 
-  const openCard = (id: string) => app.open({ kind: "line", id: `oasa:${id}`, title: id });
+  const openCard = (id: string) => app.open({ kind: "line", id: busId(id), title: id });
   // A quick pick puts the line on the map and opens its card (not when the 5-line limit refused it).
   function add(id: string) {
     app.toggleLine(id);

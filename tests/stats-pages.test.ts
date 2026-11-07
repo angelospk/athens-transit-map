@@ -173,7 +173,7 @@ describe("cityStatsPage", () => {
     expect(one).toContain("μερική");
     expect(one).not.toContain('<table id="band">');
     expect(one).not.toContain('<table id="delay">'); // no start_delay in these days
-    expect(one).toContain("ΟΑΣΘ");
+    expect(one).toContain("ΟΣΕΘ");
     expect(one).toContain('href="https://staseis.gr/thessaloniki/stats/"');
   });
 });

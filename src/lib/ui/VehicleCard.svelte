@@ -3,6 +3,7 @@
   // times, and a bell on each). A train, metro or tram: from /v2 (its run's stops ahead, a bell on each: web
   // push when this train nears that stop), asked again every 20 s.
   import { untrack } from "svelte";
+  import { isBusId } from "../busNs";
   import { fetchV2Line, fetchV2LineVehicles, fetchV2Run } from "../api";
   import { upcomingStops } from "../eta";
   import { ageLabel, delayText, fmtDelay } from "../format";
@@ -18,7 +19,7 @@
 
   const top = $derived(app.stack.at(-1));
   const card = $derived(top?.kind === "vehicle" ? top : null);
-  const isBus = $derived(!!card && card.id.startsWith("oasa:"));
+  const isBus = $derived(!!card && isBusId(card.id));
   const isRail = $derived(!!card && !isBus && (card.id.startsWith("stasy:") || card.id.startsWith("proastiakos:")));
   const native = (id: string) => id.slice(id.indexOf(":") + 1);
 

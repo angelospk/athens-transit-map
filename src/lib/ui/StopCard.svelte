@@ -11,6 +11,7 @@
   import Icon from "./Icon.svelte";
   import DisruptionRows from "./DisruptionRows.svelte";
   import { forStop } from "../disruptions";
+  import { busId } from "../busNs";
   import { busStopCard, legacyOf } from "../legacy";
   import { reportedStops } from "../stopfix";
   import StopFixBar from "./StopFixBar.svelte";
@@ -35,11 +36,11 @@
   const id = $derived(stop ? stop[3] : early);
   const name = $derived(stop?.[0] ?? board?.stop.name ?? top?.title ?? "Στάση");
   const lines = $derived(ix && i != null ? linesAt(ix, i) : board ? boardLines(board) : []);
-  // The star: the stop's /v2 id is oasa:<GTFS id>; an index from before the ids has none.
-  const favId = $derived(id ? `oasa:${id}` : null);
+  // The star: the stop's /v2 id is <bus namespace>:<GTFS id>; an index from before the ids has none.
+  const favId = $derived(id ? busId(id) : null);
   const starred = $derived(!!favId && app.isFavStop(favId));
-  // The OASA notices about the stop or its lines (/v2 ids: oasa:<GTFS stop id>, oasa:<line>).
-  const lineIds = $derived(lines.map(l => `oasa:${l.line}`));
+  // The OASA notices about the stop or its lines (/v2 ids: oasa:<GTFS stop id>, oasa:<line> in Athens).
+  const lineIds = $derived(lines.map(l => busId(l.line)));
   const disruptions = $derived(favId ? forStop(app.disruptions, favId, lineIds, app.serverNow) : []);
   const dir = $derived(ix && i != null ? towardsOf(ix, i) : null);   // which way the buses leave
   const across = $derived(ix && i != null ? twins(ix, i)[0] : undefined);
@@ -243,7 +244,7 @@
           {/each}
         </div>
       {/if}
-      <p class="src">Ζωντανά, από το GPS των λεωφορείων.{#if failed}{" "}Η τελευταία ενημέρωση απέτυχε.{/if}</p>
+      <p class="src">{app.cityInfo.gtfsHost === "citybus.gr" ? "Ζωντανά, από τις αφίξεις του citybus.gr· οι θέσεις είναι εκτιμήσεις." : "Ζωντανά, από το GPS των λεωφορείων."}{#if failed}{" "}Η τελευταία ενημέρωση απέτυχε.{/if}</p>
     {:else if failed}
       <p>{id ? "Δεν φόρτωσαν οι αφίξεις. Ξαναδοκιμάζω σε 20″." : "Οι αφίξεις δεν είναι διαθέσιμες. Ανανέωσε τη σελίδα."}</p>
     {:else}

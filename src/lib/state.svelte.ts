@@ -24,6 +24,7 @@ import { assignSlots, colorOf, type LineColor } from "./lineColors";
 import { retryStops, stopPush } from "./push";
 import type { CityLive, CityVehicle, LineInfo, LineLive, LineStatic, Status, Vehicle } from "./types";
 import { CardNav, sameCard, type Card } from "./cards";
+import { busId, isBusId } from "./busNs";
 import { busVehicleCard, cardTitle, legacyOf, routeCard, trainCard } from "./legacy";
 import { stopIndex } from "./stops";
 import { busFavIds, loadFavs, toggleLine as toggleFavLineIn, toggleStop, type FavLine, type FavStop, type Favs } from "./favs";
@@ -543,7 +544,7 @@ export class AppState {
   // Goes on the stack: the bus's card, else the line's.
   openLineAt(line: string, variants: string[], vehicle?: string) {
     if (variants.length) this.setFocus(line, variants);
-    this.push(vehicle ? busVehicleCard(line, vehicle) : variants.length ? routeCard(line, variants[0]) : { kind: "line", id: `oasa:${line}`, title: line });
+    this.push(vehicle ? busVehicleCard(line, vehicle) : variants.length ? routeCard(line, variants[0]) : { kind: "line", id: busId(line), title: line });
   }
 
   setTheme(t: Theme) {
@@ -555,7 +556,7 @@ export class AppState {
     this.favs = f;
     store(favKey(this.cityId), f);
   }
-  toggleFavorite(id: string) { this.toggleFavLine({ id: `oasa:${id}`, label: id }); }
+  toggleFavorite(id: string) { this.toggleFavLine({ id: busId(id), label: id }); }
   toggleFavStop(s: FavStop) { this.setFavs(toggleStop(this.favs, s)); }
   toggleFavLine(l: FavLine) { this.setFavs(toggleFavLineIn(this.favs, l)); }
   isFavStop = (id: string) => this.favs.stops.some(s => s.id === id);
@@ -757,7 +758,7 @@ export class AppState {
     this.startTrains();
     if (!on) {
       const top = this.stack[this.stack.length - 1];
-      if (top && !top.id.startsWith("oasa:") && !top.id.startsWith("muni:")) this.closeCards();   // a rail card has nothing to show now
+      if (top && !isBusId(top.id) && !top.id.startsWith("muni:")) this.closeCards();   // a rail card has nothing to show now
       this.selectTrain(null); this.selectRailLine(null); this.selectStation(null); this.selectRailStation(null);
       this.stasyTrains = this.suburbanTrains = [];
       this.stasyMotion = {};
@@ -1054,9 +1055,9 @@ export class AppState {
     if (s?.kind === "vehicle" && s.line === id && !d.vehicles.some(v => v.id === s.id)) {
       // Its card becomes its line's (spec B9): a link to a run that ended still shows the line.
       const top = this.stack[this.stack.length - 1];
-      if (top?.kind === "vehicle" && top.id === `oasa:${s.id}`) {
+      if (top?.kind === "vehicle" && top.id === busId(s.id)) {
         this.say("Το όχημα δεν είναι πια σε δρομολόγιο.");
-        this.nav?.replaceTop({ kind: "line", id: `oasa:${id}`, title: id });
+        this.nav?.replaceTop({ kind: "line", id: busId(id), title: id });
       } else this.clearSelection();
     }
     this.countEmpty(id, d);

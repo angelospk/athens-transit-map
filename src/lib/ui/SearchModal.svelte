@@ -4,6 +4,9 @@
   // Full screen on a phone, a 560 px dialog on a desktop. An empty query shows the favourites, then the last
   // picks. A pick closes the modal and replaces the card stack with that card.
   import { tick, untrack } from "svelte";
+  import { isBusId } from "../busNs";
+  import { PAGE_CITY } from "../config";
+  import { recentKey } from "../cityBases";
   import { fetchV2Lines, fetchV2Stops } from "../api";
   import { placeSearch, type PlaceAnswer } from "../placeSearch";
   import { geocode, type Place } from "../trip";
@@ -17,7 +20,7 @@
 
   let { app }: { app: AppState } = $props();
 
-  const GROUP = 5, PAGE = 60, RECENT_KEY = "recent.v2";
+  const GROUP = 5, PAGE = 60, RECENT_KEY = recentKey(PAGE_CITY);
   const KINDS = [["all", "Όλα"], ["lines", "Γραμμές"], ["stops", "Στάσεις"], ["places", "Μέρη"]] as const;
   const CHIPS: [Chip, string][] = [["bus", "Λεωφ."], ["metro", "Μετρό"], ["tram", "Τραμ"], ["suburban", "Προαστ."]];
 
@@ -103,7 +106,7 @@
     close();
     app.open({ kind: "line", id, title: label });
     // A bus line frames its route once the route loads (showRoute); the other modes frame their stops.
-    if (!id.startsWith("oasa:")) app.fitPoints(lineStopPoints(stops, id));
+    if (!isBusId(id)) app.fitPoints(lineStopPoints(stops, id));
   }
   // «Οδηγίες εδώ»: the trip planner, with the place as its end.
   function planTo(p: Place) {
@@ -130,7 +133,7 @@
   function badge(id: string, label?: string | null) {
     const l = byId.get(id);
     const text = l?.label ?? label ?? native(id);
-    if (id.startsWith("oasa:")) { const c = app.lineColor(native(id)); return { text, bg: c.bg, fg: c.fg }; }
+    if (isBusId(id)) { const c = app.lineColor(native(id)); return { text, bg: c.bg, fg: c.fg }; }
     return { text, bg: l?.color ?? "#6b7280", fg: l?.text_color ?? "#ffffff" };
   }
   const lineLabel = (l: V2Line) => l.label ?? l.name;

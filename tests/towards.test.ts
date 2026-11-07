@@ -60,6 +60,11 @@ describe("cleanTerminus", () => {
     ["MEDITERRANEAN COSMOS", "MEDITERRANEAN COSMOS"],
     ["ΑΜ/ΣΙΟ ΘΡΙΑΣΙΟΥ", "ΑΜ/ΣΙΟ ΘΡΙΑΣΙΟΥ"],          // a slash inside an abbreviation stays
     ["ΠΑΝ/ΠΟΛΗ", "ΠΑΝ/ΠΟΛΗ"],
+    // citybus.gr (web#54): a stop number before the name, a trailing ΤΕΡΜΑ
+    ["26-ΚΟΥΚΟΥΝΑΡΙΕΣ", "ΚΟΥΚΟΥΝΑΡΙΕΣ"],
+    ["0-ΛΙΜΑΝΙ ΤΕΡΜΑ", "ΛΙΜΑΝΙ"],
+    ["ΑΣΕΛΗΝΟΣ ΤΕΡΜΑ", "ΑΣΕΛΗΝΟΣ"],
+    ["ΤΕΡΜΑ", ""],
   ])("%s → %s", (raw, out) => expect(cleanTerminus(raw)).toBe(out));
 });
 
@@ -183,6 +188,9 @@ describe("public/trips*.json", () => {
   it.each(files)("%s has directions for every stop", f => {
     const ix: TripIndex = JSON.parse(readFileSync(new URL(f, dir), "utf8"));
     expect(ix.d?.s).toHaveLength(ix.s.length);
-    expect(ix.s.filter((_, i) => towardsOf(ix, i).towards.length).length).toBeGreaterThan(ix.s.length * 0.8);
+    // A small citybus.gr network often ends its lines at a stop named only «ΑΦΕΤΗΡΙΑ»/«ΤΕΡΜΑ», which names no
+    // place (Skiathos: 38%): the 80% bar holds for Athens and Thessaloniki only.
+    const share = f === "trips.json" || f === "trips-thessaloniki.json" ? 0.8 : 0.3;
+    expect(ix.s.filter((_, i) => towardsOf(ix, i).towards.length).length).toBeGreaterThan(ix.s.length * share);
   });
 });

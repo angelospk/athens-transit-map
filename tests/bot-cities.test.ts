@@ -24,10 +24,9 @@ describe("citybus cities in the bot", () => {
   });
 
   // No index yet: too many stops without a direction (tests/towards.test.ts), #57.
-  const NO_INDEX = ["kastoria", "ptolemaida", "skiathos"];
   it("each have the map's stop index, rebuilt daily by citybus-stops.yml", () => {
     const wf = readFileSync(".github/workflows/citybus-stops.yml", "utf8");
-    for (const c of CITYBUS.filter(c => !NO_INDEX.includes(c.slug))) {
+    for (const c of CITYBUS) {
       expect(existsSync(`public/trips-${c.slug}.json`), c.slug).toBe(true);
       expect(wf).toContain(`${c.slug}:${c.code}`);
     }

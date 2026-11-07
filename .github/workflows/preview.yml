@@ -43,6 +43,7 @@ jobs:
           VITE_FEEDBACK_URL: ${{ vars.VITE_FEEDBACK_URL }} # the Apps Script of docs/feedback; unset = text-only form
           VITE_API_BASE_THESSALONIKI: ${{ vars.VITE_API_BASE_THESSALONIKI }} # Thessaloniki's own instance (web#40)
           SEO_LEGACY: "0" # no moved pages for the old Athens URLs: Cloudflare Pages takes ~20,000 files (web#47)
+          SEO_CITYBUS_STOPS: "0" # no stop pages for the 28 citybus.gr cities: they would pass the ~20,000-file limit (web#54)
       - id: deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

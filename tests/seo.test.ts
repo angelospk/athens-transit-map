@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { appPage, build, fileOf, homePage, homePath, linePage, linePath, linesPage, linesPath, movedPage, robots, sitemap, slug, stopPage, stopPath, SITE, type GetJson, type LineDetail, type SeoLine, type StopEntry } from "../scripts/seo";
+import type { CityId } from "../src/lib/cities";
 
 const l040: SeoLine = { id: "oasa:040", mode: "bus", label: "040", name: "ΠΕΙΡΑΙΑΣ - ΣΥΝΤΑΓΜΑ", color: "#153ce0", text_color: "#ffffff" };
 const lB12: SeoLine = { id: "oasa:Β12", mode: "bus", label: "Β12", name: "ΑΝΩ ΛΙΟΣΙΑ - ΚΑΜΑΤΕΡΟ", color: "#153ce0", text_color: "#ffffff" };
@@ -230,10 +231,17 @@ describe("build", () => {
   };
   const both = (city: string) => from(city === "athens" ? api : thess);
   const read = (out: string, f: string) => readFileSync(join(out, f), "utf8");
+  const TWO: CityId[] = ["athens", "thessaloniki"];
+  const l101: SeoLine = { id: "pat:101", mode: "bus", label: "101", name: "ΕΓΛΥΚΑΔΑ", color: "#787878", text_color: "#ffffff" };
+  const patras: Record<string, unknown> = {
+    "lines": { lines: [l101] },
+    "stops": { stops: [["pat:403", "ΑΓΙΟΥ ΑΝΔΡΕΟΥ", 38.24, 21.73, ["bus"], ["pat:101"]]] },
+    "lines/pat%3A101": { line: l101, patterns: [{ id: "pat:101-0", headsign: "ΕΓΛΥΚΑΔΑ", direction: 0, stops: ["pat:403"] }], stops: { "pat:403": { id: "pat:403", name: "ΑΓΙΟΥ ΑΝΔΡΕΟΥ" } } },
+  };
 
   it("writes per city a home, an all-lines page and a page per stop and line, plus the sitemap, robots.txt and 404.html", async () => {
     const out = mkdtempSync(join(tmpdir(), "seo-"));
-    const n = await build(out, both, { shell: SHELL, legacy: false });
+    const n = await build(out, both, { shell: SHELL, legacy: false, cities: TWO });
     expect(n.cities).toEqual([{ id: "athens", stops: 2, lines: 2 }, { id: "thessaloniki", stops: 1, lines: 1 }]);
     expect(read(out, "athens/stop/oasa-100001.html")).toContain("14η ΝΤΑΜΑΡΙΑ");
     expect(existsSync(join(out, "athens/stop/stasy-αγια-βαρβαρα-metro.html"))).toBe(true);
@@ -253,7 +261,7 @@ describe("build", () => {
 
   it("legacy: every old Athens page moves to its new path, not listed in the sitemap", async () => {
     const out = mkdtempSync(join(tmpdir(), "seo-"));
-    await build(out, both, { shell: SHELL, legacy: true });
+    await build(out, both, { shell: SHELL, legacy: true, cities: TWO });
     expect(read(out, "stop/oasa-100001.html")).toContain("url=/athens/stop/oasa-100001");
     expect(read(out, "line/oasa-040.html")).toContain("url=/athens/line/oasa-040");
     expect(read(out, "lines.html")).toContain("url=/athens/lines");
@@ -263,7 +271,7 @@ describe("build", () => {
 
   it("lists extra pages (the stats pages) in the sitemap", async () => {
     const out = mkdtempSync(join(tmpdir(), "seo-"));
-    await build(out, both, { shell: SHELL, legacy: false, extraPaths: ["/athens/stats/"] });
+    await build(out, both, { shell: SHELL, legacy: false, extraPaths: ["/athens/stats/"], cities: TWO });
     expect(read(out, "sitemap.xml")).toContain(`<loc>${SITE}/athens/stats/</loc>`);
     expect(read(out, "athens/index.html")).toContain('href="/athens/stats/"');
     expect(read(out, "thessaloniki/index.html")).not.toContain("/stats/");
@@ -274,13 +282,13 @@ describe("build", () => {
     const broken = (city: string) => (city === "athens"
       ? async (p: string) => (p === "lines/stasy%3AM2" ? Promise.reject(new Error("503")) : from(api)(p))
       : from(thess));
-    await expect(build(out, broken, { shell: SHELL, legacy: false })).rejects.toThrow();
+    await expect(build(out, broken, { shell: SHELL, legacy: false, cities: TWO })).rejects.toThrow();
   });
 
   it("another city's failure skips only that city: Athens still deploys", async () => {
     const out = mkdtempSync(join(tmpdir(), "seo-"));
     const down = (city: string) => (city === "athens" ? from(api) : async () => Promise.reject(new Error("503")));
-    const n = await build(out, down, { shell: SHELL, legacy: false });
+    const n = await build(out, down, { shell: SHELL, legacy: false, cities: TWO });
     expect(n.cities[0]).toEqual({ id: "athens", stops: 2, lines: 2 });
     expect(n.cities[1]).toMatchObject({ id: "thessaloniki", stops: 0, lines: 0 });
     expect(n.cities[1].skipped).toMatch(/503/);
@@ -292,11 +300,37 @@ describe("build", () => {
     await expect(build(out, both, { shell: "<html></html>", legacy: false, cities: ["thessaloniki"] })).rejects.toThrow(/shell/);
   });
 
+  it("a citybus.gr city (web#54): its own pages under its slug, naming the city", async () => {
+    const out = mkdtempSync(join(tmpdir(), "seo-"));
+    const n = await build(out, () => from(patras), { shell: SHELL, legacy: false, cities: ["patras"] });
+    expect(n.cities).toEqual([{ id: "patras", stops: 1, lines: 1 }]);
+    const stop = read(out, "patras/stop/pat-403.html");
+    expect(stop).toContain(`${SITE}/patras/stop/pat-403`);
+    expect(stop).toContain("Πάτρα");
+    expect(stop).not.toContain("Αθήνα");
+    expect(read(out, "patras/index.html")).toContain("λεωφορείων στην Πάτρα");
+    expect(read(out, "patras/line/pat-101.html")).toContain('href="/patras/stop/pat-403"');
+  });
+
+  it("stopPages: a city can go without stop pages (the preview's file limit); its other pages stay", async () => {
+    const out = mkdtempSync(join(tmpdir(), "seo-"));
+    const get = (city: string) => from(city === "patras" ? patras : api);
+    const n = await build(out, get, { shell: SHELL, legacy: false, cities: ["athens", "patras"], stopPages: c => c === "athens" });
+    expect(n.cities).toEqual([{ id: "athens", stops: 2, lines: 2 }, { id: "patras", stops: 0, lines: 1 }]);
+    expect(existsSync(join(out, "athens/stop/oasa-100001.html"))).toBe(true);
+    expect(existsSync(join(out, "patras/stop/pat-403.html"))).toBe(false);
+    expect(existsSync(join(out, "patras/line/pat-101.html"))).toBe(true);
+    expect(existsSync(join(out, "patras/index.html"))).toBe(true);
+    const xml = read(out, "sitemap.xml");
+    expect(xml).not.toContain("/patras/stop/");
+    expect(xml).toContain(`${SITE}/patras/line/pat-101`);
+  });
+
   it("fails while a source is still warming up, so a restart never publishes a short sitemap", async () => {
     const out = mkdtempSync(join(tmpdir(), "seo-"));
     const warming = (city: string) => async (p: string) =>
       city === "athens" && p === "stops" ? { stops: [s1], sources: [{ id: "stasy", state: "warming_up", updated_at: null }] } : both(city)(p);
-    await expect(build(out, warming, { shell: SHELL, legacy: false })).rejects.toThrow(/warming_up/);
+    await expect(build(out, warming, { shell: SHELL, legacy: false, cities: TWO })).rejects.toThrow(/warming_up/);
   });
 });
 
