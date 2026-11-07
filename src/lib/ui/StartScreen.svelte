@@ -957,7 +957,7 @@
                 <span class="pvm"><b>{top.depart} → {top.arrive}</b><b class="dur">{durText(top.mins)}</b></span>
                 <span class="legs">
                   {#each top.legs as l, k (k)}
-                    <span class="leg" class:walk={l.walk} style:--lb={l.color || undefined} style:--lt={l.text || undefined} in:item={{ i: k, y: 6 }}>{l.walk ? `Πόδια ${l.label}` : l.label}</span>
+                    <span class="leg" class:walk={l.walk} style:--lb={l.color || undefined} style:--lt={l.text || undefined} in:item={{ i: k, y: 6 }}>{#if l.walk}<span class="lwi" aria-label="Πόδια"><Icon name="walk" size={12} /></span>{/if}{l.label}</span>
                   {/each}
                 </span>
                 {#if top.ignored}<span class="pvn">Με {meansOn.length === 1 ? meansOn[0].label.toLowerCase() : "αυτά τα μέσα"} δεν βγαίνει τώρα: αυτή είναι η καλύτερη με όλα.</span>{/if}
@@ -979,7 +979,7 @@
                 <button type="button" class="alt" class:sel aria-pressed={sel} onclick={() => (chosen = sel ? null : o.key)} aria-label="Διάλεξε τη διαδρομή {o.depart} – {o.arrive}">
                   {#if sel}<span class="seltag" in:item={{ y: 4 }}><Icon name="check" size={13} />Η επιλογή σου</span>{/if}
                   <span class="am"><b>{o.depart} → {o.arrive}</b><b class="dur">{durText(o.mins)}</b></span>
-                  <span class="legs">{#each o.legs as l, j (j)}<span class="leg" class:walk={l.walk} style:--lb={l.color || undefined} style:--lt={l.text || undefined}>{l.walk ? `Πόδια ${l.label}` : l.label}</span>{/each}</span>
+                  <span class="legs">{#each o.legs as l, j (j)}<span class="leg" class:walk={l.walk} style:--lb={l.color || undefined} style:--lt={l.text || undefined}>{#if l.walk}<span class="lwi" aria-label="Πόδια"><Icon name="walk" size={12} /></span>{/if}{l.label}</span>{/each}</span>
                   <span class="al">{o.leaveIn === 0 ? "Φύγε τώρα" : `Φύγε σε ${o.leaveIn}′`}{o.transfers ? ` · ${o.transfers} ${o.transfers === 1 ? "αλλαγή" : "αλλαγές"}` : " · χωρίς αλλαγή"}{o.metric ? ` · ${o.metric}` : ""}</span>
                 </button>
               </li>
@@ -1441,5 +1441,36 @@
     .box { max-width: none; min-height: 100%; padding: calc(28px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); border-radius: 0;
       box-shadow: none; background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: none; --acts-bg: var(--bg); }
     .acts { margin-top: auto; }
+  }
+  .lwi { display: flex; margin-right: 3px; }   /* a walk: the walking figure left of its minutes */
+
+  /* ---- A phone: the same screen in quieter colours. Neutral surfaces with a fine neutral edge instead of blue-tinted
+     boxes, the values in the text colour, one blue for «Πάμε» (no glow), the means and the best route without loud
+     fills; colour stays where it means something: the lines, and «Φύγε…» in green. */
+  @media (max-width: 719px) {
+    .box { --pc-surf: color-mix(in srgb, var(--fg) 6%, var(--bg)); --pc-edge: color-mix(in srgb, var(--fg) 10%, var(--bg)); --pc-acc: #3d7bea; }
+    .logo { background: var(--pc-acc); color: #fff; }
+    .field, .ends.group { border-color: var(--pc-edge); background: var(--pc-surf); }
+    .ends.group .field.end { background: none; }
+    .field.open, .ends.group .field.end.open { border-color: color-mix(in srgb, var(--fg) 22%, var(--bg)); background: color-mix(in srgb, var(--fg) 8%, var(--bg)); }
+    .ends.group .field.from { border-top-color: var(--pc-edge); }
+    input, .fv { color: var(--fg); }
+    .mk.from { background: var(--pc-acc); box-shadow: none; }
+    .fi.done { background: color-mix(in srgb, var(--fg) 12%, var(--bg)); color: var(--fg); }
+    .chip { border-color: var(--pc-edge); background: var(--pc-surf); }
+    .chip.open, .chip:hover { border-color: color-mix(in srgb, var(--fg) 22%, var(--bg)); }
+    .sb { background: color-mix(in srgb, var(--fg) 14%, var(--bg)); color: var(--fg); border-color: var(--bg); }
+    .sg, .sortc .sg { background: color-mix(in srgb, var(--fg) 10%, var(--bg)); color: var(--fg); }
+    .pv { border-color: var(--pc-edge); background: var(--pc-surf); }
+    .pv.live { color: var(--fg); border-color: var(--pc-edge); }
+    .leave i { animation: none; }
+    .leg.walk { background: color-mix(in srgb, var(--fg) 10%, var(--bg)); }
+    .alt { border-color: var(--pc-edge); background: var(--pc-surf); box-shadow: none; }
+    .alt.sel { border-color: color-mix(in srgb, var(--pc-acc) 60%, transparent); background: var(--pc-surf); }
+    .alt.sel .am b { color: var(--fg); }
+    .seltag { background: var(--pc-acc); }
+    .primary { background: var(--pc-acc); color: #fff; }
+    .primary.ready { box-shadow: none; animation: none; }
+    .primary:disabled { background: var(--pc-surf); color: var(--muted); }
   }
 </style>
