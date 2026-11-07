@@ -422,6 +422,8 @@ export class AppState {
   followMe: () => void = () => {};
   // Set by MapView: the map off the user for a look at these points ([lon, lat]), until followMe again.
   peekAt: (pts: [number, number][]) => void = () => {};
+  // Set by MapView: the camera at a place, turned to look one way, tilted ([lon, lat], degrees from north).
+  lookFrom: (at: [number, number], bearing: number) => void = () => {};
 
   // A stop's own name, as the user calls it («Η στάση του φούρνου»), and which of their ways it is for (home, work):
   // there the home screen shows only the lines that go that way. Kept on this device, by the stop's OASA id.

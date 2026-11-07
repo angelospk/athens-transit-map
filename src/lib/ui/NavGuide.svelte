@@ -160,11 +160,52 @@
   let peeking = $state(false);
   $effect(() => { void app.guideStep; peeking = false; });
   function peek() {
+    endLook(false);
     if (peeking || !bus || !ride) { peeking = false; app.followMe(); return; }
     const pts: [number, number][] = [[bus.at[1], bus.at[0]], [ride.board.at[1], ride.board.at[0]], ...(pos ? [[pos[1], pos[0]] as [number, number]] : [])];
     peeking = true;
     app.peekAt(pts);
   }
+  // «Η στάση σε 3D»: the camera at the stop to board, tilted, looking the way the bus comes from (its lane, else the
+  // stop before, else where the bus is); again, or another step: back to the user, 3D as it was.
+  let looking = $state(false), was3d = false;
+  const bearingOf = (a: Pt, b: Pt) => {
+    const r = Math.PI / 180, y = Math.sin((b[1] - a[1]) * r) * Math.cos(b[0] * r);
+    const x = Math.cos(a[0] * r) * Math.sin(b[0] * r) - Math.sin(a[0] * r) * Math.cos(b[0] * r) * Math.cos((b[1] - a[1]) * r);
+    return ((Math.atan2(y, x) / r) + 360) % 360;
+  };
+  function comesFrom(r: GuideRide): Pt | null {
+    const lane = app.guideApproach;
+    if (lane && lane.length > 1) {
+      // About 150 m back along the lane from the stop.
+      let d = 0;
+      for (let i = lane.length - 1; i > 0; i--) { d += metres(lane[i], lane[i - 1]); if (d >= 150) return lane[i - 1]; }
+      return lane[0];
+    }
+    return r.before.at(-1)?.at ?? bus?.at ?? null;
+  }
+  function lookStop() {
+    if (looking) { endLook(); return; }
+    const r = ride;
+    if (!r) return;
+    const from = comesFrom(r), at = r.board.at;
+    const bearing = from ? bearingOf(at, from) : 0;
+    // The point a little that way from the stop: the stop low in the picture, the street it comes along above it.
+    const k = 30 / 111_320, rad = (bearing * Math.PI) / 180;
+    const c: [number, number] = [at[1] + (Math.sin(rad) * k) / Math.cos((at[0] * Math.PI) / 180), at[0] + Math.cos(rad) * k];
+    was3d = app.threeD;
+    if (!app.threeD) app.setThreeD(true);
+    peeking = false;
+    looking = true;
+    app.lookFrom(c, bearing);
+  }
+  function endLook(back = true) {
+    if (!looking) return;
+    looking = false;
+    if (!was3d) app.setThreeD(false);
+    if (back) app.followMe();
+  }
+  $effect(() => { void app.guideStep; void app.guideOn; untrack(() => endLook()); });
   // The bus's way to the stop: its line's shape between the two, else the stops before.
   async function laneOf(r: GuideRide, at: Pt): Promise<Pt[]> {
     try {
@@ -525,6 +566,7 @@
   });
 
   function end() {
+    endLook(false);
     speechSynthesis?.cancel();
     if (metroRide.card?.startsWith("guide:")) metroRide.end();
     app.endGuide();
@@ -803,6 +845,10 @@
     <div class="mapbtns" hidden={app.stack.length > 0} style:bottom="{(sheetH || 0) + 12}px">
       {#if bus && ride && !(rideIsNow && app.guideOn)}
         <button type="button" class="mb" class:on={peeking} onclick={peek} aria-pressed={peeking} aria-label={peeking ? "Πίσω σε εμένα" : `Πού είναι το ${ride.line}`} title={peeking ? "Πίσω σε εμένα" : `Πού είναι το ${ride.line}`}><Icon name={peeking ? "locate" : "bus"} size={20} /></button>
+      {/if}
+      {#if ride && !(rideIsNow && app.guideOn)}
+        <button type="button" class="mb" class:on={looking} onclick={lookStop} aria-pressed={looking}
+          aria-label={looking ? "Πίσω σε εμένα" : `Η στάση ${ride.board.name} σε 3D, από εκεί που έρχεται το ${ride.line}`} title={looking ? "Πίσω σε εμένα" : "Η στάση σε 3D"}><Icon name={looking ? "locate" : "cube"} size={20} /></button>
       {/if}
       <button type="button" class="mb round2" class:on={app.headingUp} aria-pressed={app.headingUp} onclick={headingUp}
         aria-label={app.headingUp ? "Ο χάρτης με τον βορρά πάνω" : "Γύρνα τον χάρτη με το κινητό"} title={app.headingUp ? "Βορράς πάνω" : "Γύρνα τον χάρτη με το κινητό"}>

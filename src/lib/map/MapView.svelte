@@ -807,31 +807,9 @@
     locator.start();
   }
 
-  // The navigator, following: the user and the frame's points (the stop walked to, the bus when it is close) in view,
-  // eased there every couple of seconds; turned with the phone when «Γύρνα το κινητό» is on.
-  let framedGuide = false, frameAt = 0;
-  function frameGuide(m: MlMap, at: LngLat, pts: [number, number][]) {
-    const t = performance.now();
-    if (t - frameAt < 2500) return;
-    frameAt = t;
-    const b = pts.reduce((b, p) => b.extend(p), new LngLatBounds(at, at));
-    // Its own padding, from the guide's own parts (the banner on top, the sheet or bar at the foot, the round buttons
-    // at the right): the map's general padding changes with other panels and notices, and the view swung with it.
-    const rectOf = (sel: string) => { const el = document.querySelector<HTMLElement>(sel); return el && el.offsetParent !== null ? el.getBoundingClientRect() : null; };
-    const topEnd = Math.max(rectOf(".guide .then")?.bottom ?? 0, rectOf(".guide .banner")?.bottom ?? 0, 60);
-    const footTop = rectOf(".guide .minibar")?.top ?? rectOf(".guide .sheet")?.top ?? innerHeight;
-    const pad = { top: topEnd + 24, bottom: Math.max(24, innerHeight - footTop + 24), left: 32, right: 72 };
-    if (pad.top + pad.bottom > innerHeight - 120) pad.bottom = Math.max(24, innerHeight - 120 - pad.top);
-    m.setPadding({ top: 0, bottom: 0, left: 0, right: 0 });
-    const bearing = m.getBearing();
-    const cam = m.cameraForBounds(b, { padding: pad, maxZoom: 17.5, bearing });
-    if (!cam || cam.zoom == null || !cam.center) return;
-    // Close to where it already is: left still (no small swings every few seconds).
-    const c0 = m.project(m.getCenter()), c1 = m.project(cam.center as LngLatLike);
-    if (framedGuide && Math.abs(cam.zoom - m.getZoom()) < 0.3 && Math.hypot(c1.x - c0.x, c1.y - c0.y) < 48) return;
-    m.easeTo({ center: cam.center, zoom: cam.zoom, bearing, duration: framedGuide && !reducedMotion.matches ? 1000 : 0 });
-    framedGuide = true;
-  }
+  // The navigator, following: close on the user; `looked` after a look from a stop (lookFrom), so «back to me» comes
+  // back flat. framedGuide: a frame left over from before (eased back onto the user once).
+  let framedGuide = false, looked = false;
   // The phone's compass turns the map (heading-up); off again, north is up.
   let lastBearing = 0;
   $effect(() => {
@@ -990,12 +968,9 @@
       // stops MapLibre's drag before it starts, so the drag that would end the follow never came and the map stood
       // still under the finger while the fix was being smoothed. A trip framed stays, unless followed.
       if (follow && (!app.tripPlan || app.guide) && !m.isMoving() && !handsOn()) {
-        const fr = app.guide && !app.headingUp ? app.guideFrame : null;   // the phone turned: the user ahead, not an overview
-        if (fr?.length) frameGuide(m, r.pos, fr);
-        else {
-          if (framedGuide) { framedGuide = false; m.easeTo({ center: r.pos, zoom: Math.max(m.getZoom(), 17), padding: padNow(), duration: reducedMotion.matches ? 0 : 700 }); }
-          else m.setCenter(r.pos, { follow: true });
-        }
+        // The guide stays close on the user (a street's width); the stop and the bus are a tap away (NavGuide's buttons).
+        if (framedGuide) { framedGuide = false; m.easeTo({ center: r.pos, zoom: Math.max(m.getZoom(), 17.5), padding: padNow(), duration: reducedMotion.matches ? 0 : 700 }); }
+        else m.setCenter(r.pos, { follow: true });
       }
     }
     // Corrections and trails: 30 fps close up; zoomed out, where they are a few pixels and every frame
@@ -1627,10 +1602,11 @@
     app.followMe = () => {
       if (locState === "off" || locState === "denied") { follow = true; flyOnFix = false; cityOnFix = true; locator.start(); }
       follow = true;
-      // The guide keeps its frame (the stop, the bus): the next frame step fits it at once, no jump to the user first.
-      if (app.guide && app.guideFrame?.length && !app.headingUp && me) { frameAt = 0; return; }
-      if (me) m.easeTo({ center: me.mover.pos, zoom: Math.max(m.getZoom(), 17), padding: padNow(), duration: reducedMotion.matches ? 0 : 800 });
-      else if (app.guide?.legs[0]) { const l = app.guide.legs[0], at = l.kind === "walk" ? l.from : l.board.at; m.easeTo({ center: [at[1], at[0]], zoom: 17, duration: 0 }); }
+      // Close on the user: never further out than a few streets, back to a flat view after a look from a stop.
+      if (me) m.easeTo({ center: me.mover.pos, zoom: Math.max(m.getZoom(), 17.5), pitch: app.guide && looked ? 0 : m.getPitch(), bearing: app.guide && looked && !app.headingUp ? 0 : m.getBearing(),
+        padding: padNow(), duration: reducedMotion.matches ? 0 : 800 });
+      else if (app.guide?.legs[0]) { const l = app.guide.legs[0], at = l.kind === "walk" ? l.from : l.board.at; m.easeTo({ center: [at[1], at[0]], zoom: 17.5, duration: 0 }); }
+      looked = false;
     };
     // The guide's look at the bus and the user together: off the user until followMe again.
     app.peekAt = pts => {
@@ -1640,6 +1616,13 @@
       // The guide's padding stays on the map (easeTo keeps it): fitBounds would add its own on top of it.
       m.setPadding({ top: 0, bottom: 0, left: 0, right: 0 });
       m.fitBounds(b, { padding: padNow(), maxZoom: 17, duration: reducedMotion.matches ? 0 : 700, absolutePadding: true });
+    };
+    // The guide's look from the stop (NavGuide): close in, tilted, turned the way the bus comes from.
+    app.lookFrom = (at, bearing) => {
+      follow = false;
+      looked = true;
+      m.setPadding({ top: 0, bottom: 0, left: 0, right: 0 });
+      m.easeTo({ center: at, zoom: 18.4, pitch: 62, bearing, padding: padNow(), duration: reducedMotion.matches ? 0 : 1100 });
     };
     app.showCity = c => {
       follow = false;
