@@ -5,6 +5,8 @@
 // TRIPS_URL, STATIC_BASE, API_BASE. Never log the token: it is in every Telegram URL.
 // Thessaloniki (web push only, no Telegram): a second bot with its own state file and data, from its own
 // atrt instance (THESS_API_BASE, which serves its static/v1 too) and the map's THESS_TRIPS_URL; never OASTH itself.
+// citybus.gr cities (web push only, bot/cities.ts): one bot each, with its own state file, from the one
+// staseis-rt instance (CITYBUS_API_BASE) and the map's trips-<slug>.json (MAP_BASE).
 // Web push (off without the keys): VAPID_PUBLIC, VAPID_PRIVATE (`npx web-push generate-vapid-keys`),
 // PUSH_PORT (default 8188, on 127.0.0.1 behind the Cloudflare tunnel), ORIGINS (default the map's: staseis.gr and the old bus.haroldpoi.dev).
 
@@ -14,6 +16,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import webpush from "web-push";
 import { byCity, pushApi } from "./http";
+import { CITYBUS, citybusUrls } from "./cities";
 import { Bot, type BotState, type Fetched, type PushSub, type TgResult } from "./bot";
 
 const token = process.env.TELEGRAM_TOKEN?.trim();
@@ -91,12 +94,20 @@ const thess = new Bot({
   urls: { trips: process.env.THESS_TRIPS_URL || "https://staseis.gr/trips-thessaloniki.json", static: `${thessApi}/static/v1`, api: thessApi },
   agency: "ΟΑΣΘ", now: Date.now, sleep, save: saver(thessFile), tg: async () => ({ ok: false }), get, push,
 }, load(thessFile));
-const bots = [bot, thess];
+const cityApi = process.env.CITYBUS_API_BASE || "https://staseis-rt.haroldpoi.dev";
+const mapBase = process.env.MAP_BASE || "https://staseis.gr";
+const citybus = CITYBUS.map((c): [string, Bot] => {
+  const f = join(dir, `state-${c.slug}.json`);
+  return [c.slug, new Bot({ urls: citybusUrls(cityApi, mapBase, c), agency: "Αστικού ΚΤΕΛ", now: Date.now, sleep,
+    save: saver(f), tg: async () => ({ ok: false }), get, push }, load(f))];
+});
+const cities: [string, Bot][] = [["athens", bot], ["thessaloniki", thess], ...citybus];
+const bots = cities.map(([, b]) => b);
 const flushAll = () => { for (const b of bots) void b.flush(); };
 
 const ORIGINS = (process.env.ORIGINS || "https://staseis.gr,https://bus.haroldpoi.dev").split(",").map(s => s.trim());
 if (vapid.pub && vapid.priv)
-  createServer(pushApi(byCity({ athens: bot, thessaloniki: thess }, "athens"), { key: vapid.pub, origins: ORIGINS }, flushAll))
+  createServer(pushApi(byCity(Object.fromEntries(cities), "athens"), { key: vapid.pub, origins: ORIGINS }, flushAll))
     .listen(Number(process.env.PUSH_PORT) || 8188, "127.0.0.1");
 else console.log("web push off: no VAPID keys");
 
@@ -114,7 +125,7 @@ async function updates() {
 }
 
 // One gate per city: a slow city does not pause the other.
-for (const [name, b] of [["athens", bot], ["thessaloniki", thess]] as const) {
+for (const [name, b] of cities) {
   let ticking = false;
   setInterval(() => {
     if (ticking) return;
@@ -138,6 +149,6 @@ setInterval(() => {
   });
 }, 1000);
 
-console.log(`oasa-bus-bot started, state in ${file} and ${thessFile}`);
+console.log(`oasa-bus-bot started, ${cities.length} cities, state in ${dir}`);
 bot.init();
 void updates();
