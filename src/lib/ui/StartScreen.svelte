@@ -816,6 +816,36 @@
   $effect(() => { if (!app.start) untrack(() => { asking = !ready; }); });
   // «Βρες» (the search button) is never the trip asked, even with both ends of an earlier trip still set.
   const answer = $derived(!wide && ready && !asking && !app.savingPlace && !app.finding);
+  // Typing on a phone: the field goes to the top of the screen (the heading and the other field step aside), its
+  // list under it and no lower than the keyboard; «‹» or a choice brings the screen back.
+  const typing = $derived(!wide && open !== null && !answer);
+  function stopTyping() {
+    const f = open;
+    open = null;
+    if (f) inputs[f]?.blur();
+  }
+  $effect(() => {
+    if (!typing) return;
+    // iOS scrolls the page to the field as the keyboard rises: the field is at the top now, so back to the top.
+    const top = () => { boxEl?.closest(".start")?.scrollTo(0, 0); if (scrollY) scrollTo(0, 0); };
+    void tick().then(top);
+    const t = setTimeout(top, 320);
+    return () => clearTimeout(t);
+  });
+  // The list's height: down to the top of the keyboard (the visual viewport), scrolling inside.
+  function aboveKeys(node: HTMLElement) {
+    if (wide) return;
+    const vv = visualViewport;
+    const fit = () => {
+      const bottom = vv ? vv.offsetTop + vv.height : innerHeight;
+      node.style.maxHeight = `${Math.max(160, Math.floor(bottom - node.getBoundingClientRect().top - 12))}px`;
+    };
+    fit();
+    const t = setTimeout(fit, 350);
+    vv?.addEventListener("resize", fit);
+    vv?.addEventListener("scroll", fit);
+    return { destroy() { clearTimeout(t); vv?.removeEventListener("resize", fit); vv?.removeEventListener("scroll", fit); } };
+  }
   let openKey = $state<string | null>(null);
   let allShown = $state(false);
   $effect(() => { void pKey; void sortId; void modes; openKey = null; allShown = false; });
@@ -898,7 +928,7 @@
      button is released, and the click lands on something else (a chip such as «Σύνταγμα» did nothing). -->
 <svelte:document onclick={e => {
   const t = e.target as Element;
-  if (open && t.isConnected && !t.closest?.(".field, .opts")) open = null;
+  if (open && t.isConnected && !t.closest?.(".field, .opts, .typeback")) stopTyping();
 }} onpointerdown={e => {
   const t = e.target as Element;
   if (menu && !t.closest?.(".pickf, .opts")) menu = null;
@@ -996,11 +1026,11 @@
             </div>
           {/if}
         </div>
-      {:else}
+      {:else if !typing}
         {@render brandRow()}
       {/if}
-      {#if answer}
-        <!-- its heading is in the band -->
+      {#if answer || typing}
+        <!-- its heading is in the band; or typing on a phone: the field at the top, its list under it, over the keyboard -->
       {:else if app.savingPlace}
         <h1 id="start-h" in:item={{ i: 2 }}>{app.savingPlace === "home" ? "Πού είναι το Σπίτι;" : "Πού είναι η Δουλειά;"}</h1>
       {:else if find}
@@ -1016,8 +1046,12 @@
       {:else}
       <div class="fields" class:raised={menu !== null}>
         <div class="ends" class:group={!intro && wide} class:asks={!wide && !app.savingPlace} in:item={{ i: 3, y: 12 }}>
+        {#if typing && open}
+          <button type="button" class="typeback" onclick={stopTyping}><span class="tbi"><Icon name="back" size={16} /></span><span>{app.savingPlace ? (app.savingPlace === "home" ? "Πού είναι το Σπίτι;" : "Πού είναι η Δουλειά;") : find ? "Βρες" : open === "from" ? "Από πού ξεκινάς;" : "Πού θέλεις να πας;"}</span></button>
+        {/if}
         {#each (app.savingPlace || intro || find ? ["to"] : !wide ? ["from", "to"] : askFrom ? ["to", "from"] : ["to"]) as Field[] as f (f)}
-          {#if !wide && !app.savingPlace && !find}
+          {#if !typing || f === open}
+          {#if !wide && !app.savingPlace && !find && !typing}
             {@const n = f === "from" ? 1 : 2}
             <p class="qq" class:on={f === "from" ? !ends.from.place : !!ends.from.place && !ends.to.place}><span class="qn" aria-hidden="true">{n}</span>{f === "from" ? "Από πού ξεκινάς;" : "Πού θέλεις να πας;"}</p>
           {/if}
@@ -1049,6 +1083,7 @@
                 <button type="button" class="sc" class:best={c.best} onclick={c.run} in:item={{ i: k, y: 6 }}><Icon name={c.icon} size={15} /><span>{c.label}</span></button>
               {/each}
             </div>
+          {/if}
           {/if}
         {/each}
         {#if askFrom && !intro && !app.savingPlace && open === null && wide}
@@ -1286,7 +1321,7 @@
       {#if intro}
         <div class="hintfoot"><MoreHint box={boxEl} /></div>
       {:else}
-      <div class="acts">
+      <div class="acts" class:gone={typing}>
         {#if app.savingPlace}
           <button type="button" class="link" onclick={() => { app.savingPlace = null; app.start = false; }}><span>Άκυρο</span><kbd class="pc">Esc</kbd></button>
         {:else if find}
@@ -1339,7 +1374,7 @@
 {/if}
 
 {#snippet list(f: Field)}
-  <ul class="opts" id="start-{f}-list" role="listbox" aria-label={f === "from" ? "Από" : "Πού"} transition:listIn>
+  <ul class="opts" id="start-{f}-list" role="listbox" aria-label={f === "from" ? "Από" : "Πού"} transition:listIn use:aboveKeys>
     {#if ends[f].text.trim() && !ends[f].place && !opts.length && !lineHits.first.length && !lineHits.last.length && !asks.length && !muniLines.length && !muniStops.length}
       <li class="nothing" role="status">
         {#if busy}<span class="spin small" aria-hidden="true"></span>Αναζήτηση…
@@ -1533,6 +1568,10 @@
     box-shadow: 0 16px 40px rgba(0, 0, 0, .28); max-height: none; overflow: visible; }
 
   .ends > .opts { margin-top: 10px; }
+  .acts.gone { display: none; }
+  .typeback { align-self: flex-start; height: 36px; display: flex; align-items: center; gap: 8px; margin: 0 0 4px -4px; padding: 0 10px 0 4px; border: 0; border-radius: 18px;
+    background: none; color: var(--fg); font: inherit; font-size: 16px; font-weight: 700; line-height: 1; cursor: pointer; }
+  .tbi { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--control); }
   .opts { list-style: none; margin: 0; padding: 6px; border-radius: 18px; background: var(--glass-fill); border: 1px solid var(--glass-line);
     display: flex; flex-direction: column; max-height: 300px; overflow-y: auto; }
   .opt { width: 100%; min-height: 52px; display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 0; border-radius: 12px; background: none;
