@@ -698,11 +698,31 @@
   // only picks among the options (no new request). The same /v2/plan the trip planner asks, so «Πάμε» opens on it.
   const MODE_OF: Record<string, TripMode> = { bus: "bus", trolley: "trolley", metro: "metro", tram: "tram" };
   let plan = $state.raw<{ key: string; r: PlanResponse | null } | null>(null);
+  // The planner's own word on its data (each Source's state): a bus source still loading gives no bus routes yet,
+  // an expired metro timetable gives its times only roughly. Said in a line each, and asked again while loading.
+  let planSources = $state.raw<PlanResponse["sources"]>([]);
+  let planAgain = $state(0);
   const pKey = $derived(ends.from.place && ends.to.place && !app.savingPlace
     ? JSON.stringify([centre(ends.from.place.pts), centre(ends.to.place.pts), later, when]) : null);
+  $effect(() => { void pKey; planSources = []; });
+  $effect(() => {
+    if (!planSources.some(x => x.state === "warming_up")) return;
+    const t = setTimeout(() => planAgain++, 45_000);
+    return () => clearTimeout(t);
+  });
+  const SOURCE_NOTE: Record<string, Record<string, string>> = {
+    oasa: { warming_up: "Τα δεδομένα των λεωφορείων φορτώνουν ακόμα στον server: διαδρομές με λεωφορείο έρχονται σε λίγο (ξαναψάχνω μόνο του).",
+      stale: "Τα λεωφορεία δεν ενημερώνονται αυτή τη στιγμή: οι ώρες τους μπορεί να μην είναι οι τωρινές.",
+      indicative: "Λεωφορεία: ώρες από παλιό πρόγραμμα, κατά προσέγγιση.", down: "Δεν υπάρχουν δεδομένα για τα λεωφορεία αυτή τη στιγμή." },
+    stasy: { warming_up: "Το πρόγραμμα του μετρό και του τραμ φορτώνει ακόμα.",
+      indicative: "Μετρό και τραμ: το πρόγραμμά τους έληξε, οι ώρες είναι από την ίδια μέρα παλιότερου προγράμματος, κατά προσέγγιση.",
+      down: "Δεν υπάρχει πρόγραμμα για μετρό και τραμ αυτή τη στιγμή." },
+  };
+  const sourceNotes = $derived(planSources.map(x => SOURCE_NOTE[x.id]?.[x.state]).filter((x): x is string => !!x));
   $effect(() => {
     const k = pKey;
     if (!k || !app.start) return;
+    void planAgain;   // asked again while a source loads; the routes shown stay until the new answer
     const [a, b, off, w] = JSON.parse(k) as [[number, number], [number, number], number, When];
     const c = new AbortController();
     // When to ask from: now (or «σε 15′»), the time to leave, or, arriving by a time, an hour and a quarter before it
@@ -713,6 +733,7 @@
       async res => {
         if (c.signal.aborted) return;
         const r0 = res.status === 200 ? parsePlan(res.body) : null;
+        planSources = Array.isArray(r0?.sources) ? r0.sources : [];
         // No route from the server: the app finds some itself (fallbackPlan.ts), timed from the live boards: only now.
         if (w.kind !== "now" && (!r0 || !r0.itineraries.length)) { plan = { key: k, r: r0 }; return; }
         if (!r0 || !r0.itineraries.length) {
@@ -1295,6 +1316,7 @@
         {/if}
       {:else if !app.savingPlace && !find && (wide || answer)}
         {#if routes?.length && top && planR}
+          {#each sourceNotes as n (n)}<p class="est"><Icon name="warn" size={15} /><span>{n}</span></p>{/each}
           {#if planR.estimate}<p class="est"><Icon name="warn" size={15} /><span>Ο server των διαδρομών δεν απαντά τώρα: αυτές τις βρήκε η εφαρμογή από τις στάσεις και τις ζωντανές αφίξεις. Οι ώρες είναι κατά προσέγγιση.</span></p>{/if}
           {#if top.ignored}<p class="pvn solo">Με {meansOn.length === 1 ? meansOn[0].label.toLowerCase() : "αυτά τα μέσα"} δεν βγαίνει τώρα: αυτές είναι οι καλύτερες με όλα.</p>{/if}
           <!-- Every route as a compact card: when to leave, how long, the means, where its bus is now; a tap opens it
@@ -1321,6 +1343,7 @@
             {:else}
               <p class="pvh"><span class="pvi warn"><Icon name="warn" size={17} /></span>
                 <span>{walkOnly ? `Δεν βρέθηκε μέσο ${later || when.kind !== "now" ? "για τότε" : "τώρα"}. Με τα πόδια: ${durText(walkOnly.duration_s / 60)}.` : `Δεν βρέθηκε διαδρομή ${later || when.kind !== "now" ? "για τότε" : "τώρα"}. Δοκίμασε άλλη ώρα.`}</span></p>
+              {#each sourceNotes as note (note)}<p class="est"><Icon name="warn" size={15} /><span>{note}</span></p>{/each}
             {/if}
           </section>
         {/if}
