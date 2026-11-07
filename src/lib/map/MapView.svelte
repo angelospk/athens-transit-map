@@ -629,6 +629,9 @@
     if (locState === "off" || locState === "denied") {
       app.cityLocked = false;   // a tap asks for the city the user is in
       locateMe();
+    } else if (me && cityAt(me.fix.pos) && cityAt(me.fix.pos) !== app.cityId) {
+      // On, in another city than the chosen one: a tap goes to the user's city (its stops are what is near).
+      app.setCity(cityAt(me.fix.pos)!, false);
     } else if (!app.nearShown && !app.stack.length) {
       // On, with «Κοντά σου» closed: open it again (also while the first fix is still on its way).
       follow = true;
