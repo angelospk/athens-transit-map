@@ -159,12 +159,15 @@ describe("linePage", () => {
 
 describe("homePage and linesPage", () => {
   it("the city home is the map, with the city in title and canonical, and links to all lines and the stats", () => {
-    const html = homePage("thessaloniki", [l040], SHELL);
+    const html = homePage("thessaloniki", [l040], SHELL, true);
     expect(html).toContain(`<link rel="canonical" href="${SITE}/thessaloniki/">`);
     expect(html).toMatch(/<title>[^<]*Θεσσαλονίκη[^<]*<\/title>/);
     expect(html).toContain('href="/thessaloniki/lines"');
     expect(html).toContain('href="/thessaloniki/stats/"');
     expect(html).toContain('<script type="module" src="/src/main.ts"></script>');
+  });
+  it("links the stats only when the city has a stats page", () => {
+    expect(homePage("thessaloniki", [l040], SHELL, false)).not.toContain("/stats/");
   });
   it("all lines: a plain page per city, every line linked, grouped by mode, in label order", () => {
     const html = linesPage("athens", [lB12, l040, m2]);
@@ -262,6 +265,8 @@ describe("build", () => {
     const out = mkdtempSync(join(tmpdir(), "seo-"));
     await build(out, both, { shell: SHELL, legacy: false, extraPaths: ["/athens/stats/"] });
     expect(read(out, "sitemap.xml")).toContain(`<loc>${SITE}/athens/stats/</loc>`);
+    expect(read(out, "athens/index.html")).toContain('href="/athens/stats/"');
+    expect(read(out, "thessaloniki/index.html")).not.toContain("/stats/");
   });
 
   it("fails the build when Athens' API fails, so a deploy never drops its pages", async () => {
@@ -280,6 +285,11 @@ describe("build", () => {
     expect(n.cities[1]).toMatchObject({ id: "thessaloniki", stops: 0, lines: 0 });
     expect(n.cities[1].skipped).toMatch(/503/);
     expect(read(out, "sitemap.xml")).not.toContain("/thessaloniki/");
+  });
+
+  it("a write or page error in another city fails the build: only its API may skip it", async () => {
+    const out = mkdtempSync(join(tmpdir(), "seo-"));
+    await expect(build(out, both, { shell: "<html></html>", legacy: false, cities: ["thessaloniki"] })).rejects.toThrow(/shell/);
   });
 
   it("fails while a source is still warming up, so a restart never publishes a short sitemap", async () => {
