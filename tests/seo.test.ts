@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { build, linePage, linePath, robots, sitemap, slug, stopPage, stopPath, SITE, type LineDetail, type SeoLine, type StopEntry } from "../scripts/seo";
+import { build, linePage, linePath, linesPage, robots, sitemap, slug, stopPage, stopPath, SITE, type LineDetail, type SeoLine, type StopEntry } from "../scripts/seo";
 
 const l040: SeoLine = { id: "oasa:040", mode: "bus", label: "040", name: "ΠΕΙΡΑΙΑΣ - ΣΥΝΤΑΓΜΑ", color: "#153ce0", text_color: "#ffffff" };
 const lB12: SeoLine = { id: "oasa:Β12", mode: "bus", label: "Β12", name: "ΑΝΩ ΛΙΟΣΙΑ - ΚΑΜΑΤΕΡΟ", color: "#153ce0", text_color: "#ffffff" };
@@ -48,6 +48,20 @@ describe("stopPage", () => {
     expect(m).not.toBeNull();
     expect(m![1]).toContain("040");
     expect(m![1]).toContain("Β12");
+  });
+  it("is served from staseis.gr (bus.haroldpoi.dev only redirects there)", () => {
+    expect(SITE).toBe("https://staseis.gr");
+  });
+  it("has link-preview tags (Open Graph) matching the title, description and canonical", () => {
+    const title = html.match(/<title>([^<]*)<\/title>/)![1];
+    const desc = html.match(/<meta name="description" content="([^"]*)"/)![1];
+    expect(html).toContain(`<meta property="og:title" content="${title}">`);
+    expect(html).toContain(`<meta property="og:description" content="${desc}">`);
+    expect(html).toContain(`<meta property="og:url" content="${SITE}/stop/oasa-100001.html">`);
+    expect(html).toContain(`<meta property="og:image" content="${SITE}/icon-512.png">`);
+    expect(html).toContain('<meta property="og:site_name" content="Στάσεις">');
+    expect(html).toContain('<meta property="og:locale" content="el_GR">');
+    expect(html).toContain('<meta name="twitter:card" content="summary">');
   });
   it("has an absolute canonical URL, percent-encoded", () => {
     expect(html).toContain(`<link rel="canonical" href="${SITE}/stop/oasa-100001.html">`);
@@ -152,7 +166,9 @@ describe("build", () => {
     expect(existsSync(join(out, "stop/stasy-αγια-βαρβαρα-metro.html"))).toBe(true);
     expect(readFileSync(join(out, "line/stasy-M2.html"), "utf8")).toContain("Αγία Βαρβάρα");
     const xml = readFileSync(join(out, "sitemap.xml"), "utf8");
-    expect(xml.match(/<url>/g)!.length).toBe(5); // home + 2 lines + 2 stops
+    expect(xml.match(/<url>/g)!.length).toBe(6); // home + all lines + 2 lines + 2 stops
+    expect(xml).toContain(`<loc>${SITE}/lines.html</loc>`);
+    expect(readFileSync(join(out, "lines.html"), "utf8")).toContain('href="/line/oasa-040.html"');
     expect(readFileSync(join(out, "robots.txt"), "utf8")).toContain("Sitemap:");
   });
 
@@ -170,5 +186,32 @@ describe("build", () => {
     const down = async (p: string) =>
       p === "lines" ? { lines: [], sources: [{ id: "oasa", state: "down", updated_at: null }] } : get(p);
     await expect(build(out, down)).rejects.toThrow(/down/);
+  });
+});
+
+describe("linesPage", () => {
+  const html = linesPage([lB12, l040, m2]);
+  it("links every line page, grouped by mode, in label order", () => {
+    expect(html).toContain(`<link rel="canonical" href="${SITE}/lines.html">`);
+    expect(html).toContain('href="/line/oasa-040.html"');
+    expect(html).toContain('href="/line/stasy-M2.html"');
+    expect(html.indexOf("/line/oasa-040.html")).toBeLessThan(html.indexOf("/line/oasa-Β12.html".replace("Β12", encodeURI("Β12"))));
+    expect(html).toMatch(/<h2>Μετρό<\/h2>/);
+  });
+  it("is linked from the footer of every page", () => {
+    expect(stopPage(s1, [l040])).toContain('<a href="/lines.html">Όλες οι γραμμές</a>');
+    expect(html).toContain('<a href="/lines.html">Όλες οι γραμμές</a>');
+  });
+});
+
+describe("the map's own page (index.html)", () => {
+  const html = readFileSync(join(__dirname, "..", "index.html"), "utf8");
+  it("names its canonical home and carries link-preview tags", () => {
+    expect(html).toContain(`<link rel="canonical" href="${SITE}/">`);
+    expect(html).toContain(`<meta property="og:url" content="${SITE}/">`);
+    expect(html).toContain(`<meta property="og:image" content="${SITE}/icon-512.png">`);
+    expect(html).toMatch(/<meta property="og:title" content="[^"]+">/);
+    expect(html).toMatch(/<meta property="og:description" content="[^"]+">/);
+    expect(html).toContain('<meta name="twitter:card" content="summary">');
   });
 });

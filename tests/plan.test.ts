@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fixture from "./fixtures/v2/plan.json";
-import { parsePlan, planFC, planStops, planSummary, planUrl, type Itinerary, type PlanResponse } from "../src/lib/plan";
+import { parsePlan, planRetry, planFC, planStops, planSummary, planUrl, type Itinerary, type PlanResponse } from "../src/lib/plan";
 
 const plan = fixture as unknown as PlanResponse;
 
@@ -140,5 +140,16 @@ describe("planStops", () => {
     const it0 = twoRides.itineraries[0];
     const same: Itinerary = { ...it0, legs: it0.legs.map((l, k) => k === 3 ? { ...l, from: it0.legs[1].to } : k === 2 ? { ...l, to: it0.legs[1].to, distance_m: 0 } : l) };
     expect(planStops(same, twoRides).map(s => s.name)).toEqual(["Σύνταγμα", "Ελληνικό", "Πλατεία"]);
+  });
+});
+
+describe("planRetry", () => {
+  // Offline, busy or a server error: asked again a few times; a 4xx (bad ends) would only repeat itself.
+  it("retries offline, 429 and 5xx up to 3 times, never a 4xx", () => {
+    expect([0, 429, 500, 503].map(s => planRetry(s, 0))).toEqual([true, true, true, true]);
+    expect(planRetry(400, 0)).toBe(false);
+    expect(planRetry(404, 0)).toBe(false);
+    expect(planRetry(200, 0)).toBe(false);   // a 200 that did not parse: the same answer again
+    expect(planRetry(503, 3)).toBe(false);
   });
 });

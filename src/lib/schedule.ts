@@ -5,6 +5,7 @@ export const HIDDEN_GAP_MS = 60_000;    // at most every 60 s while the tab is h
 export const MAX_INTERVAL_S = 300;      // matches the max Cache-Control max-age
 export const BACKOFF_MS = 10_000;       // 429 / 5xx / network: at least 10 s
 export const MAX_BACKOFF_MS = 120_000;
+export const FIRST_TIMEOUT_MS = 5_000;  // a line still loading: a lost request (weak phone network) is given up sooner
 const SLACK_MS = 2_000;                 // network and cache latency
 
 export type Outcome =

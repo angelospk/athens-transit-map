@@ -22,13 +22,15 @@
   let { app }: { app: AppState } = $props();
 
   const top = $derived(app.stack.at(-1));
-  const card = $derived(top?.kind === "line" ? top : null);
+  const card = $derived(top?.kind === "line" && !top.id.startsWith("muni:") ? top : null);   // muni: MuniLineCard
   const native = (id: string) => id.slice(id.indexOf(":") + 1);
 
   let detail = $state.raw<LineDetail | null>(null);
   let vehicles = $state.raw<V2Vehicle[] | null>(null);
   let failed = $state(false);
+  let missing = $state(false);   // the backend does not know the line (404, a bad link): no more asking
   let vFailed = $state(false);
+  const FRESH_MS = 120_000;   // the age up to which the last vehicles still show
   const cardId = $derived(card?.id);
 
   // Back on a line seen a moment ago: its last data shows at once (vehicles up to 2 min old), then a new load.
@@ -41,8 +43,8 @@
     untrack(() => {
       const d = peekV2Line(id), v = peekV2LineVehicles(id);
       detail = (d?.body as LineDetail | undefined) ?? null;
-      vehicles = v?.at && Date.now() - v.at < 120_000 ? (v.body as { vehicles?: V2Vehicle[] }).vehicles ?? [] : null;
-      failed = false; vFailed = false;
+      vehicles = v?.at && Date.now() - v.at < FRESH_MS ? (v.body as { vehicles?: V2Vehicle[] }).vehicles ?? [] : null;
+      failed = false; missing = false; vFailed = false;
     });
     const load = async () => {
       if (document.visibilityState !== "hidden") {
@@ -51,16 +53,19 @@
             if (ac.signal.aborted) return;
             if (r.status === 200 && r.body) detail = r.body as LineDetail;
             failed = !detail;
+            missing = !detail && r.status === 404;
           }),
           fetchV2LineVehicles(id).then(r => {
             if (ac.signal.aborted) return;
             if (r.status === 200 && r.body) vehicles = (r.body as { vehicles?: V2Vehicle[] }).vehicles ?? [];
+            // A failed load keeps the last vehicles while they are young; older ones are not «now» any more.
+            else if (Date.now() - (peekV2LineVehicles(id)?.at ?? 0) >= FRESH_MS) vehicles = null;
             vFailed = vehicles === null;
           }),
         ]);
         if (ac.signal.aborted) return;
       }
-      timer = setTimeout(load, 20_000);
+      if (!missing) timer = setTimeout(load, 20_000);
     };
     void load();
     return () => { ac.abort(); clearTimeout(timer); };
@@ -280,7 +285,9 @@
       </div>
     {/snippet}
     <DisruptionRows alerts={disruptions} />
-    {#if failed}
+    {#if missing}
+      <p class="muted">Η γραμμή δεν βρέθηκε.</p>
+    {:else if failed}
       <p class="muted">Δεν φόρτωσε η γραμμή. Δοκίμασε ξανά.</p>
     {:else if !detail}
       <p class="muted">Φόρτωση…</p>

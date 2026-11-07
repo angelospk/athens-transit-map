@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getJSON, lineStaticUrl, lineUrl } from "../src/lib/api";
+import { fetchLines, fetchLineStatic, fetchV2Alerts, fetchV2Line, fetchV2LineVehicles, fetchV2Lines, fetchV2Run, fetchV2Stop, fetchV2Stops, getJSON, lineStaticUrl, lineUrl } from "../src/lib/api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -25,5 +25,54 @@ describe("api", () => {
     vi.stubGlobal("fetch", f);
     await getJSON(lineUrl("040"));
     expect(f).toHaveBeenCalledWith("https://transit.haroldpoi.dev/v1/lines/040", { signal: undefined });
+  });
+  it("rejects static files that are JSON of the wrong shape (an error page from a proxy)", async () => {
+    vi.stubGlobal("fetch", async () => new Response('{"error":"rate limited"}', { status: 200 }));
+    await expect(fetchLines()).rejects.toThrow();
+    await expect(fetchLineStatic("QA-BAD-SHAPE")).rejects.toThrow();
+  });
+  it("rejects an empty lines index (it would drop every picked line as unknown)", async () => {
+    vi.stubGlobal("fetch", async () => new Response('{"lines":[]}', { status: 200 }));
+    await expect(fetchLines()).rejects.toThrow();
+  });
+  it("gives static requests a timeout, so a stalled one does not stay memoized", async () => {
+    const f = vi.fn(async () => new Response('{"id":"x","variants":{},"stops":{}}', { status: 200 }));
+    vi.stubGlobal("fetch", f);
+    await fetchLineStatic("QA-TIMEOUT");
+    expect((f.mock.calls[0] as unknown[])[1]).toMatchObject({ signal: expect.any(AbortSignal) });
+  });
+  it("accepts a well-formed static line file", async () => {
+    vi.stubGlobal("fetch", async () => new Response('{"id":"x","variants":{},"stops":{}}', { status: 200 }));
+    await expect(fetchLineStatic("QA-GOOD-SHAPE")).resolves.toMatchObject({ id: "x" });
+  });
+  // A 200 whose main field has the wrong type counts as a 503, so the search modal and the cards do not crash.
+  it("rejects /v2 answers whose main field has the wrong type", async () => {
+    const bodies: Record<string, unknown> = {
+      lines: { lines: "x" }, stops: { stops: "x" }, alerts: { alerts: {} },
+      "lines/qa%3Abad/vehicles": { vehicles: "x" },
+      "lines/qa%3Abad": { line: { id: "qa:bad" }, patterns: "x", stops: {} },
+      "stops/qa%3Abad": { stop: { id: "qa:bad" }, lines: "x", arrivals: [] },
+      "runs/qa%3Abad": { run: { id: "qa:bad", stops: "x" } },
+      "lines/qa%3Anostops": { line: { id: "qa:nostops" }, patterns: [] },
+      "runs/qa%3Anostops": { run: { id: "qa:nostops" } },
+      "lines/qa%3Aarr": { line: [], patterns: [], stops: {} },
+      "stops/qa%3Aarr": { stop: [], lines: [], arrivals: [] },
+    };
+    vi.stubGlobal("fetch", async (u: string) => new Response(JSON.stringify(bodies[u.split("/v2/")[1]]), { status: 200 }));
+    for (const r of await Promise.all([fetchV2Lines(), fetchV2Stops(), fetchV2Alerts(), fetchV2LineVehicles("qa:bad"),
+      fetchV2Line("qa:bad"), fetchV2Stop("qa:bad"), fetchV2Run("qa:bad"), fetchV2Line("qa:nostops"), fetchV2Run("qa:nostops"),
+      fetchV2Line("qa:arr"), fetchV2Stop("qa:arr")]))
+      expect(r.status).toBe(503);
+  });
+  it("accepts well-formed /v2 answers", async () => {
+    const bodies: Record<string, unknown> = {
+      "lines/qa%3Agood/vehicles": { vehicles: [] },
+      "lines/qa%3Agood": { line: { id: "qa:good" }, patterns: [], stops: {} },
+      "stops/qa%3Agood": { stop: { id: "qa:good" }, lines: [], arrivals: [] },
+      "runs/qa%3Agood": { run: { id: "qa:good", stops: [] } },
+    };
+    vi.stubGlobal("fetch", async (u: string) => new Response(JSON.stringify(bodies[u.split("/v2/")[1]]), { status: 200 }));
+    for (const r of await Promise.all([fetchV2LineVehicles("qa:good"), fetchV2Line("qa:good"), fetchV2Stop("qa:good"), fetchV2Run("qa:good")]))
+      expect(r.status).toBe(200);
   });
 });

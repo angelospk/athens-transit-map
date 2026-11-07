@@ -6,6 +6,8 @@
   import StopCard from "./lib/ui/StopCard.svelte";
   import VehicleCard from "./lib/ui/VehicleCard.svelte";
   import LineCard from "./lib/ui/LineCard.svelte";
+  import MuniLineCard from "./lib/ui/MuniLineCard.svelte";
+  import MuniStopCard from "./lib/ui/MuniStopCard.svelte";
   import RailStopCard from "./lib/ui/RailStopCard.svelte";
   import FavsPanel from "./lib/ui/FavsPanel.svelte";
   import NearbyPanel from "./lib/ui/NearbyPanel.svelte";
@@ -17,6 +19,7 @@
   import NavGuide from "./lib/ui/NavGuide.svelte";
   import PinSheet from "./lib/ui/PinSheet.svelte";
   import FaresSheet from "./lib/ui/FaresSheet.svelte";
+  import MuniReport from "./lib/ui/MuniReport.svelte";
   import { applyTheme } from "./lib/theme";
 
   const app = new AppState();
@@ -44,6 +47,8 @@
 <StopCard {app} />
 <VehicleCard {app} />
 <LineCard {app} />
+<MuniLineCard {app} />
+<MuniStopCard {app} />
 <RailStopCard {app} />
 <FavsPanel {app} />
 <NearbyPanel {app} />
@@ -55,3 +60,4 @@
 <NavGuide {app} />
 <PinSheet {app} />
 <FaresSheet {app} />
+{#if app.muniTimes.length}<MuniReport {app} />{/if}

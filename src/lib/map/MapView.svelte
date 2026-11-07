@@ -13,9 +13,8 @@
   import { suburbanFC } from "../suburban";
   import { trainsFC } from "../trains";
   import { RailGlide, trackStops, type Track } from "../rails";
-  import { fetchStasy, fetchSuburban, fetchTrainRun, fetchV2Stop } from "../api";
+  import { fetchV2Stop } from "../api";
   import { stopRows, type V2Arrival } from "../v2";
-  import { PREFETCH_ZOOM, wanted, type Want } from "../prefetch";
   import { Locator, userPlan, type Fix, type LocState } from "../locate";
   import { CITIES, nearestCity as cityAt } from "../cities";
   import { onOpen, type Perm } from "../nearby";
@@ -33,6 +32,7 @@
   import { predictS, shapeLength, stopOffsets } from "../predict";
   import { loadSpeed, SPEED_STOPS, type SpeedData } from "../speed";
   import { municipalFC } from "../municipal";
+    import { stitch } from "../muniLine";
   import { resolveDark } from "../theme";
   import type { Variant } from "../types";
   import type { AppState } from "../state.svelte";
@@ -41,12 +41,13 @@
   import { AppleBase, MAPKIT_TOKEN } from "./appleBase";
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, smoothLine, stopsFC, variantFC, type DrawnLine } from "./layers";
-  import { STOPS_ZOOM, busStopsFC, placeNote, stopIndex, toward } from "../stops";
+  import { STOPS_ZOOM, busStopsFC, placeNote, toward } from "../stops";
   import { pinLinesFC, pinStopsFC } from "../pins";
   import { fold } from "../search";
   import { titleCase } from "../nearby";
   import { durText } from "../format";
   import { STOP_ZOOM, VEHICLE_ZOOM, focusZoom, sheetReserve, stopPin } from "../focus";
+  import type { Card } from "../cards";
   import { busStopCard, busVehicleCard, railStationCard, routeCard, stationCard } from "../legacy";
   // Rail stations show from these zooms, small like the bus stops (from STOPS_ZOOM); there are fewer of them.
   const RAIL_ZOOM = 13, SUBURBAN_ZOOM = 12;
@@ -150,6 +151,7 @@
     d.dir.style.transform = `translate(${Math.sin(a) * rx}px, ${-Math.cos(a) * ry}px) rotate(${h}deg)`;
   }
 
+  const CREDITS_MS = 5000;   // the map's credits show this long, then fold to the ⓘ
   const LANE_PX = 3;   // each direction drawn to the right of its travel direction (two lanes)
   const key = (line: string, id: string) => `${line}/${id}`;
 
@@ -182,7 +184,11 @@
 
   function fitTo(ids: string[]) {
     const b = bounds(drawn.filter(d => ids.includes(d.id)));
-    if (b && map) map.fitBounds(b, { padding: padding(), maxZoom: 15, duration: 600, absolutePadding: true });
+    if (!b || !map) return;
+    // With a card open, clear of the sheet too, at its usual height on a phone (a loading card grows), as focusOn.
+    const pad = app.stack.length ? padNow() : padding();
+    if (app.stack.length && innerWidth < 720 && typeof pad !== "number") pad.bottom = Math.max(pad.bottom ?? 0, sheetReserve(innerHeight));
+    map.fitBounds(b, { padding: pad, maxZoom: 15, duration: 600, absolutePadding: true });
   }
 
   // A right-pointing chevron; symbol layers turn it along each line in travel direction.
@@ -427,11 +433,19 @@
 
   // The other theme: the base map's style is swapped. diff: false builds the style anew, so `style.load` fires.
   function restyle(m: MlMap, d: boolean) {
+    // Offline the new style cannot load, and setStyle drops the old one first: the map would stay blank, with no
+    // layers to tap. It keeps its look; the online event (setup) switches it then.
+    if (!navigator.onLine) return;
     styleDark = d;
     loaded = false;
     const gen = ++styleGen;
     scene3d.styleGone();
-    m.once("style.load", () => { if (gen === styleGen) addAll(m); });   // a style replaced before it loaded never fires
+    m.once("style.load", () => {   // a style replaced before it loaded never fires
+      if (gen !== styleGen) return;
+      addAll(m);
+      const want = untrack(() => dark);
+      if (want !== styleDark) restyle(m, want);   // the theme changed meanwhile, offline (restyle skipped it)
+    });
     m.setStyle(STYLE, { diff: false });
   }
 
@@ -451,6 +465,7 @@
   // «Δημοτικά» (municipal.ts): the municipal bus routes, thin, dashed and muted, under every other layer of ours
   // but the speeds; their stops from zoom 14. Hidden while the switch is off; empty until the data loads.
   const MUNI = "#8c7fa6";
+  const MUNI_FOCUS = "#4f3d7a";
   function addMunicipal(m: MlMap) {
     const vis = app.municipalOn ? "visible" : "none";
     m.addSource("municipal", { type: "geojson", data: app.municipal ? municipalFC(app.municipal) : EMPTY });
@@ -463,24 +478,37 @@
     m.addLayer({ id: "municipal-stop", type: "circle", source: "municipal", filter: ["==", ["get", "kind"], "stop"], minzoom: 14,
       layout: { visibility: vis },
       paint: { "circle-radius": 3.5, "circle-color": "#fff", "circle-stroke-color": MUNI, "circle-stroke-width": 1.5 } });
+    // The open municipal card (MuniLineCard): its direction, solid, and its buses as the timetable implies them,
+    // hollow, so they never pass for live ones. Shown with the layer switch off too.
+    // Darker than the dashed lines and on a white casing, as a picked OASA line, so it never blends with them;
+    // the other municipal lines fade while it is open (the effect on app.muniFocus).
+    m.addSource("muni-focus", { type: "geojson", data: muniFocusFC() });
+    m.addLayer({ id: "muni-focus-casing", type: "line", source: "muni-focus", filter: ["==", ["get", "kind"], "line"],
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": "#fff", "line-width": ["interpolate", ["linear"], ["zoom"], 11, 6, 14, 9, 17, 12] } });
+    m.addLayer({ id: "muni-focus-line", type: "line", source: "muni-focus", filter: ["==", ["get", "kind"], "line"],
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": MUNI_FOCUS, "line-width": ["interpolate", ["linear"], ["zoom"], 11, 3.5, 14, 5.5, 17, 7.5] } });
+    m.addLayer({ id: "muni-focus-bus", type: "circle", source: "muni-focus", filter: ["==", ["get", "kind"], "bus"],
+      paint: { "circle-radius": 7, "circle-color": "#fff", "circle-stroke-color": MUNI_FOCUS, "circle-stroke-width": 3 } });
+  }
+  function muniFocusFC(): GeoJSON.FeatureCollection {
+    const f = app.muniFocus;
+    if (!f) return EMPTY as GeoJSON.FeatureCollection;
+    return { type: "FeatureCollection", features: [
+      { type: "Feature", properties: { kind: "line" },
+        geometry: { type: "LineString", coordinates: stitch(f.route.shape).map(([lat, lon]) => [lon, lat]) } },
+      ...f.vehicles.map(v => ({ type: "Feature" as const, properties: { kind: "bus" }, geometry: { type: "Point" as const, coordinates: [v.lon, v.lat] } })),
+    ] };
   }
   const MUNI_LAYERS = ["municipal-line", "municipal-hit", "municipal-stop"];
-  let closePopup = () => {};   // the map's one popup (set on mount): a municipal one must go with the layer
 
-  // A tapped municipal route or stop: its municipality and a link to the municipality's timetable page.
-  function municipalInfo(p: Record<string, unknown>) {
-    const el = document.createElement("div");
-    el.className = "munipop";
-    const add = (text: string, tag = "div") => el.appendChild(Object.assign(document.createElement(tag), { textContent: text }));
-    add("Δημοτική συγκοινωνία", "small");
-    add(String(p.m), "b");
-    if (p.kind === "stop") { add(String(p.name)); if (p.lines) add(`Γραμμές: ${p.lines}`); }
-    else add(String(p.title));
-    if (p.url) Object.assign(el.appendChild(document.createElement("a")),
-      { href: String(p.url), target: "_blank", rel: "noopener", textContent: "Πρόγραμμα στον δήμο ›" });
-    else add("Δεν έχουμε τη σελίδα του προγράμματος.", "small");
-    add("Χωρίς ώρες ή ζωντανές θέσεις · © OpenStreetMap", "small");
-    return el;
+  // The card of a municipal route (MuniLineCard), with the route's direction chosen.
+  function muniCardOf(rid: string): Card | null {
+    const c = app.muniCards.find(x => x.routes.some(r => r.id === rid));
+    if (!c) return null;
+    const d = c.routes.findIndex(r => r.id === rid);
+    return { kind: "line", id: c.id, title: c.ref ? `${c.ref} · ${c.name}` : c.name, ...(d === 1 ? { dir: 1 as const } : {}) };
   }
 
   function addLayers(m: MlMap) {
@@ -658,7 +686,9 @@
   // The view's padding around the open sheet (set once the map loads).
   let padNow: () => PaddingOptions = () => ({ top: 0, bottom: 0, left: 0, right: 0 });
   let flyOnFix = false;
-  let cityOnFix = true;   // the first fix of the page, and of each locate tap, may switch the city
+  // The first fix of the page, and of each locate tap, may switch the city; a city named in the URL
+  // (app.cityLocked) stops it until the user taps locate.
+  let cityOnFix = true;
   let me: { marker: Marker; el: HTMLElement; mover: Mover; fix: Fix } | null = null;
   const locator = new Locator({
     geo: navigator.geolocation,
@@ -697,7 +727,7 @@
     app.myFix = { at: [f.pos[1], f.pos[0]], acc: f.acc, heading: f.heading, speed: f.speed, t: f.at };
     // The first fix of the page or after a locate tap, in another city's area: the app switches to it. Later fixes
     // leave the city alone, so a hand pick in «Κοντά σου» stays.
-    const near = cityOnFix ? cityAt(f.pos) : null;
+    const near = cityOnFix && !app.cityLocked ? cityAt(f.pos) : null;
     cityOnFix = false;
     if (near && near !== app.cityId) app.setCity(near, false);
     // «Κοντά σου» follows the user, but not every few metres of GPS noise.
@@ -729,6 +759,7 @@
   // Each tap that leaves the location on also opens «Κοντά σου»; turning it off closes it.
   function locateClick() {
     if (locState === "off" || locState === "denied") {
+      app.cityLocked = false;   // a tap asks for the city the user is in
       locateMe();
     } else if (!app.nearShown && !app.stack.length && app.tab !== "now" && app.tab !== "alerts") {
       // On, with «Κοντά σου» closed: open it again (also while the first fix is still on its way).
@@ -895,7 +926,8 @@
     // Corrections and trails: 30 fps close up; zoomed out, where they are a few pixels and every frame
     // steps the whole city, 4 fps.
     // In 3D close in (the models, their labels riding on them, the near street seen large at a slant): every frame.
-    const idle = scene3d.on && z >= BUS_ZOOM ? 0 : Math.min(1000, Math.max(16, (0.5 * mpp / 20) * 1000));
+    // With motion off nothing steps: between fixes (a new one leaves a trail, fast again) once a second is enough.
+    const idle = scene3d.on && z >= BUS_ZOOM ? 0 : still ? 1000 : Math.min(1000, Math.max(16, (0.5 * mpp / 20) * 1000));
     nextDue = t + (fixing ? Math.min(idle, z >= 13 ? 33 : 250) : idle);
   }
 
@@ -1257,6 +1289,9 @@
         // Tiles kept off screen for going back: two zoom levels' worth, not five. Each keeps its buffers on the GPU
         // (in 3D its buildings and streets too), and five filled a phone's memory until the browser dropped the map.
         maxTileCacheZoomLevels: 2,
+        // Greek names for the map's own controls (a screen reader read them in English).
+        locale: { "Map.Title": "Χάρτης", "NavigationControl.ZoomIn": "Μεγέθυνση", "NavigationControl.ZoomOut": "Σμίκρυνση",
+          "AttributionControl.ToggleAttribution": "Πηγές του χάρτη" },
         dragRotate: false,
         pitchWithRotate: false,
         // Smooth edges: the 3D buildings, roads and models are not jagged (multisampling; cheap on phone GPUs).
@@ -1361,12 +1396,19 @@
       e.preventDefault(); e.stopPropagation();
       chaseZoom = Math.min(19.5, Math.max(17, (chaseZoom ?? m.getZoom()) - e.deltaY * 0.0025));
     }, { capture: true, passive: false });
+    // MapLibre shows the credits (ⓘ) open until the first drag: on a phone they cover the map. They fold after a few
+    // seconds instead; a tap on the ⓘ opens them again (#34: they must be seen first).
+    // A tap on the ⓘ before then is the user's choice: the timer stops.
+    m.once("load", () => {
+      const t = setTimeout(() =>
+        node.querySelector(".maplibregl-ctrl-attrib.maplibregl-compact-show")?.classList.remove("maplibregl-compact-show"), CREDITS_MS);
+      node.querySelector(".maplibregl-ctrl-attrib-button")?.addEventListener("click", () => clearTimeout(t), { once: true });
+    });
     // The city layer loads the tiles of the view: at first, and 300 ms after the map stops moving (never during a move).
     const reportView = () => {
       if (m.getZoom() >= STOPS_ZOOM - 0.5 && !app.stopIx) loadStops();
       const b = m.getBounds();
       app.setCityView({ north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() }, m.getZoom());
-      prefetchSoon();
     };
     const reportSoon = debounce(reportView, VIEW_SETTLE_MS);
     m.on("load", reportView);
@@ -1374,14 +1416,12 @@
     const reportFollow = throttle(reportView, FOLLOW_VIEW_MS);
     const ticked = (e: object) => "follow" in e;
     m.on("movestart", e => {
-      prefetchSoon.cancel(); ahead = [];   // the old view's: not wanted any more (follow mode too)
       if (ticked(e)) return;
       reportSoon.cancel(); reportFollow.cancel(); app.setCityMoving();
     });
     m.on("moveend", e => (ticked(e) ? reportFollow() : reportSoon()));
 
     const popup = new Popup({ closeButton: false, offset: 10, maxWidth: "240px" });
-    closePopup = () => { if (popup.getElement()?.querySelector(".munipop")) popup.remove(); };
     // The GPU dropped the map (out of memory, a driver reset). MapLibre puts back a copy of the style without our 3D
     // layer and without our other additions in step, so tiles stayed empty: the style is loaded afresh instead, and
     // everything goes in again (addAll), the 3D scene too.
@@ -1399,6 +1439,8 @@
       me?.mover.snap();
     };
     document.addEventListener("visibilitychange", onVisible);
+    const onOnline = () => { const d = untrack(() => dark); if (loaded && d !== styleDark) restyle(m, d); };   // a theme chosen offline
+    addEventListener("online", onOnline);
     // On open, «Κοντά σου» (nearby.ts onOpen): location allowed → find me and show the stops near me; not decided
     // yet → the browser asks once, later a button in the panel asks; refused or a linked card → nothing. A link with
     // the location turned on last time and still allowed starts it again (no fly-to: the map shows the link).
@@ -1420,9 +1462,7 @@
     // One dispatcher: DOM marker (its own handler) → train right under the finger → station right under the finger (drawn over the city
     // vehicles, under a picked line's stops) → city vehicle → stop → station near the finger → route → municipal route or
     // stop → speed segment → empty map.
-    let taps = 0;   // a later tap wins over a stop card still waiting for the stop index
     m.on("click", e => {
-      const tap = ++taps;
       if (!loaded) return;   // the style is being replaced: our layers are not there to hit
       if ((e.originalEvent.target as Element | null)?.closest?.(".bus")) return;
       // «Πού πας;», choosing an end on the map: a click (a computer) takes that point; nothing else opens.
@@ -1457,16 +1497,10 @@
       }
       const stop = m.queryRenderedFeatures(e.point, { layers: ["stops"] })[0];
       if (stop) {
-        // Its card; the stop index loads first when the map was never close enough to show stops.
-        const id = String(stop.properties.id), name = String(stop.properties.name);
-        const ll = (stop.geometry as GeoJSON.Point).coordinates as [number, number];
+        // Its card at once: it shows from the stop's board until the stop index loads (AppState.show, which also
+        // drops a late index answer once another card is on top).
         popup.remove();
-        void (app.stopIx ? Promise.resolve(app.stopIx) : loadStops()).then(ix => {
-          if (tap !== taps || disposed) return;
-          const at = ix ? stopIndex(ix, id) : -1;
-          if (at >= 0) app.open(busStopCard(id, ix!.s[at][0]));
-          else popup.setLngLat(ll).setText(name).addTo(m);
-        });
+        app.open(busStopCard(String(stop.properties.id), String(stop.properties.name)));
         return;
       }
       const bus = nearestBusStop(m, e.point);
@@ -1493,11 +1527,11 @@
         const near = (r: number) => m.queryRenderedFeatures([[e.point.x - r, e.point.y - r], [e.point.x + r, e.point.y + r]],
           { layers: ["municipal-stop", "municipal-hit"] });
         const hits = near(10), muni = hits.find(f => f.properties.kind === "stop") ?? hits[0];
-        if (muni) {
-          popup.setLngLat(muni.geometry.type === "Point" ? (muni.geometry.coordinates as [number, number]) : e.lngLat)
-            .setDOMContent(municipalInfo(muni.properties)).addTo(m);
-          return;
-        }
+        // A stop or a line opens its card, as the bus stops and lines do (MuniStopCard, MuniLineCard).
+        const c = muni?.properties.kind === "stop"
+          ? { kind: "stop" as const, id: `muni:${String(muni.properties.sid).replace(/^osm:/, "")}`, title: String(muni.properties.name) }
+          : muni ? muniCardOf(String(muni.properties.rid)) : null;
+        if (c) { popup.remove(); return app.open(c); }
       }
       const box: [[number, number], [number, number]] = [[e.point.x - 8, e.point.y - 8], [e.point.x + 8, e.point.y + 8]];
       const seg = app.speedOn ? m.queryRenderedFeatures(box, { layers: ["speed"] })[0] : undefined;
@@ -1516,7 +1550,8 @@
 
     map = m;
     app.fit = fitTo;
-    app.locate = () => { if (locState === "off" || locState === "denied") locateMe(); };
+    // «Χρήση της θέσης μου» (NearbyPanel): a tap, so the user's city wins over a ?city= in the URL.
+    app.locate = () => { if (locState === "off" || locState === "denied") { app.cityLocked = false; locateMe(); } };
     // The guide: the location on, the map on it, close in (a street's width).
     app.followMe = () => {
       if (locState === "off" || locState === "denied") { follow = true; flyOnFix = false; cityOnFix = true; locator.start(); }
@@ -1590,9 +1625,9 @@
       disposed = true;
       cancelAnimationFrame(raf);
       reportSoon.cancel();
-      prefetchSoon.cancel();
       reportFollow.cancel();
       document.removeEventListener("visibilitychange", onVisible);
+      removeEventListener("online", onOnline);
       locator.stop();
       dropMe();
       for (const d of doms.values()) d.marker.remove();
@@ -1633,37 +1668,6 @@
   });
 
   $effect(() => { const f = ageFilter(app.ageMode); if (loaded) map!.setFilter("train-age", f); });
-
-  // The rail cards' data of what is on screen, loaded while the map rests (prefetch.ts), by at most
-  // four requests at a time from one queue that each view replaces; what the cache holds fresh is
-  // not asked again. Also after each trains poll (they move into view), unless the map is moving.
-  const loadAhead = (w: Want) =>
-    w.kind === "stasy" ? fetchStasy(w.id) : w.kind === "suburban-station" ? fetchSuburban(w.id)
-      : fetchTrainRun(w.kind === "metro-run" ? "metro" : "suburban", w.id);
-  let ahead: Want[] = [], workers = 0;
-  const work = async () => {
-    workers++;
-    for (let w = ahead.shift(); w; w = ahead.shift()) await loadAhead(w);
-    workers--;
-  };
-  const prefetchSoon = debounce(() => {
-    const m = map;
-    if (!m || !loaded || document.hidden || m.isMoving() || m.getZoom() < PREFETCH_ZOOM) return;
-    const layers = ["train-dot", "metro-station", "suburban-station"].filter(id => m.getLayer(id) && m.getLayoutProperty(id, "visibility") !== "none");
-    if (!layers.length) return;
-    const c = m.getCanvas();
-    const seen = m.queryRenderedFeatures({ layers }).map(f => {
-      const q = m.project((f.geometry as GeoJSON.Point).coordinates as [number, number]);
-      return { layer: f.layer.id, px: [q.x, q.y] as [number, number], props: f.properties };
-    });
-    ahead = wanted(seen, [c.clientWidth / 2, c.clientHeight / 2], app.metro?.stations ?? []);
-    while (workers < 4 && ahead.length) void work();
-  }, VIEW_SETTLE_MS);
-
-  $effect(() => {
-    void app.stasyTrains; void app.suburbanTrains;
-    prefetchSoon();
-  });
 
   // Each metro/tram line's tracks as [lat, lon] shapes (rails.ts), and the Proastiakos trains snapped
   // onto their corridor, run on along it at their speed between fixes (server time: fixes carry it).
@@ -2029,13 +2033,19 @@
 
   $effect(() => {
     const vis = app.municipalOn ? "visible" : "none";
-    if (vis === "none") closePopup();
     if (loaded) for (const id of MUNI_LAYERS) map!.setLayoutProperty(id, "visibility", vis);
   });
 
   $effect(() => {
     const d = app.municipal;
     if (loaded) (map!.getSource("municipal") as GeoJSONSource).setData(d ? municipalFC(d) : EMPTY);
+  });
+
+  $effect(() => {
+    const focus = !!app.muniFocus;
+    if (!loaded) return;
+    (map!.getSource("muni-focus") as GeoJSONSource).setData(muniFocusFC());
+    map!.setPaintProperty("municipal-line", "line-opacity", focus ? 0.2 : 0.75);
   });
 
   $effect(() => {
@@ -2574,7 +2584,7 @@
   };
 
   // «Λεπτομέρειες» (a control left of the ⓘ, bottom right) opens the info sheet. The ⓘ stays MapLibre's: it shows the
-  // map's credits (open at first, closed by the first drag), which the licences want visible (#34).
+  // map's credits (open at first, closed after CREDITS_MS or the first drag), which the licences want visible (#34).
   const infoCtl = document.createElement("div");
   infoCtl.className = "maplibregl-ctrl maplibregl-ctrl-group details-ctl";
   const infoBtn = document.createElement("button");
@@ -2631,10 +2641,6 @@
   @media (prefers-reduced-motion: reduce) { :global(.stop-pin.drop svg) { animation: none; } }
   :global(.segpop b) { font-size: 15px; }
   :global(.segpop div) { font-size: 12px; }
-  :global(.munipop) { display: grid; gap: 2px; }
-  :global(.munipop b) { font-size: 14px; }
-  :global(.munipop small) { font-size: 11px; opacity: 0.75; }
-  :global(.munipop a) { display: inline-block; padding: 6px 0; font-weight: 600; color: var(--accent); }
   .nogl { position: absolute; inset: auto 16px 16px; padding: 12px 14px; border-radius: 12px;
     background: var(--warn-bg); box-shadow: var(--shadow); }
 </style>

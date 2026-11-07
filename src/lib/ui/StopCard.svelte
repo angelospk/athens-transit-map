@@ -68,7 +68,7 @@
   // The alert sheet (AlertSheet, loaded on the first bell) for the lines of a card, in its direction.
   let alertFor = $state.raw<{ line?: string; toward?: string; lines: ReturnType<typeof alertLinesAt>; ticked?: string[] } | null>(null);
   $effect(() => { void i; alertFor = null; });
-  const alertLines = $derived(ix && i != null ? alertLinesAt(ix, i) : []);
+  const alertLines = $derived(app.cityInfo.alerts && ix && i != null ? alertLinesAt(ix, i) : []);   // the bot watches only some cities
   function bell(gs: ArrivalGroup[]) {
     const ls = gs.flatMap(g => {
       const l = alertLines.find(x => x.line === g.line);
@@ -79,7 +79,7 @@
     if (!ls.length) return;
     alertFor = { line: ls.length === 1 ? ls[0].line : undefined, toward: dest(gs[0]).to, lines: ls, ticked: ls.map(l => l.line) };
   }
-  const REFRESH_MS = 20_000;
+  const REFRESH_MS = 20_000, QUICK_RETRY_MS = 2_000;
   let failed = $state(false);
   let now = $state(Date.now());   // set from app.serverMs() when a stop opens
   const groups = $derived(board ? arrivalGroups(board.arrivals, now) : []);
@@ -204,7 +204,7 @@
 
   const boardOf = (r: FetchResult | undefined) => {
     const b = r?.body as StopBoard | null | undefined;
-    return r?.status === 200 && b && Array.isArray(b.arrivals) ? b : null;
+    return r?.status === 200 && b && typeof b.stop === "object" && b.stop && Array.isArray(b.arrivals) ? b : null;
   };
 
   $effect(() => {
@@ -214,12 +214,13 @@
     if (!sid) return;
     const ac = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let busy = false;
+    let busy = false, misses = 0;
     now = app.serverMs();
     board = boardOf(peekStop(sid));
     const load = async () => {
       if (busy) return;
       clearTimeout(timer);
+      let quick = false;
       if (document.visibilityState !== "hidden") {
         busy = true;
         const r = await fetchStop(sid);
@@ -232,9 +233,12 @@
           // Loaded once per page (api.ts): a tapped bus then shows its stops ahead with no wait.
           for (const l of linesToWarm(b.arrivals)) void fetchLineStatic(l).catch(() => {});
         }
-        failed = !b;
+        // Nothing shown yet and the first try lost on the network (a weak phone network): once more in 2 s, still «Φόρτωση».
+        misses = b ? 0 : misses + 1;
+        quick = !board && misses === 1 && r?.status === 0;   // a 429 or 5xx keeps the long wait
+        failed = !b && !quick;
       }
-      timer = setTimeout(load, REFRESH_MS);
+      timer = setTimeout(load, quick ? QUICK_RETRY_MS : REFRESH_MS);
     };
     const shown = () => { if (document.visibilityState === "visible") load(); };
     load();
@@ -541,6 +545,9 @@
   .walk { display: flex; align-items: center; gap: 6px; }
   .across { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; line-height: 1; cursor: pointer; white-space: nowrap; }
   .across:hover { text-decoration: underline; text-underline-offset: 3px; }
+  /* A finger-sized hit area (about 39 px high) around the one-line link, the look unchanged. */
+  .across { position: relative; }
+  .across::after { content: ""; position: absolute; inset: -10px -4px; }
 
   .dhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 22px; margin-top: 2px; }
   h3 { margin: 0; font-size: 18px; font-weight: 800; line-height: 1; }

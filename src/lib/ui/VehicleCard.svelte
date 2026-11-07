@@ -326,7 +326,7 @@
                   onclick={() => app.ride && (app.ride = { ...app.ride, stop: null, buzzed: false })}><Icon name="check" size={14} />Κάθοδος</button>
               {:else if riding && dest < 0}
                 <button type="button" class="off" aria-label="Κατεβαίνω στη στάση {a.name}" onclick={() => offAt(a)}>Κάθοδος</button>
-              {:else if !riding}
+              {:else if !riding && app.cityInfo.alerts}
                 <button type="button" class="bell" class:on={alertAt?.id === a.id && alertAt.i === a.i} aria-expanded={alertAt?.id === a.id && alertAt.i === a.i}
                   title="Ειδοποίηση άφιξης σε αυτή τη στάση" aria-label="Ειδοποίηση άφιξης του {line} στη στάση {a.name}"
                   onclick={() => bellAt(a)}><Bell /></button>
@@ -340,6 +340,9 @@
       {:else if !bus.variant}
         <p class="muted">Φόρτωση δρομολογίου…</p>
       {/if}
+    {:else if !app.live[line]}
+      <!-- The line's data is not in yet (with the city layer off, nothing else knows the vehicle): not gone. -->
+      <p class="muted">Φόρτωση…</p>
     {:else}
       <p class="muted">Το όχημα δεν είναι πια στον χάρτη.</p>
     {/if}

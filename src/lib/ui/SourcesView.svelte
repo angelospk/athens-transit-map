@@ -1,8 +1,11 @@
 <script lang="ts">
   import { MediaQuery } from "svelte/reactivity";
-  import { API_DOCS, BACKEND_REPO, FRONTEND_REPO, GTFS_PAGE, STASY_GTFS_PAGE, TILE_CREDITS } from "../sources";
+  import { API_DOCS, BACKEND_REPO, FRONTEND_REPO, STASY_GTFS_PAGE, TILE_CREDITS } from "../sources";
+  import { CITIES } from "../cities";
+  import { PAGE_CITY } from "../config";
 
   let { motion }: { motion: boolean } = $props();
+  const city = CITIES[PAGE_CITY];
 
   // The buses in the picture move along the lines, unless motion is off (the app's switch or the system's).
   const reduced = new MediaQuery("(prefers-reduced-motion: reduce)");
@@ -68,13 +71,15 @@
     </li>
     <li>
       <h3><span>2</span> Γραμμές και δρομολόγια</h3>
-      <p>Οι διαδρομές, οι στάσεις και το πρόγραμμα του ΟΑΣΑ.</p>
-      <p class="src"><a href={GTFS_PAGE} target="_blank" rel="noopener">Αρχείο GTFS του ΟΑΣΑ (data.gov.gr)</a></p>
+      <p>Οι διαδρομές, οι στάσεις και το πρόγραμμα του {city.agency}.</p>
+      <p class="src"><a href={city.gtfsPage} target="_blank" rel="noopener">Αρχείο GTFS του {city.agency} (data.gov.gr)</a></p>
+      {#if city.rail}
       <p>Μετρό, ΗΣΑΠ και τραμ: σταθμοί από το GTFS της ΣΤΑΣΥ, χάραξη γραμμών από το OpenStreetMap.</p>
       <p class="src"><a href={STASY_GTFS_PAGE} target="_blank" rel="noopener">GTFS της ΣΤΑΣΥ (data.gov.gr)</a><span aria-hidden="true">&nbsp;·&nbsp;</span><a
         href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap (ODbL)</a></p>
       <p>Δημοτικά λεωφορεία: διαδρομές και στάσεις από το OpenStreetMap, χωρίς ώρες· το πρόγραμμα είναι στη σελίδα κάθε δήμου.</p>
       <p class="src"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors (ODbL)</a></p>
+      {/if}
     </li>
     <li>
       <h3><span>1</span> Βασικός χάρτης</h3>
@@ -104,6 +109,9 @@
   li .src { margin-top: 4px; color: var(--fg); }
   .code { margin: 12px 0 0; font-size: 13px; }
   a { color: var(--accent); }
+  /* The source links stand alone on their lines: a finger-sized hit area, the look unchanged. */
+  .src a, .code a { position: relative; }
+  .src a::after, .code a::after { content: ""; position: absolute; inset: -8px 0; }
   @media (max-width: 719px) {
     .layers { grid-template-columns: minmax(0, 1fr); gap: 12px; justify-items: center; }
     ol { grid-template-rows: none; gap: 16px; justify-self: stretch; }

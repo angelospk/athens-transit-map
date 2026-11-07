@@ -5,12 +5,13 @@
   import type { AppState } from "../state.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
   import { clock, duration } from "../format";
+  import { muniPlaces } from "../finder";
   import { LOOKS } from "../map/look3d";
 
   let { app, cityMissing, cityAge, oldest, onclose }:
     { app: AppState; cityMissing: boolean; cityAge: number | null; oldest: number | null; onclose: () => void } = $props();
 
-  const municipalities = $derived(app.municipal ? new Set(app.municipal.routes.map(r => r.municipality)).size : 0);
+  const towns = $derived(app.municipal ? muniPlaces(app.municipal.routes) : []);
   const trains = $derived(app.stasyTrains.length + app.suburbanTrains.length);
   let howOpen = $state(false);
 
@@ -18,9 +19,9 @@
   const showRows: Row[] = $derived([
     { id: "city", icon: "bus", tint: "#2563eb", title: "Λεωφορεία", sub: cityMissing ? "Όχι ακόμα διαθέσιμα" : "Όλα της πόλης, και τρόλεϊ. Όσες γραμμές διάλεξες μένουν πάντα.",
       count: app.city && !cityMissing ? `${app.city.vehicles.length}` : undefined, on: app.cityOn, disabled: cityMissing, set: (v: boolean) => app.setCityOn(v) },
-    { id: "trains", icon: "metro", tint: "#16a34a", title: "Τρένα", sub: "Μετρό και τραμ από το πρόγραμμα, Προαστιακός με GPS.",
-      count: app.trainsOn && trains ? `${trains}` : undefined, on: app.trainsOn, set: (v: boolean) => app.setTrainsOn(v) },
-    ...(app.municipal ? [{ id: "muni", icon: "bus" as IconName, tint: "#7c3aed", title: "Δημοτικά", sub: `${municipalities} δήμοι, από το OpenStreetMap. Χωρίς ώρες.`,
+    ...(app.cityInfo.rail ? [{ id: "trains", icon: "metro" as IconName, tint: "#16a34a", title: "Τρένα", sub: "Μετρό και τραμ από το πρόγραμμα, Προαστιακός με GPS.",
+      count: app.trainsOn && trains ? `${trains}` : undefined, on: app.trainsOn, set: (v: boolean) => app.setTrainsOn(v) }] : []),
+    ...(app.municipal ? [{ id: "muni", icon: "bus" as IconName, tint: "#7c3aed", title: "Δημοτικά", sub: `${towns.join(", ")}. Ώρες από το πρόγραμμα του δήμου, όχι live.`, count: `${towns.length}`,
       on: app.municipalOn, set: (v: boolean) => app.setMunicipalOn(v) }] : []),
     { id: "speed", icon: "route", tint: "#ea580c", title: "Ταχύτητα ανά δρόμο", sub: "Πόσο γρήγορα κινούνται τα λεωφορεία, από στάση σε στάση.",
       on: app.speedOn, set: (v: boolean) => app.setSpeedOn(v) },
@@ -118,7 +119,7 @@
     </button>
     {#if howOpen}
       <p class="howtext">
-        Ο ΟΑΣΑ στέλνει θέσεις κάθε 20–60″. Όταν η νέα θέση είναι πολύ μπροστά, το όχημα πηγαίνει γρήγορα ως εκεί, πάνω στον
+        {app.cityInfo.id === "athens" ? "Ο ΟΑΣΑ στέλνει θέσεις κάθε 20–60″." : `Ο ${app.cityInfo.agency} στέλνει θέσεις ανά διαστήματα.`} Όταν η νέα θέση είναι πολύ μπροστά, το όχημα πηγαίνει γρήγορα ως εκεί, πάνω στον
         δρόμο, και αφήνει για λίγο μπλε ίχνος. Όταν είναι πίσω, γυρίζει αχνό με γκρι διακεκομμένο ίχνος: διόρθωση θέσης, όχι
         όπισθεν. Αχνό όχημα με πορτοκαλί ηλικία: δεν έστειλε θέση για πάνω από 1½ λεπτό, άρα μπορεί να είναι αλλού.
       </p>

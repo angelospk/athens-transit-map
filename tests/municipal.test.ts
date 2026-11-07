@@ -61,5 +61,10 @@ describe("municipalFC", () => {
     expect(stops[0].geometry).toEqual({ type: "Point", coordinates: [23.8, 38.02] });
     expect(stops[0].properties).toMatchObject({ name: "Πολύδροσο", lines: "Β1", m: "Δήμος Χαλανδρίου" });
     expect(stops[1].properties).toMatchObject({ name: "Στάση", lines: "Β1, Β2" });
+    // The route ids, so a tap finds the routes' timetables (map properties hold no arrays: comma-joined).
+    expect(lines[0].properties).toMatchObject({ rid: "osm:r1" });
+    expect(stops[1].properties).toMatchObject({ rids: "osm:r1,osm:r2" });
+    // The stop's own id, so a tap opens its card (MuniStopCard).
+    expect(stops[0].properties).toMatchObject({ sid: "osm:n1" });
   });
 });

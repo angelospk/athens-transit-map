@@ -2,11 +2,9 @@
 
 import { API_BASE, STATIC_BASE } from "./config";
 import type { FetchResult } from "./poller";
-import { stasyUrl } from "./rail";
 import { SwrCache } from "./swr";
 import { scheduleUrl } from "./timetable";
-import { suburbanUrl } from "./suburban";
-import { railMotionUrl, stasyTripUrl, stasyVehiclesUrl, suburbanTrainUrl, suburbanVehiclesUrl } from "./trains";
+import { railMotionUrl, stasyVehiclesUrl, suburbanVehiclesUrl } from "./trains";
 import { loadTiles, tileKey, tileOf, tileUrlPath, type CityTiles, type Tile } from "./tiles";
 import type { CityLive, LineStatic, LinesIndex, Status } from "./types";
 
@@ -49,7 +47,7 @@ export const fetchCity = (tiles: CityTiles) => (_: string, signal: AbortSignal) 
 
 export async function fetchStatus(): Promise<Status | null> {
   if (import.meta.env.VITE_MOCK === "1") return (await import("./mock")).mockStatus();
-  const r = await getJSON(`${API_BASE}/v1/status`);
+  const r = await getJSON(`${API_BASE}/v1/status`, AbortSignal.timeout(15_000));   // under the 60 s between calls
   return r.status === 200 && r.body && typeof r.body === "object" ? (r.body as Status) : null;
 }
 
@@ -65,38 +63,36 @@ function once<T>(key: string, load: () => Promise<T>): Promise<T> {
   return p;
 }
 
-async function staticJSON<T>(url: string): Promise<T> {
-  const r = await getJSON(url);
-  if (r.status !== 200 || !r.body) throw new Error(`HTTP ${r.status}: ${url}`);
+const isObj = (b: unknown): b is Record<string, unknown> => !!b && typeof b === "object" && !Array.isArray(b);
+
+// A 200 with JSON of another shape (a proxy's error page, a captive portal) is a failure, not data.
+async function staticJSON<T>(url: string, ok: (b: Record<string, unknown>) => boolean): Promise<T> {
+  // A timeout: a stalled request would stay memoized (once), and every later load would wait on it.
+  const r = await getJSON(url, AbortSignal.timeout(20_000));
+  // status: a 404 means the file does not exist (an unknown line); 0 means offline.
+  if (r.status !== 200 || !isObj(r.body)) throw Object.assign(new Error(`HTTP ${r.status}: ${url}`), { status: r.status });
+  if (!ok(r.body)) throw new Error(`Unexpected shape: ${url}`);
   return r.body as T;
 }
 
 export const fetchLines = () =>
   once("lines", async (): Promise<LinesIndex> =>
-    import.meta.env.VITE_MOCK === "1" ? (await import("./mock")).mockLines() : staticJSON(`${STATIC_BASE}/lines.json`));
+    import.meta.env.VITE_MOCK === "1" ? (await import("./mock")).mockLines() : staticJSON(`${STATIC_BASE}/lines.json`, b => Array.isArray(b.lines) && b.lines.length > 0));
 
 export const fetchLineStatic = (line: string) =>
   once("line:" + line, async (): Promise<LineStatic> =>
-    import.meta.env.VITE_MOCK === "1" ? (await import("./mock")).mockLineStatic(line) : staticJSON(lineStaticUrl(line)));
+    import.meta.env.VITE_MOCK === "1" ? (await import("./mock")).mockLineStatic(line) : staticJSON(lineStaticUrl(line), b => isObj(b.variants) && isObj(b.stops)));
 
-// The rail cards' data goes through one cache: the map loads what is on screen while it rests
-// (prefetch), and a card shows that at once (peek) and asks again only past the server's cache time.
+// The cards' data goes through one cache: a card opened again shows the last answer at once (peek)
+// and asks again only past the server's cache time.
 export const railCache = new SwrCache();
 const railGet = (url: string, ttl: number, mock: () => Promise<FetchResult>) =>
   railCache.get(url, ttl, () => (import.meta.env.VITE_MOCK === "1" ? mock() : getJSON(url, AbortSignal.timeout(10_000))));
-
-export const fetchStasy = (name: string) =>
-  railGet(stasyUrl(name), 30_000, async () => (await import("./mock")).mockStasy(name));
-export const peekStasy = (name: string) => railCache.peek(stasyUrl(name));
 
 export async function fetchSchedule(line: string, signal?: AbortSignal): Promise<FetchResult> {
   if (import.meta.env.VITE_MOCK === "1") return (await import("./mock")).mockSchedule(line);
   return getJSON(scheduleUrl(line), signal);
 }
-
-export const fetchSuburban = (id: string) =>
-  railGet(suburbanUrl(id), 60_000, async () => (await import("./mock")).mockSuburban(id));
-export const peekSuburban = (id: string) => railCache.peek(suburbanUrl(id));
 
 // Trains on the map (trains.ts): the vehicles of both networks, and the run of a tapped train.
 export async function fetchTrains(kind: "metro" | "suburban", signal?: AbortSignal): Promise<FetchResult> {
@@ -109,38 +105,43 @@ export async function fetchRailMotion(signal?: AbortSignal): Promise<FetchResult
   return import.meta.env.VITE_MOCK === "1" ? null : getJSON(railMotionUrl, signal);
 }
 
-// A metro run is the timetable's (it changes once a day); a Proastiakos run carries its live delay.
-const runUrl = (kind: "metro" | "suburban", id: string) => (kind === "metro" ? stasyTripUrl(id) : suburbanTrainUrl(id));
-export const fetchTrainRun = (kind: "metro" | "suburban", id: string) =>
-  railGet(runUrl(kind, id), kind === "metro" ? 600_000 : 30_000, async () => (await import("./mock")).mockTrainRun(kind, id));
 // A bus stop's lines and live arrivals (backend, cached 15 s), shared like the rail boards.
 export const stopUrl = (id: string) => `${API_BASE}/v1/stops/${encodeURIComponent(id)}`;
 export const fetchStop = (id: string) =>
   railGet(stopUrl(id), 15_000, async () => (await import("./mock")).mockStop(id));
 export const peekStop = (id: string) => railCache.peek(stopUrl(id));
-export const peekTrainRun = (kind: "metro" | "suburban", id: string) => railCache.peek(runUrl(kind, id));
+// A metro train's run, every station with its time (Route3D, the 3D ride along the track): the timetable's, so it
+// is kept for 10 minutes.
+const stasyTripUrl = (id: string) => `${API_BASE}/v1/rail/stasy/trips/${encodeURIComponent(id)}`;
+export const fetchTrainRun = (_kind: "metro", id: string) =>
+  railCache.get(stasyTripUrl(id), 600_000, () => getJSON(stasyTripUrl(id), AbortSignal.timeout(10_000)));
 
 // The unified /v2 API (v2.ts) for the cards: a Line with its patterns, its vehicles now, a Stop board, a Run.
-// A body without its main field (a source still warming up: `line: null`) counts as a 503, so it is not cached.
-// No mock: with VITE_MOCK=1 they answer as offline (status 0).
-const v2Get = (path: string, ttl: number, field: string) => {
+// A body without its main field (a source still warming up: `line: null`), or with a field of the wrong type,
+// counts as a 503, so it is not cached and no card maps over a string. No mock: with VITE_MOCK=1 they answer
+// as offline (status 0).
+const v2Get = (path: string, ttl: number, ok: (b: Record<string, unknown>) => boolean) => {
   const url = `${API_BASE}/v2/${path}`;
   return railCache.get(url, ttl, async () => {
     if (import.meta.env.VITE_MOCK === "1") return { status: 0, body: null };
     const r = await getJSON(url, AbortSignal.timeout(10_000));
-    return r.status === 200 && !(r.body as Record<string, unknown> | null)?.[field] ? { ...r, status: 503 } : r;
+    return r.status === 200 && !(isObj(r.body) && ok(r.body)) ? { ...r, status: 503 } : r;
   });
 };
 const enc = encodeURIComponent;
-export const fetchV2Line = (id: string) => v2Get(`lines/${enc(id)}`, 3_600_000, "line");
-export const fetchV2LineVehicles = (id: string) => v2Get(`lines/${enc(id)}/vehicles`, 10_000, "vehicles");
+const arr = (f: string) => (b: Record<string, unknown>) => Array.isArray(b[f]);
+const optArr = (v: unknown) => v == null || Array.isArray(v);
+const lineOk = (b: Record<string, unknown>) => isObj(b.line) && Array.isArray(b.patterns) && isObj(b.stops);
+export const fetchV2Line = (id: string) => v2Get(`lines/${enc(id)}`, 3_600_000, lineOk);
+export const fetchV2LineVehicles = (id: string) => v2Get(`lines/${enc(id)}/vehicles`, 10_000, arr("vehicles"));
 // The last good answers, of any age: a line card opened again shows them at once, then asks again.
 export const peekV2Line = (id: string) => railCache.peek(`${API_BASE}/v2/lines/${enc(id)}`);
 export const peekV2LineVehicles = (id: string) => railCache.peek(`${API_BASE}/v2/lines/${enc(id)}/vehicles`);
-export const fetchV2Stop = (id: string) => v2Get(`stops/${enc(id)}`, 15_000, "stop");
-export const fetchV2Run = (id: string) => v2Get(`runs/${enc(id)}`, 15_000, "run");
+export const fetchV2Stop = (id: string) =>
+  v2Get(`stops/${enc(id)}`, 15_000, b => isObj(b.stop) && optArr(b.lines) && optArr(b.arrivals));
+export const fetchV2Run = (id: string) => v2Get(`runs/${enc(id)}`, 15_000, b => isObj(b.run) && Array.isArray(b.run.stops));
 // The search indexes (B8): every Line and every Stop of every mode.
-export const fetchV2Lines = () => v2Get("lines", 3_600_000, "lines");
-export const fetchV2Stops = () => v2Get("stops", 3_600_000, "stops");
+export const fetchV2Lines = () => v2Get("lines", 3_600_000, arr("lines"));
+export const fetchV2Stops = () => v2Get("stops", 3_600_000, arr("stops"));
 // Service disruptions (disruptions.ts), cached 5 min by the server.
-export const fetchV2Alerts = () => v2Get("alerts", 300_000, "alerts");
+export const fetchV2Alerts = () => v2Get("alerts", 300_000, arr("alerts"));

@@ -11,9 +11,11 @@
   import type { AppState, TripMode, TripPrefs } from "../state.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
   import MoreHint from "./MoreHint.svelte";
+  import { CITIES, type CityId } from "../cities";
   import { item, open as reveal, pop, rise, soft } from "../anim";
   import { fetchV2Lines, fetchV2Stop, fetchV2Stops, getJSON } from "../api";
-  import { lineStopPoints, type StopEntry } from "../finder";
+  import { findMuniLines, findMuniStops, lineStopPoints, type MuniStopHit, type StopEntry } from "../finder";
+  import type { MuniCard } from "../muniLine";
   import { intents, lineAlias, modeWord, ownEnd, parseTrip, searchLines, searchNamed, type Ctx, type Intent } from "../searchEngine";
   import { fold } from "../search";
   import { checkLive, liveCount } from "../liveLines";
@@ -165,7 +167,12 @@
     return () => clearTimeout(t);
   });
   const liveOf = (id: string) => { void liveTick; return liveCount(id); };
-  type Row = { key: string; me?: true; map?: true; place?: Place; line?: V2Line; ask?: Ask; head?: string };
+  // «Δημοτικά», while that layer is on: municipal lines (also by municipality, «Χολαργός») and named stops.
+  const muniQ = $derived(open === "to" && !app.savingPlace && !ends.to.place && app.municipalOn && app.municipal ? ends.to.text.trim() : "");
+  const muniLines = $derived(muniQ.length >= 2 ? findMuniLines(app.muniCards, muniQ).slice(0, 4) : []);
+  const muniStops = $derived(muniQ.length >= 2 && app.municipal ? findMuniStops(app.municipal.stops, app.municipal.routes, muniQ).slice(0, 3) : []);
+  const town = (m: string) => m.replace(/^Δήμος\s+/, "");
+  type Row = { key: string; me?: true; map?: true; place?: Place; line?: V2Line; ask?: Ask; head?: string; muniLine?: MuniCard; muniStop?: MuniStopHit };
   const lineRow = (l: V2Line, head?: string): Row => ({ key: `line|${l.id}`, line: l, head });
   const rows = $derived.by((): Row[] => {
     if (!open) return [];
@@ -175,8 +182,10 @@
     const places = opts.map((p, k): Row => ({ key: `${p.kind}|${p.label}|${p.pts[0].join()}`, place: p, head: k === 0 && (first.length || last.length) ? "Μέρη" : undefined }));
     const quick = asks.map((a, k): Row => ({ key: `ask|${a.kind}`, ask: a, head: k === 0 ? "Γρήγορα" : undefined }));
     if (quick.length && !first.length && places[0]) places[0].head = "Μέρη";
+    const muni = [...muniLines.map((c): Row => ({ key: `muni|${c.id}`, muniLine: c })), ...muniStops.map((h): Row => ({ key: `munistop|${h.id}`, muniStop: h }))];
+    if (muni[0]) muni[0].head = "Δημοτικά";
     return [...quick, ...first.map((l, k) => lineRow(l, k === 0 ? "Γραμμές" : undefined)), ...places,
-      ...last.map((l, k) => lineRow(l, k === 0 && !first.length ? "Γραμμές" : undefined)), { key: "map", map: true }];
+      ...last.map((l, k) => lineRow(l, k === 0 && !first.length ? "Γραμμές" : undefined)), ...muni, { key: "map", map: true }];
   });
   const MODE_NAME: Record<string, [string, IconName]> = { bus: ["Λεωφορείο", "bus"], trolley: ["Τρόλεϊ", "bus"], metro: ["Μετρό", "metro"],
     tram: ["Τραμ", "tram"], suburban: ["Προαστιακός", "suburban"] };
@@ -185,6 +194,13 @@
     const text = l.label ?? native(l.id);
     if (l.id.startsWith("oasa:")) { const c = app.lineColor(native(l.id)); return { text, bg: c.bg, fg: c.fg }; }
     return { text, bg: l.color ?? "#6b7280", fg: l.text_color ?? "#ffffff" };
+  }
+  function openCard(c: { kind: "line" | "stop"; id: string; title: string }) {
+    app.savingPlace = null;
+    app.start = false;
+    app.pickFor = null;
+    app.setTab("map");
+    app.open(c);
   }
   function openLine(l: V2Line) {
     app.savingPlace = null;
@@ -224,6 +240,8 @@
     if (r.ask) runAsk(r.ask);
     else if (r.me) locate(f);
     else if (r.line) openLine(r.line);
+    else if (r.muniLine) openCard({ kind: "line", id: r.muniLine.id, title: r.muniLine.ref ?? r.muniLine.name });
+    else if (r.muniStop) openCard({ kind: "stop", id: `muni:${r.muniStop.id.replace(/^osm:/, "")}`, title: r.muniStop.name });
     else if (r.map) pick(f);
     else if (r.place) choose(f, r.place);
   }
@@ -400,12 +418,22 @@
     return () => q.removeEventListener("change", on);
   });
   const intro = $derived(wide && !app.savingPlace && !ends.to.place);
-  const QUICK: Place[] = [
-    { label: "Αεροδρόμιο", hint: "Ελ. Βενιζέλος", pts: [[37.9364, 23.9445]], lines: [], kind: "area" },
-    { label: "Λιμάνι Πειραιά", hint: "Πύλες Ε1–Ε12", pts: [[37.9420, 23.6465]], lines: [], kind: "area" },
-    { label: "Σύνταγμα", hint: "Κέντρο", pts: [[37.9755, 23.7348]], lines: [], kind: "area" },
-    { label: "Κηφισιά", hint: "Πλατεία", pts: [[38.0740, 23.8110]], lines: [], kind: "area" },
-  ];
+  // The places most asked for, in the page's city (none for a city not listed here).
+  const QUICK_BY: Partial<Record<CityId, Place[]>> = {
+    athens: [
+      { label: "Αεροδρόμιο", hint: "Ελ. Βενιζέλος", pts: [[37.9364, 23.9445]], lines: [], kind: "area" },
+      { label: "Λιμάνι Πειραιά", hint: "Πύλες Ε1–Ε12", pts: [[37.9420, 23.6465]], lines: [], kind: "area" },
+      { label: "Σύνταγμα", hint: "Κέντρο", pts: [[37.9755, 23.7348]], lines: [], kind: "area" },
+      { label: "Κηφισιά", hint: "Πλατεία", pts: [[38.0740, 23.8110]], lines: [], kind: "area" },
+    ],
+    thessaloniki: [
+      { label: "Αεροδρόμιο", hint: "Μακεδονία", pts: [[40.5197, 22.9709]], lines: [], kind: "area" },
+      { label: "Λευκός Πύργος", hint: "Παραλία", pts: [[40.6264, 22.9484]], lines: [], kind: "area" },
+      { label: "Αριστοτέλους", hint: "Πλατεία", pts: [[40.6325, 22.9410]], lines: [], kind: "area" },
+    ],
+  };
+  const QUICK = $derived(QUICK_BY[app.cityId] ?? []);
+  const OF_CITY: Record<CityId, string> = { athens: "της Αθήνας", thessaloniki: "της Θεσσαλονίκης" };
   let quickMin = $state.raw<Record<string, number>>({});
   $effect(() => {
     const from = intro && app.start ? ends.from.place : null;
@@ -499,7 +527,11 @@
     choose("to", x.to);
   }
   // Beside the panel the map shows the city with its vehicles live, then, once both ends are known, the two of them.
-  const CITY: [number, number][] = [[23.63, 37.90], [23.86, 38.07]];
+  const CITY = $derived.by((): [number, number][] => {
+    if (app.cityId === "athens") return [[23.63, 37.90], [23.86, 38.07]];
+    const [lon, lat] = CITIES[app.cityId].center;
+    return [[lon - 0.08, lat - 0.06], [lon + 0.08, lat + 0.06]];
+  });
   const ll = (p: Place): [number, number] => { const [la, lo] = centre(p.pts); return [lo, la]; };
   let framed = "";
   $effect(() => {
@@ -508,7 +540,8 @@
     const want = a && b ? JSON.stringify([centre(a.pts), centre(b.pts)]) : b ? "" : "city";
     if (!want || want === framed) return;
     framed = want;
-    untrack(() => setTimeout(() => app.fitPoints(want === "city" ? CITY : [ll(a!), ll(b!)]), 80));
+    const city = CITY;
+    untrack(() => setTimeout(() => app.fitPoints(want === "city" ? city : [ll(a!), ll(b!)]), 80));
   });
 
   function nearMe() {
@@ -683,7 +716,7 @@
       {#if app.savingPlace}
         <h1 id="start-h" in:item={{ i: 2 }}>{app.savingPlace === "home" ? "Πού είναι το Σπίτι;" : "Πού είναι η Δουλειά;"}</h1>
       {:else if wide}
-        <h1 id="start-h" class="hero" in:item={{ i: 2 }}>Κάθε λεωφορείο<br />της Αθήνας,<br /><span>εκεί που είναι.</span></h1>
+        <h1 id="start-h" class="hero" in:item={{ i: 2 }}>Κάθε λεωφορείο<br />{OF_CITY[app.cityId]},<br /><span>εκεί που είναι.</span></h1>
       {:else}
         <h1 id="start-h" in:item={{ i: 2 }}>Θέλω να πάω</h1>
       {/if}
@@ -784,6 +817,7 @@
             </div>
           {/if}
 
+          {#if QUICK.length}
           <div class="quick" data-peek="Προορισμοί" data-peek-icon="pin" in:item={{ i: 8, y: 12 }}>
             <p class="ql">Ή πήγαινε κατευθείαν</p>
             <div class="qrow">
@@ -794,6 +828,7 @@
               {/each}
             </div>
           </div>
+          {/if}
         {:else if !app.savingPlace}
           <div class="pair one">
           <div class="pickf">
@@ -866,7 +901,7 @@
         {#if !favCards.length && !recent.length}
         <ul class="facts" in:item={{ i: 9 }}>
           <li><i class="g"></i>Θέσεις από τα ίδια τα οχήματα, κάθε λίγα δευτερόλεπτα</li>
-          <li><i class="b"></i>Λεωφορεία, τρόλεϊ, μετρό, τραμ και προαστιακός</li>
+          <li><i class="b"></i>{app.cityInfo.rail ? "Λεωφορεία, τρόλεϊ, μετρό, τραμ και προαστιακός" : "Όλα τα λεωφορεία της πόλης"}</li>
           <li><i></i>Χωρίς λογαριασμό: ανοίγεις και βλέπεις</li>
         </ul>
         {/if}
@@ -940,7 +975,7 @@
 
 {#snippet list(f: Field)}
   <ul class="opts" id="start-{f}-list" role="listbox" aria-label={f === "from" ? "Από" : "Πού"} transition:reveal>
-    {#if ends[f].text.trim() && !opts.length && !lineHits.first.length && !lineHits.last.length && !asks.length}
+    {#if ends[f].text.trim() && !opts.length && !lineHits.first.length && !lineHits.last.length && !asks.length && !muniLines.length && !muniStops.length}
       <li class="nothing" role="status">
         {#if busy}<span class="spin small" aria-hidden="true"></span>Αναζήτηση…
         {:else if ends[f].text.trim().length < 2}Γράψε λίγο ακόμα
@@ -974,6 +1009,12 @@
             {@const n = liveOf(r.line.id)}
             {#if n}<span class="live" in:item={{ y: 0 }}><i></i>Ζωντανά · {n}</span>
             {:else if n === 0}<span class="live off" in:item={{ y: 0 }}>Δεν κυκλοφορεί τώρα</span>{/if}
+          {:else if r.muniLine}
+            <span class="lb muni">{r.muniLine.ref ?? "Δ"}</span>
+            <span class="ot"><b>{r.muniLine.name}</b><small>{town(r.muniLine.municipality)} · πρόγραμμα, όχι live</small></span>
+          {:else if r.muniStop}
+            <span class="oi"><Icon name="stop" size={17} /></span>
+            <span class="ot"><b>{r.muniStop.name}</b><small>Δημοτική στάση · {town(r.muniStop.municipality)}</small></span>
           {:else if r.me}
             <span class="oi"><Icon name="locate" size={17} /></span><span class="ot"><b>{ME}</b><small>Από την τοποθεσία της συσκευής σου</small></span>
           {:else if r.map}
@@ -1143,6 +1184,7 @@
   .lb { flex: none; min-width: 44px; height: 32px; padding: 0 9px; box-sizing: border-box; display: flex; align-items: center; justify-content: center;
     border-radius: 9px; background: var(--c); color: var(--t); font-size: 14px; font-weight: 800; letter-spacing: -.01em; line-height: 1; }
   .lb.round { min-width: 36px; width: 36px; height: 36px; padding: 0; border-radius: 50%; }
+  .lb.muni { background: #4f3d7a; color: #fff; }   /* a municipal line: the map's colour for them (MapView MUNI_FOCUS) */
   .lm { display: flex; align-items: center; gap: 5px; }
   .live { flex: none; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; line-height: 1; color: var(--ontime); }
   .live i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { dayMonth } from "../format";
-  import { GTFS_PAGE } from "../sources";
+  import { CITIES } from "../cities";
+  import { PAGE_CITY } from "../config";
   import SourcesView from "./SourcesView.svelte";
   import LongTermView from "./LongTermView.svelte";
   import StatsView from "./StatsView.svelte";
@@ -12,12 +13,15 @@
   let { open = $bindable(false), tab = $bindable("sources"), motion, ended = null }:
     { open: boolean; tab?: Tab; motion: boolean; ended?: string | null } = $props();
 
-  const TABS = [
+  const city = CITIES[PAGE_CITY];
+  const ALL_TABS = [
     { id: "sources", label: "Πηγές δεδομένων" },
     { id: "stats", label: "Στατιστικά δικτύου" },
     { id: "feedback", label: "Feedback" },
   ] as const;
-  type Tab = (typeof TABS)[number]["id"];
+  type Tab = (typeof ALL_TABS)[number]["id"];
+  // The daily stats are of Athens only: elsewhere no stats tab.
+  const TABS = ALL_TABS.filter(t => t.id !== "stats" || city.stats);
   // Inside the stats tab: the newest day first, then the stored days together.
   const SUBS = [
     { id: "day", label: "Τελευταία μέρα" },
@@ -68,10 +72,10 @@
 
     {#if ended}
       <div class="old">
-        <b>Το πρόγραμμα του ΟΑΣΑ έληξε στις {dayMonth(ended)}.</b> Ο ΟΑΣΑ δεν έχει δημοσιεύσει ακόμα νέο πρόγραμμα
+        <b>Το πρόγραμμα του {city.agency} έληξε στις {dayMonth(ended)}.</b> Ο {city.agency} δεν έχει δημοσιεύσει ακόμα νέο πρόγραμμα
         δρομολογίων (GTFS), οπότε ο χάρτης χρησιμοποιεί το τελευταίο. Οι θέσεις των οχημάτων είναι ζωντανές· οι
         καθυστερήσεις και τα δρομολόγια βγαίνουν από το παλιό πρόγραμμα, άρα είναι κατά προσέγγιση. Μόλις βγει νέο,
-        ο χάρτης το παίρνει αυτόματα. <a href={GTFS_PAGE} target="_blank" rel="noopener">Το αρχείο στο data.gov.gr</a>
+        ο χάρτης το παίρνει αυτόματα. <a href={city.gtfsPage} target="_blank" rel="noopener">Το αρχείο στο data.gov.gr</a>
       </div>
     {/if}
 
@@ -85,6 +89,7 @@
     <div role="tabpanel" id="info-panel-sources" aria-labelledby="info-tab-sources" hidden={tab !== "sources"}>
       <SourcesView {motion} />
     </div>
+    {#if city.stats}
     <div role="tabpanel" id="info-panel-stats" aria-labelledby="info-tab-stats" hidden={tab !== "stats"}>
       <div class="tabs sub" role="tablist" aria-label="Στατιστικά">
         {#each SUBS as t (t.id)}
@@ -100,6 +105,7 @@
         {#if open && tab === "stats" && sub === "long"}<LongTermView />{/if}
       </div>
     </div>
+    {/if}
     <div role="tabpanel" id="info-panel-feedback" aria-labelledby="info-tab-feedback" hidden={tab !== "feedback"}>
       <FeedbackForm visible={open && tab === "feedback"} />
       {#if appSeen}<AboutView />{/if}

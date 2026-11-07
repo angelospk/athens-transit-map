@@ -11,7 +11,7 @@
   import type { AppState } from "../state.svelte";
   import CardSheet, { whenText } from "./CardSheet.svelte";
   import Icon from "./Icon.svelte";
-  import { CITIES, type CityId } from "../cities";
+  import { CITIES, nearestCity, type CityId } from "../cities";
 
   let { app }: { app: AppState } = $props();
 
@@ -28,19 +28,25 @@
 
   $effect(() => { if (app.nearShown) void app.loadStops(); });
 
+  // The city of the last fix (myPos is [lat, lon]), and whether the map shows another one: then the user picks.
+  const fixCity = $derived(app.myPos ? nearestCity([app.myPos[1], app.myPos[0]]) : null);
+  const elsewhere = $derived(!!app.myPos && fixCity !== app.cityId);
+
   const ids = $derived(app.nearGroups.flatMap(g => g.ids));
   const idKey = $derived(ids.join("|"));
 
   $effect(() => {
     if (!app.nearShown || !idKey) return;
     const want = untrack(() => ids);
+    // Only the stops near now: the boards of the ones passed on the way go.
+    untrack(() => { boards = Object.fromEntries(Object.entries(boards).filter(([k]) => want.includes(k))); });
     const ac = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const load = async () => {
       if (document.visibilityState !== "hidden") {
         let next = 0;
         const worker = async () => {
-          while (next < want.length && !ac.signal.aborted) {
+          while (next < want.length && !ac.signal.aborted && document.visibilityState !== "hidden") {
             const id = want[next++], r = await fetchV2Stop(`oasa:${id}`);
             if (ac.signal.aborted) return;
             const b = r.body as { arrivals?: V2Arrival[] } | null;
@@ -98,7 +104,10 @@
     {#snippet header()}
       <h2 class="title">Κοντά σου</h2>
     {/snippet}
-    {#if !app.myPos || app.locState === "denied"}
+    {#if elsewhere}
+      <p class="muted">{#if fixCity}Η θέση σου είναι στην {CITIES[fixCity].name}· δείχνεις {app.cityInfo.name}.{:else}Η θέση σου δεν είναι σε πόλη που ξέρω.{/if} Διάλεξε πόλη:</p>
+      {@render cities()}
+    {:else if !app.myPos || app.locState === "denied"}
       {#if app.locState === "denied"}
         <p class="muted">Ο browser δεν δίνει τη θέση σου. Διάλεξε πόλη:</p>
       {:else if app.locState === "unavailable"}

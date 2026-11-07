@@ -3,6 +3,7 @@
   import { tick, untrack } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
   import { directionGroups, focusGroup, otherDirection } from "../directions";
+  import { muniPlaces } from "../finder";
   import { clock, duration, fmtMinutes } from "../format";
   import { LOOKS } from "../map/look3d";
     import { STALE_S, type AppState } from "../state.svelte";
@@ -168,7 +169,8 @@
   <!-- Favourites only (B7): what the map shows, as a two-way switch. -->
   {#if app.tab === "now" || app.tab === "alerts"}
     <!-- «Τώρα» holds the favourites and the notices itself: the bar stays a search bar. -->
-  {:else if !app.favorites.length && !app.favHintSeen}
+  {:else if !app.favorites.length && !app.favHintSeen && !app.selected.length && !app.linked}
+    <!-- Not under the chips, nor on a shared link: on a phone that row would cover the map. -->
     <div class="favtip" role="note">
       <span class="ftic"><Icon name="star-filled" size={15} /></span>
       <span class="ftx"><b>Μόνο τα δικά σου.</b> Πάτα το αστέρι σε στάση ή γραμμή, και μετά εδώ, για να βλέπεις μόνο αυτά.</span>
@@ -208,7 +210,7 @@
       <span><i class="none"></i>χωρίς δρομολόγιο</span>
       {#if app.ageMode !== "never"}<span><b class="age">24″</b>πριν από τόσο ήρθε η θέση</span>{/if}
     </div>
-    {#if app.trainsOn}
+    {#if app.trainsOn && app.cityInfo.rail}
       <!-- The marker shapes (B3): the colour of a bus is its delay; a train's is its line's. -->
       <div class="legend shapes">
         <span><img class="ico" src="{import.meta.env.BASE_URL}icons/bus.png" alt="" />λεωφορείο</span>

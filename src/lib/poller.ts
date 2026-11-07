@@ -1,6 +1,6 @@
 // Polls one line per docs/CONTRACT.md. Pure timing rules live in schedule.ts.
 
-import { ClockOffset, gapFloor, outcomeDelay, type Outcome } from "./schedule";
+import { ClockOffset, FIRST_TIMEOUT_MS, gapFloor, outcomeDelay, type Outcome } from "./schedule";
 import type { LineLive } from "./types";
 
 export type PollState = "loading" | "ok" | "warming" | "backoff" | "unknown";
@@ -26,8 +26,12 @@ export interface PollerOptions<T extends Paced = LineLive> {
 export function isLineLive(b: unknown): b is LineLive {
   const d = b as LineLive;
   return !!d && typeof d === "object" && typeof d.line === "string" && Number.isFinite(d.updated_at)
-    && Number.isFinite(d.next_update_at) && Array.isArray(d.vehicles);
+    && Number.isFinite(d.next_update_at) && Array.isArray(d.vehicles) && d.vehicles.every(placed);
 }
+
+// A vehicle the map can draw: a record with a position (a null one would throw in onData every poll).
+const placed = (v: unknown) =>
+  !!v && typeof v === "object" && Number.isFinite((v as { lat: unknown }).lat) && Number.isFinite((v as { lon: unknown }).lon);
 
 export class LinePoller<T extends Paced = LineLive> {
   readonly line: string;
@@ -41,6 +45,12 @@ export class LinePoller<T extends Paced = LineLive> {
   private lastStart = -Infinity;
   private baseDeadline = -Infinity;
   private errors = 0;
+  // No data since start(): the line's card is waiting. Its first request is cut at FIRST_TIMEOUT_MS, and a
+  // network failure (status 0) is retried at the 5 s floor, once, with the full timeout (a network that is
+  // slow, not lossy, still gets its answer); 429/5xx keep their backoff.
+  private fresh = false;
+  private firstTry = false;           // the first request since start(): cut at FIRST_TIMEOUT_MS
+  private lastOk = false;             // the deadline is the server's next update, not a backoff
 
   constructor(opts: PollerOptions<T>) {
     this.line = opts.line;
@@ -61,6 +71,9 @@ export class LinePoller<T extends Paced = LineLive> {
   start() {
     if (this.running || this.dead) return;
     this.running = true;
+    this.fresh = this.firstTry = true;
+    // Reopened, the line shows nothing: the cached snapshot comes at the 5 s floor, not at its next update.
+    if (this.lastOk) this.baseDeadline = -Infinity;
     this.arm();
   }
 
@@ -99,7 +112,9 @@ export class LinePoller<T extends Paced = LineLive> {
     const ctrl = new AbortController();
     this.inFlight = ctrl;
     this.lastStart = this.o.mono();
-    const timeout = setTimeout(() => ctrl.abort(), this.o.timeoutMs);
+    const first = this.firstTry;
+    this.firstTry = false;
+    const timeout = setTimeout(() => ctrl.abort(), first ? Math.min(this.o.timeoutMs, FIRST_TIMEOUT_MS) : this.o.timeoutMs);
     const failed: FetchResult = { status: 0, body: null };
     // Settles on abort even if fetchLine ignores the signal.
     const aborted = new Promise<FetchResult>(r => ctrl.signal.addEventListener("abort", () => r(failed), { once: true }));
@@ -109,9 +124,12 @@ export class LinePoller<T extends Paced = LineLive> {
     this.inFlight = null;
     const outcome = this.handle(res);
     if (!outcome || gen !== this.gen) return;   // onData may have stopped us
-    this.baseDeadline = this.o.mono() + outcomeDelay({
+    const quick = this.fresh && outcome.kind === "error" && outcome.errors === 1 && res.status === 0;
+    this.lastOk = outcome.kind === "ok";
+    if (this.lastOk) this.fresh = false;
+    this.baseDeadline = this.o.mono() + (quick ? 0 : outcomeDelay({
       outcome, wallNow: this.o.wall(), offsetMs: this.o.clock.ms, jitter: this.o.rand(),
-    });
+    }));
     this.arm();
   }
 

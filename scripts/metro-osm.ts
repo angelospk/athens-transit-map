@@ -5,7 +5,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { MetroData } from "../src/lib/metro";
-import { osmPaths } from "./osm";
+import { osmPaths, snapStations } from "./osm";
 
 // overpass-api.de refuses some clients; this mirror answers.
 const url = process.argv[2] ?? "https://maps.mail.ru/osm/tools/overpass/api/interpreter";
@@ -22,6 +22,7 @@ async function overpass() {
   if (!r.ok) throw new Error(`Overpass: HTTP ${r.status} (busy mirrors often answer on a second try)`);
   return r.json();
 }
+const SNAP_M = 150;   // a station of one line this close to its track is drawn on it
 const paths = osmPaths((await overpass()).elements);
 
 const data: MetroData = JSON.parse(readFileSync("public/metro.json", "utf8"));
@@ -30,6 +31,10 @@ for (const l of data.lines) {
   if (!p?.length) throw new Error(`no OSM track for ${l.id}`);
   l.paths = p;
 }
+// STASY's ΠΕΥΚΑΚΙΑ has the longitude of ΝΕΑ ΙΩΝΙΑ, 370 m east of the track: the OSM station node instead.
+const FIXED: Record<string, [number, number]> = { "ΠΕΥΚΑΚΙΑ": [23.750122, 38.037124] };
+for (const s of data.stations) if (FIXED[s.name]) [s.lon, s.lat] = FIXED[s.name];
+data.stations = snapStations(data.stations, data.lines, SNAP_M);
 data.source = "STASY GTFS, data.gov.gr; γραμμές © OpenStreetMap contributors (ODbL)";
 writeFileSync("public/metro.json", JSON.stringify(data));
 console.log(data.lines.map(l => `${l.id}: ${l.paths.length} paths, ${l.paths.flat().length} points`).join("\n"));

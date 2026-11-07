@@ -56,7 +56,7 @@
     const load = async () => {
       if (document.visibilityState !== "hidden") {
         let next = 0;
-        const worker = async () => { while (next < jobs.length && !ac.signal.aborted) await jobs[next++](); };
+        const worker = async () => { while (next < jobs.length && !ac.signal.aborted && document.visibilityState !== "hidden") await jobs[next++](); };
         await Promise.all(Array.from({ length: Math.min(PARALLEL, jobs.length) }, worker));
       }
       if (!ac.signal.aborted) timer = setTimeout(load, POLL_MS);

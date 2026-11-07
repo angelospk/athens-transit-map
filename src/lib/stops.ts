@@ -119,7 +119,20 @@ function headings(ix: TripIndex, k: number): Map<string, number[]> {
 }
 
 // Where a bus runs to: OASA headsigns name the route end to end ("ΠΕΙΡΑΙΑΣ - ΣΥΝΤΑΓΜΑ"), the last is the end.
-export const toward = (headsign: string) => headsign.split(" - ").pop()!.trim() || headsign;
+// The places of a headsign: split at " - ", but not inside brackets ("ΛΑΓΚΑΔΑΣ - ΘΕΣ/ΝΙΚΗ (ΛΑΓΚΑΔΑΣ - ΛΑΓΥΝΑ - ΘΕΣ/ΝΙΚΗ)").
+function places(headsign: string): string[] {
+  const out: string[] = [];
+  let depth = 0, from = 0;
+  for (let i = 0; i < headsign.length; i++) {
+    const c = headsign[i];
+    if (c === "(") depth++;
+    else if (c === ")") depth = Math.max(0, depth - 1);
+    else if (!depth && headsign.startsWith(" - ", i)) { out.push(headsign.slice(from, i)); from = i + 3; i += 2; }
+  }
+  out.push(headsign.slice(from));
+  return out;
+}
+export const toward = (headsign: string) => places(headsign).pop()!.trim() || headsign;
 
 // "ΠΕΙΡΑΙΑΣ(ΠΡΟΣΩΡΙΝΗ ΛΟΓΩ ΕΡΓΩΝ)" → the place and the note in brackets, apart: a title reads "Προς Πειραιας" and
 // the note goes under it.
@@ -147,7 +160,7 @@ export function headTo(ix: TripIndex, line: string, variant: string, k: number, 
     seq.forEach((x, q) => { const d = distanceM(pt(first), pt(x)); if (d > far) { far = d; turn = q; } });
   }
   if (p <= turn) return plain;
-  const parts = headsign.split(" - ");
+  const parts = places(headsign);
   return { to: parts.length > 1 ? parts[0].trim() : ix.s[first][0], back: true };
 }
 

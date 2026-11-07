@@ -14,7 +14,7 @@
   import { snapStop } from "../stopSnap";
   import { smoothLine } from "../map/layers";
   import { API_BASE } from "../config";
-  import { parsePlan, planFC, planLabels, planSteps, planSummary, planUrl, RISK_MIN, scaledLegs, tightestChange, type Itinerary, type PlanResponse } from "../plan";
+  import { PLAN_RETRY_MS, parsePlan, planFC, planLabels, planRetry, planSteps, planSummary, planUrl, RISK_MIN, scaledLegs, tightestChange, type Itinerary, type PlanResponse } from "../plan";
   import Dropdown from "./Dropdown.svelte";
   import { checkLive, liveCount } from "../liveLines";
   import { euro, tripFare } from "../fares";
@@ -258,6 +258,7 @@
   // option has left. When the backend fails or is busy, only the lines below show.
   let plan = $state.raw<{ key: string; r: PlanResponse } | null>(null);
   let planGen = $state(0);
+  let planTry = { key: "", n: 0 };   // retries of a failed request for these ends (not reactive)
   // The timed trip on the map (its ends and departure), kept across close and reopen like the ends.
   let planSel = $state.raw(memo.plan);
   $effect(() => { memo.plan = planSel; });
@@ -287,18 +288,25 @@
     if (!key) return;
     const [a, b, off] = JSON.parse(key) as [Pt, Pt, number];
     const ctl = new AbortController();
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    if (planTry.key !== key) planTry = { key, n: 0 };
     const after = off ? untrack(() => app.serverNow) / 1000 + off * 60 : undefined;
     const ask = (f: Pt, t: Pt, at?: number) => getJSON(planUrl(API_BASE, f, t, at, 5), ctl.signal).then(x => (x.status === 200 ? parsePlan(x.body) : null), () => null);
     getJSON(planUrl(API_BASE, a, b, after, 5), ctl.signal).then(res => {
+      if (ctl.signal.aborted) return;
       const r = res.status === 200 ? parsePlan(res.body) : null;
-      if (ctl.signal.aborted || !r) return;
+      if (!r) {
+        // Opened offline, or the server was busy: asked again a little later (the lines below show meanwhile).
+        if (planRetry(res.status, planTry.n)) retry = setTimeout(() => { planTry.n++; planGen++; }, PLAN_RETRY_MS);
+        return;
+      }
       plan = { key, r };
       // A metro option, when the server gave none (metroBridge.ts): added to the list once it is known.
       void withMetro(r, a, b, after, untrack(() => app.serverNow) / 1000, ask).then(m => {
         if (m !== r && !ctl.signal.aborted && plan?.key === key) plan = { key, r: m };
       }, () => {});
     }, () => {});
-    return () => ctl.abort();
+    return () => { ctl.abort(); clearTimeout(retry); };
   });
   const nowS = $derived(app.serverNow / 1000);
   // One option per departure, arrival and changes (CONTRACT §9 returns no two alike).
@@ -960,7 +968,7 @@
         </ol>
       {/if}
       {#if picked && trips.length}<button type="button" class="link all" onclick={showAll}>Όλες οι γραμμές στον χάρτη</button>{/if}
-      {#if shown}
+      {#if shown && app.cityInfo.alerts}
         <div class="alert">
           {#if app.alert}
             {@const a = app.alert}

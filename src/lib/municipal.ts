@@ -39,25 +39,27 @@ export async function loadMunicipal(): Promise<MunicipalData | null> {
 }
 
 // One MultiLineString per route (kind "line") and one Point per stop (kind "stop"), in [lon, lat]. Properties:
-// m (municipality), url (its timetable page, "" when unknown), title (a route's) or name and lines (a stop's).
+// m (municipality), url (its timetable page, "" when unknown), title and rid (a route's) or sid, name, lines and rids
+// (a stop's; rids comma-joined: map properties hold no arrays).
 export function municipalFC(d: MunicipalData): GeoJSON.FeatureCollection {
   const features: GeoJSON.Feature[] = [];
-  const at = new Map<string, { m: string; url: string; lines: string[] }>();
+  const at = new Map<string, { m: string; url: string; lines: string[]; rids: string[] }>();
   for (const r of d.routes) {
     const url = r.timetable_url && /^https?:\/\//.test(r.timetable_url) ? r.timetable_url : "";   // only a web link in an href
-    features.push({ type: "Feature", properties: { kind: "line", m: r.municipality, url, title: r.ref ? `${r.ref} · ${r.name}` : r.name },
+    features.push({ type: "Feature", properties: { kind: "line", m: r.municipality, url, rid: r.id, title: r.ref ? `${r.ref} · ${r.name}` : r.name },
       geometry: { type: "MultiLineString", coordinates: r.shape.map(l => l.map(([lat, lon]) => [lon, lat])) } });
     for (const id of r.stops) {
-      const s = at.get(id) ?? { m: r.municipality, url, lines: [] };
+      const s = at.get(id) ?? { m: r.municipality, url, lines: [], rids: [] };
       const label = r.ref ?? r.name;
       if (!s.lines.includes(label)) s.lines.push(label);
+      if (!s.rids.includes(r.id)) s.rids.push(r.id);
       at.set(id, s);
     }
   }
   for (const [id, s] of at) {
     const stop = d.stops[id];
     if (!stop) continue;
-    features.push({ type: "Feature", properties: { kind: "stop", m: s.m, url: s.url, name: stop.name ?? "Στάση", lines: s.lines.join(", ") },
+    features.push({ type: "Feature", properties: { kind: "stop", sid: id, m: s.m, url: s.url, name: stop.name ?? "Στάση", lines: s.lines.join(", "), rids: s.rids.join(",") },
       geometry: { type: "Point", coordinates: [stop.lon, stop.lat] } });
   }
   return { type: "FeatureCollection", features };

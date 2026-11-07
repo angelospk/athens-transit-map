@@ -2,6 +2,8 @@
 // the backend's static data (STATIC_BASE): no file there lists all stops at once.
 //
 //   bun scripts/trips.ts   → public/trips.json   (again when OASA publishes a new GTFS)
+//   VITE_STATIC_BASE=<instance>/static/v1 TRIPS_OUT=public/trips-thessaloniki.json bun scripts/trips.ts
+//     → another city's index (no stop corrections: they are Athens stop ids)
 //
 // Stop positions found wrong (scripts/stop-corrections.json, proposed by scripts/stopfix.ts and committed
 // by hand) replace the GTFS ones.
@@ -24,7 +26,8 @@ const files: LineStatic[] = [];
 for (let i = 0; i < ix.lines.length; i += 8)   // 8 at a time: a polite load on GitHub Pages
   files.push(...await Promise.all(ix.lines.slice(i, i + 8).map(l => get<LineStatic>(`${BASE}/lines/${encodeURIComponent(l.id)}.json`))));
 
-const fixes: Record<string, Correction> = JSON.parse(readFileSync("scripts/stop-corrections.json", "utf8"));
+const OUT = process.env.TRIPS_OUT || "public/trips.json";
+const fixes: Record<string, Correction> = OUT === "public/trips.json" ? JSON.parse(readFileSync("scripts/stop-corrections.json", "utf8")) : {};
 const data: TripIndex = { v: ix.gtfs_version, s: [], l: {} };
 const at = new Map<string, number>();
 for (const f of files) {
@@ -44,5 +47,5 @@ for (const f of files) {
     });
   data.l[f.id] = variants;
 }
-writeFileSync("public/trips.json", JSON.stringify(data));
+writeFileSync(OUT, JSON.stringify(data));
 console.log(`${files.length} lines, ${data.s.length} stops, ${Object.values(data.l).reduce((n, v) => n + Object.keys(v).length, 0)} variants`);

@@ -7,7 +7,11 @@ import { cityKey, isCityLive } from "./city";
 import { loadMetro, type MetroData } from "./metro";
 import { loadSuburban, type SuburbanData } from "./suburban";
 import { loadMunicipal, type MunicipalData } from "./municipal";
-import { railMotions, runIds, type RailMotion, type StasyVehicle, type SuburbanTrain, type TrainSel } from "./trains";
+import { loadTimetables } from "./muniTables";
+import type { MuniLine, MuniTimetable } from "./muniTimes";
+import { muniCards, type MuniCard, type SimVehicle } from "./muniLine";
+import type { MunicipalRoute } from "./municipal";
+import { railMotions, runIds, validTrains, type RailMotion, type StasyVehicle, type SuburbanTrain, type TrainSel } from "./trains";
 import type { Place, TripIndex } from "./trip";
 import type { FeatureCollection, LineString } from "geojson";
 import { LinePoller, type PollState } from "./poller";
@@ -34,6 +38,7 @@ import { focusLines, nearbyGroups, titleCase } from "./nearby";
 import type { LocState } from "./locate";
 import type { Guide } from "./guide";
 import { CITIES, initialCity, type CityId } from "./cities";
+import { autoCityOnFix, cityUrl, favKey } from "./cityBases";
 
 export type TripMode = "bus" | "trolley" | "metro" | "tram";
 export interface TripPrefs { modes: TripMode[]; order: "time" | "changes" | "walk"; later: number; radius: number; pick?: [number, number] }
@@ -72,6 +77,12 @@ function store(key: string, v: unknown) {
   try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* private mode */ }
 }
 const isBool = (v: unknown) => typeof v === "boolean";
+
+// The city of this page load (config.ts computes the same): ?city=, else the last choice, else Athens.
+// Known before the fields below, because the favourites key and the rail features depend on it.
+function pageCity(): CityId {
+  return typeof location === "undefined" ? "athens" : initialCity(location.search, stored<unknown>("city", null, () => true));
+}
 
 // A stop alert from the trip planner; label: the boarding stop's name; push: the bot's id for the same
 // alert as web push (src/lib/push.ts).
@@ -114,8 +125,13 @@ export class AppState {
   // City layer (/v1/vehicles/tiles): the live vehicles of the map view; null before data or when the server lacks it.
   city = $state.raw<CityLive | null>(null);
   cityState = $state<PollState | null>(null);
-  // Favourite stops and lines of every mode (favs.ts, `fav.v2`); the old `favorites` (bus line ids) move into it once.
-  favs = $state.raw<Favs>(loadFavs(stored<unknown>("fav.v2", null, () => true), stored<unknown>("favorites", null, () => true)));
+  // The city the map shows (cities.ts): ?city=, else the last one chosen, else Athens. A location fix inside another
+  // city's area switches to it (MapView); «Κοντά σου» lets the user pick one by hand. A switch reloads the page.
+  cityId = $state<CityId>(pageCity());
+  // Favourite stops and lines of every mode (favs.ts), one list per city; the old `favorites` (bus line ids) move
+  // into Athens' list once.
+  favs = $state.raw<Favs>(loadFavs(stored<unknown>(favKey(this.cityId), null, () => true),
+    this.cityId === "athens" ? stored<unknown>("favorites", null, () => true) : null));
   // The favourites panel (★ in the top bar); it shows while no card is open.
   favsOpen = $state(false);
   // The four places of the app (TabBar): «Τώρα» (leave-now, favourites, nearby), the map, the trip planner and the
@@ -126,11 +142,11 @@ export class AppState {
   nearOpen = $state(false);
   myPos = $state.raw<[number, number] | null>(null);
   locState = $state<LocState>("off");
-  // The city the map shows (cities.ts): ?city=, else the last one chosen, else Athens. A location fix inside another
-  // city's area switches to it (MapView); «Κοντά σου» lets the user pick one by hand.
-  cityId = $state<CityId>("athens");
   // The page opened on a link to a card or to lines: it shows that, not «Κοντά σου».
   linked = false;
+  // The URL named the city (a hand pick or a shared link): kept in the URL, and a location fix does not
+  // switch away from it until the user taps locate.
+  cityLocked = false;
   // The search modal (B8): closed, or open on a kind filter.
   // A place from the search modal to plan a trip to: the panel opens the trip planner, which takes it as its end.
   tripTo = $state.raw<Place | null>(null);
@@ -277,6 +293,15 @@ export class AppState {
   municipalOn = $state(stored("municipalOn", false, isBool));
   municipal = $state.raw<MunicipalData | null>(null);
   private municipalLoading = false;
+  // Their timetables, as we transcribed them (muniTables.ts): scheduled, never live. Loaded with the routes.
+  muniTimes = $state.raw<MuniTimetable[]>([]);
+  private muniTimesLoading = false;
+  // «Κάτι δεν ισχύει;» on a municipal route or stop: the report sheet (MuniReport) for its lines, with the times shown.
+  // One card per municipal line (muniLine.ts); the open one's direction and its estimated buses go on the map.
+  muniCards = $derived<MuniCard[]>(this.municipal ? muniCards(this.municipal, this.muniTimes) : []);
+  muniStop = $state.raw<[number, number] | null>(null);   // the open municipal stop, [lon, lat] (MuniStopCard)
+  muniFocus = $state.raw<{ route: MunicipalRoute; vehicles: SimVehicle[] } | null>(null);
+  muniReport = $state.raw<{ stop: string | null; items: { table: MuniTimetable; line: MuniLine; shown: string[] }[] } | null>(null);
   // Map filters; the selected vehicle is always shown.
   only = $state.raw<Only>(stored("only", { fresh: false, onTime: false },
     v => !!v && isBool((v as Only).fresh) && isBool((v as Only).onTime)));
@@ -443,11 +468,14 @@ export class AppState {
     return colorOf(this.lineSlots, id) ?? { bg: info?.color || "#3b5bdb", fg: info?.text_color || "#ffffff" };
   }
 
+  // The selected vehicle stays (not faded) when its trip leaves the focused direction, e.g. it turned at the
+  // terminus: its open card must not say it is gone. Only a direction picked by the user lets go of it (setFocus).
   vehicles: PlacedVehicle[] = $derived(this.detailLines.flatMap(line => {
     const f = this.focus[line] ? new Set(this.focus[line]) : undefined;
     const known = new Set(Object.keys(this.statics[line]?.variants ?? {}));
-    return (this.live[line]?.vehicles ?? []).flatMap(v =>
-      isHidden(v.variant, f, known) ? [] : [{ line, v, faded: !!f && !(v.variant && f.has(v.variant)) }]);
+    const s = this.selection, keep = s?.kind === "vehicle" && s.line === line ? s.id : null;
+    return (this.live[line]?.vehicles ?? []).flatMap(v => v.id === keep ? [{ line, v, faded: false }]
+      : isHidden(v.variant, f, known) ? [] : [{ line, v, faded: !!f && !(v.variant && f.has(v.variant)) }]);
   }));
 
   cityByKey = $derived(new Map((this.city?.vehicles ?? []).map(v => [cityKey(v), v])));
@@ -510,6 +538,7 @@ export class AppState {
     this.linked = ids.length > 0 || !!cardFromQuery(location.search);
     if (this.linked) this.tab = "map";
     else this.start = true;   // a plain visit opens on «Πού πας;» (StartScreen)
+    this.cityLocked = !autoCityOnFix(location.search);
     this.cityId = initialCity(location.search, stored<unknown>("city", null, () => true));
     store("city", this.cityId);
     this.selected = ids.slice(0, MAX_LINES);
@@ -517,8 +546,9 @@ export class AppState {
     if (ids.length > MAX_LINES) this.say(`Ο σύνδεσμος είχε ${ids.length} γραμμές. Κράτησα τις πρώτες ${MAX_LINES}.`);
     this.baseTitle = document.title;
     this.nav = new CardNav(history, s => { this.stack = s; this.show(s[s.length - 1] ?? null); },
-      s => location.pathname + cardQuery(s[s.length - 1] ?? null, this.selected) + location.hash);
+      s => location.pathname + this.withCity(cardQuery(s[s.length - 1] ?? null, this.selected)) + location.hash);
     addEventListener("popstate", e => this.nav?.popped(e.state));
+    addEventListener("online", () => this.backOnline());
     this.nav.start(cardFromQuery(location.search));
     for (const id of this.selected) this.startLine(id);
     void Promise.allSettled(this.selected.map(fetchLineStatic)).then(() => { if (!this.stack.length) this.fit(this.selected); });   // a linked card frames its own
@@ -641,11 +671,12 @@ export class AppState {
       case "route": return this.showRoute(c, l.line, l.variant, l.dir);
       case "bus-stop":
         void this.loadStops().then(ix => {
-          const i = ix ? stopIndex(ix, l.code) : -1;
-          if (!this.isTop(c)) return;
-          if (i < 0) return this.say("Η στάση δεν βρέθηκε.");
+          // No index (offline): the card shows from the stop's board alone.
+          if (!ix || !this.isTop(c)) return;
+          const i = stopIndex(ix, l.code);
+          if (i < 0) return this.notFound("Η στάση δεν βρέθηκε.");
           this.busStop = i;
-          if (!c.title) this.retitle(ix!.s[i][0]);
+          if (!c.title) this.retitle(ix.s[i][0]);
         });
         return;
       case "station":
@@ -672,7 +703,7 @@ export class AppState {
     const s = this.metro.stations.find(s => fold(s.name).replace(/\s+/g, " ").trim() === want);
     this.pendingStation = null;
     if (s) { this.metroStation = s.name; this.retitle(s.name); }
-    else this.say("Ο σταθμός δεν βρέθηκε.");
+    else this.notFound("Ο σταθμός δεν βρέθηκε.");   // pending: its card is still the top one (show() clears it)
   }
 
   // A bus line's card: one direction drawn, the line shown for a while if it is not a pick. Without a
@@ -682,11 +713,16 @@ export class AppState {
       this.dropTemp();
       if (!this.selected.includes(line)) { this.tempLine = line; this.startLine(line); }
     }
-    if (variant) { this.selection = { kind: "route", line, variant }; return; }
+    if (variant) {
+      // From a vehicle's card too: the map steps back to the whole line, with its other vehicles.
+      this.selection = { kind: "route", line, variant };
+      void fetchLineStatic(line).then(() => { if (this.isTop(c)) this.fit([line]); }, () => {});
+      return;
+    }
     void fetchLineStatic(line).then(st => {
       const v = directionGroups(st)[dir ?? 0]?.variants[0] ?? Object.keys(st.variants)[0];
       if (v && this.isTop(c)) { this.selection = { kind: "route", line, variant: v }; this.fit([line]); }
-    }, () => { if (this.isTop(c)) this.say(`Άγνωστη γραμμή: ${line}.`); });
+    }, (e: { status?: number }) => { if (e?.status === 404 && this.isTop(c)) this.notFound(`Άγνωστη γραμμή: ${line}.`); });
   }
 
   // A station tapped on the map (null: none). Its card replaces a vehicle's or route's.
@@ -729,7 +765,7 @@ export class AppState {
 
   private setFavs(f: Favs) {
     this.favs = f;
-    store("fav.v2", f);
+    store(favKey(this.cityId), f);
   }
   toggleFavorite(id: string) { this.toggleFavLine({ id: `oasa:${id}`, label: id }); }
   toggleFavStop(s: FavStop) { this.setFavs(toggleStop(this.favs, s)); }
@@ -741,6 +777,7 @@ export class AppState {
   disruptions = $state.raw<Disruption[]>([]);
   closedStrikes = $state.raw<string[]>(stored<string[]>("strikesClosed", [], v => Array.isArray(v) && v.every(x => typeof x === "string")));
   async loadDisruptions() {
+    if (!this.rail) return;
     const r = await fetchV2Alerts();
     if (r.status === 200) this.disruptions = parseAlerts(r.body);
   }
@@ -766,14 +803,18 @@ export class AppState {
   }
 
   // fly: also move the map there (a hand pick); a location fix moves the map itself.
+  // A new city is a new page: every cache and the API base belong to one city, so reload on the city's URL.
   setCity(c: CityId, fly = true) {
     if (c !== this.cityId) {
-      this.cityId = c;
       store("city", c);
+      if (typeof location !== "undefined") location.replace(cityUrl(location.pathname + location.search, c));
+      return;
     }
     if (fly) this.showCity(c);
   }
   get cityInfo() { return CITIES[this.cityId]; }
+  // Metro, tram, Proastiakos, municipal buses and OASA alerts: Athens only.
+  private get rail() { return CITIES[this.cityId].rail; }
 
   // «Κοντά σου» opens over the bare map only: an open card stays as it is.
   showNear() {
@@ -938,7 +979,7 @@ export class AppState {
     this.startTrains();
     if (!on) {
       const top = this.stack[this.stack.length - 1];
-      if (top && !top.id.startsWith("oasa:")) this.closeCards();   // a rail card has nothing to show now
+      if (top && !top.id.startsWith("oasa:") && !top.id.startsWith("muni:")) this.closeCards();   // a rail card has nothing to show now
       this.selectTrain(null); this.selectRailLine(null); this.selectStation(null); this.selectRailStation(null);
       this.stasyTrains = this.suburbanTrains = [];
       this.stasyMotion = {};
@@ -952,7 +993,7 @@ export class AppState {
   private trainGen = 0;
   private startTrains() {
     const gen = ++this.trainGen;
-    if (!this.trainsOn) return;
+    if (!this.trainsOn || !this.rail) return;
     this.loadSuburban();   // the corridors' colours and paths
     const poll = async (kind: "metro" | "suburban", every: number) => {
       if (gen !== this.trainGen) return;
@@ -967,8 +1008,8 @@ export class AppState {
         const b = r.body as { vehicles?: unknown; trains?: unknown } | null;
         const list = kind === "metro" ? b?.vehicles : b?.trains;
         if (r.status === 200 && Array.isArray(list)) {
-          if (kind === "metro") this.stasyTrains = list as StasyVehicle[];
-          else this.suburbanTrains = list as SuburbanTrain[];
+          if (kind === "metro") this.stasyTrains = validTrains(kind, list) as StasyVehicle[];
+          else this.suburbanTrains = validTrains(kind, list) as SuburbanTrain[];
         }
       }
       setTimeout(() => void poll(kind, every), every);
@@ -980,7 +1021,7 @@ export class AppState {
   // Loads the suburban data once, with the trains; after a failure, the next start tries again.
   private suburbanLoading = false;
   loadSuburban() {
-    if (this.suburban || this.suburbanLoading) return;
+    if (!this.rail || this.suburban || this.suburbanLoading) return;
     this.suburbanLoading = true;
     loadSuburban().then(d => (this.suburban = d), () => this.say("Δεν φόρτωσε ο Προαστιακός."))
       .finally(() => (this.suburbanLoading = false));
@@ -989,7 +1030,7 @@ export class AppState {
   // Loads the metro data once; after a failure, the next call tries again (the layers menu calls it).
   private metroLoading = false;
   loadMetro() {
-    if (this.metro || this.metroLoading) return;
+    if (!this.rail || this.metro || this.metroLoading) return;
     this.metroLoading = true;
     loadMetro().then(d => { this.metro = d; this.findStation(); }, () => this.say("Δεν φόρτωσαν οι γραμμές του μετρό."))
       .finally(() => (this.metroLoading = false));
@@ -1013,6 +1054,11 @@ export class AppState {
 
   // Once; again after a failure or an empty answer (the backend may not have the data yet).
   loadMunicipal() {
+    if (!this.rail) return;
+    if (!this.muniTimes.length && !this.muniTimesLoading) {
+      this.muniTimesLoading = true;
+      loadTimetables().then(t => (this.muniTimes = t), () => {}).finally(() => (this.muniTimesLoading = false));
+    }
     if (this.municipal || this.municipalLoading) return;
     this.municipalLoading = true;
     loadMunicipal().then(d => (this.municipal = d), () => {}).finally(() => (this.municipalLoading = false));
@@ -1069,7 +1115,10 @@ export class AppState {
     const s = this.selection;
     if (!variants || s?.line !== line) return;
     if (s.kind === "route" && !variants.includes(s.variant)) this.selection = { kind: "route", line, variant: variants[0] };
-    if (s.kind === "vehicle" && !this.vehicles.some(p => p.line === line && p.v.id === s.id)) this.selection = null;
+    if (s.kind === "vehicle") {
+      const v = this.live[line]?.vehicles.find(x => x.id === s.id);
+      if (!v || isHidden(v.variant, new Set(variants), new Set(Object.keys(this.statics[line]?.variants ?? {})))) this.selection = null;
+    }
   }
 
   selectVehicle(line: string, id: string) {
@@ -1161,7 +1210,7 @@ export class AppState {
       fetchLine: (l, signal) => this.cityFetch(l, signal),
       validate: isCityLive,
       clock: this.clock,
-      onData: () => this.publishCity(),
+      onData: () => { this.reached(); this.publishCity(); },
       onState: s => (this.cityState = s),
     });
     this.cityPoller.start();
@@ -1169,6 +1218,13 @@ export class AppState {
 
   notify(text: string) {
     this.say(text);
+  }
+
+  // A card from a link whose stop, station or line does not exist: a notice, and Back, so no empty card stays
+  // and the URL does not keep pointing at it.
+  private notFound(text: string) {
+    this.say(text);
+    if (!this.nav?.busy) this.back();   // a move in flight replaces the card anyway; a Back queued after it would close the next one
   }
 
   private say(text: string) {
@@ -1180,7 +1236,13 @@ export class AppState {
 
   private writeUrl() {
     const top = this.stack[this.stack.length - 1] ?? null;
-    history.replaceState(history.state, "", location.pathname + cardQuery(top, this.selected) + location.hash);
+    history.replaceState(history.state, "", location.pathname + this.withCity(cardQuery(top, this.selected)) + location.hash);
+  }
+
+  // A city named in the URL at load stays in it, so a reload or a shared link opens the same city.
+  private withCity(q: string): string {
+    if (!this.cityLocked) return q;
+    return `${q ? `${q}&` : "?"}city=${this.cityId}`;
   }
 
   private startLine(id: string) {
@@ -1197,10 +1259,41 @@ export class AppState {
     }
     if (!this.live[id]) this.pollState = { ...this.pollState, [id]: "loading" };
     p.start();
-    fetchLineStatic(id).then(s => (this.statics = { ...this.statics, [id]: s }), () => {});
+    this.loadStatic(id);
+  }
+
+  // A failed load is not memoized (api.ts once): a later call asks again; one in flight is shared.
+  private loadStatic(id: string) {
+    fetchLineStatic(id).then(s => {
+      this.statics = { ...this.statics, [id]: s };
+      // It failed before (offline): a route card of the line opened meanwhile drew no direction. Now it does.
+      if (!this.staticFailed.delete(id)) return;
+      const top = this.stack.at(-1), l = top && legacyOf(top);
+      if (l?.kind === "route" && l.line === id) this.showRoute(top!, id, l.variant, l.dir);
+    }, () => this.staticFailed.add(id));
+  }
+  private staticFailed = new Set<string>();
+
+  // The browser is online again: what failed to load is asked again, also the route files of the lines on the
+  // map (the live API may still fail while the static host answers, so no data arrival would retry them).
+  private backOnline() {
+    if (this.linesFailed) this.loadLines();
+    for (const id of new Set([...this.selected, this.tempLine])) if (id && !this.statics[id]) this.loadStatic(id);
+    void this.refreshStatus();
+  }
+
+  // Data came, or the browser is online again: the server is reached (the status call runs only every
+  // 60 s), and what failed to load meanwhile is asked again.
+  private reachedN = 0;   // counts data arrivals: a status call sent before one of them is old news
+  private reached() {
+    this.reachedN++;
+    this.statusFailed = false;
+    if (this.linesFailed) this.loadLines();
   }
 
   private onData(id: string, d: LineLive) {
+    this.reached();
+    if (!this.statics[id]) this.loadStatic(id);   // its route file failed (offline): again
     this.live = { ...this.live, [id]: d };
     const s = this.selection;
     if (s?.kind === "vehicle" && s.line === id && !d.vehicles.some(v => v.id === s.id)) {
@@ -1248,6 +1341,7 @@ export class AppState {
   }
 
   private loadLines() {
+    this.linesFailed = false;   // set again if this load fails: no second load while this one runs
     fetchLines().then(
       ix => {
         this.lines = ix.lines;
@@ -1262,7 +1356,9 @@ export class AppState {
   }
 
   private async refreshStatus() {
+    const n = this.reachedN;
     const s = await fetchStatus();
+    if (!s && n !== this.reachedN) return;   // it failed, but data came meanwhile: the server is reached
     this.statusFailed = !s;
     if (s) this.status = s;
   }
