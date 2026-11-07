@@ -350,7 +350,6 @@
   }
 
   // «Η θέση μου» stays where the user is: a move of over 80 m (the location the map follows) moves the start with it.
-  const meAcc = $derived(app.myFix ? Math.round(app.myFix.acc) : null);
   $effect(() => {
     const at = app.myPos;
     untrack(() => {
@@ -849,7 +848,7 @@
               <button type="button" class="clear" aria-label="Καθάρισμα" title="Καθάρισμα" onclick={() => { ends[f] = { text: "", place: null }; inputs[f]?.focus(); }}><Icon name="close" size={13} /></button>
             {/if}
             {#if ends[f].place}
-              {#if ends[f].place?.kind === "me" && !wide}<span class="melive">{meAcc != null ? `ζωντανά · ±${meAcc} μ` : (ends[f].place?.hint ?? "").replace(/\.$/, "")}</span>{/if}
+              {#if ends[f].place?.kind === "me" && !wide && app.myFix}<span class="melive">ζωντανά</span>{/if}
               <button type="button" class="chg" onclick={() => { ends[f] = { text: "", place: null }; inputs[f]?.focus(); }}>Αλλαγή</button>
             {:else if intro && !ends[f].text}
               <kbd class="slash" aria-hidden="true">/</kbd>
@@ -1172,7 +1171,7 @@
             <span class="oi"><Icon name="stop" size={17} /></span>
             <span class="ot"><b>{r.muniStop.name}</b><small>Δημοτική στάση · {town(r.muniStop.municipality)}</small></span>
           {:else if r.me}
-            <span class="oi meoi"><svg class="arr" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5 3.8 10.6a.6.6 0 0 0 .05 1.12l6.6 2.03 2.03 6.6a.6.6 0 0 0 1.12.05z" fill="currentColor" /></svg></span><span class="ot"><b>{ME}</b><small>{app.myFix ? `Ζωντανά, εδώ που είσαι τώρα · ±${Math.round(app.myFix.acc)} μ` : "Από την τοποθεσία της συσκευής σου"}</small></span>
+            <span class="oi meoi"><svg class="arr" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5 3.8 10.6a.6.6 0 0 0 .05 1.12l6.6 2.03 2.03 6.6a.6.6 0 0 0 1.12.05z" fill="currentColor" /></svg></span><span class="ot"><b>{ME}</b><small>{app.myFix ? "Ζωντανά, εδώ που είσαι τώρα" : "Εκεί που είσαι, από το κινητό σου"}</small></span>
           {:else if r.map}
             <span class="oi"><Icon name="map" size={17} /></span><span class="ot"><b>Διάλεξε στον χάρτη</b>{#if !ends[f].text.trim()}<small class="phone">Μετακίνησε τον χάρτη και πάτα «Εδώ»</small><small class="pc">Κάνε κλικ στο σημείο</small>{/if}</span>
           {:else if r.place}
@@ -1322,6 +1321,7 @@
   .pickf .opts { position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 6px); background: var(--surface); border-color: var(--border);
     box-shadow: 0 16px 40px rgba(0, 0, 0, .28); max-height: none; overflow: visible; }
 
+  .ends > .opts { margin-top: 10px; }
   .opts { list-style: none; margin: 0; padding: 6px; border-radius: 18px; background: var(--glass-fill); border: 1px solid var(--glass-line);
     display: flex; flex-direction: column; max-height: 300px; overflow-y: auto; }
   .opt { width: 100%; min-height: 52px; display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 0; border-radius: 12px; background: none;
@@ -1526,20 +1526,20 @@
      fills; colour stays where it means something: the lines, and «Φύγε…» in green. */
   @media (max-width: 719px) {
     .box { --pc-surf: color-mix(in srgb, var(--fg) 6%, var(--bg)); --pc-edge: color-mix(in srgb, var(--fg) 10%, var(--bg)); --pc-acc: #3d7bea; }
-    .logo { background: var(--pc-acc); color: #fff; }
-    .field, .ends.group { border-color: var(--pc-edge); background: var(--pc-surf); }
+    .logo { background: var(--pc-acc, var(--accent)); color: #fff; }
+    .field, .ends.group { border-color: var(--pc-edge, var(--glass-line)); background: var(--pc-surf, var(--glass-fill)); }
     .ends.group .field.end { background: none; }
     .field.open, .ends.group .field.end.open { border-color: color-mix(in srgb, var(--fg) 22%, var(--bg)); background: color-mix(in srgb, var(--fg) 8%, var(--bg)); }
-    .ends.group .field.from { border-top-color: var(--pc-edge); }
+    .ends.group .field.from { border-top-color: var(--pc-edge, var(--glass-line)); }
     input, .fv { color: var(--fg); }
-    .mk.from { background: var(--pc-acc); box-shadow: none; }
-    .chip { border-color: var(--pc-edge); background: var(--pc-surf); }
+    .mk.from { background: var(--pc-acc, var(--accent)); box-shadow: none; }
+    .chip { border-color: var(--pc-edge, var(--glass-line)); background: var(--pc-surf, var(--glass-fill)); }
     .chip.open, .chip:hover { border-color: color-mix(in srgb, var(--fg) 22%, var(--bg)); }
     .sb { background: color-mix(in srgb, var(--fg) 14%, var(--bg)); color: var(--fg); border-color: var(--bg); }
     .sg, .sortc .sg { background: color-mix(in srgb, var(--fg) 10%, var(--bg)); color: var(--fg); }
-    .pv { border-color: var(--pc-edge); background: var(--pc-surf); }
-    .primary { background: var(--pc-acc); color: #fff; }
-    .primary:disabled { background: var(--pc-surf); color: var(--muted); }
+    .pv { border-color: var(--pc-edge, var(--glass-line)); background: var(--pc-surf, var(--glass-fill)); }
+    .primary { background: var(--pc-acc, var(--accent)); color: #fff; }
+    .primary:disabled { background: var(--pc-surf, var(--glass-fill)); color: var(--muted); }
   }
   /* ---- Not wide (mockup 39): the two numbered questions, home and work as tiles, the last trips; the answer's card
      with its two «Αλλαγή», the route cards, «Θύμισέ μου» beside «Ξεκίνα». */
