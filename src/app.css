@@ -400,4 +400,7 @@ html.sheet-open .start, html.sheet-open .now, html.sheet-open .card, html.sheet-
   .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group:has(> button.locate) { position: fixed; right: 16px; margin: 0 !important; }
   .maplibregl-ctrl-bottom-right .north-ctl { top: calc(env(safe-area-inset-top) + 204px); }
   .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group:has(> button.locate) { top: calc(env(safe-area-inset-top) + 256px); }
+  /* In 3D the tools have one more button (the metro mode): the compass and locate move down by it. */
+  :root:has(.rail .utool) .maplibregl-ctrl-bottom-right .north-ctl { top: calc(env(safe-area-inset-top) + 248px); }
+  :root:has(.rail .utool) .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group:has(> button.locate) { top: calc(env(safe-area-inset-top) + 300px); }
 }

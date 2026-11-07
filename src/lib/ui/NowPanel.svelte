@@ -31,7 +31,9 @@
 
   const POLL_MS = 30_000, PARALLEL = 4, TILES = 4;
   const native = (id: string) => id.slice(id.indexOf(":") + 1);
-  const shown = $derived(app.tab === "now" && !app.stack.length && !app.favsOpen && !app.nearShown);
+  const narrow = new MediaQuery("(max-width: 719px)");
+  // A phone shows one sheet at the foot: the 3D route of a vehicle tapped on the map (Route3D) takes its place.
+  const shown = $derived(app.tab === "now" && !app.stack.length && !app.favsOpen && !app.nearShown && !(app.bus3d && narrow.current));
 
   $effect(() => { if (shown) void app.loadStops(); });
 
@@ -264,7 +266,6 @@
   // A phone: the panel is a sheet with a handle. «peek» shows the search and home and work over a big map, «half»
   // where it opens, «full» all of it; dragged by the handle (sheetDrag.ts), it follows the finger and settles at
   // the nearest (a flick goes one step); a tap on the handle steps it.
-  const narrow = new MediaQuery("(max-width: 719px)");
   type NSnap = "peek" | "half" | "full";
   let nsnap = $state<NSnap>("half");
   let nowEl = $state<HTMLElement>(), savedEl = $state<HTMLElement>();

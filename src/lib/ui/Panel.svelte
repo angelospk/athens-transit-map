@@ -340,7 +340,7 @@
     onclick={() => app.setThreeD(!app.threeD)}>3D<span class="beta" aria-hidden="true">β</span></button>
   {#if app.threeD}
     <!-- The metro under the street: the street dims and the buildings turn see-through, the tunnels show. -->
-    <button type="button" class="tool" class:on={app.under} aria-pressed={app.under} aria-label="Λειτουργία μετρό: μόνο το υπόγειο"
+    <button type="button" class="tool utool" class:on={app.under} aria-pressed={app.under} aria-label="Λειτουργία μετρό: μόνο το υπόγειο"
       data-tip="Λειτουργία μετρό: μόνο τα τούνελ και τα τρένα, κάτω από τον δρόμο. Πάτα ξανά για να βγεις" onclick={() => (app.under = !app.under)}>
       <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
         <path d="M2 6.5h16" /><path d="M4 17v-4.5a6 6 0 0 1 12 0V17" /><path d="M7.5 17v-3.2h5V17" />
