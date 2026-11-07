@@ -108,7 +108,7 @@
             {#if bus?.live}<i class="dot"></i>{:else}<span class="clk"><Icon name="clock" size={12} /></span>{/if}
             <b>{rideLabel}</b><span class="ws">· {bus ? busWhere : "κατά πρόγραμμα, χωρίς ζωντανή θέση"}</span>
           </span>
-          <span class="eta" class:on={bus?.live}>{bus ? etaText : clockHM(rideLeg.depart_at)}</span>
+          <span class="eta" class:on={bus?.live}>{bus ? (busMin! < 60 ? (busMin === 0 ? "τώρα" : `${busMin}′`) : clockHM(bus.at)) : clockHM(rideLeg.depart_at)}</span>
         </span>
         <span class="track" class:sched={!bus?.live} aria-hidden="true">
           <i class="base"></i>
