@@ -170,4 +170,16 @@ describe("tripShare", () => {
     // 122Θ was never seen at all (no service that day, or a timetable that changed): counted, not ranked.
     expect(s.worst).toEqual([{ line: "550", missed: 20, measured: 50 }, { line: "040", missed: 15, measured: 100 }, { line: "Α1", missed: 2, measured: 100 }]);
   });
+
+  it("warns about the expired GTFS only for the lines planned from it (rt#99)", () => {
+    const base = { gtfs: "2026-07-08", gtfs_expired: true, min_coverage: 0.5, planned: 100, run: 90, partial: 0, missed: 10, unmeasured: 0 };
+    const daily = { ...tl("040", 50, 45, 5), schedule_source: "oasa_daily" as const };
+    const old = { ...tl("Α1", 50, 45, 5), schedule_source: "gtfs" as const };
+    // A day before rt#99 has no schedule_source: planned from the GTFS.
+    expect(tripShare({ ...day([]), trips: { ...base, by_line: [tl("040", 100, 90, 10)] } })).toMatchObject({ expired: true, source: "gtfs", gtfsLines: 1 });
+    expect(tripShare({ ...day([]), trips: { ...base, schedule_source: "oasa_daily", by_line: [daily] } })).toMatchObject({ expired: false, source: "oasa_daily", gtfsLines: 0 });
+    expect(tripShare({ ...day([]), trips: { ...base, schedule_source: "mixed", by_line: [daily, old] } })).toMatchObject({ expired: true, source: "mixed", gtfsLines: 1 });
+    // A valid GTFS is no warning, whatever the source.
+    expect(tripShare({ ...day([]), trips: { ...base, gtfs_expired: false, by_line: [old] } })).toMatchObject({ expired: false });
+  });
 });

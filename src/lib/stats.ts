@@ -5,8 +5,11 @@ import { STATS_BASE } from "./config";
 export type HourStats = { h: number; fixes: number; vehicles: number; lines: number; dist_m: number; time_s: number };
 export type LineStats = { line: string; fixes: number; vehicles: number; dist_m: number; time_s: number };
 type TripCount = { planned: number; run: number; partial: number; missed: number; unmeasured: number };
-export type TripLine = TripCount & { line: string; missed_trips: string[] | null };
-export type TripStats = TripCount & { gtfs: string; gtfs_expired: boolean; min_coverage: number; by_line: TripLine[] };
+// Where a day's (or a line's) scheduled trips come from (rt#99): OASA's daily schedule once the GTFS
+// has expired, else the GTFS. Missing on days before rt#99: "gtfs".
+export type ScheduleSource = "oasa_daily" | "gtfs" | "mixed";
+export type TripLine = TripCount & { line: string; missed_trips: string[] | null; schedule_source?: "oasa_daily" | "gtfs" };
+export type TripStats = TripCount & { gtfs: string; gtfs_expired: boolean; min_coverage: number; by_line: TripLine[]; schedule_source?: ScheduleSource };
 export type DayStats = {
   version: number; date: string; tz: string; generated_at: number; first_fix: number; last_fix: number;
   files: number; fixes: number; vehicles: number; lines: number; hours: HourStats[]; by_line: LineStats[];
@@ -53,7 +56,11 @@ export function tripShare(d: DayStats, n = 5) {
     .sort((a, b) => b.missed / b.measured - a.missed / a.measured || a.line.localeCompare(b.line))
     .slice(0, n);
   const unseen = t.by_line.filter(l => l.planned > l.unmeasured && l.run + l.partial === 0).length;
-  return { share: t.run / measured, run: t.run, measured, expired: t.gtfs_expired, gtfs: t.gtfs, worst, unseen };
+  // The expired-GTFS warning holds only for the lines still planned from it.
+  const source = t.schedule_source ?? "gtfs";
+  const gtfsLines = source === "oasa_daily" ? 0 : t.by_line.filter(l => (l.schedule_source ?? "gtfs") === "gtfs").length;
+  const expired = t.gtfs_expired && source !== "oasa_daily";
+  return { share: t.run / measured, run: t.run, measured, expired, source, gtfsLines, gtfs: t.gtfs, worst, unseen };
 }
 
 // Hours the day is partial in: before its first fix or after its last (history started late,
