@@ -277,11 +277,13 @@
     const peekH = nowEl && savedEl ? savedEl.getBoundingClientRect().bottom - nowEl.getBoundingClientRect().top + 16 : 190;
     return { full: st + 72, half: Math.max(220, vh * 0.32 + st), peek: Math.max(st + 72, foot - peekH) };
   }
+  // Let go after a slow drag, it stays where it is (freeAt), only named after the nearest place.
+  let freeAt: number | null = null;
   $effect(() => {
     void vh;
     const k = nsnap;
     if (!narrow.current) { nowTop = null; return; }
-    untrack(() => { nowTop = k === "half" ? null : tops()[k]; });
+    untrack(() => { nowTop = freeAt ?? (k === "half" ? null : tops()[k]); freeAt = null; });
   });
   const armed = $derived(!!app.alert || !!app.railAlert);
   // «Χάρτης» (and «Θέλω μόνο να δω τον χάρτη»): the sheet down to its handle.
@@ -296,11 +298,19 @@
     move: dy => { const t = tops(); nowTop = Math.max(t.full, Math.min(t.peek + 40, top0 + dy)); },
     end: (dy, v) => {
       dragging = false;
-      const t = tops(), at = Math.max(t.full, Math.min(t.peek + 40, top0 + dy));
-      const next = settleSnap<NSnap>(["peek", "half", "full"], nsnap, at, t, v, "up", dy);
-      if (next === nsnap) nowTop = next === "half" ? null : t[next];
-      nsnap = next;
-      if (next === "half") nowTop = null;
+      const t = tops(), at = Math.max(t.full, Math.min(t.peek, top0 + dy));
+      if (Math.abs(v) > 0.6) {
+        // A flick: a place its way.
+        const next = settleSnap<NSnap>(["peek", "half", "full"], nsnap, at, t, v, "up", dy);
+        if (next === nsnap) nowTop = next === "half" ? null : t[next];
+        nsnap = next;
+        if (next === "half") nowTop = null;
+        return;
+      }
+      // Slow: it rests where it was let go.
+      const near = (["peek", "half", "full"] as NSnap[]).reduce((a, b) => (Math.abs(t[b] - at) < Math.abs(t[a] - at) ? b : a));
+      nowTop = at;
+      if (near !== nsnap) { freeAt = at; nsnap = near; }
     },
     tap: stepN,
   });
@@ -665,8 +675,8 @@
     .now { left: 10px; right: 10px; width: auto; top: max(220px, calc(32dvh + env(safe-area-inset-top))); bottom: max(10px, env(safe-area-inset-bottom)); max-height: none;
       padding: 10px 16px 16px; border-radius: var(--sheet-r); }
     /* The handle: a band across the top (an easy target), its bar in the middle. */
-    .grip { display: block; position: relative; flex: none; height: 22px; margin: -10px -16px -10px; cursor: grab; }
-    .grip::after { content: ""; position: absolute; left: 50%; top: 9px; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: var(--border); }
+    .grip { display: block; position: relative; flex: none; height: 30px; margin: -12px -16px -12px; cursor: grab; }
+    .grip::after { content: ""; position: absolute; left: 50%; top: 12px; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: var(--border); }
     .grip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 12px; }
     .now { overscroll-behavior: none; transition: top .26s cubic-bezier(.2, .8, .2, 1); }
     .now.dragging { transition: none; }

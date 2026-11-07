@@ -1,5 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { MediaQuery } from "svelte/reactivity";
+  import { freeSheet } from "../sheetDrag";
   import { fetchLineStatic, fetchSchedule, fetchStop, peekStop } from "../api";
   import { athensClock, matchDirection, timetableView, type Schedule } from "../timetable";
   import { placeNote, alertLinesAt, arrivalGroups, arrivalNote, boardLines, headTo, linesAt, linesToWarm, timeText, toward, twins, usualRows, type ArrivalGroup, type ArrivalTime, type StopBoard } from "../stops";
@@ -23,6 +25,8 @@
   // and a bell (the alert sheet for that line and direction); the other lines short below («Περνούν επίσης»)
   // and the ones with no bus near. Arrivals: backend, from GPS; asked again every 20 s while open and the tab
   // visible (cached 15 s). The stop of the same name across the street is a tap away.
+  // A phone: the card is a sheet, dragged by its handle or header to where it suits (sheetDrag.ts).
+  const narrow = new MediaQuery("(max-width: 719px)");
   let { app }: { app: AppState } = $props();
   let board = $state.raw<StopBoard | null>(null);
 
@@ -271,7 +275,7 @@
 {#if fixing}
   <StopFixBar {app} ondone={() => (sent = !!id && reportedStops().includes(id))} />
 {:else if stop || early}
-  <section class="card" aria-label="Στάση {name}">
+  <section class="card" aria-label="Στάση {name}" use:freeSheet={{ handles: ".grip, .card > header", keep: 120, on: () => narrow.current }}>
     <div class="grip" aria-hidden="true"></div>
     <header>
       <Back {app} />
@@ -637,7 +641,9 @@
   @media (max-width: 719px) {
     .card { left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); width: auto; border-radius: var(--sheet-r);
       padding: 10px 16px 16px; max-height: 78dvh; }
-    .grip { display: block; align-self: center; flex: none; width: 40px; height: 5px; border-radius: 3px; background: var(--border); }
+    /* The handle: a wide strip to catch the thumb (the header drags too), the bar in its middle. */
+    .grip { display: flex; align-items: center; justify-content: center; align-self: stretch; flex: none; height: 26px; margin: -10px -16px -6px; cursor: grab; }
+    .grip::after { content: ""; width: 40px; height: 5px; border-radius: 3px; background: var(--border); }
   }
   /* A card comes up from below. */
   .card { animation: cardIn .32s cubic-bezier(.2, .8, .2, 1); }

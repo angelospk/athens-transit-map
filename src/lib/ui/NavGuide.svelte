@@ -191,7 +191,7 @@
     const from = comesFrom(r), at = r.board.at;
     const bearing = from ? bearingOf(at, from) : 0;
     // The point a little that way from the stop: the stop low in the picture, the street it comes along above it.
-    const k = 30 / 111_320, rad = (bearing * Math.PI) / 180;
+    const k = 35 / 111_320, rad = (bearing * Math.PI) / 180;
     const c: [number, number] = [at[1] + (Math.sin(rad) * k) / Math.cos((at[0] * Math.PI) / 180), at[0] + Math.cos(rad) * k];
     was3d = app.threeD;
     if (!app.threeD) app.setThreeD(true);
@@ -695,6 +695,7 @@
   let nsnap = $state<"half" | "full">("half");
   let sheetEl = $state<HTMLElement>();
   let dragH = $state<number | null>(null);
+  let freeH = $state<number | null>(null);   // let go after a slow drag: it stays that tall
   let sheetH = $state(0);
   let h0 = 0;
   const clampH = (h: number) => Math.max(80, Math.min(innerHeight * 0.9, h));
@@ -704,12 +705,19 @@
     start: () => { h0 = sheetEl?.getBoundingClientRect().height ?? 0; },
     move: dy => { dragH = clampH(h0 - dy); },
     end: (dy, v) => {
-      const at = innerHeight - clampH(h0 - dy);
-      const next = settleSnap<NSnap>(["mini", "half", "full"], nsnap, at, tops(), v, "up", dy);
+      const h = clampH(h0 - dy), at = innerHeight - h;
       dragH = null;
+      if (Math.abs(v) <= 0.6 && h > 140) {
+        // Slow: it stays as tall as it was let go (the map above it, as much as the rider wants).
+        freeH = h;
+        nsnap = h > innerHeight * 0.6 ? "full" : "half";
+        return;
+      }
+      freeH = null;
+      const next = settleSnap<NSnap>(["mini", "half", "full"], nsnap, at, tops(), v, "up", dy);
       if (next === "mini") setMini(true); else nsnap = next;
     },
-    tap: () => { nsnap = nsnap === "half" ? "full" : "half"; },
+    tap: () => { freeH = null; nsnap = nsnap === "half" ? "full" : "half"; },
   });
   const miniDrag: SheetDrag = { ignore: "button", start: () => {}, move: () => {}, end: (dy, v) => { if (dy < -30 || v < -0.4) setMini(false); }, tap: () => setMini(false) };
 
@@ -857,7 +865,7 @@
     </div>
 
     <section class="sheet" class:full={nsnap === "full"} class:dragging={dragH != null} aria-label="Η διαδρομή" hidden={app.stack.length > 0} bind:this={sheetEl} bind:offsetHeight={sheetH}
-      style:height={dragH != null ? `${dragH}px` : undefined}>
+      class:free={freeH != null} style:height={dragH != null ? `${dragH}px` : freeH != null ? `${freeH}px` : undefined}>
       <div class="grip" role="button" tabindex="0" aria-label={nsnap === "full" ? "Μικρότερο" : "Μεγαλύτερο"} use:sheetDrag={navDrag}
         onkeydown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); nsnap = nsnap === "half" ? "full" : "half"; } }}></div>
       <button type="button" class="round sm minbtn" aria-label="Σμίκρυνση πλοήγησης" title="Σμίκρυνση" onclick={() => setMini(true)}><Icon name="chevron" size={18} /></button>
@@ -933,7 +941,7 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M4 9v6h4l5 4V5L8 9z" />{#if voice}<path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11" />{:else}<path d="M17 9l5 6M22 9l-5 6" />{/if}</svg>
           </button>
-          <button type="button" class="round listbtn" aria-expanded={list} aria-label="Τα επόμενα βήματα" title="Τα επόμενα βήματα" onclick={() => { list = !list; if (list) nsnap = "full"; }}>
+          <button type="button" class="round listbtn" aria-expanded={list} aria-label="Τα επόμενα βήματα" title="Τα επόμενα βήματα" onclick={() => { list = !list; if (list) { freeH = null; nsnap = "full"; } }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" /></svg>
           </button>
           <button type="button" class="sharebtn" onclick={share}><Icon name="share" size={16} /><span>{shared ? "Αντιγράφηκε" : "Μοίρασε άφιξη"}</span></button>
@@ -1012,9 +1020,12 @@
     display: flex; flex-direction: column; gap: 12px; padding: 8px 14px max(16px, env(safe-area-inset-bottom)); border-radius: var(--sheet-r) var(--sheet-r) 0 0;
     background: var(--surface); border-top: 1px solid var(--border); box-shadow: 0 -18px 40px rgba(0, 0, 0, .35); scrollbar-width: none; }
   .sheet::-webkit-scrollbar { display: none; }
-  .grip { align-self: stretch; height: 22px; margin: -8px -14px -10px; display: flex; align-items: center; justify-content: center; cursor: grab; }
+  .grip { align-self: stretch; height: 30px; margin: -12px -14px -12px; display: flex; align-items: center; justify-content: center; cursor: grab; }
   .grip::after { content: ""; width: 40px; height: 5px; border-radius: 3px; background: var(--border); }
+  /* Half: the leg now and a little more, the map above it; the rest scrolls, or a drag shows it. */
+  .sheet { max-height: 46dvh; }
   .sheet.full { max-height: 88dvh; }
+  .sheet.free { max-height: none; }
   .sheet.dragging { max-height: none; overflow: hidden; }
   .mapbtns { position: absolute; right: 12px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; z-index: 2; pointer-events: none; }
   .mapbtns[hidden] { display: none; }
@@ -1118,6 +1129,11 @@
 
   /* The actions. */
   .acts { display: flex; align-items: center; gap: 8px; }
+  /* A phone: the buttons stay at the sheet's foot however short it is, the rest scrolls above them. */
+  @media (max-width: 719px) {
+    .acts { position: sticky; bottom: calc(-1 * max(16px, env(safe-area-inset-bottom))); z-index: 2; margin: auto -14px calc(-1 * max(16px, env(safe-area-inset-bottom)));
+      padding: 10px 14px max(16px, env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--border); }
+  }
   .round { flex: none; width: 46px; height: 46px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 16px;
     background: var(--control); color: var(--fg); cursor: pointer; }
   .round[aria-pressed="false"] { color: var(--muted); }

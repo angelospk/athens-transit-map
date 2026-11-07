@@ -539,6 +539,7 @@
     :global(:root[data-tripsheet="peek"]) { --trip-h: var(--trip-peek, 200px); }
     :global(:root[data-tripsheet="half"]) { --trip-h: 52dvh; }
     :global(:root[data-tripsheet="full"]) { --trip-h: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+    :global(:root[data-tripfree]) .popwrap.tabbed:has(:global(.rv)) { height: var(--trip-free) !important; }
     :global(:root[data-tripdrag]) .popwrap.tabbed:has(:global(.rv)) { height: var(--trip-drag) !important; transition: none; }
   }
   @media (max-width: 719px) {

@@ -287,14 +287,18 @@
   let rvTopEl = $state<HTMLElement>(), rvFootEl = $state<HTMLElement>();
   let topH = $state(0), footH = $state(0);
   const sheetOn = $derived(narrow.current && review);
+  // Let go after a slow drag, the sheet stays that tall (data-tripfree).
+  let freeH = $state<number | null>(null);
   $effect(() => {
     const root = document.documentElement;
     if (!sheetOn) return;
     root.dataset.tripsheet = snap;
     root.style.setProperty("--trip-peek", `${Math.round(topH + footH + 18)}px`);
-    return () => { delete root.dataset.tripsheet; root.style.removeProperty("--trip-peek"); };
+    if (freeH != null) { root.dataset.tripfree = ""; root.style.setProperty("--trip-free", `${Math.round(freeH)}px`); }
+    else { delete root.dataset.tripfree; root.style.removeProperty("--trip-free"); }
+    return () => { delete root.dataset.tripsheet; delete root.dataset.tripfree; root.style.removeProperty("--trip-peek"); root.style.removeProperty("--trip-free"); };
   });
-  $effect(() => { if (!review) snap = "half"; });
+  $effect(() => { if (!review) { snap = "half"; freeH = null; } });
   // Each new height frames the trip again, above the sheet, once it has settled.
   let snapped = "";
   $effect(() => {
@@ -314,7 +318,7 @@
   // buttons keep their taps. Off a phone nothing is dragged.
   let dragH0 = 0;
   const clampH = (h: number) => { const s = snapsPx(); return Math.max(s.peek * 0.8, Math.min(s.full, h)); };
-  const stepSnap = () => { snap = snap === "peek" ? "half" : snap === "half" ? "full" : "peek"; };
+  const stepSnap = () => { freeH = null; snap = snap === "peek" ? "half" : snap === "half" ? "full" : "peek"; };
   const tripDrag = $derived<SheetDrag>({
     ignore: sheetOn ? "button:not(.grip)" : "*",
     start: () => { dragH0 = sheetEl()?.offsetHeight ?? 0; },
@@ -327,7 +331,16 @@
       const root = document.documentElement;
       delete root.dataset.tripdrag;
       root.style.removeProperty("--trip-drag");
-      snap = settleSnap<Snap>(["peek", "half", "full"], snap, clampH(dragH0 - dy), snapsPx(), v, "up", dy);
+      const h = clampH(dragH0 - dy);
+      if (Math.abs(v) <= 0.6) {
+        // Slow: it stays as tall as it was let go, named after the nearest place.
+        const s = snapsPx();
+        freeH = h;
+        snap = (["peek", "half", "full"] as Snap[]).reduce((a, b) => (Math.abs(s[b] - h) < Math.abs(s[a] - h) ? b : a));
+        return;
+      }
+      freeH = null;
+      snap = settleSnap<Snap>(["peek", "half", "full"], snap, h, snapsPx(), v, "up", dy);
     },
     tap: stepSnap,
   });
