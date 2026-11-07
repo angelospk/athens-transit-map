@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrivalGroups, timeText, toward, headTo, linesAt, busStopsFC, stopIndex, twins, alertLinesAt, arrivalNote, stopBack, mineFirst, boardLines, linesToWarm, usualRows, type StopArrival, type Usual, type ArrivalGroup } from "../src/lib/stops";
+import { arrivalGroups, timeText, toward, headTo, linesAt, busStopsFC, stopIndex, twins, alertLinesAt, arrivalNote, stopBack, mineFirst, boardLines, linesToWarm, usualRows, signCode, type StopArrival, type Usual, type ArrivalGroup } from "../src/lib/stops";
 import type { TripIndex } from "../src/lib/trip";
 
 // 0 and 1: one stop on both sides of a street (~44 m), 2: the same name 1 km away, 3: another name close by.
@@ -261,5 +261,14 @@ describe("usualRows (contract rev 18, map#24)", () => {
   it("nothing for a line with a live bus, and nothing from an older server", () => {
     expect(usualRows([u("040"), u("608")], [live("040")], now).map(r => r.line)).toEqual(["608"]);
     expect(usualRows(undefined, [], now)).toEqual([]);
+  });
+});
+
+describe("signCode", () => {
+  it("shows the code on the stop sign: the server's stop_code in Athens, the stop id elsewhere", () => {
+    expect(signCode("040054", "40054", true)).toBe("040054");
+    expect(signCode(undefined, "40054", true)).toBeNull();   // an older server: the id is not the sign's code
+    expect(signCode(undefined, "1011", false)).toBe("1011"); // Thessaloniki: stop_code is the stop id
+    expect(signCode("", null, false)).toBeNull();
   });
 });
