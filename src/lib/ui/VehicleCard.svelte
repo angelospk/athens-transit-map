@@ -19,6 +19,8 @@
   import { open } from "../anim";
   import Bell from "./Bell.svelte";
   import Icon from "./Icon.svelte";
+  import { linkTransfers, loadMetro, type MetroData } from "../metro";
+  import { distanceM } from "../glide";
   import CardSheet, { whenText } from "./CardSheet.svelte";
 
   let { app }: { app: AppState } = $props();
@@ -198,6 +200,32 @@
   const railHead = $derived(rail.vehicle ? headsignName(rail.vehicle.headsign, rail.detail?.stops) : "");
   const railFresh = $derived(rail.vehicle ? freshness(rail.vehicle, app.serverNow / 1000) : null);
   const note = $derived(timesNote(rail.ahead));
+  // Mockup 45: a metro train (M1-M3) gets «Λειτουργία μετρό»; its line, nodes and badge take the line's colour.
+  const isMetro = $derived(!!card && /^stasy:M/.test(card.line));
+  const lineBg = $derived(rail.detail?.line.color ?? "#3b5bdb");
+  const lineFg = $derived(rail.detail?.line.text_color ?? "#ffffff");
+  const sched = $derived(rail.vehicle?.position.kind === "estimate");
+  const operator = $derived(!!card?.id.startsWith("stasy:"));
+  function metroMode() {
+    if (app.threeD && app.under) { app.under = false; return; }
+    if (!app.threeD) app.setThreeD(true);
+    app.under = true;
+  }
+  // The other lines met at each station ahead (the metro's and the tram's, from metro.json, near the stop).
+  let metro = $state.raw<MetroData | null>(null);
+  $effect(() => { if (isRail && !metro) void loadMetro().then(d => (metro = { ...d, stations: linkTransfers(d.stations) })).catch(() => {}); });
+  const own = $derived(card ? native(card.line) : "");
+  function meets(stop: string) {
+    const st = rail.detail?.stops[stop];
+    if (!metro || !st) return [];
+    const near = metro.stations.find(m => distanceM([m.lon, m.lat], [st.lon, st.lat]) <= 150);
+    const colors = new Map(metro.lines.map(l => [l.id, l.color]));
+    return (near?.lines ?? []).filter(id => id !== own).map(id => ({ id, label: id.replace(/^M/, "Μ").replace(/^T/, "Τ"), color: colors.get(id) ?? "#666" }));
+  }
+  // A station tapped opens under it (its changes, a bell, the station); one at a time.
+  let pick = $state<string | null>(null);
+  let allStops = $state(false);
+  $effect(() => { void card?.id; pick = null; allStops = false; });
 
   // The rail alert sheet at one of the stops ahead: this train when it has a run, else its line and direction.
   let railAt = $state.raw<Omit<RailSpec, "min" | "until"> | null>(null);
@@ -375,9 +403,9 @@
 {:else if card && isRail}
   <CardSheet {app} {key} closeOnEscape={!railAt}>
     {#snippet header()}
-      {@render label(railLabel, rail.detail?.line.color ?? "#3b5bdb", rail.detail?.line.text_color ?? "#ffffff")}
-      <h2>{railHead ? `→ ${railHead}` : ""}</h2>
-      {#if railFresh}<span class="fresh" class:warn={railFresh.warn}>{railFresh.text}</span>{/if}
+      <span class="pill rpill" class:logo={isMetro} style:--c={lineBg} style:--t={lineFg}>{#if isMetro}<img src="{import.meta.env.BASE_URL}icons/metro-logo.svg" alt="" />{/if}{railLabel.replace(/^M(?=\d)/, "Μ")}</span>
+      <h2 class="rto">{#if railHead}<small>Προς</small><span>{railHead}</span>{/if}</h2>
+      {#if railFresh && !sched}<span class="fresh" class:warn={railFresh.warn}>{railFresh.text}</span>{/if}
     {/snippet}
     {#if rail.state === "loading"}
       <p class="muted">Φόρτωση…</p>
@@ -386,29 +414,69 @@
     {:else if rail.state === "gone"}
       <p class="muted">Το όχημα δεν είναι πια σε δρομολόγιο.</p>
     {:else}
-      {#if rail.vehicle && (rail.vehicle.delay_s !== null || rail.vehicle.label)}
+      {#if sched}
+        <p class="rsrc"><Icon name="clock" size={14} /><span>{operator ? "Πρόγραμμα ΣΤΑΣΥ" : "Από το πρόγραμμα"} · χωρίς ζωντανή θέση</span></p>
+      {:else if rail.vehicle && (rail.vehicle.delay_s !== null || rail.vehicle.label)}
         <p class="meta">{[rail.vehicle.delay_s !== null ? fmtDelay(rail.vehicle.delay_s) : "", rail.vehicle.label ? `#${rail.vehicle.label}` : ""].filter(Boolean).join(" · ")}</p>
       {/if}
+      <div class="row2 racts">
+        {#if isMetro}
+          <button type="button" class="act" style:--c={lineBg} style:--t={lineFg} aria-pressed={app.threeD && app.under} onclick={metroMode}>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 19h5v-4h4v-4h4V7h5" /></svg>
+            <span>{app.threeD && app.under ? "Έξοδος από το μετρό" : "Λειτουργία μετρό"}</span></button>
+        {/if}
+        <button type="button" class="act quiet" onclick={() => app.push({ kind: "line", id: card.line, title: railLabel })}>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.5v11M12 3.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM12 17.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z" /></svg>
+          <span>Όλη η {railLabel.replace(/^M(?=\d)/, "Μ")}</span></button>
+      </div>
       {#if rail.ahead.length}
-        {#if note}<p class="note">{note}</p>{/if}
-        <ol class="ahead listscroll" aria-live="polite" aria-label="Επόμενες στάσεις">
-          {#each rail.ahead as a, k (a.stop + "/" + k)}
-            {@const nm = rail.detail?.stops[a.stop]?.name ?? a.stop}
-            <li class:next={k === 0} class:sched={!a.live}>
-              <span class="t">{whenText(a.at, app.serverNow)}</span><button type="button" class="name" title="Η στάση {nm}" onclick={() => app.push({ kind: "stop", id: a.stop, title: nm })}>{nm}</button>
-              {#if a.platform}<span class="plat">Αποβ. {a.platform}</span>{/if}
-              <button type="button" class="bell" class:on={railAt?.stop === a.stop} aria-expanded={railAt?.stop === a.stop}
-                title="Ειδοποίηση άφιξης σε αυτή τη στάση" aria-label="Ειδοποίηση άφιξης του {railLabel} στη στάση {nm}"
-                onclick={() => railBell(a.stop, nm)}><Bell /></button>
-            </li>
-          {/each}
-        </ol>
+        {@const nx = rail.ahead[0]}
+        {#if isMetro && app.threeD && app.under && !allStops}
+          <!-- In metro mode the card keeps to the next stop; the rest one tap away. -->
+          <div class="rnext" style:--lc={lineBg}>
+            <i aria-hidden="true"></i>
+            <span><small>Επόμενη στάση</small><b>{rail.detail?.stops[nx.stop]?.name ?? nx.stop}</b></span>
+            <b class="rmin">{whenText(nx.at, app.serverNow)}</b>
+          </div>
+          <button type="button" class="rall" onclick={() => (allStops = true)}>Όλες οι στάσεις</button>
+        {:else}
+          <p class="rh">Οι επόμενες στάσεις{#if note && !sched}<small> · {note}</small>{/if}</p>
+          <ol class="ahead rail listscroll" style:--lc={lineBg} aria-live="polite" aria-label="Επόμενες στάσεις">
+            {#each rail.ahead as a, k (a.stop + "/" + k)}
+              {@const nm = rail.detail?.stops[a.stop]?.name ?? a.stop}
+              {@const x = meets(a.stop)}
+              <li class:next={k === 0} class:sched={!a.live} class:picked={pick === a.stop}>
+                <button type="button" class="rrow" aria-expanded={pick === a.stop} onclick={() => (pick = pick === a.stop ? null : a.stop)}>
+                  <span class="t">{whenText(a.at, app.serverNow)}</span><i class="nd" aria-hidden="true"></i><span class="name">{nm}</span>
+                  {#if a.platform}<span class="plat">Αποβ. {a.platform}</span>{/if}
+                  {#each x as l (l.id)}<span class="xl" style:background={l.color}>{l.label}</span>{/each}
+                  {#if railAt?.stop === a.stop}<span class="xb" aria-label="Ειδοποίηση"><Icon name="bell" size={12} /></span>{/if}
+                </button>
+                {#if pick === a.stop}
+                  <div class="rmore" transition:open>
+                    {#if x.length}<p>Αλλαγή για {x.map(l => l.label).join(", ")} · ο συρμός φτάνει {clockHM(a.at)}</p>{:else}<p>Ο συρμός φτάνει {clockHM(a.at)}</p>{/if}
+                    <div class="rbtns">
+                      <button type="button" class="rb warm" class:on={railAt?.stop === a.stop} onclick={() => railBell(a.stop, nm)}><Icon name="bell" size={15} /><span>Ειδοποίησέ με</span></button>
+                      <button type="button" class="rb" onclick={() => app.push({ kind: "stop", id: a.stop, title: nm })}><span>Ο σταθμός</span></button>
+                    </div>
+                  </div>
+                {/if}
+              </li>
+            {/each}
+          </ol>
+        {/if}
       {/if}
     {/if}
-    <button type="button" class="foot" onclick={() => app.push({ kind: "line", id: card.line, title: railLabel })}>
-      Γραμμή {railLabel} <span aria-hidden="true">›</span>
-    </button>
   </CardSheet>
+{/if}
+
+{#if card && isMetro && app.threeD && app.under}
+  <!-- Metro mode on: a pill over the map says so, and how to leave it. -->
+  <div class="upill" role="status" transition:open>
+    <span class="ui" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 19h5v-4h4v-4h4V7h5" /></svg></span>
+    <span class="ut"><b>Λειτουργία μετρό</b><small>Μόνο τα τούνελ και τα τρένα</small></span>
+    <button type="button" onclick={() => (app.under = false)}>Έξοδος</button>
+  </div>
 {/if}
 
 {#if alertAt && alertAt.from != null && alertAt.from >= 0}
@@ -579,4 +647,63 @@
     .lopt, .act, .opt, .off, .cbtn, .sw i { transition: none; }
     .lopt[aria-pressed="true"] :global(svg), .left li, .rl b { animation: none; }
   }
+  /* ---- A metro or rail train (mockup 45) */
+  :global(header .rpill.logo) { gap: 6px; padding: 0 12px 0 6px; }
+  :global(header .rpill img) { width: 24px; height: 24px; display: block; }
+  :global(header h2.rto) { display: flex; flex-direction: column; gap: 5px; }
+  :global(header h2.rto small) { font-size: 12px; font-weight: 500; color: var(--muted); line-height: 1; }
+  :global(header h2.rto span) { font-size: 18px; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rsrc { display: flex; align-items: center; gap: 6px; margin: 0; min-height: 16px; font-size: 13px; color: var(--muted); line-height: 1.2; }
+  .rsrc :global(svg) { flex: none; }
+  .racts .act { background: var(--c, var(--accent)); color: var(--t, var(--on-accent)); border-radius: 16px; }
+  .racts .act.quiet { flex: 0.8; background: var(--card); color: var(--fg); }
+  .racts .act :global(svg) { flex: none; }
+  .rh { margin: 18px 0 4px; font-size: 15px; font-weight: 700; line-height: 1.2; }
+  .rh small { font-size: 12px; font-weight: 500; color: var(--muted); }
+  .ahead.rail li { display: block; min-height: 0; padding-left: 0; }
+  .ahead.rail li::before { left: 61px; top: 0; bottom: 0; width: 4px; background: var(--lc); }
+  .ahead.rail li::after { display: none; }
+  .ahead.rail li:first-child::before { top: 22px; }
+  .ahead.rail li:last-of-type::before { bottom: auto; height: 22px; }
+  .rrow { width: 100%; min-height: 44px; display: flex; align-items: center; gap: 0; padding: 0 8px 0 0; border: 0; border-radius: 14px; background: none;
+    color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .ahead.rail li.picked .rrow, .ahead.rail li.picked .rmore { background: color-mix(in srgb, var(--fg) 6%, transparent); }
+  .ahead.rail li.picked .rrow { border-radius: 14px 14px 0 0; }
+  .ahead.rail .t { width: 44px; min-width: 44px; align-items: flex-end; font-size: 14px; font-weight: 600; color: var(--muted); }
+  .ahead.rail li.next .t { color: var(--fg); font-weight: 700; }
+  .nd { position: relative; z-index: 1; flex: none; width: 14px; height: 14px; margin: 0 14px; border-radius: 50%; border: 3px solid var(--lc); background: var(--surface); box-sizing: border-box; }
+  .ahead.rail li.next .nd { width: 18px; height: 18px; margin: 0 12px; background: #fff; }
+  .ahead.rail .name { flex: 1; min-width: 0; min-height: 0; font-size: 15px; font-weight: 500; line-height: 1.2; }
+  .ahead.rail li.next .name, .ahead.rail li.picked .name { font-weight: 700; }
+  .ahead.rail .name:hover { text-decoration: none; }
+  .xl { flex: none; height: 22px; min-width: 22px; margin-left: 4px; padding: 0 6px; border-radius: 11px; box-sizing: border-box; display: inline-flex; align-items: center;
+    justify-content: center; color: #fff; font-size: 11px; font-weight: 700; line-height: 1; }
+  .xb { flex: none; width: 22px; height: 22px; margin-left: 4px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+    background: color-mix(in srgb, #f0ae45 22%, transparent); color: #f0ae45; }
+  .rmore { padding: 0 10px 12px 86px; border-radius: 0 0 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .rmore p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.35; }
+  .rbtns { display: flex; flex-wrap: wrap; gap: 6px; }
+  .rb { height: 38px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border: 0; border-radius: 12px; background: color-mix(in srgb, var(--fg) 10%, transparent);
+    color: var(--fg); font: inherit; font-size: 14px; font-weight: 600; line-height: 1; cursor: pointer; }
+  .rb.warm { background: color-mix(in srgb, #f0ae45 18%, transparent); color: #f0ae45; }
+  .rb.warm.on { background: #f0ae45; color: #1d1503; }
+  .rnext { margin-top: 14px; min-height: 60px; display: flex; align-items: center; gap: 12px; padding: 0 14px; border-radius: 18px; background: var(--card); }
+  .rnext > i { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 3px solid var(--lc); background: #fff; box-sizing: border-box; }
+  .rnext > span { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .rnext small { font-size: 12px; color: var(--muted); line-height: 1; }
+  .rnext b { font-size: 17px; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rnext .rmin { flex: none; }
+  .rall { align-self: center; height: 40px; margin-top: 6px; padding: 0 16px; border: 0; border-radius: 20px; background: none; color: var(--muted);
+    font: inherit; font-size: 14px; font-weight: 600; line-height: 1; cursor: pointer; }
+  .rall:hover { background: var(--control); color: var(--fg); }
+  .upill { position: fixed; z-index: 40; left: 12px; right: 12px; top: calc(env(safe-area-inset-top) + 84px); max-width: 420px; margin: 0 auto; height: 56px;
+    display: flex; align-items: center; gap: 12px; padding: 0 8px 0 10px; box-sizing: border-box; border-radius: 28px;
+    background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 8px 24px rgba(0, 0, 0, .4); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+  .upill .ui { flex: none; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    background: color-mix(in srgb, #d7171f 22%, transparent); color: #ff8a84; }
+  .upill .ut { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+  .upill b { font-size: 15px; line-height: 1; }
+  .upill small { font-size: 12px; color: var(--muted); line-height: 1; }
+  .upill button { flex: none; height: 40px; padding: 0 16px; border: 0; border-radius: 20px; background: color-mix(in srgb, var(--fg) 12%, transparent); color: var(--fg);
+    font: inherit; font-size: 14px; font-weight: 600; line-height: 1; cursor: pointer; }
 </style>

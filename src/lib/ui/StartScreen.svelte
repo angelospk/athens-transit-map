@@ -724,7 +724,8 @@
   let wasReady = false;
   $effect(() => { const r = ready; untrack(() => { if (r && !wasReady) asking = false; wasReady = r; }); });
   $effect(() => { if (!app.start) untrack(() => { asking = !ready; }); });
-  const answer = $derived(!wide && ready && !asking && !app.savingPlace);
+  // «Βρες» (the search button) is never the trip asked, even with both ends of an earlier trip still set.
+  const answer = $derived(!wide && ready && !asking && !app.savingPlace && !app.finding);
   let openKey = $state<string | null>(null);
   let allShown = $state(false);
   $effect(() => { void pKey; void sortId; void modes; openKey = null; allShown = false; });
