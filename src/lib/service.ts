@@ -27,5 +27,5 @@ export const muniGaps = (r: MunicipalRoute, tables: MuniTimetable[]): MuniGaps =
 
 export function muniGapNote(g: MuniGaps): string | null {
   const what = g.stops && g.times ? "στάσεις και ώρες" : g.stops ? "στάσεις" : g.times ? "ώρες" : null;
-  return what && `Ο δήμος δεν δημοσιεύει ${what} σε μορφή που μπορούμε να δείξουμε. Δες τη σελίδα του δήμου.`;
+  return what && `Δεν έχουμε ακόμα ${what} για αυτή τη γραμμή. Δες τη σελίδα του δήμου.`;
 }

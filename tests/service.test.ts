@@ -66,10 +66,10 @@ describe("muniGaps", () => {
 
 describe("muniGapNote", () => {
   it("names what is missing", () => {
-    const tail = " σε μορφή που μπορούμε να δείξουμε. Δες τη σελίδα του δήμου.";
-    expect(muniGapNote({ stops: true, times: false })).toBe(`Ο δήμος δεν δημοσιεύει στάσεις${tail}`);
-    expect(muniGapNote({ stops: false, times: true })).toBe(`Ο δήμος δεν δημοσιεύει ώρες${tail}`);
-    expect(muniGapNote({ stops: true, times: true })).toBe(`Ο δήμος δεν δημοσιεύει στάσεις και ώρες${tail}`);
+    const tail = " για αυτή τη γραμμή. Δες τη σελίδα του δήμου.";
+    expect(muniGapNote({ stops: true, times: false })).toBe(`Δεν έχουμε ακόμα στάσεις${tail}`);
+    expect(muniGapNote({ stops: false, times: true })).toBe(`Δεν έχουμε ακόμα ώρες${tail}`);
+    expect(muniGapNote({ stops: true, times: true })).toBe(`Δεν έχουμε ακόμα στάσεις και ώρες${tail}`);
     expect(muniGapNote({ stops: false, times: false })).toBeNull();
   });
 });
