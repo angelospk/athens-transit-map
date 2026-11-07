@@ -244,3 +244,104 @@ describe("CardNav", () => {
     expect(nav.stack).toEqual([]);
   });
 });
+
+// Screens over the map («Πού πας;», the navigator) have a history entry of their own: the phone's Back closes them
+// instead of leaving the page.
+describe("CardNav screens", () => {
+  let h: FakeHistory, nav: CardNav, screens: (string | null)[];
+  const pop = () => { if (h.queued) { h.queued = false; nav.popped(h.state); } };
+  const back = () => { h.back(); pop(); };   // the browser's own Back (a swipe, Android's button)
+  beforeEach(() => {
+    h = new FakeHistory();
+    screens = [];
+    nav = new CardNav(h, () => {}, s => (s.length ? `/?top=${s[s.length - 1].id}` : "/"), s => screens.push(s));
+    nav.start(null);
+  });
+
+  it("a screen goes above the page's entry, and the browser's Back closes it", () => {
+    nav.openScreen("start");
+    expect(nav.screen).toBe("start");
+    expect(h.entries).toHaveLength(2);
+    back();
+    expect(nav.screen).toBeNull();
+    expect(screens).toEqual([null]);
+    expect(h.i).toBe(0);
+  });
+  it("the screen's own × goes back one step and tells no one (the app closed it already)", () => {
+    nav.openScreen("start");
+    nav.closeScreen("start"); pop();
+    expect(nav.screen).toBeNull();
+    expect(h.i).toBe(0);
+    expect(screens).toEqual([]);
+  });
+  it("a card chosen on the screen opens once the screen's entry is gone: one Back from closed", () => {
+    nav.openScreen("start");
+    nav.closeScreen("start");
+    nav.open(stop("s")); pop();
+    expect(nav.stack).toEqual([stop("s")]);
+    expect(h.entries.map(e => e.url)).toEqual(["/", "/?top=s"]);
+    expect(h.i).toBe(1);
+    back();
+    expect(nav.stack).toEqual([]);
+    expect(nav.screen).toBeNull();
+  });
+  it("over a card, Back closes the screen and the card is still there", () => {
+    nav.open(stop("s"));
+    nav.openScreen("start");
+    expect(nav.stack).toEqual([stop("s")]);
+    back();
+    expect(nav.stack).toEqual([stop("s")]);
+    expect(screens).toEqual([null]);
+    back();
+    expect(nav.stack).toEqual([]);
+  });
+  it("one screen for another takes the same entry (the navigator from «Πού πας;»): Back goes home", () => {
+    nav.openScreen("start");
+    nav.openScreen("guide");
+    expect(h.entries).toHaveLength(2);
+    expect(nav.screen).toBe("guide");
+    back();
+    expect(screens).toEqual([null]);
+    expect(h.i).toBe(0);
+  });
+  it("cards closed, «Πού πας;» closed and the navigator opened in one go end on one entry above the page's", () => {
+    nav.open(stop("s"));
+    nav.openScreen("start");
+    nav.close();
+    nav.closeScreen("start");
+    nav.openScreen("guide"); pop();
+    expect(nav.stack).toEqual([]);
+    expect(nav.screen).toBe("guide");
+    expect(h.i).toBe(1);
+    expect(h.state).toMatchObject({ cards: [], depth: 1, screen: "guide" });
+    back();
+    expect(nav.screen).toBeNull();
+    expect(h.i).toBe(0);
+  });
+  it("closing a screen that is not showing does nothing", () => {
+    nav.openScreen("start");
+    nav.closeScreen("guide");
+    expect(h.queued).toBe(false);
+    expect(nav.screen).toBe("start");
+  });
+  it("Forward brings the screen back", () => {
+    nav.openScreen("start");
+    back();
+    h.go(1); pop();
+    expect(screens).toEqual([null, "start"]);
+    expect(nav.screen).toBe("start");
+  });
+  it("a reload on a screen's entry drops the screen (it has nothing to show)", () => {
+    nav.openScreen("guide");
+    const again = new CardNav(h, () => {}, () => "/", s => screens.push(s));
+    again.start(null);
+    expect(again.screen).toBeNull();
+    expect(h.state).toMatchObject({ screen: null });
+  });
+  it("a card's entry keeps the screen it was written under when the card is renamed", () => {
+    nav.openScreen("start");
+    nav.push(stop("s"));
+    nav.retitle("Σύνταγμα");
+    expect(h.state).toMatchObject({ screen: null });
+  });
+});

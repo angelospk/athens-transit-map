@@ -55,14 +55,15 @@ export interface Hist {
   go(n: number): void;
 }
 
-type NavState = { cards: Card[]; depth: number };
+// screen: a screen over the map on this entry («Πού πας;», the navigator), so the phone's Back closes it.
+type NavState = { cards: Card[]; depth: number; screen: string | null };
 
 function parseState(state: unknown): NavState {
-  const s = state as { cards?: unknown; depth?: unknown } | null;
+  const s = state as { cards?: unknown; depth?: unknown; screen?: unknown } | null;
   if (s && typeof s === "object" && Array.isArray(s.cards) && typeof s.depth === "number") {
-    return { cards: s.cards as Card[], depth: s.depth };
+    return { cards: s.cards as Card[], depth: s.depth, screen: typeof s.screen === "string" ? s.screen : null };
   }
-  return { cards: [], depth: 0 };
+  return { cards: [], depth: 0, screen: null };
 }
 
 // History entries mirror the stack: each entry the class writes holds { cards, depth }, where depth
@@ -72,17 +73,24 @@ function parseState(state: unknown): NavState {
 export class CardNav {
   stack: Card[] = [];
   private depth = 0;
+  private shown: string | null = null;
   private moving = false;
   // What to do once the move in flight lands: write this stack over the entry ("replace"), or push it
   // as a new entry, which drops the Forward entries of the old stack ("fresh").
-  private landing: { mode: "replace" | "fresh"; cards: Card[] } | null = null;
+  // screen: the screen the landed entry gets (closing one: none); left out, the entry keeps its own.
+  private landing: { mode: "replace" | "fresh"; cards: Card[]; screen?: null } | null = null;
   private waiting: (() => void)[] = [];
 
   constructor(
     private h: Hist,
     private onChange: (stack: Card[]) => void,
     private url: (stack: Card[]) => string,
+    // The browser moved to an entry with another screen (Back, Forward): the app shows it, or none. Not called for
+    // the moves made here: the app asked for those.
+    private onScreen: (screen: string | null) => void = () => {},
   ) {}
+
+  get screen(): string | null { return this.shown; }
 
   // A reload on a card's entry keeps its stack; else the page's entry is the base, and a deep link's card
   // goes above it, so Back closes it.
@@ -90,7 +98,8 @@ export class CardNav {
     const was = parseState(this.h.state);
     this.stack = was.cards;
     this.depth = was.depth;
-    this.h.replaceState({ cards: this.stack, depth: this.depth }, "", this.url(this.stack));
+    this.shown = null;   // a reload: the screen's data is gone
+    this.write();
     if (!this.depth && initial) this.pushEntry([initial]);
     else this.onChange(this.stack);
   }
@@ -101,8 +110,8 @@ export class CardNav {
     const i = this.stack.findIndex(c => sameCard(c, card));
     if (i < 0) return this.pushEntry(next);
     if (i < this.stack.length - 1) return this.go(-(this.stack.length - 1 - i), { mode: "replace", cards: next });
-    this.h.replaceState({ cards: next, depth: this.depth }, "", this.url(next));
     this.stack = next;
+    this.write();
     this.onChange(this.stack);
   }
 
@@ -119,15 +128,34 @@ export class CardNav {
     const top = this.stack[this.stack.length - 1];
     if (this.moving || !top || top.title === title) return;
     this.stack = [...this.stack.slice(0, -1), { ...top, title }];
-    this.h.replaceState({ cards: this.stack, depth: this.depth }, "", this.url(this.stack));
+    this.write();
   }
 
   // Swaps the top card for another in the same history entry (no new entry, no Back step).
   replaceTop(card: Card): void {
     if (this.wait(() => this.replaceTop(card)) || !this.stack.length) return;
     this.stack = [...this.stack.slice(0, -1), card];
-    this.h.replaceState({ cards: this.stack, depth: this.depth }, "", this.url(this.stack));
+    this.write();
     this.onChange(this.stack);
+  }
+
+  // A screen over the map gets an entry above the current one (the cards under it stay); one screen for another
+  // takes the same entry, so Back from the navigator goes where «Πού πας;» was opened from.
+  openScreen(screen: string): void {
+    if (this.wait(() => this.openScreen(screen)) || this.shown === screen) return;
+    if (!this.shown) this.depth += 1;
+    const push = !this.shown;
+    this.shown = screen;
+    if (push) this.h.pushState(this.entry(), "", this.url(this.stack));
+    else this.write();
+  }
+
+  // The screen closed by the app (×, a choice made on it): its entry goes, as Back would.
+  closeScreen(screen: string): void {
+    if (this.wait(() => this.closeScreen(screen)) || this.shown !== screen) return;
+    if (this.depth > 0) return this.go(-1, { mode: "replace", cards: this.stack, screen: null });
+    this.shown = null;
+    this.write();
   }
 
   back(): void {
@@ -145,18 +173,21 @@ export class CardNav {
 
   // Call on every popstate with the history state of the entry now showing.
   popped(state: unknown): void {
-    const at = parseState(state), land = this.landing;
+    const at = parseState(state), land = this.landing, mine = this.moving;
     this.moving = false;
     this.landing = null;
     this.depth = at.depth;
+    const was = this.shown;
+    this.shown = land && land.screen !== undefined ? land.screen : at.screen;
     if (land?.mode === "fresh") {
       this.stack = [];
       this.pushEntry(land.cards);
     } else {
       this.stack = land ? land.cards : at.cards;
-      if (land) this.h.replaceState({ cards: this.stack, depth: this.depth }, "", this.url(this.stack));
+      if (land) this.write();
       this.onChange(this.stack);
     }
+    if (!mine && this.shown !== was) this.onScreen(this.shown);
     while (!this.moving && this.waiting.length) this.waiting.shift()!();
   }
 
@@ -174,8 +205,13 @@ export class CardNav {
 
   private pushEntry(next: Card[]): void {
     this.depth += 1;
-    this.h.pushState({ cards: next, depth: this.depth }, "", this.url(next));
+    this.shown = null;   // a card opened over a screen covers it: Back from the card shows the screen again
     this.stack = next;
+    this.h.pushState(this.entry(), "", this.url(next));
     this.onChange(this.stack);
   }
+
+  private entry(): NavState { return { cards: this.stack, depth: this.depth, screen: this.shown }; }
+
+  private write(): void { this.h.replaceState(this.entry(), "", this.url(this.stack)); }
 }

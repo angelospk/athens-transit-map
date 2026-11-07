@@ -158,7 +158,15 @@ export class AppState {
   tripFrom = $state.raw<Place | null>(null);
   // «Πού πας;» (StartScreen): the first screen of a visit, and again from the search pill of «Τώρα». pickFor: which end
   // is being chosen on the map (the screen steps aside for a crosshair); mapCenter: the map's centre, [lat, lon].
-  start = $state(false);
+  // Open, it has an entry in the browser's history (CardNav.openScreen): the phone's Back closes it.
+  private startOn = $state(false);
+  get start() { return this.startOn; }
+  set start(on: boolean) {
+    if (on === this.startOn) return;
+    this.startOn = on;
+    if (on) this.nav?.openScreen("start");
+    else this.nav?.closeScreen("start");
+  }
   // The search at the top left of the map (a phone): the same screen as one field, to find a line, a stop or a place and
   // see it, no trip.
   finding = $state(false);
@@ -401,6 +409,7 @@ export class AppState {
     this.closeCards();
     this.start = false;
     this.guide = g;
+    this.nav?.openScreen("guide");
     this.guideStep = 0;
     this.guideOn = false;
     this.guideWalk = null;
@@ -409,6 +418,7 @@ export class AppState {
     this.followMe();
   }
   endGuide() {
+    this.nav?.closeScreen("guide");
     this.guide = null;
     this.guideFrame = null;
     this.headingUp = false;
@@ -584,11 +594,12 @@ export class AppState {
     // Not document.title: a prerendered stop or line page (scripts/seo.ts) has the card in its title already.
     this.baseTitle = `Στάσεις · ${CITIES[this.cityId].name}`;
     this.nav = new CardNav(history, s => { this.stack = s; this.show(s[s.length - 1] ?? null); },
-      s => pageUrl(this.cityId, s[s.length - 1] ?? null, this.selected) + location.hash);
+      s => pageUrl(this.cityId, s[s.length - 1] ?? null, this.selected) + location.hash, s => this.screenMoved(s));
     addEventListener("popstate", e => this.nav?.popped(e.state));
     addEventListener("online", () => { this.online = true; this.backOnline(); });
     addEventListener("offline", () => (this.online = false));
     this.nav.start(linkedCard);
+    if (this.startOn) this.nav.openScreen("start");   // a plain visit: Back from «Πού πας;» shows the map, not the last site
     for (const id of this.selected) this.startLine(id);
     void Promise.allSettled(this.selected.map(fetchLineStatic)).then(() => { if (!this.stack.length) this.fit(this.selected); });   // a linked card frames its own
     this.loadLines();
@@ -665,6 +676,12 @@ export class AppState {
   }
 
   // A map tap: a new stack with this card. A tap in a card: the card goes on top.
+  // The browser's Back or Forward moved to an entry with another screen over the map (or none).
+  private screenMoved(s: string | null) {
+    if (s !== "start" && this.startOn) { this.startOn = false; this.pickFor = null; this.savingPlace = null; }
+    else if (s === "start" && !this.startOn) this.startOn = true;
+    if (s !== "guide" && this.guide) this.endGuide();
+  }
   open(c: Card) { this.nav?.open(c); }
   push(c: Card) { this.nav?.push(c); }
   back() { this.nav?.back(); }

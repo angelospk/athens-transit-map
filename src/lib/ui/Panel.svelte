@@ -120,8 +120,9 @@
   $effect(() => { if (focused.length < 2) focusOpen = false; });
 
 
-  // «Τώρα» and «Ειδοποιήσεις» with no card open: the bar is a search field (as in the mockup), not the line picker.
-  const home = $derived((app.tab === "now" || app.tab === "alerts") && !app.stack.length);
+  // «Τώρα» and «Ειδοποιήσεις» with no card open: the bar is a search field (as in the mockup), not the line picker. A
+  // phone keeps that one round search over a card too, in the same place, unless lines are picked (their chips show).
+  const home = $derived((app.tab === "now" || app.tab === "alerts") && (!app.stack.length || narrow.current && !app.selected.length));
 
   // A strike today (/v2/alerts, urgent): one line under the bar until the user closes it.
   const strike = $derived(app.notifyPrefs.strikes ? strikes(app.disruptions, app.serverNow, app.closedStrikes)[0] : undefined);
@@ -545,7 +546,7 @@
   @media (max-width: 719px) {
     :global(:root[data-sheet]) .popwrap { left: 8px !important; right: 8px !important; width: auto; max-width: none; }
     :global(:root[data-sheet]) .rail { opacity: 0; pointer-events: none; transform: translateX(12px); }
-    :global(:root[data-sheet]) .panel:not(.home) { right: 16px; max-width: none; }
+    :global(:root[data-sheet]) .panel:not(.home) { right: 16px; width: auto; max-width: none; }
     .under { right: 68px; width: auto; max-width: none; }
     .rail { transition: opacity .2s, transform .25s cubic-bezier(.2, .8, .2, 1); }
   }

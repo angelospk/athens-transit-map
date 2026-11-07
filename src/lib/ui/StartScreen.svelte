@@ -6,7 +6,7 @@
   // and the geocoder). Shown at every plain visit (not a shared link), and again from «Πού πας;» on Τώρα. The same
   // box, one field only, sets «Σπίτι» and «Δουλειά» (app.savingPlace).
   import { tick, untrack } from "svelte";
-  import { centre, distM, geocode, loadTripIndex, places, savedPlaces, stationPlaces, suggest, type Place, type TripIndex } from "../trip";
+  import { centre, distM, geocode, loadTripIndex, places, placeStop, savedPlaces, stationPlaces, suggest, type Place, type TripIndex } from "../trip";
   import { titleCase } from "../nearby";
   import type { AppState, TripMode, TripPrefs } from "../state.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
@@ -540,6 +540,16 @@
   const intro = $derived(wide && !app.savingPlace && !ends.to.place && !app.finding);
   // The quick search (the map's top-left button): one field; a line opens live, a stop its card, a place the map on it.
   const find = $derived(app.finding && !app.savingPlace);
+  // The quick search has its own field: it opens empty, and what was typed there does not stay in «Πού θέλεις να πας»
+  // (the trip's destination comes back as it was).
+  let tripTo: { text: string; place: Place | null } | null = null;
+  $effect(() => {
+    const on = find;
+    untrack(() => {
+      if (on && !tripTo) { tripTo = ends.to; ends.to = { text: "", place: null }; open = null; }
+      else if (!on && tripTo) { ends.to = tripTo; tripTo = null; open = null; }
+    });
+  });
   $effect(() => { if (!app.start) app.finding = false; });
   $effect(() => { if (find && app.start && !app.pickFor) untrack(() => setTimeout(() => inputs.to?.focus(), 80)); });
   function showFound(p: Place) {
@@ -547,9 +557,8 @@
     const at = centre(p.pts);
     app.setTab("map");
     if (p.kind === "stop" && ix) {
-      // The stop's own card: the index's stop of that name nearest the place.
-      let k = -1, d = 60;
-      ix.s.forEach((s, i) => { if (s[3]) { const m = distM([s[1], s[2]], at); if (m < d) { d = m; k = i; } } });
+      // The stop's own card: of the place's stops, the one nearest its centre.
+      const k = placeStop(ix, p);
       if (k >= 0) { app.push(busStopCard(ix.s[k][3]!, titleCase(ix.s[k][0]))); return; }
     }
     app.flyTo([at[1], at[0]]);

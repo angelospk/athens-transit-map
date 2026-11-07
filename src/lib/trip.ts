@@ -77,6 +77,19 @@ export function places(ix: TripIndex): Place[] {
   return [...groups.values()].flat().map(g => ({ ...g.place, lines: [...g.lines].sort(byLine) }));
 }
 
+// The stop whose card a stop place of the search opens: of the place's own stops, the one with a code nearest the
+// place's centre; -1 when none is in the index. (The centre of a busy name, like Σύνταγμα, can be far from them all.)
+export function placeStop(ix: TripIndex, p: Place): number {
+  const c = centre(p.pts), own = new Set(p.pts.map(x => `${x[0]},${x[1]}`));
+  let k = -1, d = Infinity;
+  ix.s.forEach((s, i) => {
+    if (!s[3] || !own.has(`${s[1]},${s[2]}`)) return;
+    const m = distM([s[1], s[2]], c);
+    if (m < d) { d = m; k = i; }
+  });
+  return k;
+}
+
 const folded = new WeakMap<Place, string>();
 const isWordChar = (c: string | undefined) => !!c && /[\p{L}\p{N}]/u.test(c);
 
