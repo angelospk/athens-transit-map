@@ -36,6 +36,23 @@ describe("driveSeconds", () => {
     expect(driveSeconds(200, [0.1])).toBeCloseTo(200, 5);
     expect(driveSeconds(200, [40])).toBeCloseTo(200 / 15, 5);
   });
+  it("uses the vehicle's own speed as the base when no step has a speed", () => {
+    expect(driveSeconds(700, null, 7)).toBeCloseTo(100, 5);
+    expect(driveSeconds(700, [], 7)).toBeCloseTo(100, 5);
+    expect(driveSeconds(700, [null, null], 7)).toBeCloseTo(100, 5);
+  });
+  it("keeps the vehicle's speed in the sane range", () => {
+    expect(driveSeconds(300, null, 40)).toBeCloseTo(20, 5);
+    expect(driveSeconds(200, null, 0.1)).toBeCloseTo(200, 5);
+  });
+  it("prefers the step speeds over the vehicle's speed", () => {
+    expect(driveSeconds(500, [10, 5], 2)).toBeCloseTo(20 + 40 + 100 / 7.5, 5);
+  });
+  it("uses the fallback when the vehicle's speed is not a number", () => {
+    expect(driveSeconds(700, null, null)).toBeCloseTo(700 / FALLBACK_MPS, 5);
+    expect(driveSeconds(700, null, undefined)).toBeCloseTo(700 / FALLBACK_MPS, 5);
+    expect(driveSeconds(700, null, NaN)).toBeCloseTo(700 / FALLBACK_MPS, 5);
+  });
 });
 
 describe("upcomingStops", () => {
@@ -54,6 +71,15 @@ describe("upcomingStops", () => {
   it("uses the typical step speeds ahead (path_speeds)", () => {
     const r = upcomingStops(variant, stops, bus(0.5, "B", { path_speeds: [10, 10, 10] }));
     // 0.5·M ≈ 439 m: 400 m at 10 m/s, the rest at the mean, 10 m/s
+    expect(r[0].at).toBeCloseTo(1000 + (0.5 * M) / 10, -1);
+  });
+  it("uses the vehicle's speed without path_speeds (citybus.gr cities)", () => {
+    const r = upcomingStops(variant, stops, bus(0.5, "B", { path_speeds: null, speed: 8 }));
+    expect(r[0].at).toBeCloseTo(1000 + (0.5 * M) / 8, -1);
+    expect(r[2].at).toBeCloseTo(1000 + (2.5 * M) / 8, -1);
+  });
+  it("keeps path_speeds first when the vehicle also has a speed (Athens, Thessaloniki)", () => {
+    const r = upcomingStops(variant, stops, bus(0.5, "B", { path_speeds: [10, 10, 10], speed: 3 }));
     expect(r[0].at).toBeCloseTo(1000 + (0.5 * M) / 10, -1);
   });
   it("puts a bus that is past its next stop's point on that stop (no negative time)", () => {
