@@ -719,6 +719,12 @@
   "basis": "gps",
   "note": "4η ΑΡΓΥΡΟΥΠΟΛΗΣ: 40 m, 0 reports, proposed 2026-11-03"
  },
+ "60683": {
+  "lat": 37.994221,
+  "lon": 23.774555,
+  "basis": "reports",
+  "note": "ΣΤ. ΜΕΤΡΟ ΚΑΤΕΧΑΚΗ: 36 m, hand check: OSM node 12794492722 + 1 report, 2026-11-08"
+ },
  "640049": {
   "lat": 38.046118,
   "lon": 23.838656,
@@ -736,6 +742,18 @@
   "lon": 23.77439,
   "basis": "gps",
   "note": "ΣΚΑΛΑΚΙΑ: 60 m, 0 reports, proposed 2026-11-03"
+ },
+ "770021": {
+  "lat": 37.999545,
+  "lon": 23.77049,
+  "basis": "gps+reports",
+  "note": "ΚΑΤΕΧΑΚΗ: 37 m, hand check: OSM node 3182639566 + GPS halt (11 m) + 1 report, 2026-11-08"
+ },
+ "770028": {
+  "lat": 38.012631,
+  "lon": 23.782233,
+  "basis": "reports",
+  "note": "ΑΡΣΑΚΕΙΟ: 79 m, hand check: OSM node 2786681259 + 1 report, 2026-11-08"
  },
  "800048": {
   "lat": 38.017888,
