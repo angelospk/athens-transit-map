@@ -6,12 +6,13 @@
   // and the geocoder). Shown at every plain visit (not a shared link), and again from «Πού πας;» on Τώρα. The same
   // box, one field only, sets «Σπίτι» and «Δουλειά» (app.savingPlace).
   import { untrack } from "svelte";
-  import { centre, distM, geocode, loadTripIndex, metroPlaces, places, savedPlaces, suggest, type Place, type TripIndex } from "../trip";
+  import { centre, distM, geocode, loadTripIndex, places, savedPlaces, stationPlaces, suggest, type Place, type TripIndex } from "../trip";
   import { titleCase } from "../nearby";
   import type { AppState, TripMode, TripPrefs } from "../state.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
   import MoreHint from "./MoreHint.svelte";
   import { loadMetro } from "../metro";
+  import { loadSuburban } from "../suburban";
   import { CITIES, type CityId } from "../cities";
   import { item, open as reveal, pop, rise, soft } from "../anim";
   import { fetchV2Lines, fetchV2Stop, fetchV2Stops, getJSON } from "../api";
@@ -123,7 +124,7 @@
   // lines before one with fewer, the nearer first.
   function findOwn(q: string, max: number): Place[] {
     const at = app.myPos ?? app.mapCenter;
-    return searchNamed(own, q, p => p.label, p => (p.kind === "metro" ? -0.4 : 0) - Math.min(0.3, p.lines.length / 40)
+    return searchNamed([...rail, ...own], q, p => p.label, p => (p.kind === "metro" ? -0.8 : 0) - Math.min(0.3, p.lines.length / 40)
       + (at ? Math.min(1, distM(at, centre(p.pts)) / 8000) : 0)).slice(0, max).map(x => x.item);
   }
   // Two asks in one line: «040 Σύνταγμα», a line at a stop (searchEngine intents); «Σύνταγμα προς σπίτι», «από εδώ
@@ -175,26 +176,38 @@
   const town = (m: string) => m.replace(/^Δήμος\s+/, "");
   // The stations (metro, tram, Προαστιακός) a walk from where the user is (or the map's middle), offered in an empty
   // field: a trip often starts, or ends, best at one.
-  let stationPlaces = $state.raw<Place[]>([]);
+  let rail = $state.raw<Place[]>([]);   // every metro, tram and Προαστιακός station, by its proper name (trip.ts)
   $effect(() => {
-    if (!app.start || stationPlaces.length) return;
-    loadMetro().then(d => { stationPlaces = metroPlaces(d); }, () => {});
+    if (!app.start || rail.length) return;
+    Promise.all([loadMetro().catch(() => null), loadSuburban().catch(() => null)]).then(([m, sb]) => { rail = stationPlaces(m, sb); });
   });
+  // Near the user (or the start they chose, or the map's middle): the two nearest stations, however far (a suburb's
+  // is a bus ride away), and the bus stops a short walk off. Each with how far and what runs there.
+  const dist = (d: number) => (d < 1000 ? `${Math.round(d / 10) * 10} μ` : `${(d / 1000).toFixed(1).replace(".", ",")} χλμ`);
+  const nearAt = $derived(app.myPos ?? (ends.from.place && ends.from.place.kind !== "metro-any" ? centre(ends.from.place.pts) : null) ?? app.mapCenter);
   const nearStations = $derived.by((): Place[] => {
-    const at = app.myPos ?? app.mapCenter;
+    const at = nearAt;
     if (!at || app.savingPlace) return [];
     // One per name: the metro's «Συνταγμα» and the tram's «Σύνταγμα (Κέντρο)» are one place to walk to.
     const seen = new Set<string>();
-    return stationPlaces.map(p => ({ p, d: distM(at, centre(p.pts)) })).filter(x => x.d < 1500).sort((a, b) => a.d - b.d)
-      .filter(({ p }) => { const k = fold(p.label.replace(/\s*\(.*\)\s*/, "")); return !seen.has(k) && !!seen.add(k); }).slice(0, 3)
-      .map(({ p, d }) => ({ ...p, hint: `${d < 1000 ? `${Math.round(d / 10) * 10} μ` : `${(d / 1000).toFixed(1).replace(".", ",")} χλμ`}${p.lines.length ? ` · ${p.lines.slice(0, 3).join(", ")}` : ""}` }));
+    return rail.map(p => ({ p, d: distM(at, centre(p.pts)) })).filter(x => x.d < 6000).sort((a, b) => a.d - b.d)
+      .filter(({ p }) => { const k = fold(p.label.replace(/\s*\(.*\)\s*/, "")); return !seen.has(k) && !!seen.add(k); }).slice(0, 2)
+      .map(({ p, d }) => ({ ...p, hint: `${dist(d)} · ${p.hint}` }));
   });
+  const nearStops = $derived.by((): Place[] => {
+    const at = nearAt;
+    if (!at || app.savingPlace) return [];
+    return own.flatMap(p => { const d = Math.min(...p.pts.map(q => distM(at, q))); return d < 500 ? [{ p, d }] : []; })
+      .sort((a, b) => a.d - b.d).slice(0, 3).map(({ p, d }) => ({ ...p, hint: `${dist(d)} · ${stopHint(p)}` }));
+  });
+  // A bus stop's own label in the lists: what it is and the lines through it.
+  const stopHint = (p: Place) => `Στάση${p.lines.length ? ` · ${p.lines.slice(0, 4).join(", ")}${p.lines.length > 4 ? ` +${p.lines.length - 4}` : ""}` : ""}`;
   type Row = { key: string; me?: true; map?: true; place?: Place; line?: V2Line; ask?: Ask; head?: string; muniLine?: MuniCard; muniStop?: MuniStopHit };
   const lineRow = (l: V2Line, head?: string): Row => ({ key: `line|${l.id}`, line: l, head });
   const rows = $derived.by((): Row[] => {
     if (!open) return [];
     if (!ends[open].text.trim()) {
-      const near = nearStations.map((p, k): Row => ({ key: `near|${p.label}`, place: p, head: k === 0 ? "Σταθμοί κοντά" : undefined }));
+      const near = [...nearStations, ...nearStops].map((p, k): Row => ({ key: `near|${p.kind}|${p.label}|${p.pts[0].join()}`, place: p, head: k === 0 ? (app.myPos ? "Κοντά σου" : "Κοντά") : undefined }));
       return [{ key: "me", me: true }, ...(app.savingPlace ? [] : savedPlaces(app.places).map(p => ({ key: p.kind!, place: p }))), ...near, { key: "map", map: true }];
     }
     const { first, last } = lineHits;
@@ -423,6 +436,8 @@
     app.pickFor = null;
     app.setTab("map");
   }
+  // The rail lines' own colours (metro.json; the Προαστιακός's purple), for the station rows' chips.
+  const LINE_TINT: Record<string, string> = { M1: "#00a651", M2: "#e30613", M3: "#0072bc", T6: "#f39200", T7: "#f39200", Π: "#7b3fa0" };
   const iconOf = (p: Place): IconName => p.kind === "home" || p.kind === "work" ? p.kind : p.kind === "street" ? "street" : p.kind === "area" ? "area"
     : p.kind === "metro" || p.kind === "metro-any" ? "metro" : p.kind === "poi" ? "pin" : "stop";
 
@@ -1042,7 +1057,12 @@
             {@const p = r.place}
             {#if iconOf(p) === "stop"}<span class="oi oasa"><img src="{import.meta.env.BASE_URL}icons/oasa.png" alt="" /></span>
             {:else}<span class="oi"><Icon name={iconOf(p)} size={17} /></span>{/if}
-            <span class="ot"><b>{titleCase(p.label)}</b>{#if p.hint}<small>{p.hint}</small>{/if}</span>
+            <span class="ot"><b>{titleCase(p.label)}</b>
+              {#if p.kind === "metro" && p.lines.length}
+                <!-- A station: its lines in their colours, then what runs there (and how far, near the user). -->
+                <small class="lm st">{#each p.lines as l (l)}<i class="lc" style:--c={LINE_TINT[l] ?? "#6b7280"}>{l}</i>{/each}<span>{p.hint}</span></small>
+              {:else if p.hint}<small>{p.hint}</small>
+              {:else if p.kind === "stop"}<small>{stopHint(p)}</small>{/if}</span>
           {/if}
         </button>
       </li>
@@ -1203,7 +1223,11 @@
   .lb { flex: none; min-width: 44px; height: 32px; padding: 0 9px; box-sizing: border-box; display: flex; align-items: center; justify-content: center;
     border-radius: 9px; background: var(--c); color: var(--t); font-size: 14px; font-weight: 800; letter-spacing: -.01em; line-height: 1; }
   .lb.round { min-width: 36px; width: 36px; height: 36px; padding: 0; border-radius: 50%; }
-  .lb.muni { background: #4f3d7a; color: #fff; }   /* a municipal line: the map's colour for them (MapView MUNI_FOCUS) */
+  .lb.muni { background: #4f3d7a; color: #fff; }
+  .lm.st { gap: 4px; min-width: 0; overflow: hidden; white-space: nowrap; }
+  .lm.st span { min-width: 0; margin-left: 2px; overflow: hidden; text-overflow: ellipsis; }
+  .lc { flex: none; height: 18px; min-width: 22px; padding: 0 5px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 5px; background: var(--c); color: #fff; font-size: 10.5px; font-style: normal; font-weight: 800; line-height: 1; }   /* a municipal line: the map's colour for them (MapView MUNI_FOCUS) */
   .lm { display: flex; align-items: center; gap: 5px; }
   .live { flex: none; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; line-height: 1; color: var(--ontime); }
   .live i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }

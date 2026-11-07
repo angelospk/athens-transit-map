@@ -169,8 +169,9 @@
   <!-- Favourites only (B7): what the map shows, as a two-way switch. -->
   {#if app.tab === "now" || app.tab === "alerts"}
     <!-- «Τώρα» holds the favourites and the notices itself: the bar stays a search bar. -->
-  {:else if !app.favorites.length && !app.favHintSeen && !app.selected.length && !app.linked}
-    <!-- Not under the chips, nor on a shared link: on a phone that row would cover the map. -->
+  {:else if !app.favorites.length && !app.favHintSeen && !app.selected.length && !app.linked && !(pop && narrow.current)}
+    <!-- Not under the chips, nor on a shared link: on a phone that row would cover the map. Nor while a popover covers
+         the panel on a phone: the panel is inert then, and its «Εντάξει» could not be pressed. -->
     <div class="favtip" role="note">
       <span class="ftic"><Icon name="star-filled" size={15} /></span>
       <span class="ftx"><b>Μόνο τα δικά σου.</b> Πάτα το αστέρι σε στάση ή γραμμή, και μετά εδώ, για να βλέπεις μόνο αυτά.</span>

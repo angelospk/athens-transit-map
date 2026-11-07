@@ -2,6 +2,7 @@
 // only (dynamic import), as is public/trips.json, its stop index (scripts/trips.ts).
 
 import type { MetroData } from "./metro";
+import type { SuburbanData } from "./suburban";
 import { fold, greeklish, greeklishKeys, hasLatin } from "./search";
 import type { AppState } from "./state.svelte";
 import type { CityId } from "./cities";
@@ -333,6 +334,30 @@ export function toggleTripLine(app: AppState, t: TripLine) {
 export function metroPlaces(data: MetroData): Place[] {
   return data.stations.map(s => ({ label: s.name, pts: [[s.lat, s.lon]] as Pt[], lines: s.lines, kind: "metro" as const }));
 }
+// Every rail station (metro, tram, Προαστιακός) as one place, for the search and «Σταθμοί κοντά»: the metro's GTFS
+// writes some names short or in capitals («ΚΑΝΤΖΑ», «Δ. ΠΛΑΚΕΝΤΙΑΣ»); where the Προαστιακός stops at the same
+// station its own name is used (and «Π» added to the lines), and a few are named here. The hint says what runs.
+const STATION_NAMES: Record<string, string> = { "ΚΑΝΤΖΑ": "Παιανία - Κάντζα", "Δ. ΠΛΑΚΕΝΤΙΑΣ": "Δουκίσσης Πλακεντίας",
+  "ΕΛ. ΒΕΝΙΖΕΛΟΣ": "Αεροδρόμιο (Ελ. Βενιζέλος)", "ΣΥΝΔΕΣΗ ΠΡΟΑΣΤΙΑΚΟΥ": "Σύνδεση Προαστιακού" };
+export const SUBURBAN = "Π";
+export function stationHint(lines: string[]): string {
+  const m = lines.filter(l => /^M/.test(l)), t = lines.filter(l => /^T/.test(l));
+  return [m.length ? `Μετρό ${m.join(", ")}` : "", t.length ? `Τραμ ${t.join(", ")}` : "", lines.includes(SUBURBAN) ? "Προαστιακός" : ""].filter(Boolean).join(" · ");
+}
+export function stationPlaces(metro: MetroData | null, sub: SuburbanData | null): Place[] {
+  const out: Place[] = (metro?.stations ?? []).map(s => ({ label: STATION_NAMES[s.name] ?? s.name, pts: [[s.lat, s.lon]] as Pt[], lines: [...s.lines], kind: "metro" as const }));
+  for (const r of sub?.stations ?? []) {
+    const at: Pt = [r.lat, r.lon];
+    const near = out.find(p => distM(p.pts[0], at) < 300);
+    const name = r.name.replace(/\s*-\s*/g, " - ");
+    if (!near) { out.push({ label: name, pts: [at], lines: [SUBURBAN], kind: "metro" }); continue; }
+    if (!near.lines.includes(SUBURBAN)) near.lines.push(SUBURBAN);
+    // The same station by its proper name: «ΚΟΡΩΠΙ» is «Κορωπί» (not «ΣΤΑΘΜΟΣ ΛΑΡΙΣΗΣ» as «Αθήνα»).
+    const a = fold(near.label), b = fold(name);
+    if (near.label === near.label.toUpperCase() && (b.includes(a) || a.includes(b))) near.label = name;
+  }
+  return out.map(p => ({ ...p, hint: stationHint(p.lines) }));
+}
 const isMetro = (s: MetroData["stations"][number]) => s.lines.some(l => l.startsWith("M"));
 export function anyMetro(data: MetroData): Place {
   return { label: "Κοντινότερος σταθμός μετρό", pts: data.stations.filter(isMetro).map(s => [s.lat, s.lon] as Pt), lines: [], kind: "metro-any" };
@@ -395,7 +420,9 @@ export function suggest(own: Place[], geo: Place[], max = 7): Place[] {
   const areas = geo.filter(g => g.kind === "area" && !covered(g)).slice(0, 2);
   const rest = [...geo.filter(g => g.kind === "street"), ...geo.filter(g => g.kind === "poi").slice(0, 3)];
   const stops = own.slice(0, Math.max(max - areas.length - Math.min(rest.length, 4), 0));
-  return [...areas, ...stops, ...rest].slice(0, max);
+  // A rail station among the best of ours goes first, before an area of the same name («Κορωπί», «Παιανία»).
+  const rail = stops.slice(0, 3).filter(o => o.kind === "metro");
+  return [...rail, ...areas, ...stops.filter(o => !rail.includes(o)), ...rest].slice(0, max);
 }
 
 // The stop index of each city (scripts/trips.ts): Athens keeps trips.json.
