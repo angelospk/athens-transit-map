@@ -51,7 +51,7 @@ const PLACE_TYPE: Record<string, string> = {
   suburban: "TrainStation",
 };
 
-const escape = (s: string | null | undefined) =>
+export const escape = (s: string | null | undefined) =>
   String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 // Suburban lines carry no label in /v2/lines: their name is the label.
@@ -90,9 +90,9 @@ footer{max-width:40rem;margin:0 auto;padding:1rem;color:var(--dim);font-size:.85
 </style>`;
 
 // The JSON-LD is inlined in a <script> tag, so a name with "</script>" must not close it.
-const jsonLd = (data: unknown) => JSON.stringify(data).replaceAll("<", "\\u003c");
+export const jsonLd = (data: unknown) => JSON.stringify(data).replaceAll("<", "\\u003c");
 
-function layout(o: { title: string; description: string; canonical: string; body: string; ld?: unknown }): string {
+export function layout(o: { title: string; description: string; canonical: string; body: string; ld?: unknown; style?: string; footer?: string }): string {
   return `<!doctype html>
 <html lang="el">
 <head>
@@ -110,12 +110,12 @@ function layout(o: { title: string; description: string; canonical: string; body
 <meta property="og:image" content="${SITE}/icon-512.png">
 <meta name="twitter:card" content="summary">
 ${o.ld === undefined ? "" : `<script type="application/ld+json">${jsonLd(o.ld)}</script>\n`}${STYLE}
-</head>
+${o.style ?? ""}</head>
 <body>
 <main>
 ${o.body}
 </main>
-<footer><a href="/">Στάσεις</a> · ζωντανός χάρτης λεωφορείων, τρόλεϊ, μετρό και τραμ στην Αθήνα · <a href="/lines.html">Όλες οι γραμμές</a></footer>
+<footer>${o.footer ?? `<a href="/">Στάσεις</a> · ζωντανός χάρτης λεωφορείων, τρόλεϊ, μετρό και τραμ στην Αθήνα · <a href="/lines.html">Όλες οι γραμμές</a>`}</footer>
 </body>
 </html>
 `;
@@ -229,7 +229,7 @@ Sitemap: ${SITE}/sitemap.xml
 `;
 
 // Six requests at a time: the API is one small box and answers the whole line list in seconds.
-async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);
   let next = 0;
   const worker = async () => {
@@ -241,7 +241,8 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 
 // Writes every page and both index files. Any API error rejects: a deploy must not publish a
 // site whose pages are missing.
-export async function build(outDir: string, getJson: GetJson): Promise<{ stops: number; lines: number }> {
+// extraPaths: pages written by other scripts (the stats pages), listed in the same sitemap.
+export async function build(outDir: string, getJson: GetJson, extraPaths: string[] = []): Promise<{ stops: number; lines: number }> {
   // A Source loading or down can answer with empty lists (CONTRACT.md /v2): its pages would vanish.
   const complete = async <T>(path: string) => {
     const body = (await getJson(path)) as T & { sources?: { id: string; state: string }[] };
@@ -262,7 +263,7 @@ export async function build(outDir: string, getJson: GetJson): Promise<{ stops: 
   ]);
 
   await writeFile(join(outDir, LINES_PATH.slice(1)), linesPage(lines));
-  const paths = ["/", LINES_PATH, ...lines.map(l => linePath(l.id)), ...stops.map(s => stopPath(s[0]))];
+  const paths = ["/", LINES_PATH, ...extraPaths, ...lines.map(l => linePath(l.id)), ...stops.map(s => stopPath(s[0]))];
   await writeFile(join(outDir, "sitemap.xml"), sitemap(paths));
   await writeFile(join(outDir, "robots.txt"), robots());
   return { stops: stops.length, lines: lines.length };
@@ -285,9 +286,26 @@ if (isMain) {
       }
     }
   };
+  // The stats pages (web#48) read the stats branch of athens-transit-rt on GitHub.
+  const { buildStats } = await import("./stats-pages");
+  const statsBase = (process.env.VITE_STATS_BASE || "https://raw.githubusercontent.com/angelospk/athens-transit-rt/stats/v1").replace(/\/+$/, "");
+  const getText = async (url: string) => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const res = await fetch(url);
+        if (res.status === 404) return null;
+        if (!res.ok) throw new Error(`${res.status} ${url}`);
+        return await res.text();
+      } catch (err) {
+        if (attempt >= 1) throw err;
+      }
+    }
+  };
   try {
-    const n = await build(outDir, getJson);
+    const stats = await buildStats(outDir, getText, statsBase);
+    const n = await build(outDir, getJson, stats.paths);
     console.log(`seo: ${n.stops} stops, ${n.lines} lines -> ${outDir}`);
+    console.log(`stats: ${stats.cities.map(c => `${c.id} ${c.days} days${c.bad ? ` (${c.bad} unreadable)` : ""}`).join(", ") || "none"}`);
   } catch (err) {
     console.error("seo:", err);
     process.exit(1);

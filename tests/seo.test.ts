@@ -172,6 +172,14 @@ describe("build", () => {
     expect(readFileSync(join(out, "robots.txt"), "utf8")).toContain("Sitemap:");
   });
 
+  it("lists extra pages (the stats pages) in the sitemap", async () => {
+    const out = mkdtempSync(join(tmpdir(), "seo-"));
+    await build(out, get, ["/athens/stats/"]);
+    const xml = readFileSync(join(out, "sitemap.xml"), "utf8");
+    expect(xml.match(/<url>/g)!.length).toBe(7);
+    expect(xml).toContain(`<loc>${SITE}/athens/stats/</loc>`);
+  });
+
   it("fails the build when the API fails, so a deploy never drops the pages", async () => {
     const out = mkdtempSync(join(tmpdir(), "seo-"));
     const broken = async (p: string) => (p === "lines/stasy%3AM2" ? Promise.reject(new Error("503")) : get(p));
