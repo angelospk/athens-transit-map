@@ -190,6 +190,10 @@ describe("arrivalNote", () => {
   it("says estimate, never a delay, for a bus with no trip", () => {
     expect(arrivalNote({ min: 6, vehicle: "v", late: 0, est: true, away: 2 })).toEqual({ text: "2 στάσεις πριν · εκτίμηση", tone: "muted" });
   });
+  it("in the citybus.gr cities a bus with no trip is a live GPS bus: live, not estimate", () => {
+    expect(arrivalNote({ min: 6, vehicle: "v", late: 0, est: true, away: 2 }, true)).toEqual({ text: "2 στάσεις πριν · ζωντανά", tone: "ok" });
+    expect(arrivalNote({ min: 6, vehicle: "v", late: 0, est: true }, true)).toEqual({ text: "ζωντανά", tone: "ok" });
+  });
   it("counts an early bus as on time", () => {
     expect(arrivalNote({ min: 6, vehicle: "v", late: -3 })).toEqual({ text: "στην ώρα του", tone: "ok" });
   });
@@ -296,5 +300,9 @@ describe("scheduleRows (citybus.gr cities: timetable runs with no bus)", () => {
   it("one time once: the same run twice (two variants) does not hide the next one", () => {
     expect(scheduleRows([s("03", [22, 59]), s("03", [22, 59], { variant: "0303" }), s("03", [23, 9])], [], now)[0].text)
       .toBe("Κατά πρόγραμμα 22:59, 23:09 · όχι live");
+  });
+  it("on a loop, the return leg: the variant it keeps leads headTo back to the start", () => {
+    const r = scheduleRows([s("L", [23, 0], { variant: "v", headsign: "ΣΤ. ΚΟΡΩΠΙ - ΑΥΛΑΚΙ" })], [], now)[0];
+    expect(headTo(loop, r.line, r.variant, 3, r.headsign)).toEqual({ to: "ΣΤ. ΚΟΡΩΠΙ", back: true });
   });
 });

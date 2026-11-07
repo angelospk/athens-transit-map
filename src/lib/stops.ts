@@ -202,10 +202,12 @@ export function alertLinesAt(ix: TripIndex, k: number, lines?: string[], hint?: 
 }
 
 // The line under an arrival's headsign: where the bus is (stops to go) and how it runs. est: no trip,
-// so no delay to tell; late of 2 minutes or more is late (an early bus is on time).
-export function arrivalNote(t: ArrivalTime): { text: string; tone: "ok" | "late" | "muted" } {
+// so no delay to tell; late of 2 minutes or more is late (an early bus is on time). tripless: the city's
+// buses never carry a trip (citybus.gr), so one with no trip is a live GPS bus, not an estimate (rt#124).
+export function arrivalNote(t: ArrivalTime, tripless = false): { text: string; tone: "ok" | "late" | "muted" } {
   if (t.here) return { text: "στη στάση", tone: "ok" };
   const where = t.away ? [`${t.away} στάσεις πριν`] : [];
+  if (t.est && tripless) return { text: [...where, "ζωντανά"].join(" · "), tone: "ok" };
   if (t.est) return { text: [...where, "εκτίμηση"].join(" · "), tone: "muted" };
   if (t.late >= 2) return { text: [...where, `αργεί ${t.late}′`].join(" · "), tone: "late" };
   return { text: [...where, "στην ώρα του"].join(" · "), tone: "ok" };

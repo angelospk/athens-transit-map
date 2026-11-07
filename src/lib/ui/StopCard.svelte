@@ -197,7 +197,7 @@
         <ul class="arr" aria-label="Επόμενα λεωφορεία">
           {#each shown as g (g.line + g.headsign)}
             {@const t = g.times[0]}
-            {@const note = arrivalNote(t)}
+            {@const note = arrivalNote(t, app.cityInfo.gtfsHost === "citybus.gr")}
             {@const d = dest(g)}
             <li><button type="button" class="row" onclick={() => app.openLineAt(g.line, g.variant ? [g.variant] : variantsOf(g.line), t.vehicle)}>
               {@render chip(g.line)}
