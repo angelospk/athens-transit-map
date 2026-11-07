@@ -65,13 +65,12 @@
     if (next.length) means = ALL.filter(x => next.includes(x));
   }
   const meansOn = $derived(MEANS.filter(x => means.includes(x.m)));
-  const meansLabel = $derived(meansOn.length === MEANS.length ? "Όλα τα μέσα" : meansOn.length === 1 ? meansOn[0].label : `${meansOn.length} μέσα`);
+  const meansLabel = $derived(meansOn.length === MEANS.length ? "Όλα" : meansOn.length === 1 ? meansOn[0].label : `${meansOn.length} μέσα`);
   type Sort = "time" | "price" | "dist";
-  // short: the phone's one-row label (mockup 38).
-  const SORTS: { id: Sort; label: string; short: string; hint: string; icon: IconName }[] = [
-    { id: "time", label: "Χρόνος", short: "Γρηγορότερη", hint: "Φτάνεις νωρίτερα", icon: "clock" },
-    { id: "price", label: "Τιμή", short: "Φθηνότερη", hint: "Τα λιγότερα ευρώ, π.χ. χωρίς Express", icon: "ticket" },
-    { id: "dist", label: "Απόσταση", short: "Συντομότερη", hint: "Τα λιγότερα χιλιόμετρα, και λιγότερο περπάτημα", icon: "route" },
+  const SORTS: { id: Sort; label: string; hint: string; icon: IconName }[] = [
+    { id: "time", label: "Χρόνος", hint: "Φτάνεις νωρίτερα", icon: "clock" },
+    { id: "price", label: "Τιμή", hint: "Τα λιγότερα ευρώ, π.χ. χωρίς Express", icon: "ticket" },
+    { id: "dist", label: "Απόσταση", hint: "Τα λιγότερα χιλιόμετρα, και λιγότερο περπάτημα", icon: "route" },
   ];
   let sortId = $state<Sort>("time");
   const sort = $derived(SORTS.find(x => x.id === sortId) ?? SORTS[0]);
@@ -93,8 +92,7 @@
     if (!app.start || app.pickFor) return;
     untrack(() => {
       menu = null;
-      // Not on a phone: the keyboard would cover what is near (mockup 38); a tap on «Πού» brings it up.
-      if (!ends.to.place && !matchMedia("(max-width: 719px)").matches) setTimeout(() => inputs.to?.focus(), 60);
+      if (!ends.to.place) setTimeout(() => inputs.to?.focus(), 60);
       // Whether the browser would give the location without asking (it is offered first then), or never (not offered).
       navigator.permissions?.query({ name: "geolocation" }).then(r => { geoPerm = r.state; r.onchange = () => (geoPerm = r.state); }, () => {});
     });
@@ -202,15 +200,6 @@
     return own.flatMap(p => { const d = Math.min(...p.pts.map(q => distM(at, q))); return d < 500 ? [{ p, d }] : []; })
       .sort((a, b) => a.d - b.d).slice(0, 3).map(({ p, d }) => ({ ...p, hint: `${dist(d)} · ${stopHint(p)}` }));
   });
-  // The phone's empty screen (mockup 38): the nearby stations and stops as a list, each with its lines, what it is and
-  // how far.
-  const modesText = (lines: string[]) => [lines.some(l => /^M/.test(l)) ? "Μετρό" : "", lines.some(l => /^T/.test(l)) ? "Τραμ" : "",
-    lines.includes("Π") ? "Προαστιακός" : ""].filter(Boolean).join(" και ");
-  const nearList = $derived([...nearStations, ...nearStops].map(p => {
-    const station = p.kind === "metro";
-    return { key: `${p.kind}|${p.label}|${p.pts[0].join()}`, place: p, station, d: (p.hint ?? "").split(" · ")[0],
-      badges: station ? p.lines : p.lines.slice(0, 2), sub: station ? modesText(p.lines) : "Στάση λεωφορείου" };
-  }));
   // A bus stop's own label in the lists: what it is and the lines through it.
   const stopHint = (p: Place) => `Στάση${p.lines.length ? ` · ${p.lines.slice(0, 4).join(", ")}${p.lines.length > 4 ? ` +${p.lines.length - 4}` : ""}` : ""}`;
   type Row = { key: string; me?: true; map?: true; place?: Place; line?: V2Line; ask?: Ask; head?: string; muniLine?: MuniCard; muniStop?: MuniStopHit };
@@ -875,9 +864,6 @@
           </div>
           {/if}
         {:else if !app.savingPlace}
-          <!-- On a phone «Πότε», the means and the order are one quiet row (mockup 38); on a computer this wrapper is
-               not a box at all (display: contents). -->
-          <div class="optrow">
           <div class="pair one">
           <div class="pickf">
             <button type="button" class="field pick" class:open={menu === "when"} aria-haspopup="listbox" aria-expanded={menu === "when"} onclick={() => toggleMenu("when")} in:item={{ i: 5, y: 12 }}>
@@ -927,7 +913,7 @@
             <div class="pickf">
               <button type="button" class="chip sortc" class:open={menu === "sort"} aria-haspopup="listbox" aria-expanded={menu === "sort"} onclick={() => toggleMenu("sort")}>
                 <span class="sg" aria-hidden="true"><Icon name={sort.icon} size={15} /></span>
-                <span class="col"><span class="fl">Πρώτα</span>{#key sortId}<span class="sv" in:item={{ y: 6 }}>{sort.label}</span>{/key}</span><span class="ss">{sort.short}</span>
+                <span class="col"><span class="fl">Πρώτα</span>{#key sortId}<span class="sv" in:item={{ y: 6 }}>{sort.label}</span>{/key}</span>
                 <span class="cv" aria-hidden="true"><Icon name="chevron" size={15} /></span>
               </button>
               {#if menu === "sort"}
@@ -942,7 +928,6 @@
               {/if}
             </div>
           </div>
-          </div>
         {/if}
       </div>
 
@@ -955,22 +940,9 @@
         </ul>
         {/if}
       {:else if !app.savingPlace}
-        <section class="pv" class:empty={!pKey} class:live={!!top && best === top} class:off={!!top && best !== top} aria-live="polite" in:item={{ i: 7, y: 14 }}>
+        <section class="pv" class:live={!!top && best === top} class:off={!!top && best !== top} aria-live="polite" in:item={{ i: 7, y: 14 }}>
           {#if !pKey}
             <p class="pvh"><span class="pvi"><Icon name="route" size={17} /></span><span>{ends.to.place ? "Διάλεξε από πού ξεκινάς, και η καλύτερη διαδρομή εμφανίζεται εδώ αμέσως." : "Πες πού πας, και η καλύτερη διαδρομή εμφανίζεται εδώ αμέσως."}</span></p>
-            <!-- A phone: under the note, what is near, to start or end at (mockup 38). -->
-            {#if nearList.length}
-              <div class="nearl">
-                <p class="nh">{app.myPos ? "Κοντά σου" : "Κοντά"}</p>
-                {#each nearList as n (n.key)}
-                  <button type="button" class="nr" onclick={() => choose(ends.to.place ? "from" : "to", n.place)}>
-                    <span class="nb">{#each n.badges as b (b)}<i class="lc" style:--c={n.station ? LINE_TINT[b] ?? "#6b7280" : "#1f5fc8"}>{b}</i>{/each}</span>
-                    <span class="nt"><b>{titleCase(n.place.label)}</b><small>{n.sub}</small></span>
-                    <span class="nd">{n.d}</span>
-                  </button>
-                {/each}
-              </div>
-            {/if}
           {:else if waiting}
             <div class="sk" aria-label="Αναζήτηση διαδρομής"><i></i><i></i><i></i></div>
           {:else if top}
@@ -980,12 +952,12 @@
               <button type="button" class="pvb" aria-pressed={best === top} onclick={() => (chosen = null)} in:item={{ y: 10 }}>
                 <span class="pvt">
                   <span>{sortId === "price" ? `Η φθηνότερη · ${top.metric}` : sortId === "dist" ? `Η πιο σύντομη · ${top.metric}` : later ? `Η καλύτερη σε ${later}′` : "Η καλύτερη τώρα"}</span>
-                  <span class="leave"><i></i>{top.leaveIn === 0 ? "Φύγε τώρα" : `Φύγε σε ${top.leaveIn}′`}<small class="xf">{top.transfers ? `με ${top.transfers} ${top.transfers === 1 ? "αλλαγή" : "αλλαγές"}` : "χωρίς αλλαγή"}</small></span>
+                  <span class="leave"><i></i>{top.leaveIn === 0 ? "Φύγε τώρα" : `Φύγε σε ${top.leaveIn}′`}</span>
                 </span>
                 <span class="pvm"><b>{top.depart} → {top.arrive}</b><b class="dur">{durText(top.mins)}</b></span>
                 <span class="legs">
                   {#each top.legs as l, k (k)}
-                    {#if k}<span class="arr" aria-hidden="true"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6" /></svg></span>{/if}<span class="leg" class:walk={l.walk} style:--lb={l.color || undefined} style:--lt={l.text || undefined} in:item={{ i: k, y: 6 }}>{#if l.walk}<span class="lwi" aria-hidden="true"><Icon name="walk" size={12} /></span><span class="lw">Πόδια </span>{/if}{l.label}</span>
+                    <span class="leg" class:walk={l.walk} style:--lb={l.color || undefined} style:--lt={l.text || undefined} in:item={{ i: k, y: 6 }}>{l.walk ? `Πόδια ${l.label}` : l.label}</span>
                   {/each}
                 </span>
                 {#if top.ignored}<span class="pvn">Με {meansOn.length === 1 ? meansOn[0].label.toLowerCase() : "αυτά τα μέσα"} δεν βγαίνει τώρα: αυτή είναι η καλύτερη με όλα.</span>{/if}
@@ -1007,7 +979,7 @@
                 <button type="button" class="alt" class:sel aria-pressed={sel} onclick={() => (chosen = sel ? null : o.key)} aria-label="Διάλεξε τη διαδρομή {o.depart} – {o.arrive}">
                   {#if sel}<span class="seltag" in:item={{ y: 4 }}><Icon name="check" size={13} />Η επιλογή σου</span>{/if}
                   <span class="am"><b>{o.depart} → {o.arrive}</b><b class="dur">{durText(o.mins)}</b></span>
-                  <span class="legs">{#each o.legs as l, j (j)}<span class="leg" class:walk={l.walk} style:--lb={l.color || undefined} style:--lt={l.text || undefined}>{#if l.walk}<span class="lwi" aria-hidden="true"><Icon name="walk" size={12} /></span><span class="lw">Πόδια </span>{/if}{l.label}</span>{/each}</span>
+                  <span class="legs">{#each o.legs as l, j (j)}<span class="leg" class:walk={l.walk} style:--lb={l.color || undefined} style:--lt={l.text || undefined}>{l.walk ? `Πόδια ${l.label}` : l.label}</span>{/each}</span>
                   <span class="al">{o.leaveIn === 0 ? "Φύγε τώρα" : `Φύγε σε ${o.leaveIn}′`}{o.transfers ? ` · ${o.transfers} ${o.transfers === 1 ? "αλλαγή" : "αλλαγές"}` : " · χωρίς αλλαγή"}{o.metric ? ` · ${o.metric}` : ""}</span>
                 </button>
               </li>
@@ -1469,100 +1441,5 @@
     .box { max-width: none; min-height: 100%; padding: calc(28px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); border-radius: 0;
       box-shadow: none; background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: none; --acts-bg: var(--bg); }
     .acts { margin-top: auto; }
-  }
-  /* A computer: the one-row wrapper is no box, and the phone's extras stay hidden. */
-  .optrow { display: contents; }
-  .ss, .nearl, .arr, .xf, .lwi { display: none; }
-
-  /* ---- A phone, calmer (mockup 38): one colour for the action, neutral surfaces with no borders or glows, sentence-case
-     labels, colour only where it means a line. */
-  @media (max-width: 719px) {
-    .box { --pc-surf: color-mix(in srgb, var(--fg) 6%, var(--bg)); --pc-line: color-mix(in srgb, var(--fg) 9%, var(--bg));
-      --pc-rule: color-mix(in srgb, var(--fg) 22%, var(--bg)); --pc-acc: #3d7bea; gap: 14px; }
-    .brand { font-size: 14px; font-weight: 600; color: var(--muted); }
-    .logo { width: 24px; height: 24px; border-radius: 7px; background: var(--pc-acc); color: #fff; }
-    h1 { margin: 10px 0 4px; font-size: 30px; font-weight: 700; letter-spacing: -.015em; line-height: 1.1; }
-
-    /* The two ends: one grouped list; the markers (the route's ends) joined by a fine rule. */
-    .ends.group { border: 0; border-radius: 16px; background: var(--pc-surf); }
-    .ends.group .field.end { min-height: 58px; padding-left: 18px; gap: 14px; }
-    .ends.group .field.end.open { background: color-mix(in srgb, var(--fg) 3%, transparent); }
-    .ends.group .field.from { border-top: 0; }
-    .ends.group .field.from::after { content: ""; position: absolute; left: 66px; right: 0; top: 0; height: 1px; background: var(--pc-line); }
-    .ends.group .field.from::before { left: 22px; top: -25px; height: 50px; border-left: 1px solid var(--pc-rule); }
-    .mk { width: 9px; height: 9px; margin-right: 0; }
-    .mk.to { border-radius: 2px; background: #e9a23b; }
-    .mk.from { background: var(--pc-acc); box-shadow: none; }
-    .fl { width: 34px; font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; }
-    .ends.group .fl { width: 34px; }
-    .field.end input { height: 54px; font-size: 16px; font-weight: 600; letter-spacing: 0; color: var(--fg); }
-    .field.end input::placeholder { font-size: 16px; font-weight: 400; }
-    .ends.group .fi.done { width: 30px; height: 30px; background: none; color: var(--muted); box-shadow: none; }
-    .ends .swap { top: 41px; right: 14px; width: 34px; height: 34px; border: 0; background: color-mix(in srgb, var(--fg) 10%, var(--bg)); box-shadow: none; color: var(--muted); }
-
-    /* «Πότε», the means and the order: one quiet row; their lists open full width under it. */
-    .optrow { position: relative; z-index: 4; display: flex; gap: 8px; }
-    .optrow .pair.one { display: block; flex: none; }
-    .optrow .chips { display: contents; }
-    .optrow .pickf, .optrow .grow { position: static; flex: none; }
-    .optrow .field.pick, .optrow .chip { width: auto; height: 36px; min-height: 36px; gap: 6px; padding: 0 10px 0 12px; border: 0; border-radius: 10px;
-      background: var(--pc-surf); color: var(--fg); font-size: 14px; font-weight: 600; box-shadow: none; }
-    .optrow .field.pick .col .fl, .optrow .stackb, .optrow .sg, .optrow .chip .col { display: none; }
-    .optrow .field.pick .fv { font-size: 14px; font-weight: 600; color: var(--fg); }
-    .optrow .field.pick .fi { width: auto; height: auto; background: none; color: var(--muted); }
-    .optrow .ss { display: inline; white-space: nowrap; }
-    .optrow .cl { flex: none; }
-    .optrow .opts { left: 0; right: 0; width: auto; top: calc(100% + 6px); }
-
-    /* Empty: what is near, as a plain list. */
-    .pv { min-height: 0; padding: 16px; border: 0; border-radius: 16px; background: var(--pc-surf); }
-    .pv.live { border: 0; }
-    .pv.empty { padding: 0; background: none; justify-content: flex-start; }
-    .pv.empty .pvh { font-size: 13px; line-height: 1.4; }
-    .pv.empty .pvi { display: none; }
-    .nearl { display: block; }
-    .nh { margin: 14px 0 4px; font-size: 13px; font-weight: 600; line-height: 1; color: var(--muted); }
-    .nr { width: 100%; min-height: 56px; display: flex; align-items: center; gap: 12px; padding: 8px 0; border: 0; border-bottom: 1px solid var(--pc-line);
-      background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; box-sizing: border-box; }
-    .nb { width: 54px; flex: none; display: flex; gap: 3px; }
-    .nb .lc { height: 20px; min-width: 24px; font-size: 11px; }
-    .nt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
-    .nt b { font-size: 15px; font-weight: 600; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .nt small { font-size: 12.5px; line-height: 1; color: var(--muted); }
-    .nd { flex: none; font-size: 13px; line-height: 1; color: var(--muted); }
-
-    /* The best: the times first, then when to leave, then the way. */
-    .pvt { font-size: 13px; font-weight: 600; }
-    .pvm b { font-size: 24px; font-weight: 700; letter-spacing: -.01em; color: var(--fg); }
-    .pvm .dur { font-size: 18px; font-weight: 600; }
-    .leave { gap: 6px; font-size: 13px; font-weight: 600; }
-    .leave i { width: 6px; height: 6px; animation: none; }
-    .xf { display: inline; margin-left: 2px; font-size: 13px; font-weight: 500; color: var(--muted); }
-    .legs { align-items: center; gap: 6px; }
-    .leg { height: 22px; padding: 0 6px; border-radius: 6px; font-weight: 700; }
-    .leg.walk { background: var(--pc-line); color: var(--muted); }
-    .lw { display: none; }
-    .lwi { display: flex; margin-right: 2px; }   /* a walk: the walking figure left of its minutes */
-    .arr { display: flex; align-items: center; color: var(--pc-rule); }
-
-    /* The others: plain rows, the times, the lines, how long. */
-    .alth { margin: 6px 0 -8px; font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; }
-    .alts { gap: 0; }
-    .alts li, .alts li.sel { opacity: 1; transform: none; transition: none; }
-    .alt { gap: 8px; padding: 12px 0; border: 0; border-bottom: 1px solid var(--pc-line); border-radius: 0; background: none; box-shadow: none; opacity: 1; }
-    .alt:hover, .alt:focus-visible { border-color: var(--pc-line); background: color-mix(in srgb, var(--fg) 3%, transparent); }
-    .alt .am b { font-size: 16px; font-weight: 600; letter-spacing: 0; }
-    .alt .am .dur { font-size: 15px; font-weight: 600; }
-    .alt .leg { height: 20px; font-size: 11px; }
-    .seltag { background: none; padding: 0; height: auto; color: var(--pc-acc); font-size: 12px; font-weight: 700; }
-    .alt.sel { border-color: var(--pc-line); background: none; }
-    .alt.sel .am b { color: var(--pc-acc); }
-
-    /* «Πάμε»: the one coloured thing, no glow. */
-    .primary.big { height: 52px; border-radius: 14px; font-size: 16px; font-weight: 700; background: var(--pc-acc); color: #fff; }
-    .primary.big .fwd { display: none; }
-    .primary.ready { box-shadow: none; animation: none; }
-    .primary:disabled { background: var(--pc-surf); color: var(--muted); }
-    .link { color: var(--muted); font-weight: 600; }
   }
 </style>
