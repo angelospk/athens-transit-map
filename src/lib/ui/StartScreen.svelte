@@ -399,10 +399,23 @@
     if (!c) return;
     untrack(() => { app.mapPick = null; if (app.pickFor) takeAt(c); });
   });
+  // Checking an end on the map (the band's map buttons): the picking view, the map flown to the place. «Πίσω»
+  // keeps it; «Άλλαξε εδώ» takes the centre, unless the map was not moved (then the place stays as it was named).
+  let checking = $state.raw<{ f: Field; place: Place } | null>(null);
+  $effect(() => { if (!app.pickFor) checking = null; });
+  function checkOnMap(f: Field) {
+    const p = ends[f].place;
+    if (!p?.pts.length) return;
+    const at = centre(p.pts);
+    checking = { f, place: p };
+    app.pickFor = f;
+    app.flyTo([at[1], at[0]]);
+  }
   function takeAt(c: [number, number] | null) {
-    const f = app.pickFor;
+    const f = app.pickFor, was = checking;
     app.pickFor = null;
     if (!f || !c) return;
+    if (was && was.f === f && distM(centre(was.place.pts), c) < 25) return;
     let near: string | null = null, best = 400;
     for (const s of ix?.s ?? []) {
       const d = distM([s[1], s[2]], c);
@@ -829,13 +842,17 @@
   <!-- Picking on the map: a crosshair at the centre and two buttons; the map stays free to move. -->
   <div class="pickbar" role="status" transition:rise={{ y: -16 }}>
     <span class="dot {app.pickFor}"></span>
-    <span class="phone">{app.pickFor === "from" ? "Μετακίνησε τον χάρτη στην αφετηρία" : "Μετακίνησε τον χάρτη στον προορισμό"}</span>
-    <span class="pc">{app.pickFor === "from" ? "Κάνε κλικ στην αφετηρία" : "Κάνε κλικ στον προορισμό"}<kbd>Esc</kbd></span>
+    {#if checking}
+      <span class="chk"><b>{checking.f === "from" ? "Από" : "Προς"}: {checking.place.kind === "me" ? "Εδώ που είσαι" : titleCase(checking.place.label)}</b><small>Λάθος σημείο; Μετακίνησε τον χάρτη και πάτα «Άλλαξε εδώ».</small></span>
+    {:else}
+      <span class="phone">{app.pickFor === "from" ? "Μετακίνησε τον χάρτη στην αφετηρία" : "Μετακίνησε τον χάρτη στον προορισμό"}</span>
+      <span class="pc">{app.pickFor === "from" ? "Κάνε κλικ στην αφετηρία" : "Κάνε κλικ στον προορισμό"}<kbd>Esc</kbd></span>
+    {/if}
   </div>
   <div class="cross" aria-hidden="true"><span class="drop"><Icon name="pin" size={34} /></span><i class="shadow"></i></div>
   <div class="pickacts" transition:rise>
-    <button type="button" class="ghost" onclick={() => (app.pickFor = null)}>Άκυρο</button>
-    <button type="button" class="primary" disabled={!app.mapCenter} onclick={takeCentre}>Εδώ</button>
+    <button type="button" class="ghost" onclick={() => (app.pickFor = null)}>{checking ? "Πίσω" : "Άκυρο"}</button>
+    <button type="button" class="primary" disabled={!app.mapCenter} onclick={takeCentre}>{checking ? "Άλλαξε εδώ" : "Εδώ"}</button>
   </div>
 {:else if app.start}
   <div class="start" class:side={wide} role="dialog" aria-modal={!wide} aria-labelledby="start-h" transition:soft>
@@ -851,12 +868,17 @@
              «Προς» are fields (a tap edits that end), the swap between them; when and with what, two chips. -->
         <div class="band" in:item={{ i: 2, y: 12 }}>
           <h1 id="start-h" class="sr">Οι διαδρομές</h1>
-          <div class="btop"><button type="button" class="xclose" aria-label="Κλείσιμο" title="Κλείσιμο" onclick={() => { app.savingPlace = null; app.pickFor = null; app.start = false; }}><Icon name="close" size={16} /></button></div>
           <div class="tends">
             <span class="trail" aria-hidden="true"><i class="tf"></i><i class="tl"></i><i class="tt"></i></span>
             <div class="tfields">
-              <button type="button" class="tfield" onclick={() => editEnd("from")}><span class="tk">Από</span><span class="tv">{capital(fromWord(ends.from.place))}</span></button>
-              <button type="button" class="tfield" onclick={() => editEnd("to")}><span class="tk">Προς</span><span class="tv">{ends.to.place ? titleCase(ends.to.place.label) : ""}</span></button>
+              <div class="tfw">
+                <button type="button" class="tfield" onclick={() => editEnd("from")}><span class="tk">Από</span><span class="tv">{capital(fromWord(ends.from.place))}</span></button>
+                <button type="button" class="tview" aria-label="Δες το «Από» στον χάρτη" title="Δες το στον χάρτη" onclick={() => checkOnMap("from")}><Icon name="map" size={16} /></button>
+              </div>
+              <div class="tfw">
+                <button type="button" class="tfield" onclick={() => editEnd("to")}><span class="tk">Προς</span><span class="tv">{ends.to.place ? titleCase(ends.to.place.label) : ""}</span></button>
+                <button type="button" class="tview" aria-label="Δες το «Προς» στον χάρτη" title="Δες το στον χάρτη" onclick={() => checkOnMap("to")}><Icon name="map" size={16} /></button>
+              </div>
               <button type="button" class="tswap" class:turned aria-label="Αντιστροφή αφετηρίας και προορισμού" title="Αντιστροφή" onclick={swap}><Icon name="swap" size={18} /></button>
             </div>
           </div>
@@ -864,6 +886,7 @@
             <button type="button" class="tchip" aria-haspopup="dialog" onclick={() => (sheet = "opts")}><Icon name="clock" size={16} /><span>{capital(whenWord)}</span><span class="tcv" aria-hidden="true"><Icon name="chevron" size={14} /></span></button>
             <button type="button" class="tchip" aria-haspopup="dialog" onclick={() => (sheet = "opts")}><Icon name={meansOn.length === 1 ? meansOn[0].icon : "bus"} size={16} /><span>{capital(meansWord)}</span><span class="tcv" aria-hidden="true"><Icon name="chevron" size={14} /></span></button>
             {#if sortId !== "time"}<button type="button" class="tchip" aria-haspopup="dialog" onclick={() => (sheet = "opts")}><Icon name={sort.icon} size={16} /><span>{sort.label}</span><span class="tcv" aria-hidden="true"><Icon name="chevron" size={14} /></span></button>{/if}
+            <button type="button" class="xclose tclose" aria-label="Κλείσιμο" title="Κλείσιμο" onclick={() => { app.savingPlace = null; app.pickFor = null; app.start = false; }}><Icon name="close" size={16} /></button>
           </div>
         </div>
       {:else}
@@ -1665,9 +1688,15 @@
      between them; when and with what as two chips that open the options. */
   .band { position: sticky; top: calc(10px + env(safe-area-inset-top)); z-index: 25; display: flex; flex-direction: column; gap: 16px;
     margin: -18px -6px 0; padding: 14px; border-radius: 30px;
-    background: color-mix(in srgb, var(--fg) 9%, var(--bg)); box-shadow: 0 10px 30px rgba(0, 0, 0, .3);
+    background: color-mix(in srgb, var(--fg) 9%, var(--bg));
+    /* The page's colour above and beside it (the first shadow), so the routes scrolled up go under the screen's top,
+       not into the gap over the card; then its own shade. */
+    box-shadow: 0 calc(-60px - env(safe-area-inset-top)) 0 10px var(--bg), 0 0 0 10px var(--bg), 0 10px 30px rgba(0, 0, 0, .3);
     --tf-bg: color-mix(in srgb, var(--fg) 14%, var(--bg)); }
-  .btop { height: 40px; margin-bottom: -6px; display: flex; align-items: center; justify-content: flex-end; }
+  .tclose { margin-left: auto; }
+  .chk { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+  .chk b { font-size: 15px; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chk small { font-size: 12px; color: var(--muted); line-height: 1.3; white-space: normal; }
   .tends { display: flex; gap: 10px; }
   .trail { flex: none; width: 14px; display: flex; flex-direction: column; align-items: center; padding: 19px 0; box-sizing: border-box; }
   .trail i { display: block; }
@@ -1675,7 +1704,11 @@
   .tl { flex: 1; width: 0; margin: 4px 0; border-left: 2px dotted color-mix(in srgb, var(--fg) 30%, transparent); }
   .tt { width: 12px; height: 12px; border-radius: 50%; background: var(--late1, #f0ae45); }
   .tfields { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; gap: 8px; }
-  .tfield { height: 50px; display: flex; align-items: center; gap: 10px; padding: 0 72px 0 14px; border: 0; border-radius: 14px; box-sizing: border-box;
+  .tfw { position: relative; }
+  .tview { position: absolute; right: 70px; top: 9px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0;
+    border-radius: 50%; background: color-mix(in srgb, var(--fg) 10%, transparent); color: var(--muted); cursor: pointer; }
+  .tview:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 16%, transparent); }
+  .tfield { width: 100%; height: 50px; display: flex; align-items: center; gap: 10px; padding: 0 112px 0 14px; border: 0; border-radius: 14px; box-sizing: border-box;
     background: var(--tf-bg); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
   .tfield:hover { background: color-mix(in srgb, var(--fg) 18%, var(--bg)); }
   .tk { flex: none; width: 40px; font-size: 14px; color: var(--muted); line-height: 1; }
@@ -1683,8 +1716,8 @@
   .tswap { position: absolute; right: 18px; top: 32px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0;
     border-radius: 50%; background: color-mix(in srgb, var(--bg) 70%, #000); color: #fff; box-shadow: 0 6px 16px rgba(0, 0, 0, .35); cursor: pointer; transition: transform .3s; }
   .tswap.turned { transform: rotate(180deg); }
-  .tchips { display: flex; flex-wrap: wrap; gap: 8px; padding-left: 24px; }
-  .tchip { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 0; border-radius: 12px;
+  .tchips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-left: 24px; }
+  .tchip { min-width: 0; height: 40px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border: 0; border-radius: 12px;
     background: var(--tf-bg); color: var(--fg); font: inherit; font-size: 15px; font-weight: 600; line-height: 1; cursor: pointer; }
   .tchip > :global(svg:first-child) { color: var(--muted); }
   .tcv { display: flex; color: var(--muted); }

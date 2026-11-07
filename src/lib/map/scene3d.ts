@@ -39,6 +39,7 @@ type TreeTile = { key: string; crowns: Three.InstancedMesh; trunks: Three.Instan
 
 export const BUS_ZOOM = 16;    // models from here; below it the pills alone
 export const TREE_ZOOM = 16;
+export const MAX_PITCH_3D = 80;    // the tilt allowed in 3D (see enable): short of the horizon
 export const BUILD_ZOOM = 15;   // the buildings stand up from here; below it the base map's flat ones (memory: a tilted view sees far)
 const TREE_FULL_M = 220;   // trees closer than this to the view's centre in full (four blobs), the rest one blob
 const BUS_SCALE = 1.3;
@@ -440,7 +441,9 @@ export class Scene3D {
       return;
     }
     if (!was) {
-      map.setMaxPitch(110);   // any angle: level with the street, and past it, looking up (MapLibre allows to 180)
+      // Tilted up to 80°, not past the horizon: near 90° and beyond (MapLibre allows to 180) the map loads tiles and
+      // buildings all the way to the horizon, and a phone's browser runs out of memory and reloads the page.
+      map.setMaxPitch(MAX_PITCH_3D);
       // Right-drag (or Ctrl+drag) turns and tilts at once, as in any 3D map: MapLibre reads its pitch-with-rotate
       // flag when the handler is enabled (the map was made without it, for 2D).
       (map.dragRotate as unknown as { _pitchWithRotate: boolean })._pitchWithRotate = true;

@@ -1969,10 +1969,11 @@
     });
   });
   let lastPicked: string | null = null;
-  // Under the street the camera may tilt further, nearly level (MapLibre allows 85°), to look along a tunnel.
+  // Under the street the camera may tilt a little further, nearly level, to look along a tunnel (the dive is at
+  // 82°); never past the horizon (see scene3d.MAX_PITCH_3D: a phone's browser runs out of memory there).
   let maxPitchUp: number | null = null;
   function lowCamera(m: MlMap) {
-    if (maxPitchUp == null) { maxPitchUp = m.getMaxPitch(); m.setMaxPitch(Math.max(maxPitchUp, 110)); }
+    if (maxPitchUp == null) { maxPitchUp = m.getMaxPitch(); m.setMaxPitch(Math.max(maxPitchUp, 85)); }
   }
   // The camera to an elevation (0: back on the street, where MapLibre keeps it again, and tilts as before).
   function surface(m: MlMap, elevation: number, pitch: number) {
