@@ -28,7 +28,6 @@
   import Bell from "./Bell.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
   import LineChip from "./LineChip.svelte";
-  import RouteCard from "./RouteCard.svelte";
   import TransferBox from "./TransferBox.svelte";
   import { item } from "../anim";
   import { distText, titleCase } from "../nearby";
@@ -329,7 +328,7 @@
   function snapsPx(): Record<Snap, number> {
     const cs = getComputedStyle(document.documentElement);
     const peek = parseFloat(cs.getPropertyValue("--trip-peek")) || 200;
-    return { peek, half: innerHeight * 0.52, full: innerHeight - 24 };
+    return { peek, half: innerHeight * 0.52, full: innerHeight * 0.72 };   // as Panel.svelte's --trip-h
   }
   // The handle and the header drag the sheet (sheetDrag.ts: touch events, so iOS does not scroll instead); their
   // buttons keep their taps. Off a phone nothing is dragged.
@@ -789,22 +788,14 @@
         <h3 id="trip-h" class="rvends"><i class="rdot from" aria-hidden="true"></i>{titleCase(from?.label ?? "")}<span aria-hidden="true">→</span><i class="rdot to" aria-hidden="true"></i>{titleCase(to?.label ?? "")}</h3>
         <button type="button" class="icon" aria-label="Κλείσιμο διαδρομής" title="Κλείσιμο" onclick={close}><Icon name="close" size={16} /></button>
       </div>
-      {#if !narrow.current}
       <div class="rvtabs" role="tablist" aria-label="Οι επιλογές">
         {#each planRows.slice(0, 4) as q (q.at)}
           <button type="button" role="tab" aria-selected={q.at === p.at} onclick={() => pickPlan(q.at)}>
             <b>{q.arrive}</b><small>{durText(q.mins)}{q.transfers ? ` · ${q.transfers} ${q.transfers === 1 ? "αλλαγή" : "αλλαγές"}` : ""}</small></button>
         {/each}
       </div>
-      {/if}
       </div>
       <div class="tbody" bind:this={bodyEl}>
-      {#if narrow.current}
-        <!-- A phone (compact mockups 17, 17β): the picked route as «Πού πας;» shows it, its steps open; not the old
-             overview with its figures and tabs. -->
-        <div class="rvcard"><RouteCard it={p.it} r={plan.r} ix={data?.ix ?? null} legs={p.legs} {nowS} open sel row live steps soon city={app.cityId}
-          others={plan.r.itineraries} onpick={() => {}} onmap={() => (review = false)} /></div>
-      {:else}
       <!-- The overview: when, then the numbers that decide (how long, how far on foot, the changes and the tightest,
            how many stops), then where the times come from. -->
       <div class="rvsum" in:item={{ i: 0 }}>
@@ -927,7 +918,6 @@
                   </li>
                 {/each}
               </ol>
-      {/if}
       </div>
       <div class="rvfoot" bind:this={rvFootEl} bind:offsetHeight={footH}><button type="button" class="startbtn" onclick={() => startPlan(p.at)}><Icon name="route" size={18} /><span>Ξεκίνα</span></button></div>
     </div>
@@ -1284,6 +1274,11 @@
     :global(:root .popwrap.tabbed:has(> .trip.compact)) { top: auto !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
       width: auto !important; max-width: none !important; height: auto !important; max-height: none !important; }
   }
+  /* A phone, the route's details pulled up: edge to edge like the sheet it grew from, rounded only on top. */
+  @media (max-width: 719px) {
+    .trip:has(> .rv) { border-radius: var(--sheet-r, 28px) var(--sheet-r, 28px) 0 0; }
+    .trip:has(> .rv) .rvfoot { padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
+  }
   .trip.compact { padding: 0; border-radius: 0; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; text-shadow: none; overflow: visible; }
   .mapback { position: fixed; z-index: 2; top: calc(16px + env(safe-area-inset-top)); left: 16px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
     padding: 0; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--card) 94%, transparent); box-shadow: inset 0 0 0 1px var(--border), var(--shadow-sm);
@@ -1479,5 +1474,4 @@
   .opt { transition: border-color .2s, background-color .2s, transform .12s; }
   .opt:active { transform: scale(.98); }
   @media (prefers-reduced-motion: reduce) { .swap, .opt { transition: none; } .swap.turned { transform: none; } }
-  .rvcard { padding: 4px 0 8px; }
 </style>

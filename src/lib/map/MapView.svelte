@@ -26,7 +26,6 @@
   import { busRoute, lateness, minsTo } from "../bus3d";
   import { smoothPath, snapTram } from "./tramRails";
   import { metroGlyph, metroLogo, oasaLogo, stopSign, tramGlyph, tramLogo } from "./mapIcons";
-  import { Clouds } from "./clouds";
   import { bearingOf, depthAt, liveryOf, metroStops, nearestIndex, rightOf, straighten, trackBehind } from "./metroDepth";
   import { snapLine } from "../roadSnap";
   import { Mover, planOnto } from "../motion";
@@ -434,16 +433,9 @@
       features: [{ type: "Feature", properties: { acc: f.acc }, geometry: { type: "Point", coordinates: f.pos } }] });
   }
 
-  // Clouds where the sky has them now (clouds.ts): under the map's names and all of ours, gone by street level.
-  const clouds = new Clouds();
-  const showClouds = (m: MlMap) => {
-    const before = m.getStyle()?.layers.find(l => l.type === "symbol")?.id;
-    void clouds.show(m, CITIES[untrack(() => app.cityId)].center, styleDark, before);
-  };
   function addAll(m: MlMap) {
     addIcons(m);
     addLayers(m);
-    showClouds(m);
     addMeAcc(m);
     if (me) showAcc(m, me.fix);
     nextDue = 0;   // the city layer and the trails start empty: draw them now
@@ -1389,8 +1381,6 @@
     // MapLibre puts a new bottom control above the others; after the credits it floats left of the ⓘ, on its row.
     infoCtl.parentElement?.append(infoCtl);
     watchHands(m);
-    const cloudTimer = setInterval(() => { if (!document.hidden) showClouds(m); }, 20 * 60_000);
-    m.on("remove", () => clearInterval(cloudTimer));
     // 3D: a stop under the mouse lights up whole (pole, shelter, a ring), and the pointer says it can be tapped.
     let hovered = false;
     m.on("mousemove", e => {
