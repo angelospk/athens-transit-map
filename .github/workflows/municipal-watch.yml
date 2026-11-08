@@ -23,7 +23,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
+      # Bun from npm, not from GitHub's release downloads: those answered 504 for a while (2026-11-08) and failed the job.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g bun@1
       - run: bun install --frozen-lockfile
       - run: bun scripts/municipal-watch.ts > report.md
       - name: Open or update the issue

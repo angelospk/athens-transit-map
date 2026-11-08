@@ -35,7 +35,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.SHA }} # the branch head, not the PR's merge commit
-      - uses: oven-sh/setup-bun@v2
+      # Bun from npm, not from GitHub's release downloads: those answered 504 for a while (2026-11-08) and failed the job.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g bun@1
       - run: bun install --frozen-lockfile
       - run: bun run test
       - run: bun run check
