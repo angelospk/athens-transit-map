@@ -312,7 +312,7 @@
     const { top: st, bottom: sb } = safeInsets();
     const foot = vh - Math.max(12, sb) - (narrow.current ? 0 : 88);   // a phone: no tab bar under it
     const peekH = nowEl && savedEl ? savedEl.getBoundingClientRect().bottom - nowEl.getBoundingClientRect().top + 16 : 190;
-    return { full: st + 72, half: Math.max(220, vh * 0.32 + st), peek: Math.max(st + 72, foot - peekH) };
+    return { full: st + 8, half: Math.max(220, vh * 0.32 + st), peek: Math.max(st + 72, foot - peekH) };
   }
   // Let go after a slow drag, it stays where it is (freeAt), only named after the nearest place.
   let freeAt: number | null = null;
@@ -362,7 +362,8 @@
     {@const n = notices[0]}
     <a class="mapnote" in:rise={{ y: -12, delay: 200 }} href={n.d.url} target="_blank" rel="noopener"><Icon name="warn" size={15} /><span>{badge(n.line.id).label}: {n.d.title}</span></a>
   {/if}
-  <section class="now" class:dragging aria-label="Αρχική" in:rise bind:this={nowEl} style:top={nowTop != null ? `${nowTop}px` : undefined}>
+  <section class="now" class:dragging aria-label="Αρχική" in:rise bind:this={nowEl} style:top={nowTop != null ? `${nowTop}px` : undefined}
+    onscroll={e => { if (narrow.current && nsnap !== "full" && (e.currentTarget as HTMLElement).scrollTop > 6) nsnap = "full"; }}>
     <div class="grip" role="button" tabindex="0" aria-label={nsnap === "full" ? "Μικρότερο" : "Μεγαλύτερο"} use:sheetDrag={nowDrag}
       onkeydown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); stepN(); } }}></div>
 
@@ -632,7 +633,8 @@
       padding: 8px 16px calc(16px + env(safe-area-inset-bottom)); border-radius: 24px 24px 0 0; background: var(--surface); box-shadow: 0 -10px 30px rgba(0, 0, 0, .45);
       -webkit-backdrop-filter: none; backdrop-filter: none; }
     /* The handle: a band across the top (an easy target), its bar in the middle. */
-    .grip { display: block; position: relative; flex: none; height: 25px; margin: -8px -16px -12px; cursor: grab; }
+    /* It stays at the top while the sheet scrolls under it. */
+    .grip { display: block; position: sticky; top: -8px; z-index: 2; flex: none; height: 22px; margin: -8px -16px -6px; cursor: grab; background: var(--surface); border-radius: 24px 24px 0 0; }
     .grip::after { content: ""; position: absolute; left: 50%; top: 8px; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: var(--border); }
     .grip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 12px; }
     .now { overscroll-behavior: none; transition: top .26s cubic-bezier(.2, .8, .2, 1); }
