@@ -582,4 +582,10 @@
     :global(:root[data-homepeek]) .rail { top: auto; bottom: calc(64px + 16px + 52px + env(safe-area-inset-bottom)); }
     :global(:root[data-homepeek]) .rail .tripb, :global(:root[data-homepeek]) .rail .helpb { display: none; }
   }
+  /* A phone with the home sheet (compact mockup 15Γ): its own search is on the map; the map's tools show only while
+     the sheet is lowered (at the bottom right then). */
+  @media (max-width: 719px) {
+    :global(:root[data-home]) .homebar { display: none; }
+    :global(:root[data-home]:not([data-homepeek])) .rail { display: none; }
+  }
 </style>

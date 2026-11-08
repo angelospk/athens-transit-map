@@ -443,7 +443,8 @@ html.sheet-open .start, html.sheet-open .now, html.sheet-open .card, html.sheet-
 
 /* Every panel over the map (the home sheet, the cards, «Κοντά σου», the pick's and the planner's sheets, the dialogs):
    a little see-through, with a soft gaussian blur of the map behind it. Its own colour stays under the blur. */
-:root body :is(section.now, section.card, section.near, .psheet, section.panel:not(.home), .popwrap:not(.page) .pop, div.sheet, section.fixbar, section.alerts) {
+:root body :is(section.now, section.card, section.near, .psheet, section.panel:not(.home), .popwrap:not(.page) .pop, div.sheet, section.fixbar, section.alerts,
+  .rail, .homebar .round, .homebar .where, .maplibregl-ctrl-group:not(:empty), .recenter, .details-ctl button.details) {
   background: color-mix(in srgb, var(--surface) 78%, transparent) !important;
   -webkit-backdrop-filter: blur(24px) saturate(160%) !important; backdrop-filter: blur(24px) saturate(160%) !important;
 }

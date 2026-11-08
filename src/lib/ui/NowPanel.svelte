@@ -400,14 +400,15 @@
     {@const n = notices[0]}
     <a class="mapnote" in:rise={{ y: -12, delay: 200 }} href={n.d.url} target="_blank" rel="noopener"><Icon name="warn" size={15} /><span>{badge(n.line.id).label}: {n.d.title}</span></a>
   {/if}
-  {#if peeked && !app.start}
-    <!-- Lowered (compact mockup 15Γ): the search on top of the map, your places and the lists as chips under it. -->
+  {#if shown && narrow.current && nsnap !== "full" && !app.start}
+    <!-- A phone (compact mockup 15Γ): the search on top of the map, your places and the lists as chips under it. -->
     <div class="mtop" in:rise={{ y: -12 }}>
       <button type="button" class="mwhere" aria-haspopup="dialog" onclick={openWhere}><Icon name="search" size={19} /><span>Πού πας;</span></button>
       <div class="mchips">
         {@render placeChips()}
         <button type="button" class="chip glass" onclick={() => app.toggleFavs()}><Icon name="star" size={16} /><b>Αγαπημένα</b></button>
         <button type="button" class="chip glass" onclick={openLines}><Icon name="route" size={16} /><b>Γραμμές</b></button>
+        <button type="button" class="chip glass round" aria-label={armed ? "Ειδοποιήσεις, μία ενεργή" : "Ειδοποιήσεις"} onclick={() => app.setTab("alerts")}><Icon name="bell" size={16} />{#if armed}<i class="bdot" aria-hidden="true"></i>{/if}</button>
       </div>
     </div>
   {/if}
@@ -666,7 +667,7 @@
       -webkit-backdrop-filter: none; backdrop-filter: none; }
     /* The handle: a band across the top (an easy target), its bar in the middle. */
     /* It stays at the top while the sheet scrolls under it. */
-    .grip { display: block; position: sticky; top: -8px; z-index: 2; flex: none; height: 22px; margin: -8px -16px -6px; cursor: grab; background: var(--surface); border-radius: 24px 24px 0 0; }
+    .grip { display: block; position: sticky; top: -8px; z-index: 2; flex: none; height: 22px; margin: -8px -16px -6px; cursor: grab; background: none; border-radius: 24px 24px 0 0; }
     .grip::after { content: ""; position: absolute; left: 50%; top: 8px; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: var(--border); }
     .grip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 12px; }
     .now { overscroll-behavior: none; transition: top .26s cubic-bezier(.2, .8, .2, 1); }
@@ -693,4 +694,8 @@
   .mchips .chip { height: 34px; }
   .chip.glass { background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 2px 8px rgb(0 0 0 / .35), inset 0 0 0 1px var(--card-border, var(--border)); color: var(--fg); }
   .mwhere, .chip.glass { background: color-mix(in srgb, var(--surface) 62%, transparent); -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%); }
+  /* A phone: the search and the chips are on the map (compact mockup 15Γ), not in the sheet. */
+  @media (max-width: 719px) { .now > .where, .now > .chips { display: none; } }
+  .chip.glass.round { width: 34px; padding: 0; justify-content: center; position: relative; }
+  .chip.glass.round .bdot { position: absolute; right: 6px; top: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 </style>
