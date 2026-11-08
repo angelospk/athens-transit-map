@@ -33,6 +33,14 @@ export interface StopBoard {
   updated_at: number;
 }
 
+// An empty board can mean «not known yet», not «no bus»: after a restart the backend answers 200 with no
+// arrivals until it has polled the stop's lines again (rt has no flag for it). So the card shows «Φόρτωση» and
+// asks again, past every cache, up to EMPTY_RETRIES times EMPTY_RETRY_MS apart; then it shows the empty board.
+// shown: the board on the card now (a live one there means the stop is known: an empty answer is then real).
+export const EMPTY_RETRIES = 3, EMPTY_RETRY_MS = 3_000;
+export const trustBoard = (b: StopBoard, shown: StopBoard | null, tries: number) =>
+  b.arrivals.length > 0 || b.lines.length === 0 || shown != null || tries >= EMPTY_RETRIES;
+
 export function busStopsFC(ix: TripIndex): GeoJSON.FeatureCollection<GeoJSON.Point> {
   return { type: "FeatureCollection", features: ix.s.map(([name, lat, lon], i) =>
     ({ type: "Feature", id: i, geometry: { type: "Point", coordinates: [lon, lat] }, properties: { i, name } })) };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrivalGroups, timeText, toward, headTo, linesAt, busStopsFC, stopIndex, twins, alertLinesAt, arrivalNote, stopBack, mineFirst, boardLines, linesToWarm, usualRows, scheduleRows, signCode, type StopArrival, type Usual, type ArrivalGroup } from "../src/lib/stops";
+import { arrivalGroups, timeText, toward, headTo, linesAt, busStopsFC, stopIndex, twins, alertLinesAt, arrivalNote, stopBack, mineFirst, boardLines, linesToWarm, usualRows, scheduleRows, signCode, trustBoard, EMPTY_RETRIES, type StopBoard, type StopArrival, type Usual, type ArrivalGroup } from "../src/lib/stops";
 import type { TripIndex } from "../src/lib/trip";
 
 // 0 and 1: one stop on both sides of a street (~44 m), 2: the same name 1 km away, 3: another name close by.
@@ -304,5 +304,26 @@ describe("scheduleRows (citybus.gr cities: timetable runs with no bus)", () => {
   it("on a loop, the return leg: the variant it keeps leads headTo back to the start", () => {
     const r = scheduleRows([s("L", [23, 0], { variant: "v", headsign: "ΣΤ. ΚΟΡΩΠΙ - ΑΥΛΑΚΙ" })], [], now)[0];
     expect(headTo(loop, r.line, r.variant, 3, r.headsign)).toEqual({ to: "ΣΤ. ΚΟΡΩΠΙ", back: true });
+  });
+});
+
+describe("trustBoard (an empty board is «not known yet» at first)", () => {
+  const board = (lines: string[], n: number): StopBoard => ({ stop: { id: "1045", name: "Π", lat: 0, lon: 0 }, lines, updated_at: 0,
+    arrivals: Array.from({ length: n }, (_, k) => ({ line: lines[0], headsign: "Χ", vehicle: String(k), eta_s: 60, at: 60, delay_s: 0,
+      position_at: 0, source: "live" }) as unknown as StopArrival) });
+  it("shows a board with arrivals at once", () => {
+    expect(trustBoard(board(["14", "28"], 2), null, 0)).toBe(true);
+  });
+  it("does not show the first empty answers of a stop with lines: the backend may still be polling them after a restart", () => {
+    for (let t = 0; t < EMPTY_RETRIES; t++) expect(trustBoard(board(["14", "28"], 0), null, t)).toBe(false);
+  });
+  it("shows the empty board after the last retry: the wait is bounded", () => {
+    expect(trustBoard(board(["14", "28"], 0), null, EMPTY_RETRIES)).toBe(true);
+  });
+  it("shows an empty board at once for a stop with no lines (nothing to wait for)", () => {
+    expect(trustBoard(board([], 0), null, 0)).toBe(true);
+  });
+  it("trusts an empty answer once a live board is on the card (buses left; a later poll fills it)", () => {
+    expect(trustBoard(board(["14"], 0), board(["14"], 1), 0)).toBe(true);
   });
 });
