@@ -766,6 +766,10 @@
     .primary, .second { height: 40px; gap: 7px; border-radius: 12px; font-size: 14px; line-height: 1; }
     .primary { font-weight: 800; }
     .second { background: var(--control); }
+    /* As the other cards' buttons: a darker glass than the sheet with a fine light edge and a soft shadow. */
+    .circle:not(.sm), .second { background: var(--card); box-shadow: inset 0 0 0 1px var(--card-border), 0 2px 8px rgb(0 0 0 / .25); }
+    .circle.on { background: var(--accent-bg); }
+    .circle.star.starred { background: color-mix(in srgb, var(--star) 16%, var(--card)); }
     .near { min-height: 16px; font-size: 13px; }
     .dhead { min-height: 20px; margin-top: 0; padding: 0 2px; }
     .dhead h3 { font-size: 14px; }
