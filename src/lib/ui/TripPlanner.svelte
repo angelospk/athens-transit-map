@@ -328,7 +328,7 @@
   function snapsPx(): Record<Snap, number> {
     const cs = getComputedStyle(document.documentElement);
     const peek = parseFloat(cs.getPropertyValue("--trip-peek")) || 200;
-    return { peek, half: innerHeight * 0.52, full: innerHeight * 0.72 };   // as Panel.svelte's --trip-h
+    return { peek, half: innerHeight * 0.52, full: innerHeight - 24 };
   }
   // The handle and the header drag the sheet (sheetDrag.ts: touch events, so iOS does not scroll instead); their
   // buttons keep their taps. Off a phone nothing is dragged.
@@ -763,7 +763,10 @@
           <span class="cstep" class:chg={s.change}><b>{clockHM(s.at)}</b><span>{s.text}</span></span>
         {/each}
       </button>
-      <button type="button" class="cstart" onclick={() => startPlan(cp.at)}>Ξεκίνα</button>
+      <div class="cacts">
+        <button type="button" class="moreb" aria-label="Όλες οι πληροφορίες" title="Όλες οι πληροφορίες" onclick={() => { review = true; snap = "full"; }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5" /><circle cx="12" cy="7.6" r=".6" fill="currentColor" /></svg></button>
+        <button type="button" class="cstart" onclick={() => startPlan(cp.at)}>Ξεκίνα</button>
+      </div>
     </div>
   {:else if review && planOn && plan && planRows.length}
     {@const p = planRows.find(x => x.at === planOn) ?? planRows[0]}
@@ -919,7 +922,12 @@
                 {/each}
               </ol>
       </div>
-      <div class="rvfoot" bind:this={rvFootEl} bind:offsetHeight={footH}><button type="button" class="startbtn" onclick={() => startPlan(p.at)}><Icon name="route" size={18} /><span>Ξεκίνα</span></button></div>
+      <div class="rvfoot" bind:this={rvFootEl} bind:offsetHeight={footH}>
+        <!-- A phone: «Πληροφορίες» beside «Ξεκίνα» raises the sheet all the way by itself (or lowers it again). -->
+        {#if sheetOn}<button type="button" class="moreb" class:on={snap === "full"} aria-label={snap === "full" ? "Λιγότερα" : "Όλες οι πληροφορίες"} title={snap === "full" ? "Λιγότερα" : "Όλες οι πληροφορίες"}
+          onclick={() => { freeH = null; snap = snap === "full" ? "half" : "full"; }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5" /><circle cx="12" cy="7.6" r=".6" fill="currentColor" /></svg></button>{/if}
+        <button type="button" class="startbtn" onclick={() => startPlan(p.at)}><Icon name="route" size={18} /><span>Ξεκίνα</span></button>
+      </div>
     </div>
   {:else if folded && from && to && (trips || planRows.length)}
     <span id="trip-h" class="sr">Διαδρομή</span>
@@ -1261,7 +1269,15 @@
   .midacts { display: flex; gap: 6px; padding: 4px 8px 6px 25px; }
   .midgo { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 0; border-radius: 16px; background: var(--accent); color: #fff;
     font: inherit; font-size: 13px; font-weight: 700; line-height: 1; cursor: pointer; }
-  .rvfoot { flex: none; padding: 12px 14px 14px; box-shadow: 0 -1px 0 var(--border); }
+  .rvfoot { flex: none; display: flex; align-items: center; gap: 10px; padding: 12px 14px 14px; box-shadow: 0 -1px 0 var(--border); }
+  .rvfoot .startbtn { flex: 1; }
+  .cacts { display: flex; gap: 10px; }
+  .cacts .cstart { flex: 1; width: auto; }
+  /* «Όλες οι πληροφορίες»: round, beside «Ξεκίνα», the sheet goes up by itself. */
+  .moreb { flex: none; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 50%; cursor: pointer;
+    background: var(--control); box-shadow: inset 0 0 0 1px var(--border); color: var(--fg); transition: background-color .15s, color .15s; }
+  .moreb.on { background: var(--accent-bg); color: var(--accent); }
+  .cacts .moreb { width: 52px; height: 52px; border-radius: 16px; }
   /* The sheet's handle (a phone): the header drags it too; at «peek» only the options and «Ξεκίνα» show. */
   .grip { display: block; width: 100%; height: 18px; margin: -8px 0 -4px; padding: 0; border: 0; background: none; cursor: grab; touch-action: none; }
   .grip span { display: block; width: 40px; height: 5px; margin: 0 auto; border-radius: 3px; background: var(--grip); }
