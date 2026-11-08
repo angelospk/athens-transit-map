@@ -443,7 +443,7 @@
     const first = (w && planRows.find(r => r.it.depart_at === w[0] && r.it.arrive_at === w[1])) || planRows[0];
     wantPick = null;
     // Framed again once the details are open (on a phone they take the foot of the screen).
-    untrack(() => { autoOpen = false; pickPlan(first.at); review = !narrow.current; tick().then(() => setTimeout(() => app.fitPoints(fitPts), 60)); });
+    untrack(() => { autoOpen = false; pickPlan(first.at); review = true; tick().then(() => setTimeout(() => app.fitPoints(fitPts), 60)); });
   });
   $effect(() => { if (autoOpen && plan && !plan.r.itineraries.length) untrack(() => (autoOpen = false)); });   // nothing timed: the lines below
   const planShown = $derived.by(() => {
@@ -478,6 +478,8 @@
   // The sheet's head: a tap on the handle, or a swipe up, opens «Οδηγίες».
   // A phone: «‹» on the picked route goes back to the routes of «Πού πας;» (compact mockup 14), not to this planner's
   // own fields and list (the old layout).
+  // A phone: a picked option opens straight on its details sheet (the small sheet of compact mockup 9 is gone).
+  $effect(() => { if (narrow.current && planOn && plan && !review && !showList) untrack(() => (review = true)); });
   function backToRoutes() {
     if (!narrow.current) { showList = true; return; }
     const f = ends.from.place, t = ends.to.place;
@@ -787,7 +789,7 @@
           onclick={e => { if (e.detail === 0) stepSnap(); }}><span></span></button>
       {/if}
       <div class="row rvhead">
-        <button type="button" class="icon back" aria-label="Πίσω στις επιλογές" title="Πίσω στις επιλογές" onclick={() => (review = false)}><Icon name="back" size={18} /></button>
+        <button type="button" class="icon back" aria-label="Πίσω στις επιλογές" title="Πίσω στις επιλογές" onclick={() => (narrow.current ? backToRoutes() : (review = false))}><Icon name="back" size={18} /></button>
         <h3 id="trip-h" class="rvends"><i class="rdot from" aria-hidden="true"></i>{titleCase(from?.label ?? "")}<span aria-hidden="true">→</span><i class="rdot to" aria-hidden="true"></i>{titleCase(to?.label ?? "")}</h3>
         <button type="button" class="icon" aria-label="Κλείσιμο διαδρομής" title="Κλείσιμο" onclick={close}><Icon name="close" size={16} /></button>
       </div>
@@ -1292,8 +1294,11 @@
   }
   /* A phone, the route's details pulled up: edge to edge like the sheet it grew from, rounded only on top. */
   @media (max-width: 719px) {
-    .trip:has(> .rv) { border-radius: var(--sheet-r, 28px) var(--sheet-r, 28px) 0 0; }
-    .trip:has(> .rv) .rvfoot { padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
+    /* Keyed on the root's data-tripsheet (iOS Safari did not always re-match :has()): the sheet fills its place
+       (on iOS it kept its content's height at the top of a taller place, the map showing under it) and its
+       «Ξεκίνα» clears the browser's bar. */
+    :global(:root[data-tripsheet]) .trip { flex: 1 1 auto; height: 100%; min-height: 0; border-radius: var(--sheet-r, 28px) var(--sheet-r, 28px) 0 0; }
+    :global(:root[data-tripsheet]) .rvfoot { padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
   }
   .trip.compact { padding: 0; border-radius: 0; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; text-shadow: none; overflow: visible; }
   .mapback { position: fixed; z-index: 2; top: calc(16px + env(safe-area-inset-top)); left: 16px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
