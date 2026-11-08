@@ -16,7 +16,7 @@
   import { snapStop } from "../stopSnap";
   import { smoothLine } from "../map/layers";
   import { API_BASE } from "../config";
-  import { PLAN_RETRY_MS, parsePlan, planFC, planLabels, planRetry, planSteps, planSummary, planUrl, RISK_MIN, scaledLegs, tightestChange, type Itinerary, type PlanResponse } from "../plan";
+  import { PLAN_RETRY_MS, badgeLabel, parsePlan, planFC, planLabels, planRetry, planSteps, planSummary, planUrl, RISK_MIN, scaledLegs, tightestChange, type Itinerary, type PlanResponse } from "../plan";
   import Dropdown from "./Dropdown.svelte";
   import { checkLive, liveCount } from "../liveLines";
   import { euro, tripFare } from "../fares";
@@ -26,6 +26,7 @@
   import AlertForm from "./AlertForm.svelte";
   import Bell from "./Bell.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
+  import LineChip from "./LineChip.svelte";
   import TransferBox from "./TransferBox.svelte";
   import { item } from "../anim";
   import { distText, titleCase } from "../nearby";
@@ -278,6 +279,9 @@
   }
   // «Οδηγίες»: the picked option on its own, step by step (the mockup «Η διαδρομή στον χάρτη»); off: the list.
   let review = $state(false);
+  // A phone, an option picked: the route on the map with a compact sheet at the foot (compact mockup 9, way Γ);
+  // the back button over the map brings the list of options back (showList) until another option is picked.
+  let showList = $state(false);
   // A phone, a trip's details open: a sheet at the foot with a handle (Panel.svelte draws it from the page's root):
   // «peek» shows the options and «Ξεκίνα» over a big map, «half» the details too, «full» all of it. Dragged by the
   // handle (or the header), it follows the finger and settles at the nearest; a tap on the handle steps it.
@@ -427,13 +431,40 @@
     const first = (w && planRows.find(r => r.it.depart_at === w[0] && r.it.arrive_at === w[1])) || planRows[0];
     wantPick = null;
     // Framed again once the details are open (on a phone they take the foot of the screen).
-    untrack(() => { autoOpen = false; pickPlan(first.at); review = true; tick().then(() => setTimeout(() => app.fitPoints(fitPts), 60)); });
+    untrack(() => { autoOpen = false; pickPlan(first.at); review = !narrow.current; tick().then(() => setTimeout(() => app.fitPoints(fitPts), 60)); });
   });
   $effect(() => { if (autoOpen && plan && !plan.r.itineraries.length) untrack(() => (autoOpen = false)); });   // nothing timed: the lines below
   const planShown = $derived.by(() => {
     const it = planOn == null ? null : plan?.r.itineraries.find(x => itKey(x) === planOn);
     return it && plan ? planSummary(it, plan.r, nowS) : null;
   });
+  // The phone's compact sheet: the picked option (not in «Οδηγίες», not sent back to the list).
+  const cp = $derived(narrow.current && planOn && plan && !review && !showList ? planRows.find(x => x.at === planOn) ?? null : null);
+  const cpAt = $derived(cp?.at ?? "");
+  // Its steps in three kinds of rows: where to get on, each change (when the next leaves, where), the arrival.
+  const into = (label: string) => (label === "Προαστιακός" ? "στον Προαστιακό" : `στο ${label}`);
+  function compactRows(it: Itinerary, r: PlanResponse) {
+    const out: { at: number; text: string; change: boolean }[] = [];
+    const steps = planSteps(it, r);
+    const first = steps.find(s => s.kind === "ride");
+    if (first?.kind === "ride")
+      out.push({ at: first.at, text: `Ανέβα ${into(badgeLabel(first.label, it.legs[first.leg]?.mode ?? r.lines[first.line]?.mode ?? ""))} · ${titleCase(first.from)}`, change: false });
+    for (const s of steps)
+      if (s.kind === "change") out.push({ at: s.leaves, text: `Αλλαγή ${into(badgeLabel(s.label, s.mode))} · ${titleCase(s.next || s.stop)}`, change: true });
+    out.push({ at: it.arrive_at, text: `Φτάνεις · ${titleCase(to?.label ?? "")}`, change: false });
+    return out;
+  }
+  // The search bar and the tab bar step away (Panel.svelte, TabBar.svelte read data-tripsheet), and the trip is framed
+  // again above the sheet once it is in the page (MapView's fit reads the sheet's top).
+  $effect(() => {
+    if (!cpAt) return;
+    const root = document.documentElement;
+    root.dataset.tripsheet = "compact";
+    const t = setTimeout(() => untrack(() => { if (fitPts.length) app.fitPoints(fitPts); }), 80);
+    return () => { clearTimeout(t); if (root.dataset.tripsheet === "compact") delete root.dataset.tripsheet; };
+  });
+  // The sheet's head: a tap on the handle, or a swipe up, opens «Οδηγίες».
+  const compactDrag: SheetDrag = { ignore: "button:not(.grip)", start: () => {}, move: () => {}, end: dy => { if (dy < -30) review = true; }, tap: () => (review = true) };
   // A tap on an option picks it: on the map alone, with its words (planLabels); the panel stays as it is.
   let fitPts: [number, number][] = [];
   function pickPlan(at: string) {
@@ -442,6 +473,7 @@
     app.tripStops = [];   // the labels name the stops
     app.planLabels = planLabels(it, r, titleCase(to?.label ?? "Προορισμός"));
     planSel = { key: plan!.key, at };
+    showList = false;
     picked = null;
     fitPts = fc.features.flatMap(f => f.geometry.coordinates as [number, number][]);
     app.fitPoints(fitPts);
@@ -682,8 +714,36 @@
 <svelte:document onpointerdown={e => { if (openField && !(e.target as Element).closest?.(".ends")) openField = null; }} />
 
 <div class="trip" class:split={!(folded && from && to && (trips || planRows.length)) || (review && planOn && plan && planRows.length)} role="dialog" tabindex="-1" aria-labelledby="trip-h" {@attach focusIn}
-  onkeydown={e => { if (e.key === "Escape" && !openField) { e.stopPropagation(); close(); } }}>
-  {#if review && planOn && plan && planRows.length}
+  class:compact={!!cp} onkeydown={e => { if (e.key === "Escape" && !openField) { e.stopPropagation(); close(); } }}>
+  {#if cp && plan}
+    <!-- A phone, an option picked (compact mockup 9): the map on top with the route and its labels, a back button over
+         it to the options, and at the foot the times, the legs, the steps that matter and «Ξεκίνα». -->
+    <h3 id="trip-h" class="sr">{titleCase(from?.label ?? "")} → {titleCase(to?.label ?? "")}</h3>
+    <button type="button" class="mapback" aria-label="Πίσω στις επιλογές" title="Πίσω στις επιλογές" onclick={() => (showList = true)}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+    </button>
+    <div class="rvc">
+      <div class="rvchead" use:sheetDrag={compactDrag}>
+        <button type="button" class="grip" aria-label="Οδηγίες βήμα βήμα" onclick={e => { if (e.detail === 0) review = true; }}><span></span></button>
+        <div class="ctime"><b>{cp.depart} → {cp.arrive}</b><span>{durText(cp.mins)}</span></div>
+      </div>
+      <div class="cchips" class:dense={cp.legs.length > 4} aria-label={cp.legs.map(l => (l.walk ? `περπάτημα ${l.label}` : `${l.label} ${durText(l.min)}`)).join(", ")}>
+        {#each cp.legs as l, j (j)}
+          {#if j}<svg class="csep" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>{/if}
+          <span class="cchip" aria-hidden="true">
+            {#if l.walk}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4" r="2" /><path d="M9 20l2-6 3 3v4M7 12l3-4 4 1 3 3" /></svg>
+            {:else}<LineChip label={l.label} bg={l.color} fg={l.text} mode={l.mode} size="sm" city={app.cityId} />{/if}{durText(l.min)}
+          </span>
+        {/each}
+      </div>
+      <button type="button" class="csteps" onclick={() => (review = true)}>
+        {#each compactRows(cp.it, plan.r) as s, j (j)}
+          <span class="cstep" class:chg={s.change}><b>{clockHM(s.at)}</b><span>{s.text}</span></span>
+        {/each}
+      </button>
+      <button type="button" class="cstart" onclick={() => startPlan(cp.at)}>Ξεκίνα</button>
+    </div>
+  {:else if review && planOn && plan && planRows.length}
     {@const p = planRows.find(x => x.at === planOn) ?? planRows[0]}
     {@const steps = planSteps(p.it, plan.r, plan.r.itineraries)}
     {@const ps = parts(p.it, plan.r)}
@@ -1186,6 +1246,48 @@
   .grip:focus-visible { outline: 2px solid var(--accent); border-radius: 6px; }
   @media (max-width: 719px) { .rvtop { touch-action: none; } }
   .rv.peek > .tbody { display: none; }
+  /* A phone, an option picked (compact mockup 9): the planner is only its sheet, edge to edge at the foot, and a back
+     button over the map. Panel.svelte places the planner as a card under the search bar: here, at the foot. */
+  @media (max-width: 719px) {
+    :global(:root .popwrap.tabbed:has(> .trip.compact)) { top: auto !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+      width: auto !important; max-width: none !important; height: auto !important; max-height: none !important; }
+  }
+  .trip.compact { padding: 0; border-radius: 0; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; text-shadow: none; overflow: visible; }
+  .mapback { position: fixed; z-index: 2; top: calc(16px + env(safe-area-inset-top)); left: 16px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+    padding: 0; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--card) 94%, transparent); box-shadow: inset 0 0 0 1px var(--border), var(--shadow-sm);
+    color: var(--fg); cursor: pointer; }
+  .mapback svg { display: block; }
+  .rvc { display: flex; flex-direction: column; gap: 14px; padding: 10px 16px calc(18px + env(safe-area-inset-bottom)); border-radius: var(--sheet-r, 28px) var(--sheet-r, 28px) 0 0;
+    background: var(--card); box-shadow: 0 -10px 30px rgba(0, 0, 0, .45); animation: cUp .32s cubic-bezier(.2, .8, .2, 1); }
+  @keyframes cUp { from { transform: translateY(40px); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .rvc { animation: none; } }
+  .rvchead { display: flex; flex-direction: column; gap: 14px; }
+  .rvc .grip { display: flex; align-items: center; justify-content: center; height: 21px; margin: -8px 0; }   /* 5 px drawn, a bigger target */
+  .rvc .grip span { background: color-mix(in srgb, var(--muted) 25%, transparent); }
+  .ctime { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .ctime b { font-size: 24px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ctime span { font-size: 15px; font-weight: 700; line-height: 1; color: var(--muted); white-space: nowrap; }
+  .cchips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 5px; }
+  .cchip { flex: none; height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 14px; background: var(--control-hover);
+    color: color-mix(in srgb, var(--fg) 80%, var(--muted)); font-size: 13px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  .cchip > svg { flex: none; display: block; color: var(--muted); }
+  .cchip :global(.lc) { border-radius: 6px; padding-right: 6px; font-size: 12px; }
+  .csep { flex: none; color: color-mix(in srgb, var(--muted) 50%, transparent); }
+  /* Five legs or more: a little tighter, so they stay on one line on a phone. */
+  .cchips.dense { gap: 6px 3px; }
+  .cchips.dense .cchip { gap: 4px; padding: 0 6px; }
+  .cchips.dense .csep { width: 8px; }
+  .csteps { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .cstep { width: 100%; height: 36px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-radius: 12px; box-sizing: border-box;
+    font-size: 13.5px; line-height: 1; color: var(--muted); }
+  .cstep b { flex: none; width: 44px; font-weight: 700; color: color-mix(in srgb, var(--fg) 80%, var(--muted)); font-variant-numeric: tabular-nums; }
+  .cstep span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .cstep.chg { background: var(--accent-bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); color: var(--fg); }
+  .cstep.chg b { color: var(--fg); }
+  .csteps:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 12px; }
+  .cstart { width: 100%; height: 52px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 16px; background: var(--accent);
+    color: var(--on-accent); font: inherit; font-size: 16px; font-weight: 800; line-height: 1; cursor: pointer; }
+  .cstart:focus-visible, .mapback:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
   .rvfoot .startbtn { margin-top: 0; }
   /* The picked option: «Οδηγίες» and «Ξεκίνα». */
   .pickacts { display: flex; gap: 8px; margin-top: 8px; }

@@ -1640,6 +1640,11 @@
       const sheet = document.querySelector(".popwrap.tabbed")?.getBoundingClientRect();
       const foot = card ?? (sheet && sheet.top > innerHeight * 0.25 ? sheet : null);
       if (innerWidth < 720) pad.bottom = Math.max(pad.bottom, foot ? innerHeight - foot.top + 16 : innerHeight * 0.45);
+      // The picked trip's compact sheet (mockup 9): clear of the back button on top, the map's buttons on the right,
+      // and room at the left for the change's card.
+      if (innerWidth < 720 && document.documentElement.dataset.tripsheet === "compact") {
+        pad.top = Math.max(pad.top, 76); pad.right = Math.max(pad.right, 76); pad.left = Math.max(pad.left, 40);
+      }
       return pad;
     };
     padNow = sheetPad;
@@ -2332,7 +2337,18 @@
       }
       return crisp(el, l.kind === "leg" ? "center" : "bottom", 14).setLngLat(l.at).addTo(m);
     });
-    return () => marks.forEach(k => k.remove());
+    // The change's card is wide: kept inside the screen (slid sideways from over its point) as the map moves.
+    const wide = marks.filter(k => k.getElement().classList.contains("plan-chg"));
+    const keepIn = () => {
+      const W = m.getContainer().clientWidth;
+      for (const k of wide) {
+        const el = k.getElement(), w = el.offsetWidth, h = el.offsetHeight, x = m.project(k.getLngLat()).x;
+        const left = Math.min(Math.max(x - w / 2, 8), W - 8 - w);
+        k.setOffset([Math.round(left - x), -h - 14]);
+      }
+    };
+    if (wide.length) { keepIn(); m.on("move", keepIn); }
+    return () => { m.off("move", keepIn); marks.forEach(k => k.remove()); };
   });
 
   // The guide's bus, where it is now: its line on a pulsing marker, over the city layer.
