@@ -26,3 +26,16 @@ describe("relief", () => {
     expect(added[0].layer.layout.visibility).toBe("none");
   });
 });
+
+describe("mountains", () => {
+  it("keeps the city flat and raises the mountains above the floor", async () => {
+    const { flatten, flattenTerrarium, FLAT_M } = await import("../src/lib/map/relief");
+    expect(flatten(150)).toBe(0);          // the Acropolis
+    expect(flatten(-20)).toBe(0);          // the sea
+    expect(flatten(1026)).toBe(1026 - FLAT_M);   // Υμηττός
+    // Terrarium: h = R*256 + G + B/256 - 32768. 1026.5 m → 726.5 m after.
+    const v = 1026.5 + 32768, px = new Uint8ClampedArray([Math.floor(v) >> 8, Math.floor(v) & 255, 128, 255]);
+    flattenTerrarium(px);
+    expect(px[0] * 256 + px[1] + px[2] / 256 - 32768).toBeCloseTo(726.5, 1);
+  });
+});

@@ -40,7 +40,7 @@
   import type { AppState } from "../state.svelte";
   import SpeedLegend from "../ui/SpeedLegend.svelte";
   import { paintBase } from "./basemap";
-  import { addRelief, RELIEF_LAYER, reliefStrength } from "./relief";
+  import { addRelief, RELIEF_LAYER, reliefStrength, setMountains } from "./relief";
   import { AppleBase, MAPKIT_TOKEN } from "./appleBase";
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, smoothLine, stopsFC, variantFC, type DrawnLine } from "./layers";
@@ -122,6 +122,12 @@
     const on3d = app.threeD;
     void baseGen;
     untrack(() => { if (map?.getLayer(RELIEF_LAYER)) map.setPaintProperty(RELIEF_LAYER, "hillshade-exaggeration", reliefStrength(styleDark, on3d) as ExpressionSpecification); });
+  });
+  // 3D on a computer: the mountains round the city rise, under the sky's haze (relief.ts setMountains).
+  $effect(() => {
+    const on = app.threeD && wideMap.current;
+    void baseGen;
+    untrack(() => { if (map?.isStyleLoaded() || map?.getLayer(RELIEF_LAYER)) try { setMountains(map, on); } catch { /* an old WebGL: the flat map */ } });
   });
   const dark = $derived(resolveDark(app.theme, systemDark.current));
   let styleDark = untrack(() => dark);   // the theme of the style on the map
