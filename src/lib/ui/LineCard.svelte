@@ -9,7 +9,7 @@
   import { metresBetween, walkTo } from "../now";
   import LineChip from "./LineChip.svelte";
   import type { DiagramItem } from "../linediagram";
-  import { fetchV2Line, fetchV2LineVehicles, fetchV2Run, peekV2Line, peekV2LineVehicles } from "../api";
+  import { fetchV2Line, fetchV2LineVehicles, fetchV2Run, fetchV2Stop, peekV2Line, peekV2LineVehicles } from "../api";
   import { glance, lineDiagram, lineSpeed, mainPattern, nextIndex, spread } from "../linediagram";
   import { titleCase } from "../nearby";
   import { LOADS, loadLabel } from "../crowd";
@@ -20,7 +20,7 @@
   import { fmtDelay } from "../format";
   import { busVehicleCard } from "../legacy";
   import { directionGroups } from "../directions";
-  import { dirLabels, headsignName, lineVehicleRows, vehicleDir, withDirections, type LineDetail, type V2Run, type V2Vehicle } from "../v2";
+  import { dirLabels, headsignName, lineVehicleRows, stopRows, vehicleDir, withDirections, type LineDetail, type V2Arrival, type V2Run, type V2Vehicle } from "../v2";
   import type { AppState } from "../state.svelte";
   import CardSheet from "./CardSheet.svelte";
   import DisruptionRows from "./DisruptionRows.svelte";
@@ -325,6 +325,27 @@
     next.sort((a, b) => a.at - b.at);
     return { next, gone };
   });
+  // The open stop's own board (every 30 s): the timetable's next times of this line and way, for when no bus of it is
+  // on the road with a position (its row showed no time at all then).
+  let board = $state.raw<V2Arrival[] | null>(null);
+  $effect(() => {
+    const id = focusId;
+    board = null;
+    if (!id || !isBus) return;
+    let dead = false;
+    const load = () => fetchV2Stop(id).then(r => {
+      const b = r.body as { arrivals?: V2Arrival[] } | null;
+      if (!dead && r.status === 200 && b) board = b.arrivals ?? [];
+    }, () => {});
+    void load();
+    const t = setInterval(load, 30_000);
+    return () => { dead = true; clearInterval(t); };
+  });
+  const sched = $derived.by(() => {
+    if (!board) return [];
+    const rows = stopRows(board, nowS).filter(r => native(r.line) === nativeLine && (r.dir == null || r.dir === dir));
+    return rows.flatMap(r => r.times).filter(t => t.at >= nowS - 30).sort((a, b) => a.at - b.at).slice(0, 3);
+  });
   const focusNote = $derived.by(() => {
     const n = focusTimes.next[0];
     const what = `το ${vName.toLocaleLowerCase("el")}`;
@@ -335,7 +356,8 @@
       return [`${n.live ? "Ζωντανά" : "Από το πρόγραμμα"}: ${where || what}`, delayText(n.v.delay_s)].join(" · ");
     }
     if (vehicles === null) return vFailed ? "Δεν φόρτωσαν τα οχήματα. Νέα προσπάθεια σε λίγο." : "";
-    return `Κανένα ${label} με GPS τώρα${focusTimes.gone ? ` · πέρασε ${clockHM(focusTimes.gone)}` : ""}`;
+    return [`Κανένα ${label} στον δρόμο για εδώ τώρα`, sched.length ? "ώρες από το πρόγραμμα" : "", focusTimes.gone ? `πέρασε ${clockHM(focusTimes.gone)}` : ""]
+      .filter(Boolean).join(" · ");
   });
   // A stop after the user's: how much later the bus that comes to the user's stop gets there («+3′»).
   const later = (id: string) => {
@@ -489,6 +511,9 @@
                     <span class="fcl"><b>{titleCase(r.it.name)}</b>{#if focusWhy}<small>{focusWhy}</small>{/if}</span>
                     {#if nx.length}
                       <span class="fcr"><b>{etaText(nx[0].at)}</b><small>{(nx.length > 1 ? nx.slice(1, 3) : nx).map(n => clockHM(n.at)).join(" · ")}</small></span>
+                    {:else if sched.length}
+                      <!-- No bus of the line on the road: the timetable's times, in grey (not live). -->
+                      <span class="fcr sch"><b>{clockHM(sched[0].at)}</b><small>{sched.length > 1 ? sched.slice(1).map(t => clockHM(t.at)).join(" · ") : "πρόγραμμα"}</small></span>
                     {/if}
                   </div>
                   {#if focusNote}<p class="fcn">{focusNote}</p>{/if}
@@ -844,6 +869,7 @@
   .fcl b { font-size: 15.5px; font-weight: 700; line-height: 1; overflow-wrap: anywhere; }
   .fcr b { font-size: 20px; font-weight: 700; line-height: 1; }
   .fcl small, .fcr small { font-size: 12.5px; line-height: 1; color: color-mix(in srgb, var(--accent) 35%, var(--fg)); }
+  .fcr.sch b { color: color-mix(in srgb, var(--fg) 80%, var(--muted)); }
   .fcn { margin: 0; font-size: 12.5px; line-height: 1.3; color: color-mix(in srgb, var(--fg) 85%, var(--muted)); }
   .fca { display: flex; flex-wrap: wrap; gap: 6px; }
   .fbtn { flex: none; height: 34px; display: flex; align-items: center; gap: 6px; padding: 0 11px; border: 0; border-radius: 17px;
