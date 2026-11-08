@@ -823,7 +823,7 @@
   .mchips::-webkit-scrollbar { display: none; }
   .mchips .chip { height: 34px; }
   .chip.glass { background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: var(--float), inset 0 0 0 1px var(--card-border, var(--border)); color: var(--fg); }
-  .mwhere, .chip.glass { background: color-mix(in srgb, var(--surface) 62%, transparent);  }
+  .mwhere, .chip.glass { background: color-mix(in srgb, var(--surface) 62%, transparent); -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%); }
   /* A phone: the search and the chips are on the map (compact mockup 15Γ), not in the sheet. */
   @media (max-width: 719px) { .now > .where, .now > .chips { display: none; } }
   .chip.glass.round { width: 34px; padding: 0; justify-content: center; position: relative; }
