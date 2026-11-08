@@ -4,6 +4,7 @@
 // entrances.json to commit.
 
 import type { Direction } from "./map/entrance/metroEntrance";
+import { fold } from "./search";
 
 export interface Entrance3D {
   id: string;
@@ -21,6 +22,7 @@ export interface Entrance3D {
   adBack?: string;           // stairs: the same case's back face (none: plain steel)
   adFit?: "cover" | "contain";   // cover fills the case, cropping the picture; contain shows all of it
   roundel?: string;          // the circle on the pylon, or on a lift's sign (none: blank)
+  stop?: string;             // the station's /v2 stop, for its opening hours (none: from the name, see stationStop)
 }
 
 /** This device's admin changes: a whole entrance (added or edited) by id, or null for one removed. */
@@ -77,3 +79,15 @@ export function newId(station: string, taken: Iterable<string>): string {
   const ids = new Set(taken);
   for (let n = 1; ; n++) if (!ids.has(`${slug}-${n}`)) return `${slug}-${n}`;
 }
+
+/** The /v2 stop of the metro station an entrance belongs to: its own `stop`, else the backend's id from the name
+ *  (folded, words joined by "-", then "-metro": «Σύνταγμα» → stasy:συνταγμα-metro). A name STASY writes otherwise
+ *  («Αγ. Δημήτριος») needs its `stop`. */
+export const stationStop = (e: { name: string; stop?: string }) => e.stop ?? `stasy:${fold(e.name).trim().replace(/\s+/g, "-")}-metro`;
+
+export const OPEN_AHEAD_S = 20 * 60;
+/** A station is open while a train is due within 20 minutes, or left in the last 2 (its timetable, /v2/stops):
+ *  the metro never waits that long by day, so a longer gap is the night (after the last train, before the
+ *  first). Its shutters are down then. */
+export const stationOpen = (arrivals: { at: number }[], nowS: number) =>
+  arrivals.some(a => a.at >= nowS - 120 && a.at <= nowS + OPEN_AHEAD_S);

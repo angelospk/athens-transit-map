@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ahead, bearing, isEntrance, newId, normElevation, normHeading, withEdits, type Entrance3D } from "../src/lib/entrances";
+import { ahead, bearing, isEntrance, newId, normElevation, normHeading, stationOpen, stationStop, withEdits, type Entrance3D } from "../src/lib/entrances";
 
 const at: [number, number] = [37.975096, 23.735739];
 const stairs: Entrance3D = { id: "syntagma-1", kind: "stairs", name: "Σύνταγμα", at, heading: 75 };
@@ -57,5 +57,25 @@ describe("isEntrance", () => {
     expect(isEntrance(stairs)).toBe(true);
     expect(isEntrance({ ...stairs, at: [37.9] })).toBe(false);
     expect(isEntrance({ ...stairs, heading: "east" })).toBe(false);
+  });
+});
+
+describe("stationOpen", () => {
+  const now = 1_800_000_000;
+  it("is open with a train due within 20 minutes, or one just gone", () => {
+    expect(stationOpen([{ at: now + 4 * 60 }], now)).toBe(true);
+    expect(stationOpen([{ at: now - 60 }], now)).toBe(true);
+  });
+  it("is closed at night: the next train is the first of the morning", () => {
+    expect(stationOpen([{ at: now + 5 * 3600 }], now)).toBe(false);
+    expect(stationOpen([], now)).toBe(false);
+  });
+});
+
+describe("stationStop", () => {
+  it("is the backend's STASY stop id of the station", () => {
+    expect(stationStop({ name: "Σύνταγμα" })).toBe("stasy:συνταγμα-metro");
+    expect(stationStop({ name: "Άγιος Ιωάννης" })).toBe("stasy:αγιοσ-ιωαννησ-metro");
+    expect(stationStop({ name: "Άγιος Δημήτριος", stop: "stasy:αγ.-δημητριοσ-metro" })).toBe("stasy:αγ.-δημητριοσ-metro");
   });
 });

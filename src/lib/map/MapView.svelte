@@ -11,7 +11,7 @@
   import type { LngLat } from "../glide";
   import { vehicleHeading } from "../heading";
   import { loadFixes, metroFC, stationKey } from "../metro";
-  import { ahead, bearing, loadEntrances, newId, normHeading, type Entrance3D } from "../entrances";
+  import { ahead, bearing, loadEntrances, newId, normHeading, stationOpen, stationStop, type Entrance3D } from "../entrances";
   import { suburbanFC } from "../suburban";
   import { trainsFC } from "../trains";
   import { RailGlide, trackStops, type Track } from "../rails";
@@ -2740,6 +2740,28 @@
     void loadEntrances().then(v => { app.entrances3d = v; });
   });
   $effect(() => { scene3d.setEntrances(app.threeD ? app.entrancesShown : []); });
+  // A station's shutters come down while it is closed (entrances.stationOpen: no train due in its timetable), checked
+  // every 2 minutes while the 3D mode is on, for the stations of the entrances drawn. A failed check keeps the last.
+  $effect(() => {
+    if (!app.threeD) return;
+    const stations = new Map(app.entrancesShown.filter(e => e.kind !== "elevator").map(e => [e.name, stationStop(e)]));
+    if (!stations.size) return;
+    const closed = new Set<string>();
+    let gone = false;
+    const check = async () => {
+      for (const [n, stop] of stations) {
+        const r = await fetchV2Stop(stop);
+        if (gone) return;
+        const arr = (r.body as { arrivals?: { at: number }[] } | null)?.arrivals;
+        if (r.status !== 200 || !Array.isArray(arr)) continue;
+        if (stationOpen(arr, Date.now() / 1000)) closed.delete(n); else closed.add(n);
+      }
+      scene3d.setClosedStations([...closed]);
+    };
+    void check();
+    const t = setInterval(check, 120_000);
+    return () => { gone = true; clearInterval(t); };
+  });
   // Admin mode, in 3D: two handles on each entrance. The round one at the top step moves it; the small one down the
   // stairs' way turns it (Shift held: in steps of 15°). A click on the move handle picks it for the admin bar.
   // While a handle is dragged the model follows (scene3d only); the edit is kept when it is let go.

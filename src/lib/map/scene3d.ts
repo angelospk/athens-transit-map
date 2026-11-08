@@ -1389,6 +1389,7 @@ export class Scene3D {
   // The metro's street entrances (public/entrances.json, or the admin's edits): sign, stairwell and lift models.
   private entrances = (() => { const e = new EntranceModels(); e.onChange = () => this.map?.triggerRepaint(); return e; })();
   setEntrances(list: Entrance3D[]) { this.entrances.set(list); }
+  setClosedStations(names: string[]) { this.entrances.setClosed(names); }
 
   setStops(stops: LngLat[]) {
     this.stopsAll = stops;

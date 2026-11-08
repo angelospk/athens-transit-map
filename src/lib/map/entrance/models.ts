@@ -8,7 +8,7 @@
 // street's fills wrote theirs. Through the opening the stairs show; everywhere else they stay under the street.
 import type * as Three from "three";
 import type { LngLat } from "../../map3d";
-import type { Entrance3D } from "../../entrances";
+import { type Entrance3D } from "../../entrances";
 
 type Lib = typeof import("./metroEntrance") & typeof import("./metroElevator");
 type Built = { key: string; g: Three.Group };
@@ -33,6 +33,7 @@ function picture(src: string | undefined): Promise<HTMLImageElement | null> {
 
 export class EntranceModels {
   private list: Entrance3D[] = [];
+  private closed = new Set<string>();   // stations whose shutters are down (MapView: from their timetable)
   private objs = new Map<string, Built>();
   private lib: Promise<[Lib, typeof Three]> | null = null;
   private scene: Three.Scene | null = null;
@@ -44,6 +45,14 @@ export class EntranceModels {
 
   set(list: Entrance3D[]) {
     this.list = list;
+    this.sync();
+  }
+
+  /** The stations closed now, by the name on their entrances: their stairs get the shutter down. */
+  setClosed(names: string[]) {
+    const next = new Set(names);
+    if (next.size === this.closed.size && [...next].every(n => this.closed.has(n))) return;
+    this.closed = next;
     this.sync();
   }
 
@@ -73,13 +82,14 @@ export class EntranceModels {
     const ids = new Set(this.list.map(e => e.id));
     for (const [id, b] of this.objs) if (!ids.has(id)) { b.g.removeFromParent(); dispose(b.g); this.objs.delete(id); }
     for (const e of this.list) {
-      const key = buildKey(e);
+      const shut = e.kind !== "elevator" && this.closed.has(e.name);
+      const key = buildKey(e) + (shut ? "|shut" : "");
       let b = this.objs.get(e.id);
       if (!b || b.key !== key) {
         if (b) { b.g.removeFromParent(); dispose(b.g); this.objs.delete(e.id); }
         const [adFront, adBack, roundel] = await Promise.all([picture(e.adFront), picture(e.adBack), picture(e.roundel)]);
         if (!this.list.includes(e)) continue;   // changed again while the pictures loaded: the next pass builds it
-        b = { key, g: build(lib, T, e, { adFront, adBack, roundel }) };
+        b = { key, g: build(lib, T, e, { adFront, adBack, roundel }, shut) };
         this.objs.set(e.id, b);
       }
       if (b.g.parent !== scene) scene.add(b.g);
@@ -94,7 +104,7 @@ export class EntranceModels {
 
 type Pics = { adFront: HTMLImageElement | null; adBack: HTMLImageElement | null; roundel: HTMLImageElement | null };
 
-function build(lib: Lib, T: typeof Three, e: Entrance3D, p: Pics): Three.Group {
+function build(lib: Lib, T: typeof Three, e: Entrance3D, p: Pics, shut: boolean): Three.Group {
   const outer = new T.Group();
   outer.name = `entrance:${e.id}`;
   // The models are built y up, walking down the stairs (or into the lift) towards -z; turned a quarter about x they
@@ -103,7 +113,7 @@ function build(lib: Lib, T: typeof Three, e: Entrance3D, p: Pics): Three.Group {
   const model = lift
     ? lib.createMetroElevator({ name: e.name, latin: e.latin, roundel: p.roundel ?? undefined })
     : lib.createMetroEntrance({ name: e.name, latin: e.latin, plaza: false, elevator: false, signSide: e.signSide ?? "right", directions: e.directions ?? [],
-      adFront: p.adFront ?? undefined, adBack: p.adBack ?? undefined, adFit: e.adFit ?? "cover", roundel: p.roundel ?? undefined });
+      adFront: p.adFront ?? undefined, adBack: p.adBack ?? undefined, adFit: e.adFit ?? "cover", roundel: p.roundel ?? undefined, shutter: shut });
   model.rotation.x = Math.PI / 2;
   // No scene environment to reflect here: the brushed steel would come out near black, so it is made less metallic.
   model.traverse(o => {
