@@ -4,7 +4,7 @@
   // the map). The routine reminders run from here too. Live data from /v2, asked again every 30 s while it shows (at most 4 requests at a time).
   // On a phone a sheet over the map, above the tab bar; on a desktop a card in the map's left column.
   import { busId } from "../busNs";
-  import { untrack } from "svelte";
+  import { flushSync, untrack } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
   import { safeInsets, sheetDrag, type SheetDrag } from "../sheetDrag";
   import { fetchV2Stop } from "../api";
@@ -230,6 +230,15 @@
   const pressEnd = () => clearTimeout(pressT);
   // «Χρήσιμοι προορισμοί»: a trip there from where the user is.
   const dests = $derived(destGroups(app.cityId));
+  // «Πού πας;»: the search opens on «Προς» with the keyboard up. The field is focused inside the tap itself (the screen
+  // drawn at once with flushSync): a focus a moment later does not bring the keyboard up on iOS.
+  function openWhere(e: MouseEvent) {
+    e.stopPropagation();   // this tap is not «a tap outside the field» for the screen that opens under it
+    flushSync(() => { app.start = true; });
+    const f = document.getElementById("start-to") as HTMLInputElement | null;
+    f?.focus();
+    f?.click();
+  }
   function goDest(d: Dest) {
     if (app.myPos) app.tripFrom = { label: "Η θέση μου", pts: [app.myPos], lines: [], kind: "me" };
     app.tripTo = { label: d.label, pts: [d.at], lines: [], kind: "area" };
@@ -369,7 +378,7 @@
       onkeydown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); stepN(); } }}></div>
 
     <!-- The one search: «Πού πας;» (StartScreen), for places, stops and lines, with our engine. -->
-    <button type="button" class="where" aria-haspopup="dialog" onclick={() => (app.start = true)}>
+    <button type="button" class="where" aria-haspopup="dialog" onclick={openWhere}>
       <Icon name="search" size={18} /><span>Πού πας;</span><kbd class="pc" aria-hidden="true">/</kbd>
     </button>
 
