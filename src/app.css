@@ -15,7 +15,7 @@
   --shadow-sm: 0 4px 14px rgba(16, 24, 40, .12), 0 1px 2px rgba(16, 24, 40, .07);
   /* The panels over the map and the tiles inside them (app.css below, NowPanel): light is nearly solid white with flat
      pale grey tiles; dark a see-through glass with darker glass tiles lifted by a shadow. */
-  --see: 96%; --tile: #f3f5f8; --tile-hover: #eaedf2; --tile-line: #e3e7ed; --tile-lift: 0 0 0 transparent; --float: 0 3px 10px rgba(16, 24, 40, .14);
+  --see: 95%; --tile: #f3f5f8; --tile-hover: #eaedf2; --tile-line: #e3e7ed; --tile-lift: 0 0 0 transparent; --float: 0 3px 10px rgba(16, 24, 40, .14);
   --radius: 20px; --radius-sm: 12px;
   --col-w: 440px;   /* a computer's left column: the home panel, the cards, the lists */
   --sheet-r: 28px;   /* the phone sheets' corners (below) */
@@ -26,10 +26,7 @@
   --glass-strong: var(--surface);
   --glass-fill: var(--card);
   --glass-line: var(--card-border);
-  /* No blur of the map behind the panels: a blurred backdrop is drawn again on every frame the map moves under it (a
-     whole screen's worth under the home sheet), the one thing that made a phone stutter. The panels are nearly solid
-     instead, as the mockups drew them (rgba …, .96). */
-  --glass-fx: none;
+  --glass-fx: blur(10px);
   --glass-rim: var(--shadow);
   --glass-text: none;
   --label-edge: var(--border);
@@ -46,7 +43,7 @@
     --star: #f0b33a; --ring: #15181e; --card: #1b1f27; --card-border: #242934;
     --shadow: 0 12px 32px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .05);
     --shadow-sm: 0 4px 14px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .05);
-    --see: 96%; --tile: color-mix(in srgb, var(--bg) 55%, transparent); --tile-hover: color-mix(in srgb, var(--bg) 35%, transparent);
+    --see: 78%; --tile: color-mix(in srgb, var(--bg) 55%, transparent); --tile-hover: color-mix(in srgb, var(--bg) 35%, transparent);
     --tile-line: color-mix(in srgb, var(--fg) 11%, transparent); --tile-lift: 0 4px 14px rgb(0 0 0 / .32); --float: 0 4px 14px rgba(0, 0, 0, .4);
   }
 }
@@ -60,7 +57,7 @@
   --star: #f0b33a; --ring: #15181e; --card: #1b1f27; --card-border: #242934;
   --shadow: 0 12px 32px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .05);
   --shadow-sm: 0 4px 14px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .05);
-   --see: 96%; --tile: color-mix(in srgb, var(--bg) 55%, transparent); --tile-hover: color-mix(in srgb, var(--bg) 35%, transparent);
+   --see: 78%; --tile: color-mix(in srgb, var(--bg) 55%, transparent); --tile-hover: color-mix(in srgb, var(--bg) 35%, transparent);
   --tile-line: color-mix(in srgb, var(--fg) 11%, transparent); --tile-lift: 0 4px 14px rgb(0 0 0 / .32); --float: 0 4px 14px rgba(0, 0, 0, .4);
 }
 /* A floating control or panel: one recipe (the tokens above). */
@@ -239,7 +236,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .bus .eta { display: none; }
 .map3d-near .vm .bus { translate: 0 -44px; gap: 4px; height: auto; min-width: 0; padding: 4px; border: 0; border-radius: 12px;
   background: rgba(24, 27, 33, .82); box-shadow: 0 6px 18px rgba(0, 0, 0, .35), inset 0 0 0 1px rgba(255, 255, 255, .08);
-  }
+  backdrop-filter: blur(6px); }
 .map3d-near .vm .bus .num, .map3d-near .vm .bus .eta:not(:empty) { display: inline-flex; align-items: center; justify-content: center;
   height: 28px; min-width: 44px; padding: 0 9px; border-radius: 8px; font: 700 15px/1 var(--font); }
 .map3d-near .vm .bus .num { background: var(--c, var(--d)); color: var(--t, #fff); }
@@ -295,7 +292,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* 3D, close in: the chip above the selected bus or the one under the mouse (MapView showInfo). */
 .info3d { display: flex; align-items: center; gap: 10px; max-width: 260px; padding: 8px 12px 8px 8px; border-radius: 16px; background: var(--panel);
-  color: var(--fg); box-shadow: var(--shadow); pointer-events: none; animation: info3dIn .25s cubic-bezier(.2, .8, .2, 1); }
+  color: var(--fg); box-shadow: var(--shadow); backdrop-filter: blur(10px); pointer-events: none; animation: info3dIn .25s cubic-bezier(.2, .8, .2, 1); }
 .info3d[hidden] { display: none; }
 .info3d .b { flex: none; display: inline-flex; align-items: center; justify-content: center; height: 30px; min-width: 30px; padding: 0 10px;
   border-radius: 15px; font-size: 14px; font-weight: 800; line-height: 1; }
@@ -471,7 +468,7 @@ html.sheet-open .start, html.sheet-open .now, html.sheet-open .card, html.sheet-
 :root body :is(section.now, section.card, section.near, .psheet, section.panel:not(.home):not(.mbar), .popwrap:not(.page) .pop, div.sheet, section.fixbar, section.alerts,
   .homebar .round, .homebar .where, .maplibregl-ctrl-group:not(:empty), .recenter, .details-ctl button.details) {
   background: color-mix(in srgb, var(--surface) var(--see), transparent) !important;
-  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+  -webkit-backdrop-filter: blur(16px) saturate(160%) !important; backdrop-filter: blur(16px) saturate(160%) !important;
 }
 /* A phone: each its own layer from the start (iOS Safari drew the blur only once a slide-in had ended). Not on a
    computer: a layer of its own there drew the text soft (blurry) at fractional positions. */
@@ -493,13 +490,14 @@ html.sheet-open .start, html.sheet-open .now, html.sheet-open .card, html.sheet-
    own, 8 px apart, as the locate and compass buttons under them. */
 @media (min-width: 720px) {
   :root body div.rail[role="toolbar"] { background: color-mix(in srgb, var(--surface) var(--see), transparent) !important;
-    -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+    -webkit-backdrop-filter: blur(16px) saturate(160%) !important; backdrop-filter: blur(16px) saturate(160%) !important; }
 }
 @media (max-width: 719px) {
   :root body div.rail[role="toolbar"] { background: none !important; box-shadow: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
     border: 0 !important; overflow: visible !important; gap: 8px; }
   :root body div.rail[role="toolbar"] > .tool { border-radius: 50% !important; border-top: 0 !important;
-    background: color-mix(in srgb, var(--surface) var(--see), transparent);
+    background: color-mix(in srgb, var(--surface) 78%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(160%); backdrop-filter: blur(16px) saturate(160%);
     box-shadow: var(--float), inset 0 0 0 1px var(--card-border, var(--border)); transform: translateZ(0); }
   :root body div.rail[role="toolbar"] > .tool.on { background: var(--accent-bg); }
   .maplibregl-ctrl-group:not(:empty) { box-shadow: var(--float), inset 0 0 0 1px var(--card-border, var(--border)) !important; }

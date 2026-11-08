@@ -768,7 +768,8 @@
 
   @media (max-width: 719px) {
     /* Under the search and the chips, in their column; ✕ at the right. */
-    .mtop .mapnote { position: static; max-width: none; height: 40px; padding: 0 4px 0 6px; border-radius: 14px; font-size: 13px; }
+    .mtop .mapnote { position: static; max-width: none; height: 40px; padding: 0 4px 0 6px; border-radius: 14px; font-size: 13px;
+      -webkit-backdrop-filter: blur(16px) saturate(160%); backdrop-filter: blur(16px) saturate(160%); }
     .mtop .mapnote button { width: 32px; height: 32px; }
     /* A sheet from edge to edge, rounded at the top (mockup 1). */
     .now { left: 0; right: 0; width: auto; top: calc(8px + env(safe-area-inset-top)); bottom: 0; max-height: none;

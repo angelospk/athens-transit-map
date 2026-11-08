@@ -240,7 +240,8 @@
   .go { background: var(--accent); color: var(--on-accent, #fff); }
   .go:disabled { opacity: .5; cursor: default; }
   .bar { position: fixed; z-index: 40; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); translate: -50% 0; max-width: calc(100% - 16px); box-sizing: border-box;
-    display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 8px; border-radius: 22px; background: color-mix(in srgb, var(--surface) 92%, transparent); box-shadow: 0 10px 30px rgb(0 0 0 / .45), inset 0 0 0 1px #f0ae45; color: var(--fg); }
+    display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 8px; border-radius: 22px; background: color-mix(in srgb, var(--surface) 92%, transparent);
+    -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: 0 10px 30px rgb(0 0 0 / .45), inset 0 0 0 1px #f0ae45; color: var(--fg); }
   .tag { flex: none; height: 26px; padding: 0 9px; border-radius: 13px; display: flex; align-items: center; background: #f0ae45; color: #1a1200; font-size: 12px; font-weight: 800; line-height: 1; }
   .n { min-width: 0; padding: 0 4px; font-size: 13px; font-weight: 700; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .bar button { flex: none; height: 32px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border: 0; border-radius: 16px;
@@ -250,7 +251,8 @@
   .bar .x { width: 32px; padding: 0; }
   /* The picked 3D entrance: a card above the bar */
   .ent { position: fixed; z-index: 40; left: 50%; bottom: calc(66px + env(safe-area-inset-bottom)); translate: -50% 0; width: 340px; max-width: calc(100% - 16px); box-sizing: border-box;
-    display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 22px; background: color-mix(in srgb, var(--surface) 92%, transparent); box-shadow: 0 10px 30px rgb(0 0 0 / .45), inset 0 0 0 1px #f0ae45; color: var(--fg); }
+    display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 22px; background: color-mix(in srgb, var(--surface) 92%, transparent);
+    -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: 0 10px 30px rgb(0 0 0 / .45), inset 0 0 0 1px #f0ae45; color: var(--fg); }
   .ent .head { display: flex; align-items: center; gap: 8px; min-height: 32px; }
   .ent .kind { flex: none; height: 24px; padding: 0 9px; border-radius: 12px; display: flex; align-items: center; background: #f0ae45; color: #1a1200; font-size: 12px; font-weight: 800; line-height: 1; }
   .ent .head b { flex: 1; min-width: 0; font-size: 15px; font-weight: 800; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

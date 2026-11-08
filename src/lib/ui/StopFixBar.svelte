@@ -61,7 +61,7 @@
 
 <style>
   .fixbar { position: absolute; z-index: 6; left: 12px; bottom: 28px; width: 360px; padding: 12px 16px; box-sizing: border-box;
-    background: var(--panel); border: 0; border-radius: var(--radius); box-shadow: var(--shadow); }
+    background: var(--panel); border: 0; border-radius: var(--radius); box-shadow: var(--shadow); backdrop-filter: blur(10px); }
   p { margin: 0; }
   .title { font-size: 15px; font-weight: 600; }
   .hint { margin-top: 2px; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }

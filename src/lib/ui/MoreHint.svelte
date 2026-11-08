@@ -118,7 +118,7 @@
 
   .pill { position: absolute; bottom: 16px; left: 50%; translate: -50% 0; height: 44px; max-width: calc(100% - 8px); display: flex; align-items: center; gap: 10px;
     padding: 0 6px 0 8px; border-radius: 22px; overflow: hidden; border: 1px solid var(--border);
-    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    background: color-mix(in srgb, var(--surface) 92%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
     color: var(--fg); font: inherit; font-size: 13px; font-weight: 700; line-height: 1; white-space: nowrap; cursor: pointer;
     box-shadow: 0 8px 22px rgba(0, 0, 0, .28); animation: rise .5s cubic-bezier(.2, .8, .2, 1) both; }
   .pill:hover { border-color: color-mix(in srgb, var(--fg) 24%, var(--border)); }
@@ -133,7 +133,8 @@
   .go { flex: none; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; color: var(--muted); }
 
   .up { position: absolute; bottom: 16px; right: 0; width: 44px; height: 44px; padding: 0; display: flex; align-items: center; justify-content: center;
-    border-radius: 50%; border: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 92%, transparent); color: var(--fg); cursor: pointer; box-shadow: 0 8px 22px rgba(0, 0, 0, .28);
+    border-radius: 50%; border: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 92%, transparent);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); color: var(--fg); cursor: pointer; box-shadow: 0 8px 22px rgba(0, 0, 0, .28);
     animation: rise .35s cubic-bezier(.2, .8, .2, 1) both; }
   .up:hover { background: var(--control); }
   .up:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

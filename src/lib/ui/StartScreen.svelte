@@ -1858,7 +1858,7 @@
 
 <style>
   .start { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; padding: 24px 16px;
-    background: color-mix(in srgb, var(--bg) 70%, transparent); box-sizing: border-box; overflow-y: auto; }
+    background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(6px); box-sizing: border-box; overflow-y: auto; }
   .box { width: 100%; max-width: 460px; display: flex; flex-direction: column; gap: 18px; padding: 22px 20px 18px; box-sizing: border-box;
     border-radius: 28px; background: var(--glass-strong); --card: var(--glass-fill); --card-border: var(--glass-line); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); text-shadow: var(--glass-text); }
   /* It still scrolls when the window is short, without a scrollbar: the «πιο κάτω» pill says there is more. */
@@ -2540,7 +2540,7 @@
   .oldnote { margin: 4px 0 -6px; display: flex; align-items: center; gap: 7px; padding: 0 2px; font-size: 12px; font-weight: 600; line-height: 1.3; color: var(--muted); }
   .oldnote i { width: 7px; height: 7px; border-radius: 50%; background: #ffb26b; display: block; flex: none; }
   /* Over the map (the pick's back, field and hint): a soft gaussian blur of the map behind, the surface see-through. */
-  .ptop .pcirc, .pfield, .phint { background: color-mix(in srgb, var(--surface) 62%, transparent);  }
+  .ptop .pcirc, .pfield, .phint { background: color-mix(in srgb, var(--surface) 62%, transparent); -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%); }
   /* Setting «Σπίτι» / «Δουλειά» (compact mockups 16, 16β). */
   .svhead { flex: 0 0 100%; height: 44px; display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
   .svback { flex: none; width: 32px; height: 44px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; background: none; color: var(--fg); cursor: pointer; }

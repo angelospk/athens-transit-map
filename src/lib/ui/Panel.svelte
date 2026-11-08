@@ -526,7 +526,7 @@
   .mbar .tool.add, .mbar .sep { display: none; }
   .mbar .bar :global(.find) { display: none; }   /* the pill above is the search */
   .mbar .tool, .mbar .fold { width: 36px; height: 36px; min-width: 36px; padding: 0; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 18px;
-    background: color-mix(in srgb, var(--surface) 62%, transparent); 
+    background: color-mix(in srgb, var(--surface) 62%, transparent); -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%);
     box-shadow: var(--float), inset 0 0 0 1px var(--card-border, var(--border)); color: var(--fg); }
   .mbar .favbtn.on { width: auto; padding: 0 12px; background: color-mix(in srgb, var(--star) 22%, var(--surface)); color: var(--star); }
   .mbar #panel-body:not([hidden]) { margin-top: 10px; padding: 12px 14px; border-radius: 20px; background: var(--glass-strong);
