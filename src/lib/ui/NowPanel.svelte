@@ -455,8 +455,8 @@
           </button>
           {#if across}
             <span class="sides" role="radiogroup" aria-label="Κατεύθυνση">
-              <button type="button" role="radio" aria-checked={side === 0} class:on={side === 0} onclick={() => (side = 0)}>{side === 0 ? "Προς " : ""}{sideName(plan[0])}</button>
-              <button type="button" role="radio" aria-checked={side === 1} class:on={side === 1} onclick={() => (side = 1)}>{side === 1 ? "Προς " : ""}{sideName(across)}</button>
+              <button type="button" role="radio" aria-checked={side === 0} class:on={side === 0} onclick={() => (side = 0)} title="Προς {sideName(plan[0])}"><span>{sideName(plan[0])}</span></button>
+              <button type="button" role="radio" aria-checked={side === 1} class:on={side === 1} onclick={() => (side = 1)} title="Προς {sideName(across)}"><span>{sideName(across)}</span></button>
             </span>
           {/if}
         </div>
@@ -593,10 +593,13 @@
   .st b, .dt b { font-size: 15px; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dt b { font-size: 14.5px; }
   .st small, .dt small { font-size: 12.5px; line-height: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .sides { flex: none; height: 30px; display: flex; gap: 2px; padding: 3px; box-sizing: border-box; border-radius: 15px; background: var(--surface); max-width: 58%; }
-  .sides button { min-width: 0; height: 24px; display: flex; align-items: center; padding: 0 10px; border: 0; border-radius: 12px; background: none;
-    font-size: 12.5px; font-weight: 600; line-height: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-  .sides button.on { background: color-mix(in srgb, var(--fg) 16%, var(--surface)); color: var(--fg); font-weight: 700; flex: none; max-width: 128px; }
+  /* The two ways of the stop: two equal halves, the one shown in the accent; a long name ends in «…» inside its half. */
+  .sides { flex: 0 1 212px; min-width: 0; height: 32px; display: flex; gap: 2px; padding: 2px; box-sizing: border-box; border-radius: 16px;
+    background: none; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 14%, transparent); }
+  .sides button { flex: 1 1 0; min-width: 0; height: 28px; display: flex; align-items: center; justify-content: center; padding: 0 8px; border: 0; border-radius: 14px;
+    background: none; font: inherit; font-size: 12.5px; font-weight: 600; line-height: 1; color: var(--muted); cursor: pointer; }
+  .sides button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sides button.on { flex-grow: 1.7; background: var(--accent-bg); color: var(--accent); font-weight: 700; }
   .dep { width: 100%; height: 56px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border: 0; background: none; cursor: pointer; text-align: left; }
   .dep + .dep { border-top: 1px solid var(--card-border); }
   .dep:hover { background: var(--control); }
