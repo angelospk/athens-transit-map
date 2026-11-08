@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { distanceM, type LngLat } from "../src/lib/glide";
 import {
-  bridge, CATCH_MAX, LEAP_M, OWN_STAND_S, chase, cumulativeLL, drive, DWELL_S, GLIDE_MAX_S, GLIDE_S, glideS, holdM, HORIZON_S, linePlan, MIN_CRUISE, Mover, PACE,
-  pathPlan, pointAtLL, project, STEP_M, subLine, TRAIL_S, walk, type Plan,
+  AHEAD_MAX, BRAKE, bridge, careful, CATCH_MAX, CRAWL, FADE_S, LEAN, LEAN_S, LEAP_M, OWN_STAND_S, chase, cumulativeLL, drive, DWELL_S, GLIDE_MAX_S, GLIDE_S, glideS, HORIZON_S,
+  linePlan, MIN_CRUISE, Mover, PACE, pathPlan, PENDING_STAND_S, pointAtLL, project, STEP_M, STOP_HOLD_S, subLine, TRAIL_S, WAIT_MAX, WAIT_STAND_S, walk, type Plan,
 } from "../src/lib/motion";
 
 // 0.01° lon at 37.97° ≈ 877 m. Geometry here is [lon, lat].
@@ -18,26 +18,38 @@ const bent: LngLat[] = [[23.70, 37.97], [23.71, 37.97], [23.71, 37.98]];
 const onBent = (m: number): LngLat => (m <= M ? atM(m) : [23.71, 37.97 + ((m - M) / N) * 0.01]);
 
 describe("chase", () => {
-  it("moves at target speed when on target, faster when behind, never overshoots", () => {
-    expect(chase(96, 100, 8, 0.5)).toBe(100);               // the target moved 4 m: reach it
-    const late = chase(0, 100, 8, 0.5) as number;
-    expect(late).toBeGreaterThan(0.5 * 8);                   // faster than v
-    expect(late).toBeLessThanOrEqual(0.5 * (8 + CATCH_MAX) + 1e-9); // capped catch-up
+  it("wants the target's speed on target, more when behind, only what it can brake off when close", () => {
+    expect(chase(100, 100, 8)).toBe(8);
+    const late = chase(0, 100, 8) as number;
+    expect(late).toBeGreaterThan(8);                         // faster than v
+    expect(late).toBeLessThanOrEqual(8 + CATCH_MAX + 1e-9);  // capped catch-up
     expect(CATCH_MAX).toBeLessThanOrEqual(6);                // no burst after new data
-    expect(chase(99, 100, 0, 5)).toBeLessThanOrEqual(100);   // no overshoot
-    expect(chase(99, 100, 0, 5)).toBeGreaterThan(99);
+    const close = chase(99, 100, 0) as number;
+    expect(close).toBeGreaterThan(0);
+    expect(close).toBeLessThanOrEqual(Math.sqrt(2 * BRAKE * 1) + 1e-9);   // it can still stop on the target
   });
-  it("slows down instead of reversing when a little ahead", () => {
-    const ahead = chase(110, 100, 8, 0.5) as number;
-    expect(ahead).toBeGreaterThanOrEqual(110);
-    expect(ahead - 110).toBeLessThan(4);
-    expect(chase(120, 100, 0, 1)).toBe(120);                 // standing target: wait
+  it("eases off when ahead, never under a crawl, never a correction back", () => {
+    const ahead = chase(110, 100, 8) as number;
+    expect(ahead).toBeLessThan(8);
+    expect(ahead).toBeGreaterThanOrEqual(CRAWL);
+    expect(chase(400, 100, 8)).toBe(CRAWL);
+    expect(chase(120, 100, 0)).toBe(CRAWL);                  // standing target: it still rolls, slowly
   });
-  it("asks for a correction when far behind the target or far ahead of it", () => {
-    expect(chase(100 + holdM(8) + 1, 100, 8, 0.1)).toBe("fix");
-    expect(chase(0, 700, 8, 0.1)).toBe("fix");
-    expect(holdM(0)).toBe(25);
-    expect(holdM(100)).toBe(80);
+  it("asks for a correction only when far behind the target", () => {
+    expect(chase(0, 700, 8)).toBe("fix");
+    expect(chase(0, 500, 8)).not.toBe("fix");
+  });
+});
+
+describe("careful", () => {
+  it("leans the guess back as the fix ages, up to LEAN after LEAN_S; nothing before the fix", () => {
+    const f = careful(t => 8 * (t - 100), 100);
+    expect(f(100)).toBe(0);
+    expect(f(90)).toBe(-80);
+    expect(f(120)).toBeCloseTo(8 * 20 * (1 - LEAN * (20 / LEAN_S)), 6);
+    expect(f(100 + LEAN_S)).toBeCloseTo(8 * LEAN_S * (1 - LEAN), 6);
+    expect(f(100 + 3 * LEAN_S)).toBeCloseTo(8 * 3 * LEAN_S * (1 - LEAN), 6);
+    for (let t = 100; t < 300; t += 0.5) expect(f(t + 0.5)).toBeGreaterThanOrEqual(f(t));   // still never backwards
   });
 });
 
@@ -91,34 +103,62 @@ describe("Mover", () => {
     const mv = new Mover(atM(0));
     mv.setPlan(plan(() => 200), 0, 0);
     mv.step(1);
-    expect(mv.s).toBeGreaterThan(5);
-    expect(mv.s).toBeLessThanOrEqual(CATCH_MAX + 1e-9);
-    for (let t = 1.1; t < 90; t += 0.1) mv.step(t);
+    expect(mv.s).toBeGreaterThan(0);
+    expect(mv.s).toBeLessThanOrEqual(1 + 1e-9);   // pulls away at ACC: no burst of speed
+    for (let t = 1.1; t < 90; t += 0.1) { mv.step(t); expect(mv.u).toBeLessThanOrEqual(CATCH_MAX + 1e-9); }
     expect(mv.s).toBeCloseTo(200, 0);
   });
-  it("glides back along the route to a target far behind, then leaves a fading trail", () => {
-    const mv = new Mover(onBent(M + 200));
-    mv.setPlan(plan(() => M + 200, bent), M + 200, 0);
-    mv.step(0.1);
-    mv.retarget(plan(() => M - 100, bent), 1);   // the target jumps 300 m back, past the bend
-    const G = glideS(300, true);
-    const a = mv.step(1.1);
-    expect(a.fx).not.toBeNull();
-    expect(distanceM(a.pos, onBent(M + 200))).toBeLessThan(1);           // starts where it was
-    const q = stepTo(mv, 1.1 + G / 4);
-    expect(mv.s).toBeCloseTo(M + 200 - 300 * (1 / 16), 0);                // ease-in-out: slow start
-    expect(distanceM(q.trail!.geom[0], onBent(M + 200))).toBeLessThan(2);
-    stepTo(mv, 1.1 + G * 0.75);
-    expect(mv.s).toBeLessThan(M);                                          // past the bend, on the route
-    const end = stepTo(mv, 1.1 + G + 0.01);
-    expect(end.fx).toBeNull();
-    expect(mv.s).toBe(M - 100);
-    expect(end.trail!.geom).toHaveLength(3);                               // old place, bend, new place
-    expect(end.trail!.alpha).toBeGreaterThan(0.9);
-    expect(mv.fixing).toBe(true);                                          // still drawing the trail
-    expect(mv.step(1.1 + G + TRAIL_S / 2).trail!.alpha).toBeCloseTo(0.5, 1);
-    expect(mv.step(1.1 + G + TRAIL_S + 0.01).trail).toBeNull();
-    expect(mv.fixing).toBe(false);
+  it("never goes back: ahead of a target that fell behind, it rolls on at a crawl until it is caught up", () => {
+    const mv = new Mover(atM(200));
+    mv.setPlan(plan(t => 200 + 8 * t), 200, 0);
+    stepTo(mv, 2);
+    expect(mv.s).toBeCloseTo(216, 0);
+    mv.retarget(plan(t => 100 + 8 * t), 2);   // a fix behind: the guess is now 100 m back, still at 8 m/s
+    let prev = mv.s, prevU = mv.u, slowest = Infinity, caught: number | null = null;
+    for (let t = 2.1; t <= 45; t += 0.1) {
+      const r = mv.step(t);
+      expect(r.alpha).toBe(1);                              // no fade: it waits on the road
+      expect(mv.s).toBeGreaterThanOrEqual(prev - 1e-9);     // never backwards
+      expect(Math.abs(mv.u - prevU)).toBeLessThan(0.2);     // speed changes at the dot's own pace (BRAKE per 0.1 s)
+      prev = mv.s; prevU = mv.u;
+      if (t > 6) slowest = Math.min(slowest, mv.u);
+      if (caught == null && Math.abs(mv.s - (100 + 8 * t)) < 10) caught = t;
+    }
+    expect(slowest).toBeGreaterThanOrEqual(CRAWL - 1e-9);   // never stood
+    expect(caught).not.toBeNull();
+    expect(caught!).toBeLessThan(40);                       // the guess gains on it, easing in over the last metres
+    expect(Math.abs(mv.s - (100 + 8 * 45))).toBeLessThan(6);   // riding along with it again
+  });
+  it("ahead of its guess, it brakes into a stop just ahead, stands there a while, then rolls on", () => {
+    const mv = new Mover(atM(200));
+    mv.setPlan({ ...plan(t => 200 + 8 * t), stops: [240] }, 200, 0);
+    stepTo(mv, 2);
+    mv.retarget({ ...plan(t => 50 + 0.5 * t), stops: [240] }, 2);   // the bus is far behind and barely moving
+    stepTo(mv, 20);
+    expect(mv.s).toBeCloseTo(240, 0);                       // standing at the stop
+    expect(mv.u).toBe(0);
+    stepTo(mv, 2 + STOP_HOLD_S + 12);
+    expect(mv.s).toBeGreaterThan(242);                      // rolled on after its hold
+    expect(mv.u).toBeGreaterThanOrEqual(CRAWL - 1e-9);
+  });
+  it("fades over to a guess it has waited on too long, or that is too far behind", () => {
+    const mv = new Mover(atM(200));
+    mv.setPlan(plan(t => 200 + 8 * t), 200, 0);
+    stepTo(mv, 2);
+    mv.retarget(plan(t => 50 + 2 * t), 2);                  // 160 m behind, coming at the crawl's own pace: never
+    let faded: number | null = null, fromPos = mv.pos;
+    for (let t = 2.1; t < 2 + WAIT_MAX + 2; t += 0.1) { const r = mv.step(t); if (r.alpha < 1) { faded ??= t; if (t < faded + FADE_S / 2 - 0.1) expect(distanceM(r.pos, fromPos)).toBeLessThan(1); } else if (faded == null) fromPos = r.pos; }
+    expect(faded).not.toBeNull();
+    expect(faded!).toBeGreaterThan(2 + WAIT_MAX - 1);
+    expect(Math.abs(mv.s - (50 + 2 * (2 + WAIT_MAX + 1.9)))).toBeLessThan(2);   // landed on the guess, riding with it
+    const far = new Mover(atM(400));
+    far.setPlan(plan(() => 400), 400, 0);
+    far.step(0.1);
+    far.retarget(plan(() => 400 - AHEAD_MAX - 20), 0.2);
+    far.step(0.3);
+    expect(far.step(0.4).alpha).toBeLessThan(1);            // too far behind to wait for: a fade at once
+    expect(far.step(0.3 + FADE_S + 0.01).alpha).toBe(1);
+    expect(far.s).toBe(400 - AHEAD_MAX - 20);
   });
   it("races up to a target ahead, never backwards; leaps at once to one far ahead (a new place)", () => {
     const mv = new Mover(atM(0));
@@ -140,15 +180,20 @@ describe("Mover", () => {
     expect(r.fx).toBeNull();
     expect(far.s).toBe(LEAP_M + 300);
   });
-  it("starts a correction glide from the shown point of a fix handoff", () => {
+  it("fades from the shown point to a place far behind on a fix handoff, never driving back", () => {
     const mv = new Mover(atM(400));
     mv.setPlan(plan(() => 400), 400, 0);
     mv.step(0.1);
-    const h = linePlan(mv.pos, atM(100), 90);                // far behind the bearing: a correction
+    const h = linePlan(mv.pos, atM(100), 90);                // far behind the bearing
     expect(h.fix).toBe(true);
+    expect(h.back).toBe(true);
     mv.apply(h, 1);
-    expect(distanceM(mv.step(1.01).pos, atM(400))).toBeLessThan(2);
-    expect(distanceM(stepTo(mv, 1 + glideS(300, true) + 0.01).pos, atM(100))).toBeLessThan(0.5);
+    mv.step(1.01);
+    const a = mv.step(1.1);
+    expect(distanceM(a.pos, atM(400))).toBeLessThan(2);
+    expect(a.alpha).toBeLessThan(1);
+    expect(distanceM(stepTo(mv, 1 + FADE_S + 0.01).pos, atM(100))).toBeLessThan(0.5);
+    expect(mv.fixing).toBe(false);
   });
   it("drops the old sideways offset on a correction to new geometry: it starts at the shown point", () => {
     const mv = new Mover([23.71, 37.9702]);
@@ -258,14 +303,15 @@ describe("plans from new data", () => {
     const r = pathPlan(atM(300), east, 8, 1000, 1000)!;
     expect(r.fix).toBe(false);
     expect(r.s0).toBeCloseTo(300, 0);
-    expect(r.plan.target(1010)).toBeCloseTo(drive(8, [], cumulativeLL(east)[2])(10), 5);   // the path starts at the fix
+    expect(r.plan.target(1010)).toBeCloseTo(careful(drive(8, [], cumulativeLL(east)[2]), 0)(10), 5);   // the path starts at the fix, the guess leans
   });
   it("drives into the stops of the path and stops at its end", () => {
     const r = pathPlan(atM(0), east, 15, 1000, 1000, [400])!;
     const end = cumulativeLL(east)[2];
-    expect(r.plan.target(1000 + 600)).toBeCloseTo(end, 6);
-    const f = drive(15, [400], end);
+    expect(r.plan.target(1000 + 900)).toBeCloseTo(end, 6);
+    const f = careful(drive(15, [400], end), 0);
     expect(r.plan.target(1040)).toBeCloseTo(f(40), 5);
+    expect(r.plan.stops).toEqual([400]);
   });
   it("prepends the shown point when it is behind the new path's start", () => {
     const r = pathPlan([23.695, 37.97], east, 8, 1000, 1000)!;
@@ -287,38 +333,66 @@ describe("plans from new data", () => {
 });
 
 describe("Mover lifecycle", () => {
-  it("corrects a dot left ahead of a standing target after a bounded wait", () => {
+  it("ahead of a standing target it rolls on slowly, then fades over to it after a bounded wait", () => {
     const mv = new Mover(atM(120));
     mv.setPlan(plan(() => 100), 120, 0);
-    let fx = false;
-    for (let t = 0.1; t < 5; t += 0.1) fx ||= mv.step(t).fx != null;
-    expect(fx).toBe(false);                     // waits first: the bus may still be there
-    for (let t = 5; t < 8; t += 0.1) fx ||= mv.step(t).fx != null;
-    expect(fx).toBe(true);
-    for (let t = 8; t < 10; t += 0.1) mv.step(t);
+    let prev = 120;
+    for (let t = 0.1; t < WAIT_STAND_S - 1; t += 0.1) { const r = mv.step(t); expect(r.alpha).toBe(1); expect(mv.s).toBeGreaterThanOrEqual(prev); prev = mv.s; }
+    expect(mv.s).toBeGreaterThan(120 + CRAWL * (WAIT_STAND_S - 1) - 5);   // rolled on at the crawl, never stood
+    let faded = false;
+    for (let t = WAIT_STAND_S - 1; t < WAIT_STAND_S + 3; t += 0.1) { const r = mv.step(t); faded ||= r.alpha < 1; }
+    expect(faded).toBe(true);
     expect(mv.s).toBe(100);
   });
-  it("restarts a running glide from where the dot is when a new correction arrives", () => {
+  it("waits on its way for a place behind on another geometry, and takes it up when it passes under", () => {
+    const mv = new Mover(atM(400));
+    mv.setPlan(plan(t => 400 + 8 * t), 400, 0);
+    mv.step(0.1);
+    // A fix 100 m behind with its own path along the same road, driving on at 8 m/s: planOnto puts the dot
+    // on that path ahead of the guess, and it waits at a crawl (same as on one geometry).
+    const path: LngLat[] = [atM(300), atM(600), atM(1000)];
+    const h = pathPlan(mv.pos, path, 8, 0.1, 0.1);
+    expect(h.fix).toBe(false);
+    mv.apply(h, 0.1);
+    let prev = mv.pos[0];
+    for (let t = 0.2; t < 40; t += 0.1) { const r = mv.step(t); expect(r.alpha).toBe(1); expect(r.pos[0]).toBeGreaterThanOrEqual(prev - 1e-12); prev = r.pos[0]; }
+    expect(mv.u).toBeGreaterThan(CRAWL + 1);                 // caught up and riding along again
+  });
+  it("gives a place behind with no way on, and standing, a short wait, then fades to it", () => {
     const mv = new Mover(atM(400));
     mv.setPlan(plan(() => 400), 400, 0);
     mv.step(0.1);
-    mv.retarget(plan(() => 100), 1);
-    mv.step(1);                                              // the glide starts here
-    const G = glideS(300, true);
+    const h = bridge(mv, linePlan(mv.pos, atM(300), 90));    // no path: a straight leg back along the road
+    expect(h.back).toBe(true);
+    mv.apply(h, 1);
+    let faded: number | null = null;
+    for (let t = 1.1; t < 1 + PENDING_STAND_S + 2; t += 0.1) { const r = mv.step(t); if (r.alpha < 1) faded ??= t; if (faded == null) expect(mv.pos[0]).toBeGreaterThanOrEqual(atM(400)[0]); }
+    expect(faded).not.toBeNull();
+    expect(faded!).toBeGreaterThan(1 + PENDING_STAND_S - 0.2);
+    expect(distanceM(mv.pos, atM(300))).toBeLessThan(0.5);
+  });
+  it("restarts a running glide ahead from where the dot is when a new correction arrives", () => {
+    const mv = new Mover(atM(0));
+    mv.setPlan(plan(() => 0), 0, 0);
+    mv.step(0.1);
+    mv.apply({ plan: plan(() => 300), s0: 0, fix: true }, 1);   // a handoff far off the geometry: a glide ahead
+    mv.step(1);
+    const G = glideS(300, false);
     const mid = stepTo(mv, 1 + G / 2).pos;
-    mv.apply(linePlan(mid, atM(50), 90), 1 + G / 2);         // newer fix, still far behind
-    expect(distanceM(mv.step(1 + G / 2 + 0.01).pos, mid)).toBeLessThan(2);
+    mv.apply({ plan: plan(() => 350), s0: 0, fix: true }, 1 + G / 2);   // newer fix, still far ahead
+    expect(distanceM(mv.step(1 + G / 2 + 0.01).pos, atM(0))).toBeLessThan(2);   // s0 = 0 is the shown point in the handoff's own geometry
     expect(stepTo(mv, 1 + G).fx).not.toBeNull();             // a new schedule, not the old one
     stepTo(mv, 1 + G / 2 + GLIDE_MAX_S + 0.01);
-    expect(distanceM(mv.pos, atM(50))).toBeLessThan(0.5);
+    expect(mv.s).toBe(350);
+    void mid;
   });
   it("goes on from where the dot is when the target moves on the same geometry mid-glide", () => {
-    const mv = new Mover(atM(400));
-    mv.setPlan(plan(() => 400), 400, 0);
+    const mv = new Mover(atM(0));
+    mv.setPlan(plan(() => 0), 0, 0);
     mv.step(0.1);
-    mv.retarget(plan(() => 100), 1);
+    mv.apply({ plan: plan(() => 300), s0: 0, fix: true }, 1);
     mv.step(1);
-    const G = glideS(300, true);
+    const G = glideS(300, false);
     const mid = stepTo(mv, 1 + G / 2).pos;
     mv.retarget(plan(() => 200), 1 + G / 2);
     expect(distanceM(mv.step(1 + G / 2).pos, mid)).toBeLessThan(1);
@@ -326,12 +400,12 @@ describe("Mover lifecycle", () => {
     expect(mv.s).toBe(200);
   });
   it("ends a glide without a jump when new data needs no correction, and fades its trail", () => {
-    const mv = new Mover(atM(400));
-    mv.setPlan(plan(() => 400), 400, 0);
+    const mv = new Mover(atM(0));
+    mv.setPlan(plan(() => 0), 0, 0);
     mv.step(0.1);
-    mv.retarget(plan(() => 100), 1);
+    mv.apply({ plan: plan(() => 300), s0: 0, fix: true }, 1);
     mv.step(1);                                              // the glide starts here
-    const G = glideS(300, true);
+    const G = glideS(300, false);
     const mid = stepTo(mv, 1 + G / 2).pos;
     const h = linePlan(mid, atM(255), null);                 // close by: no correction
     expect(h.fix).toBe(false);
@@ -388,38 +462,20 @@ describe("Mover lifecycle", () => {
   });
 });
 
-describe("corrections forward and back", () => {
-  it("takes longer for a longer jump, either way, within bounds: a slide, not a blink", () => {
+describe("corrections ahead", () => {
+  it("takes longer for a longer jump, within bounds: a slide, not a blink", () => {
     expect(glideS(200, false)).toBeGreaterThan(GLIDE_S);
-    expect(glideS(200, true)).toBe(glideS(200, false));
-    expect(200 / glideS(200, true)).toBeLessThan(40);   // never faster than this, m/s
+    expect(200 / glideS(200, false)).toBeLessThan(40);   // never faster than this, m/s
     expect(glideS(5000, false)).toBe(GLIDE_MAX_S);
     expect(glideS(0, false)).toBe(GLIDE_S);
   });
-  it("marks a glide back, and its trail, as back; a glide ahead is not", () => {
-    const mv = new Mover(atM(400));
-    mv.setPlan(plan(() => 400), 400, 0);
-    mv.step(0.1);
-    mv.retarget(plan(() => 100), 1);
-    expect(mv.step(1.1).back).toBe(true);
-    const end = stepTo(mv, 1.1 + glideS(300, true) + 0.01);
-    expect(end.trail).not.toBeNull();
-    expect(end.back).toBe(true);
-    const fw = new Mover(atM(0));
-    fw.setPlan(plan(() => 0), 0, 0);
-    fw.step(0.1);
-    fw.retarget(plan(() => 350), 0.2);
-    expect(fw.step(0.3).back).toBe(false);
-  });
-  it("keeps facing the way it travels while it glides back", () => {
+  it("keeps facing its way while it waits for a place behind", () => {
     const mv = new Mover(onBent(M + 200));
     mv.setPlan(plan(() => M + 200, bent), M + 200, 0);
     mv.step(0.1);
     const h = bridge(mv, linePlan(mv.pos, onBent(M - 100), 0));   // heading north; the fix is back past the bend
     mv.apply(h, 1);
-    mv.step(1.05);
-    stepTo(mv, 1 + glideS(300, true) * 0.75);                       // past the bend, going west on the route
-    expect(mv.heading()).toBeCloseTo(0, 0);                        // still north, the way it travels
+    for (let t = 1.05; t < 4; t += 0.1) { mv.step(t); expect(mv.heading()).toBeCloseTo(0, 0); }   // north, the way it travels
   });
 });
 
@@ -500,9 +556,9 @@ describe("walk (contract rev 6 path_speeds)", () => {
   it("is what pathPlan drives when the vehicle has path_speeds (no stop waits)", () => {
     const end = cumulativeLL(east)[2];
     const r = pathPlan(atM(0), east, 15, 1000, 1000, [400], [6, 3]);
-    expect(r.plan.target(1040)).toBeCloseTo(walk([6, 3], 15, end)(40), 5);
-    expect(pathPlan(atM(0), east, 15, 1000, 1000, [400], null).plan.target(1040)).toBeCloseTo(drive(15, [400], end)(40), 5);
-    expect(pathPlan(atM(0), east, 15, 1000, 1000, [400], []).plan.target(1040)).toBeCloseTo(drive(15, [400], end)(40), 5);
+    expect(r.plan.target(1040)).toBeCloseTo(careful(walk([6, 3], 15, end), 0)(40), 5);
+    expect(pathPlan(atM(0), east, 15, 1000, 1000, [400], null).plan.target(1040)).toBeCloseTo(careful(drive(15, [400], end), 0)(40), 5);
+    expect(pathPlan(atM(0), east, 15, 1000, 1000, [400], []).plan.target(1040)).toBeCloseTo(careful(drive(15, [400], end), 0)(40), 5);
   });
 });
 

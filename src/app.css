@@ -102,7 +102,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .hotdisc img { width: 72%; height: 72%; display: block; }
 @media (prefers-reduced-motion: reduce) { .bus, .hotdisc { transition: none; } }
 .bus.stale { opacity: .45; }
-.bus.rewind { opacity: .5; transition: opacity .2s; }   /* gliding back to a fix behind (motion.ts) */
 .vm.stale .age { color: var(--late2); }
 .bus.selected { outline: 3px solid var(--accent); outline-offset: 5px; z-index: 2; opacity: 1; }   /* a stale one too */
 .bus:focus-visible { outline: 3px solid var(--accent); }

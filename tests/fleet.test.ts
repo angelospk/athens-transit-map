@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { distanceM, type LngLat } from "../src/lib/glide";
 import { Fleet, GAP_M, routeGeom } from "../src/lib/map/fleet";
-import { cumulativeLL, project, GLIDE_MAX_S } from "../src/lib/motion";
+import { CRAWL, cumulativeLL, project, FADE_S, PENDING_STAND_S } from "../src/lib/motion";
 import { shapeLength } from "../src/lib/predict";
 import type { CityVehicle, Vehicle } from "../src/lib/types";
 
@@ -145,18 +145,18 @@ describe("Fleet", () => {
     const f = new Fleet();
     const bent: [number, number][] = [[37.97, 23.70], [37.97, 23.71], [37.98, 23.71]];
     f.city([city(0, T, { path: bent })], new Set(), T);
-    run(f, T, T + 150);                                           // past the bend, going north
+    run(f, T, T + 200);                                           // past the bend, going north
     const mv = f.entries.get("040/1")!.mover;
     expect(mv.pos[1]).toBeGreaterThan(37.9701);
-    f.city([city(600, T + 150, { path: null })], new Set(), T + 150);   // the bus was not that far
+    f.city([city(600, T + 200, { path: null })], new Set(), T + 200);   // the bus was not that far
     const geom: LngLat[] = bent.map(([lat, lon]) => [lon, lat]), cum = cumulativeLL(geom);
-    let worst = 0, back = false;
-    for (let t = T + 150.05; t < T + 150 + GLIDE_MAX_S + 0.2; t += 0.05) {   // a long way back: the longest glide
+    let worst = 0, faded = false;
+    for (let t = T + 200.05; t < T + 200 + PENDING_STAND_S + FADE_S + 1; t += 0.05) {   // a long way back, standing: a fade over
       const r = mv.step(t);
-      back ||= r.back;
+      faded ||= r.alpha < 1;
       worst = Math.max(worst, project(geom, cum, r.pos).off);
     }
-    expect(back).toBe(true);
+    expect(faded).toBe(true);
     expect(worst).toBeLessThan(3);                                // on the road, never across the corner
     expect(distanceM(mv.pos, [lonAt(600), 37.97])).toBeLessThan(2);
   });
@@ -175,7 +175,7 @@ describe("Fleet", () => {
     f.line("040", [{ v: line(100, T, crawl), route }], T + 25);   // same position_at, now with path_speeds
     expect(f.entries.get("040/1")!.track!.steps).toEqual(crawl.path_speeds);
     const a = run(f, T + 25.05, T + 30), b = run(f, T + 30.05, T + 45);
-    expect(distanceM(a, b)).toBeLessThan(10);   // crawls at the typical speed, not at its own 8 m/s
+    expect(distanceM(a, b)).toBeLessThan(15 * CRAWL + 2);   // ahead of a guess at the typical speed: it waits at a crawl, not at its own 8 m/s
   });
 
   it("walks the step speeds that come only with the line's second copy of a fix the city layer showed", () => {
@@ -188,7 +188,7 @@ describe("Fleet", () => {
     f.line("040", [{ v: line(100, T, crawl), route }], T + 30);   // and again, now with path_speeds
     expect(distanceM(shown, run(f, T + 30.05, T + 30.05))).toBeLessThan(1.5);   // hands over, no jump
     const a = run(f, T + 30.1, T + 35), b = run(f, T + 35.05, T + 50);
-    expect(distanceM(a, b)).toBeLessThan(10);
+    expect(distanceM(a, b)).toBeLessThan(15 * CRAWL + 2);
   });
 
   it("does not disturb a running handoff when the same line data comes again", () => {

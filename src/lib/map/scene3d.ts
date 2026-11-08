@@ -1270,7 +1270,7 @@ export class Scene3D {
       highlight: { "line-width": width(6), "line-opacity": near(1, 1), "line-offset": near(3, 0) },
       // The vehicles' trails follow OASA's shapes, not the roads: close in they would cut across lanes and
       // buildings, and the moving models show the motion anyway.
-      ...Object.fromEntries(["trails-city", "trails-city-back", "trails-line", "trails-line-back"].map(id =>
+      ...Object.fromEntries(["trails-city", "trails-line"].map(id =>
         [id, { "line-opacity": (orig: unknown) => near(orig ?? 1, 0) }])),
       "highlight-casing": { "line-opacity": near(0.9, 0), "line-offset": near(3, 0) },
       "route-arrows": { "icon-opacity": near(1, 0) },

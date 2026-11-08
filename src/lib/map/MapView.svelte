@@ -567,16 +567,12 @@
     // Trails of corrections (the route a vehicle glided along) and, with motion off, of moves to a
     // new fix. Always under the vehicle: city dots' trails under the dots, detailed lines' trails
     // over the route lines (their vehicles are DOM markers, above the map).
-    // A correction back is drawn apart: thin, grey and dashed, so it does not read as the bus reversing.
     m.addSource("trails", { type: "geojson", data: EMPTY });
     const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#0071e3";
     const trail = (id: string, dom: boolean, before?: string) => {
       m.addLayer({ id, type: "line", source: "trails",
-        filter: ["all", ["==", ["get", "dom"], dom], ["!", ["to-boolean", ["get", "back"]]]], layout: { "line-join": "round", "line-cap": "round" },
+        filter: ["==", ["get", "dom"], dom], layout: { "line-join": "round", "line-cap": "round" },
         paint: { "line-color": accent, "line-width": 8, "line-opacity": ["*", 0.55, ["get", "alpha"]] } }, before);
-      m.addLayer({ id: `${id}-back`, type: "line", source: "trails",
-        filter: ["all", ["==", ["get", "dom"], dom], ["to-boolean", ["get", "back"]]], layout: { "line-join": "round" },
-        paint: { "line-color": "#80868b", "line-width": 3, "line-dasharray": [1.5, 1.5], "line-opacity": ["*", 0.9, ["get", "alpha"]] } }, before);
     };
     trail("trails-city", false, "city-dot");
     m.addImage("route-arrow", arrowImage(), { pixelRatio: 2 });
@@ -921,7 +917,7 @@
       if (!dom && (!app.cityOn || (focusLines && !focusLines.has(e.line)) || (cull && (still
         ? !moved && cull(e.pos)
         : !e.mover.fixing && cull(e.mover.pos) && cull(e.mover.targetPos(now) ?? e.mover.pos))))) continue;
-      let pos: LngLat, trail: { geom: LngLat[]; alpha: number } | null, back = false, rewind = false;
+      let pos: LngLat, trail: { geom: LngLat[]; alpha: number } | null, alpha = 1;
       if (still) {
         pos = e.pos;
         trail = moved && { geom: [moved.from, e.pos], alpha: 1 - (now - moved.at) / STILL_TRAIL_S };
@@ -930,15 +926,14 @@
         const r = e.mover.step(now);
         pos = r.pos;
         trail = r.trail;
-        back = r.back;
-        rewind = back && r.fx != null;   // gliding back: the dot is drawn faint
+        alpha = r.alpha;   // under 1 while it fades over to a place it cannot drive to (motion.ts)
         if (e.mover.fixing) fixing = true;
       }
       if (moved) fixing = true;
       // A trail is drawn like its vehicle: not for one filtered out, hidden or dimmed by a selection.
       const o = dom || !s || app.others === "normal" || e.key === selKey || (s.kind === "route" && e.line === s.line) ? 1 : app.others === "dim" ? 0.22 : 0;
       if (trail && shown && o && trail.geom.length > 1)
-        trails.push({ type: "Feature", geometry: { type: "LineString", coordinates: trail.geom }, properties: { alpha: trail.alpha * o, dom, ...(back && { back }) } });
+        trails.push({ type: "Feature", geometry: { type: "LineString", coordinates: trail.geom }, properties: { alpha: trail.alpha * o, dom } });
       if (dom) {
         // In 3D, close in, the vehicle is drawn in the middle of its lane, where its route is painted (scene3d.place).
         const placed = scene3d.on ? scene3d.place(pos, doms.get(e.key)?.heading ?? null, e.line, e.key) : null;
@@ -954,7 +949,8 @@
           const label = etaLabel(e);
           if (d.eta.textContent !== label) d.eta.textContent = label;
         }
-        d.el.classList.toggle("rewind", rewind);
+        const fade = alpha < 1 ? String(Math.round(alpha * 100) / 100) : "";
+        if (d.el.style.opacity !== fade) d.el.style.opacity = fade;
       }
       else {
         const h = turners.toward(e.key, headingOf(e, still), turnNow);
@@ -986,7 +982,7 @@
       const pr = f.properties as Record<string, unknown>;
       pr.line = e.line; pr.id = e.id; pr.cls = e.cls; pr.mode = app.lineInfo.get(e.line)?.kind ?? "bus"; pr.stale = isStalePos(now - e.at);
       if (h != null) pr.h = h; else delete pr.h;
-      if (rewind) pr.rewind = true; else delete pr.rewind;
+      if (alpha < 1) pr.fade = Math.round(alpha * 100) / 100; else delete pr.fade;
       if (city3d?.has(e.key)) pr.m3d = true; else delete pr.m3d;
       features.push(f);
       }
@@ -2635,7 +2631,7 @@
     const o = !s || app.others === "normal" ? 1 : app.others === "dim" ? 0.22 : 1;
     // «Κοντά σου» with nothing selected: the lines of the nearest stops stay, the others dim.
     const near = !s && app.nearFocus ? app.nearFocus : null;
-    const opacity: ExpressionSpecification = ["*", ["case", sel, 1, o], near ? ["case", ["in", ["get", "line"], ["literal", near]], 1, 0.22] : 1, ["case", ["get", "stale"], 0.3, 1], ["case", ["to-boolean", ["get", "rewind"]], 0.5, 1],
+    const opacity: ExpressionSpecification = ["*", ["case", sel, 1, o], near ? ["case", ["in", ["get", "line"], ["literal", near]], 1, 0.22] : 1, ["case", ["get", "stale"], 0.3, 1], ["coalesce", ["get", "fade"], 1],
       ["case", ["to-boolean", ["get", "m3d"]], 0, 1]];
     m.setPaintProperty("city-dot", "icon-opacity", opacity);
     m.setPaintProperty("city-delay", "circle-opacity", opacity);

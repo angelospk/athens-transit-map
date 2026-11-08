@@ -4,7 +4,7 @@
 
 import { delayClass, type DelayClass } from "../format";
 import { distanceM, JUMP_M, type LngLat } from "../glide";
-import { bridge, drive, linePlan, Mover, project, NO_SPEED, pathPlan, planOnto, pointAtLL, walk, type Handoff, type Plan, cumulativeLL } from "../motion";
+import { bridge, careful, drive, linePlan, Mover, project, NO_SPEED, pathPlan, planOnto, pointAtLL, walk, type Handoff, type Plan, cumulativeLL } from "../motion";
 import { predictS, updateTrack, type Route, type Track } from "../predict";
 import type { CityVehicle, Vehicle } from "../types";
 
@@ -73,7 +73,7 @@ function alongPlan(shown: LngLat, r: RouteGeom, s0: number, v: CityVehicle | Veh
   const near = (v.path_stops ?? []).map(x => x * k), after = near.length ? near[near.length - 1] + 15 : 1;
   const stops = [...near, ...r.route.stopS.map(x => x - s0).filter(x => x > after)];
   const f = v.path_speeds?.length ? walk(v.path_speeds, speed, end) : drive(speed, stops, end);
-  return planOnto(shown, { geom: r.geom, cum: r.cum, target: t => s0 + f(t - v.position_at) }, nowSec);
+  return planOnto(shown, { geom: r.geom, cum: r.cum, target: careful(t => s0 + f(t - v.position_at), v.position_at), stops: stops.map(x => x + s0) }, nowSec);
 }
 
 // Along the backend `path` and its continuation `path_beyond` (rev 4; it starts at path's end, or
@@ -140,7 +140,7 @@ export class Fleet {
       if (sameFix && e.mover.plan && (e.guess || !(e.track || hasPath(v))) && (!e.track || e.track === before)) continue;
       if (e.track && route) {
         const track = e.track;
-        const plan: Plan = { geom: route.geom, cum: route.cum, target: t => predictS(track, t) };
+        const plan: Plan = { geom: route.geom, cum: route.cum, target: careful(t => predictS(track, t), track.at), stops: route.route.stopS };
         if (keepRoute && e.mover.plan?.geom === route.geom) e.mover.retarget(plan, nowSec);
         else {
           const h = bridge(e.mover, planOnto(e.mover.pos, plan, nowSec));
