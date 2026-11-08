@@ -110,10 +110,11 @@
   // The base map follows the theme. A new style drops our sources, layers and images: they are added again
   // (addAll) once it has loaded, and `loaded` going false then true makes the effects below send their data again.
   const systemDark = new MediaQuery("(prefers-color-scheme: dark)");
-  // A computer: the hills in relief (relief.ts); a phone keeps the flat map (lighter to draw, less to read).
+  // The hills in relief (relief.ts): on a computer always; on a phone in 3D (with its mountains), its 2D map flat
+  // (lighter to draw, less to read).
   const wideMap = new MediaQuery("(min-width: 720px)");
   $effect(() => {
-    const on = wideMap.current;
+    const on = wideMap.current || app.threeD;
     void baseGen;
     untrack(() => { if (map?.getLayer(RELIEF_LAYER)) map.setLayoutProperty(RELIEF_LAYER, "visibility", on ? "visible" : "none"); });
   });
@@ -123,11 +124,11 @@
     void baseGen;
     untrack(() => { if (map?.getLayer(RELIEF_LAYER)) map.setPaintProperty(RELIEF_LAYER, "hillshade-exaggeration", reliefStrength(styleDark, on3d) as ExpressionSpecification); });
   });
-  // 3D on a computer: the mountains round the city rise, under the sky's haze (relief.ts setMountains). Not in the
+  // 3D, on a computer and a phone: the mountains round the city rise, under the sky's haze (relief.ts setMountains). Not in the
   // metro mode: there the camera goes under the street (its elevation below 0), which a terrain would not let it do,
   // and coming up again it stayed under the ground (the map blank).
   $effect(() => {
-    const on = app.threeD && wideMap.current && !app.under;
+    const on = app.threeD && !app.under;
     void baseGen;
     untrack(() => { if (map?.isStyleLoaded() || map?.getLayer(RELIEF_LAYER)) try { setMountains(map, on); } catch { /* an old WebGL: the flat map */ } });
   });
@@ -1405,7 +1406,7 @@
     // and its own layers are noted (before ours go in): the ones Apple's map replaces in 2D.
     m.on("style.load", () => {
       paintBase(m, styleDark);
-      addRelief(m, styleDark, wideMap.current, app.threeD);   // the hills in relief, a computer only (relief.ts)
+      addRelief(m, styleDark, wideMap.current || app.threeD, app.threeD);   // the hills in relief (relief.ts)
       baseLayers = m.getStyle().layers.map(l => [l.id, (m.getLayoutProperty(l.id, "visibility") as string | undefined) ?? "visible"] as [string, string]);
       baseHidden = false;
       baseGen++;

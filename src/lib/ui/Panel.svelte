@@ -118,6 +118,12 @@
     });
   });
 
+  // No tab bar (a phone and a computer): «Χάρτης» or «Ταξίδι» left over with nothing to show (no lines picked, no
+  // card, no planner open: after a card or «Πού πας;» closed) is the home again, not the old search bar on its own.
+  $effect(() => {
+    const t = app.tab, idle = !app.selected.length && !app.stack.length && pop !== "trip" && !app.start && !app.guide;
+    if ((t === "map" || t === "trip") && idle) untrack(() => { app.tab = "now"; });
+  });
   // The chevron: opens and closes the dropdown.
   function fold() {
     collapsed = !collapsed;

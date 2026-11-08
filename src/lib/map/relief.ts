@@ -1,5 +1,5 @@
 // The hills in relief (canvas mockup Μ5): Υμηττός, Πεντέλη, Πάρνηθα and the rest shaded from the north-west, softly,
-// under the streets and the buildings, in 2D and in 3D. A computer only (MapView turns it off on a phone). In 2D it is
+// under the streets and the buildings: on a computer in 2D and 3D, on a phone in 3D (MapView). In 2D it is
 // gone by street level, where it would only dirty the streets; in 3D it stays, for the hills in the distance. The
 // heights: Mapzen's Terrarium tiles on AWS (open data, no key).
 
@@ -92,7 +92,7 @@ function register() {
   return true;
 }
 
-/** The mountains on or off (3D on a computer): the flattened terrain under the map, the sky's haze over it. */
+/** The mountains on or off (3D): the flattened terrain under the map, the sky's haze over it. */
 export function setMountains(m: ReliefMap, on: boolean) {
   if (!m.setTerrain) return;
   if (!on) { if (m.getTerrain?.()) m.setTerrain(null); return; }
