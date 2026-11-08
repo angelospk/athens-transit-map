@@ -89,6 +89,9 @@
   // Close enough in for the routes to go onto their roads: it flips as the zoom crosses STREET3D_ZOOM, and the routes
   // are sent again then (not only when their data changes).
   let streetZoom = $state(false);
+  // Zoomed out far enough for the mountains to show (3D on a computer): the terrain is heavy, so only out here.
+  const MOUNTAIN_ZOOM = 14;
+  let farOut = $state(false);
   // Each route snapped once per road index: the same shape always gives the same line, at every zoom and data refresh.
   const snapCache = new WeakMap<object, Map<string, [number, number][]>>();
   function onRoads<F extends GeoJSON.FeatureCollection<GeoJSON.LineString>>(fc: F): F {
@@ -130,11 +133,11 @@
   // 3D on a computer: the mountains round the city rise, under the sky's haze (relief.ts setMountains). Not in the
   // metro mode: there the camera goes under the street (its elevation below 0), which a terrain would not let it do,
   // and coming up again it stayed under the ground (the map blank).
-  // Not at street level either: a terrain has MapLibre draw every layer to a texture per tile, and with the street's
-  // own layers that made a pan stutter badly (2026-11-09, PC); zoomed out, where the mountains are seen, it is light.
-  // The basin is flat at 0 either way (relief.ts FLAT_M), so nothing moves when it comes and goes.
+  // Only zoomed out (MOUNTAIN_ZOOM), where the mountains are seen: a terrain has MapLibre draw every layer to a texture
+  // per tile, and closer in that made a pan, a zoom stutter badly (2026-11-09, PC). The basin is flat at 0 either way
+  // (relief.ts FLAT_M), so nothing moves when it comes and goes.
   $effect(() => {
-    const on = app.threeD && !app.under && mouseMap.current && !streetZoom;
+    const on = app.threeD && !app.under && mouseMap.current && farOut;
     void baseGen;
     untrack(() => { if (map?.isStyleLoaded() || map?.getLayer(RELIEF_LAYER)) try { setMountains(map, on); } catch { /* an old WebGL: the flat map */ } });
   });
@@ -1484,7 +1487,10 @@
     m.on("dragstart", () => { follow = false; if (dive) dive.follow = false; if (focus) focus.follow = false; following = false; });   // only user gestures fire them
     // Untracked: setup runs inside the attachment's effect, and reading streetZoom there would make the whole map
     // depend on it (crossing zoom 15 would then tear the map down and build it again at the city's starting view).
-    const zoomed = () => untrack(() => { const z = m.getZoom() >= STREET3D_ZOOM; if (z !== streetZoom) streetZoom = z; });
+    const zoomed = () => untrack(() => {
+      const z = m.getZoom() >= STREET3D_ZOOM; if (z !== streetZoom) streetZoom = z;
+      const far = m.getZoom() < MOUNTAIN_ZOOM; if (far !== farOut) farOut = far;
+    });
     m.on("zoom", zoomed);
     zoomed();
     // 3D, close in, a mouse over a city bus shows its info chip (showInfo); a few times a second is enough.

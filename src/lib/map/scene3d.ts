@@ -39,7 +39,9 @@ function sideCanvas(w: number, h: number, back: boolean, draw: (x: CanvasRenderi
 
 /** One stop's arrival screen: where the stop is ([lon, lat]) and its rows: line, where to, minutes. */
 export interface Board { at: LngLat; rows: [string, string, string][] }
-type TreeTile = { key: string; crowns: Three.InstancedMesh; trunks: Three.InstancedMesh; origin: LngLat; roads: RoadIndex | null };
+// crowns/trunks: the trees near the view's centre, in full; far: the rest, one coarse blob each and no trunk, casting
+// no shadow (the sun's shadow box, 120 m about the centre, never reaches them).
+type TreeTile = { key: string; crowns: Three.InstancedMesh; trunks: Three.InstancedMesh; far: Three.InstancedMesh; origin: LngLat; roads: RoadIndex | null };
 
 export const BUS_ZOOM = 16;    // models from here; below it the pills alone
 export const TREE_ZOOM = 16;
@@ -732,7 +734,7 @@ export class Scene3D {
     if (!m || !this.styleReady) return;
     for (const id of [...STREET_LAYERS, ...this.streetIds]) if (m.getLayer(id)) m.setLayoutProperty(id, "visibility", this.under ? "none" : "visible");
     if (this.under) {
-      for (const t of this.trees.values()) if (t !== "none") { t.crowns.removeFromParent(); t.trunks.removeFromParent(); dispose(t); }
+      for (const t of this.trees.values()) if (t !== "none") { t.crowns.removeFromParent(); t.trunks.removeFromParent(); t.far.removeFromParent(); dispose(t); }
       this.trees.clear();
     }
     if (this.under && !m.getLayer("x3d-under")) {
@@ -1121,6 +1123,13 @@ export class Scene3D {
         repaint(l.id, "line-color", /rail|transit/.test(l.id) ? TOON.rail : /casing/.test(l.id) ? TOON.casing : TOON.road);
         continue;
       }
+      // Under the street zoom, the base map's roads are drawn wider in 3D (up to 2.4 times at STREET_ZOOM, where the
+      // modelled streets take over at their real widths): seen tilted, the base map's hairlines read as no map at all.
+      if (l.type === "line" && sl === "transportation" && !l.id.startsWith("x3d-") && !/rail|transit/.test(l.id)) {
+        const w = widenBy(m.getPaintProperty(l.id, "line-width"), z => z <= 12 ? 1 : z >= STREET_ZOOM ? 2.4 : z <= 14 ? 1 + (0.6 * (z - 12)) / 2 : 1.6 + (0.8 * (z - 14)) / (STREET_ZOOM - 14));
+        if (w) repaint(l.id, "line-width", w);
+        continue;
+      }
       if (l.type !== "fill" || !sl) continue;
       if (sl === "park" || (sl === "landcover" && /grass|wood|park|garden/.test(l.id))) repaint(l.id, "fill-color", c.park);
       else if (sl === "water") repaint(l.id, "fill-color", c.water);
@@ -1385,8 +1394,8 @@ export class Scene3D {
       const tile = this.trees.get(key), t = treeTiles.get(key);
       if (tile && tile !== "none" && t) {
         const fresh = this.treeMeshes(this.T, key, t);
-        this.scene.add(fresh.crowns, fresh.trunks);
-        tile.crowns.removeFromParent(); tile.trunks.removeFromParent(); dispose(tile);
+        this.scene.add(fresh.crowns, fresh.trunks, fresh.far);
+        tile.crowns.removeFromParent(); tile.trunks.removeFromParent(); tile.far.removeFromParent(); dispose(tile);
         this.trees.set(key, fresh);
         this.map?.triggerRepaint();
       }
@@ -1711,8 +1720,9 @@ export class Scene3D {
         self.renderer.shadowMap.type = phone ? T.PCFShadowMap : T.PCFSoftShadowMap;
         // A phone draws the shadow map (every tree, building and bus once more, from the sun) every other frame: a
         // shadow one frame behind is not seen, half the shadow passes are.
-        self.renderer.shadowMap.autoUpdate = !phone;
-        self.shadowEvery = phone ? 2 : 1;
+        // (On a computer too, since 2026-11-09: a pan across the city was choppy.)
+        self.renderer.shadowMap.autoUpdate = false;
+        self.shadowEvery = 2;
         // Once the trees around are built, every shader is compiled at the next frame (prewarm), under the loading
         // screen, not one by one as each thing first comes into view.
         void (self.refresh() ?? Promise.resolve()).finally(() => { self.warmUp = true; map.triggerRepaint(); });
@@ -1729,7 +1739,7 @@ export class Scene3D {
     this.scale = this.ref.meterInMercatorCoordinateUnits();
     for (const g of this.groups.values()) g.removeFromParent();
     this.groups.clear();
-    for (const t of this.trees.values()) if (t !== "none") { t.crowns.removeFromParent(); t.trunks.removeFromParent(); dispose(t); }
+    for (const t of this.trees.values()) if (t !== "none") { t.crowns.removeFromParent(); t.trunks.removeFromParent(); t.far.removeFromParent(); dispose(t); }
     this.trees.clear();
     this.poolsAt = "";   // lamps again, around the new origin
     this.tunnelAt = null;
@@ -1800,14 +1810,14 @@ export class Scene3D {
         if (!this.on || !this.scene || this.under || this.trees.get(key) !== "none") { if (this.under) this.trees.delete(key); return; }
         const tile = this.treeMeshes(T, key, t);
         this.trees.set(key, tile);
-        this.scene.add(tile.crowns, tile.trunks);
+        this.scene.add(tile.crowns, tile.trunks, tile.far);
         m.triggerRepaint();
       } catch { /* no trees there */ }
     }));
     // Keep the tiles near the view; let the far ones go.
     for (const [key, tile] of this.trees) {
       if (tile === "none" || want.includes(key) || this.trees.size < 8) continue;
-      tile.crowns.removeFromParent(); tile.trunks.removeFromParent(); dispose(tile);
+      tile.crowns.removeFromParent(); tile.trunks.removeFromParent(); tile.far.removeFromParent(); dispose(tile);
       this.trees.delete(key);
     }
   }
@@ -1834,25 +1844,30 @@ export class Scene3D {
     const trunkG = new T.CylinderGeometry(0.14, 0.26, 1, 10);
     trunkG.rotateX(Math.PI / 2);
     trunkG.translate(0, 0, 0.5);
+    // The far trees (most of them, small on the screen): one coarse blob each, a quarter of the triangles of a near
+    // one's blob, and its trunk in the same mesh, with no shadow (the sun's shadow box never reaches them).
+    const farG = toon ? facetedSphere(T) : lumpySphere(T, 1);
     const crowns = new T.InstancedMesh(crownG, swayMaterial(T, this.time, toon), Math.max(1, n * blobs));
     const trunks = new T.InstancedMesh(trunkG, new T.MeshLambertMaterial({ color: c.trunk }), Math.max(1, n));
-    crowns.count = n * blobs;
-    trunks.count = n;
+    const far = new T.InstancedMesh(farG, swayMaterial(T, this.time, toon), Math.max(1, n));
     const o = new T.Object3D(), col = new T.Color();
-    let seed = 11, k = 0;
+    let seed = 11, k = 0, kn = 0, kf = 0;
     const rnd = () => ((seed = (seed * 16807) % 2147483647), seed / 2147483647);
     const j = () => (rnd() - 0.5) * 2;
-    spots.forEach(([lon, lat, h0], i) => {
+    for (const [lon, lat, h0] of spots) {
       const [x, y] = this.local([lon, lat]);
       // Wide, flat umbrella crowns (as street trees grow, and as the reference renders them) on a taller trunk.
       const h = Math.max(5, Math.min(h0, 16)), r = Math.max(3, Math.min(7.5, h * 0.52));
-      o.position.set(x, y, 0); o.rotation.set(0, 0, 0); o.scale.set(1, 1, h * 0.72); o.updateMatrix();
-      trunks.setMatrixAt(i, o.matrix);
       const base = c.leaves[Math.floor(rnd() * c.leaves.length)];
-      // Far from the view's centre (most of the trees seen, small on the screen), one blob is enough: four times
-      // fewer to draw, and to draw again for the shadows.
-      const far = Math.hypot(x - cx, y - cy) > TREE_FULL_M;
-      const parts: [number, number, number, number][] = far ? [[0, 0, h - r * 0.5, r * 1.1]] : [
+      if (Math.hypot(x - cx, y - cy) > TREE_FULL_M) {
+        o.position.set(x, y, h - r * 0.5); o.rotation.set(rnd() * 6, rnd() * 6, rnd() * 6); o.scale.set(r * 1.23, r * 1.23, r * (toon ? 1 : 0.66)); o.updateMatrix();
+        far.setMatrixAt(kf, o.matrix);
+        far.setColorAt(kf++, col.setHex(base).offsetHSL(0, 0, (rnd() - 0.5) * 0.06));
+        continue;
+      }
+      o.position.set(x, y, 0); o.rotation.set(0, 0, 0); o.scale.set(1, 1, h * 0.72); o.updateMatrix();
+      trunks.setMatrixAt(kn++, o.matrix);
+      const parts: [number, number, number, number][] = [
         [0, 0, h - r * 0.42, r],                                   // the main crown
         [r * 0.75 * j(), r * 0.75 * j(), h - r * 0.62, r * 0.72],  // lumps round its rim
         [r * 0.75 * j(), r * 0.75 * j(), h - r * 0.6, r * 0.68],
@@ -1863,10 +1878,11 @@ export class Scene3D {
         crowns.setMatrixAt(k, o.matrix);
         crowns.setColorAt(k++, col.setHex(base).offsetHSL(0, 0, (rnd() - 0.5) * 0.06));
       }
-    });
-    crowns.count = k;
+    }
+    crowns.count = k; trunks.count = kn; far.count = kf;
     for (const mesh of [crowns, trunks]) { mesh.castShadow = true; mesh.frustumCulled = false; }
-    return { key, crowns, trunks, origin: this.origin, roads: idx };
+    far.castShadow = false; far.frustumCulled = false;
+    return { key, crowns, trunks, far, origin: this.origin, roads: idx };
   }
 
   // Buses kept apart (spacing.ts): each one's eased gap (out to the left, back in line), its speed from its last
@@ -1996,7 +2012,7 @@ export class Scene3D {
       seen.add(key);
     }
     for (const [key, g] of this.groups) if (!seen.has(key)) { g.visible = false; this.drawn.delete(key); }
-    for (const t of this.trees.values()) if (t !== "none") t.crowns.visible = t.trunks.visible = z >= TREE_ZOOM;
+    for (const t of this.trees.values()) if (t !== "none") t.crowns.visible = t.trunks.visible = t.far.visible = z >= TREE_ZOOM;
     const street = z >= STREET_ZOOM && !this.under;   // underground only: no street level
     for (const l of this.lampMeshes) l.visible = street;
     for (const l of this.stopMeshes) l.visible = street;
@@ -2319,7 +2335,7 @@ function mergeParts<O extends Three.Object3D>(T: typeof Three, root: O): O {
 }
 
 function dispose(t: TreeTile) {
-  for (const m of [t.crowns, t.trunks]) { m.geometry.dispose(); (m.material as Three.Material).dispose(); m.dispose(); }
+  for (const m of [t.crowns, t.trunks, t.far]) { m.geometry.dispose(); (m.material as Three.Material).dispose(); m.dispose(); }
 }
 
 // Destination displays on a model (Scene3D.sign() gives them the line's number): across the top of the windscreen,
@@ -2723,8 +2739,8 @@ function facetedSphere(T: typeof Three): Three.BufferGeometry {
   g.computeVertexNormals();
   return g;
 }
-function lumpySphere(T: typeof Three): Three.BufferGeometry {
-  const g = new T.IcosahedronGeometry(1, 2);
+function lumpySphere(T: typeof Three, detail = 2): Three.BufferGeometry {
+  const g = new T.IcosahedronGeometry(1, detail);
   const p = g.attributes.position as Three.BufferAttribute, v = new T.Vector3();
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i).normalize();
@@ -2740,6 +2756,37 @@ function lumpySphere(T: typeof Three): Three.BufferGeometry {
 // A base-map layer filter as an expression, so it can be combined with one: expressions pass as they are; the legacy
 // forms the base map uses (all/any/none, ==, !=, <, <=, >, >=, in, !in, has, !has, $type) are converted; null for
 // anything else.
+/** A style's line width (a number, a zoom interpolate, or a legacy stops function) with every width multiplied by
+ *  `by(zoom)`: one interpolate over the zoom, with its own stops and stops at 12, 14 and 16 (the style allows one zoom
+ *  interpolate in an expression, so the factor cannot be a second one). Null for a width this cannot read. */
+export function widenBy(w: unknown, by: (z: number) => number): unknown {
+  let base = 1, stops: [number, number][] | null = null;
+  if (typeof w === "number") stops = [[0, w], [24, w]];
+  else if (w && typeof w === "object" && !Array.isArray(w) && Array.isArray((w as { stops?: unknown }).stops)) {
+    const f = w as { base?: number; stops: unknown[] };
+    base = f.base ?? 1;
+    stops = f.stops.map(s => (Array.isArray(s) && typeof s[0] === "number" && typeof s[1] === "number" ? [s[0], s[1]] as [number, number] : null)).filter((s): s is [number, number] => !!s);
+    if (stops.length !== f.stops.length) return null;
+  } else if (Array.isArray(w) && w[0] === "interpolate" && Array.isArray(w[2]) && w[2][0] === "zoom" && Array.isArray(w[1])) {
+    if (w[1][0] === "exponential") base = w[1][1] as number; else if (w[1][0] !== "linear") return null;
+    stops = [];
+    for (let i = 3; i + 1 < w.length; i += 2) { if (typeof w[i] !== "number" || typeof w[i + 1] !== "number") return null; stops.push([w[i] as number, w[i + 1] as number]); }
+  }
+  if (!stops || stops.length < 1) return null;
+  const at = (z: number) => {
+    const st = stops!;
+    if (z <= st[0][0]) return st[0][1];
+    if (z >= st[st.length - 1][0]) return st[st.length - 1][1];
+    let i = 0;
+    while (st[i + 1][0] < z) i++;
+    const [z0, w0] = st[i], [z1, w1] = st[i + 1], d = z1 - z0;
+    const t = d === 0 ? 0 : base === 1 ? (z - z0) / d : (Math.pow(base, z - z0) - 1) / (Math.pow(base, d) - 1);
+    return w0 + (w1 - w0) * t;
+  };
+  const zs = [...new Set([...stops.map(s => s[0]), 12, 14, STREET_ZOOM])].sort((a, b) => a - b);
+  return ["interpolate", base === 1 ? ["linear"] : ["exponential", base], ["zoom"], ...zs.flatMap(z => [z, at(z) * by(z)])];
+}
+
 export function asExpression(f: unknown): unknown {
   if (!Array.isArray(f) || typeof f[0] !== "string") return f === true || f === false ? f : null;
   const [op, ...args] = f as [string, ...unknown[]];
