@@ -476,6 +476,15 @@
     return () => { clearTimeout(t); if (root.dataset.tripsheet === "compact") delete root.dataset.tripsheet; };
   });
   // The sheet's head: a tap on the handle, or a swipe up, opens «Οδηγίες».
+  // A phone: «‹» on the picked route goes back to the routes of «Πού πας;» (compact mockup 14), not to this planner's
+  // own fields and list (the old layout).
+  function backToRoutes() {
+    if (!narrow.current) { showList = true; return; }
+    const f = ends.from.place, t = ends.to.place;
+    app.startEnds = { from: f ?? null, to: t ?? null };
+    onclose();
+    app.start = true;
+  }
   const compactDrag: SheetDrag = { ignore: "button:not(.grip)", start: () => {}, move: () => {}, end: dy => { if (dy < -30) review = true; }, tap: () => (review = true) };
   // A tap on an option picks it: on the map alone, with its words (planLabels); the panel stays as it is.
   let fitPts: [number, number][] = [];
@@ -732,7 +741,7 @@
     <!-- A phone, an option picked (compact mockup 9): the map on top with the route and its labels, a back button over
          it to the options, and at the foot the times, the legs, the steps that matter and «Ξεκίνα». -->
     <h3 id="trip-h" class="sr">{titleCase(from?.label ?? "")} → {titleCase(to?.label ?? "")}</h3>
-    <button type="button" class="mapback" aria-label="Πίσω στις επιλογές" title="Πίσω στις επιλογές" onclick={() => (showList = true)}>
+    <button type="button" class="mapback" aria-label="Πίσω στις επιλογές" title="Πίσω στις επιλογές" onclick={backToRoutes}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
     </button>
     <div class="rvc">

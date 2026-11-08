@@ -444,10 +444,16 @@ html.sheet-open .start, html.sheet-open .now, html.sheet-open .card, html.sheet-
   :root[data-homepeek] .maplibregl-ctrl-bottom-right .north-ctl:not(:has(.turned, .tilted)) { display: none; }
 }
 
+/* Inside those see-through panels the tiles (--card: the stats row, the round ‹, the lists) are a darker glass than the
+   panel with a fine light edge (as the home sheet's cards): a solid tile of nearly the panel's colour hardly showed. */
+:root body :is(section.card, section.near, div.sheet, section.alerts, .popwrap:not(.page) .pop, .psheet) {
+  --card: color-mix(in srgb, var(--bg) 55%, transparent); --card-border: color-mix(in srgb, var(--fg) 11%, transparent);
+}
+
 /* Every panel over the map (the home sheet, the cards, «Κοντά σου», the pick's and the planner's sheets, the dialogs):
    a little see-through, with a soft gaussian blur of the map behind it. Its own colour stays under the blur. */
-:root body :is(section.now, section.card, section.near, .psheet, section.panel:not(.home), .popwrap:not(.page) .pop, div.sheet, section.fixbar, section.alerts,
-  .rail, .homebar .round, .homebar .where, .maplibregl-ctrl-group:not(:empty), .recenter, .details-ctl button.details) {
+:root body :is(section.now, section.card, section.near, .psheet, section.panel:not(.home):not(.mbar), .popwrap:not(.page) .pop, div.sheet, section.fixbar, section.alerts,
+  div.rail[role="toolbar"], .homebar .round, .homebar .where, .maplibregl-ctrl-group:not(:empty), .recenter, .details-ctl button.details) {
   background: color-mix(in srgb, var(--surface) 78%, transparent) !important;
   -webkit-backdrop-filter: blur(16px) saturate(160%) !important; backdrop-filter: blur(16px) saturate(160%) !important;
   /* Its own layer from the start: iOS Safari drew the blur only once a slide-in had ended. */

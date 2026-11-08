@@ -805,7 +805,7 @@
   :global(body:has(.psheet) .panel.home .homebar) { visibility: hidden; }
   /* The stop list: it alone scrolls (its bar inside the sheet), the header and the foot stay. */
   .pscroll { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-  .plist { list-style: none; margin: 0; padding: 0; }
+  .plist { list-style: none; margin: 0; padding: 0 0 0 6px; }   /* room on the left for the bus disc on the line (26 px over a 20 px column, and its ring): the scrolling list clipped it */
   .prow { width: 100%; height: 44px; display: flex; align-items: center; gap: 12px; padding: 0; border: 0; background: none; color: var(--fg);
     font: inherit; text-align: left; cursor: pointer; }
   .prow.fold { height: 40px; }

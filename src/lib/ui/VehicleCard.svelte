@@ -569,7 +569,7 @@
     font-size: 12px; font-weight: 600; line-height: 1; color: var(--muted); font-variant-numeric: tabular-nums; }
   .note { margin: 8px 0 6px; font-size: 12px; color: var(--muted); }
   /* The state strip, and a detour as a notice. */
-  .facts { display: flex; margin: 0 0 10px; border-radius: 16px; background: var(--card); overflow: hidden; }
+  .facts { display: flex; margin: 0 0 10px; border-radius: 16px; background: var(--card); box-shadow: inset 0 0 0 1px var(--card-border), 0 2px 10px rgb(0 0 0 / .25); overflow: hidden; }
   .facts > span { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; padding: 10px 12px; }
   .facts > span + span { border-left: 1px solid var(--card-border); }
   .facts small { font-size: 10px; font-weight: 800; letter-spacing: .05em; color: var(--muted); line-height: 1; }
