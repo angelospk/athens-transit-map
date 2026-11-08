@@ -1,43 +1,64 @@
 <script lang="ts">
-  // The map's settings (the rail's eye button, Panel.svelte): what the map shows, how it looks, how the vehicles
-  // behave. Grouped as a phone's settings are: a card per group, a row per setting (a coloured tile, a name, a line
-  // on what it does, the control at the right), the themes and 3D looks as small pictures to pick.
+  // «Ρυθμίσεις» (the rail's eye button, Panel.svelte). A phone shows it as a page of its own (compact mockup 11), a
+  // computer as the popover beside the rail. Groups of rows: a name, at most one short line under it, the control at
+  // the right (a switch, two or three choices, or the current value that opens its choices under the row).
+  import { MediaQuery } from "svelte/reactivity";
   import type { AppState } from "../state.svelte";
-  import Icon, { type IconName } from "./Icon.svelte";
+  import Icon from "./Icon.svelte";
   import { clock, duration } from "../format";
-  import { muniPlaces } from "../finder";
   import { LOOKS } from "../map/look3d";
   import { lastSaved, markSaved, ownLines, saveLines } from "../offline";
 
   let { app, cityMissing, cityAge, oldest, onclose }:
     { app: AppState; cityMissing: boolean; cityAge: number | null; oldest: number | null; onclose: () => void } = $props();
 
-  const towns = $derived(app.municipal ? muniPlaces(app.municipal.routes) : []);
-  const trains = $derived(app.stasyTrains.length + app.suburbanTrains.length);
-  let howOpen = $state(false);
+  const narrow = new MediaQuery("(max-width: 719px)");
 
-  type Row = { id: string; icon: IconName; tint: string; title: string; sub: string; count?: string; on: boolean; disabled?: boolean; set: (v: boolean) => void };
-  const showRows: Row[] = $derived([
-    { id: "city", icon: "bus", tint: "#2563eb", title: "Λεωφορεία", sub: cityMissing ? "Όχι ακόμα διαθέσιμα" : "Όλα της πόλης, και τρόλεϊ. Όσες γραμμές διάλεξες μένουν πάντα.",
-      count: app.city && !cityMissing ? `${app.city.vehicles.length}` : undefined, on: app.cityOn, disabled: cityMissing, set: (v: boolean) => app.setCityOn(v) },
-    ...(app.cityInfo.rail ? [{ id: "trains", icon: "metro" as IconName, tint: "#16a34a", title: "Τρένα", sub: "Μετρό και τραμ από το πρόγραμμα, Προαστιακός με GPS.",
-      count: app.trainsOn && trains ? `${trains}` : undefined, on: app.trainsOn, set: (v: boolean) => app.setTrainsOn(v) }] : []),
-    ...(app.municipal ? [{ id: "muni", icon: "bus" as IconName, tint: "#7c3aed", title: "Δημοτικά", sub: `${towns.join(", ")}. Ώρες από το πρόγραμμα του δήμου, όχι live.`, count: `${towns.length}`,
-      on: app.municipalOn, set: (v: boolean) => app.setMunicipalOn(v) }] : []),
-    { id: "speed", icon: "route", tint: "#ea580c", title: "Ταχύτητα ανά δρόμο", sub: "Πόσο γρήγορα κινούνται τα λεωφορεία, από στάση σε στάση.",
-      on: app.speedOn, set: (v: boolean) => app.setSpeedOn(v) },
+  type Toggle = { id: string; title: string; sub?: string; on: boolean; disabled?: boolean; beta?: boolean; set: (v: boolean) => void };
+  type Choice<T> = { value: T; label: string; short?: string; hint?: string };   // short: the value in the narrower popover
+
+  const THEMES = [{ value: "system", label: "Αυτόματο" }, { value: "dark", label: "Σκούρο" }, { value: "light", label: "Ανοιχτό" }] as const;
+  const OTHERS = [
+    { value: "normal", label: "μένουν όπως είναι", short: "όπως είναι" },
+    { value: "dim", label: "τα άλλα αχνά", short: "αχνά" },
+    { value: "hide", label: "τα άλλα κρυφά", short: "κρυφά" },
+  ] as const;
+  const STALE = [
+    { value: false, label: "φαίνονται", hint: "αχνά, με πορτοκαλί ηλικία" },
+    { value: true, label: "κρυφά", hint: "όσα δεν έστειλαν θέση για πάνω από 1½ λεπτό" },
+  ] as const;
+  const AGES = [
+    { value: "never", label: "ποτέ" },
+    { value: "old", label: "όταν είναι παλιά" },
+    { value: "always", label: "πάντα" },
+  ] as const;
+
+  const shows: Toggle[] = $derived([
+    { id: "city", title: "Λεωφορεία", sub: cityMissing ? "όχι ακόμα διαθέσιμα" : undefined, on: app.cityOn, disabled: cityMissing, set: v => app.setCityOn(v) },
+    ...(app.cityInfo.rail ? [{ id: "trains", title: "Μετρό, τραμ, τρένα", on: app.trainsOn, set: (v: boolean) => app.setTrainsOn(v) }] : []),
+    ...(app.municipal ? [{ id: "muni", title: "Δημοτικά λεωφορεία", sub: "από το πρόγραμμα του δήμου, όχι live", on: app.municipalOn,
+      set: (v: boolean) => app.setMunicipalOn(v) }] : []),
+    { id: "speed", title: "Ταχύτητα στους δρόμους", sub: "κόκκινο αργά, πράσινο γρήγορα", on: app.speedOn, set: v => app.setSpeedOn(v) },
   ]);
-  const vehicleRows: Row[] = $derived([
-    { id: "fresh", icon: "clock", tint: "#0891b2", title: "Μόνο με πρόσφατη θέση", sub: "Όσα έστειλαν θέση τα τελευταία 1½ λεπτά.",
-      on: app.only.fresh, set: (v: boolean) => app.setOnly({ fresh: v }) },
-    { id: "ontime", icon: "check", tint: "#16a34a", title: "Μόνο στην ώρα τους", sub: "Έως 5 λεπτά καθυστέρηση.",
-      on: app.only.onTime, set: (v: boolean) => app.setOnly({ onTime: v }) },
-    { id: "motion", icon: "walk", tint: "#db2777", title: "Κίνηση ανάμεσα στις θέσεις", sub: "Κλειστό: το όχημα μένει εκεί που έστειλε θέση.",
-      on: app.motion, set: (v: boolean) => app.setMotion(v) },
+  const vehicles: Toggle[] = $derived([
+    { id: "ontime", title: "Μόνο όσα είναι στην ώρα τους", sub: "έως 5′ καθυστέρηση", on: app.only.onTime, set: v => app.setOnly({ onTime: v }) },
+    { id: "motion", title: "Ομαλή κίνηση", sub: "ανάμεσα στις θέσεις που στέλνουν", on: app.motion, set: v => app.setMotion(v) },
   ]);
-  const THEMES = [["system", "Συσκευής"], ["light", "Φωτεινό"], ["dark", "Σκοτεινό"]] as const;
-  const OTHERS = [["normal", "Κανονικά"], ["dim", "Αχνά"], ["hide", "Κρυφά"]] as const;
-  const AGES = [["never", "Ποτέ"], ["old", "Παλιές"], ["always", "Πάντα"]] as const;
+  const sends = $derived(app.cityInfo.id === "athens" ? "ο ΟΑΣΑ στέλνει θέση κάθε 20–60″" : `ο ${app.cityInfo.agency} στέλνει θέση ανά διαστήματα`);
+
+  // One value row open at a time: its choices show under it.
+  let open = $state<string | null>(null);
+  const flip = (id: string) => (open = open === id ? null : id);
+
+  // How fresh the data is: the older of the picked lines and the city's buses.
+  const age = $derived.by(() => {
+    const lines = oldest != null ? Math.max(0, app.serverNow / 1000 - oldest) : null;
+    const city = cityAge != null && app.cityOn ? cityAge : null;
+    if (lines == null && city == null) return null;
+    return Math.max(lines ?? 0, city ?? 0);
+  });
+  const ageTitle = $derived([oldest != null ? `Γραμμές ${clock(oldest)}` : "", cityAge != null && app.cityOn && app.city ? `Πόλη ${clock(app.city.updated_at)}` : ""]
+    .filter(Boolean).join(" · "));
 
   // «Χωρίς σύνδεση»: the rider's own timetables kept ahead of time (offline.ts); what they open is kept anyway.
   let saving = $state<{ done: number; total: number } | null>(null);
@@ -59,205 +80,217 @@
     if (ok) { saved = { at: Date.now(), lines: ok }; markSaved(saved); }
     saveNote = ok === lines.length ? "" : ok ? `Κατέβηκαν ${ok} από ${lines.length}. Οι άλλες: ξανά σε λίγο.` : "Δεν κατέβηκε τίποτα. Δοκίμασε ξανά σε λίγο.";
   }
+
+  // «Σχετικά» opens the ⓘ sheet (MapView listens for «openfeedback»), then its tab or its «Τι νέο».
+  function info(to: "sources" | "whatsnew" | "feedback") {
+    onclose();
+    dispatchEvent(new Event("openfeedback"));
+    if (to === "feedback") return;
+    const until = performance.now() + 10000;
+    const find = () => {
+      const el = document.getElementById(to === "sources" ? "info-tab-sources" : "whatsnew-title");
+      if (el) { if (to === "sources") el.click(); else el.scrollIntoView({ block: "start" }); }
+      else if (performance.now() < until) requestAnimationFrame(find);
+    };
+    requestAnimationFrame(find);
+  }
+  let howOpen = $state(false);
 </script>
 
-{#snippet row(r: Row)}
-  <div class="row" class:off={r.disabled}>
-    <span class="tile" style:--t={r.tint} aria-hidden="true"><Icon name={r.icon} size={17} /></span>
+{#snippet toggle(t: Toggle, last = false)}
+  <button type="button" class="row" class:sub={!!t.sub} class:last role="switch" aria-checked={t.on} disabled={t.disabled} onclick={() => t.set(!t.on)}>
     <span class="txt">
-      <span class="name">{r.title}{#if r.count}<em>{r.count} τώρα</em>{/if}</span>
-      <span class="sub">{r.sub}</span>
+      <span class="name">{t.title}{#if t.beta}<span class="beta">Beta</span>{/if}</span>
+      {#if t.sub}<span class="note">{t.sub}</span>{/if}
     </span>
-    <button type="button" class="sw" role="switch" aria-checked={r.on} aria-label={r.title} disabled={r.disabled} onclick={() => r.set(!r.on)}><i></i></button>
-  </div>
+    <span class="sw" aria-hidden="true"><i></i></span>
+  </button>
 {/snippet}
 
-<div class="set">
+{#snippet pick<T>(id: string, title: string, sub: string | undefined, value: T, choices: readonly Choice<T>[], set: (v: T) => void, last = false)}
+  {@const chosen = choices.find(c => c.value === value)}
+  <button type="button" class="row" class:sub={!!sub} class:last={last && open !== id} aria-expanded={open === id} aria-controls="set-{id}" onclick={() => flip(id)}>
+    <span class="txt">
+      <span class="name">{title}</span>
+      {#if sub}<span class="note">{sub}</span>{/if}
+    </span>
+    <span class="val">{(narrow.current ? chosen?.label : chosen?.short ?? chosen?.label) ?? ""}<span class="chev" class:open={open === id} aria-hidden="true"><Icon name="chevron" size={14} /></span></span>
+  </button>
+  {#if open === id}
+    <!-- A choice closes the list: its press stops here, or Panel's click-outside would see a button gone from the page. -->
+    <div class="opts" class:last id="set-{id}" role="radiogroup" aria-label={title}>
+      {#each choices as c (c.value)}
+        <button type="button" class="opt" role="radio" aria-checked={c.value === value} onclick={e => { e.stopPropagation(); set(c.value); open = null; }}>
+          <span class="txt"><span class="oname">{c.label}</span>{#if c.hint}<span class="note">{c.hint}</span>{/if}</span>
+          <span class="tick" aria-hidden="true">{#if c.value === value}<Icon name="check" size={16} />{/if}</span>
+        </button>
+      {/each}
+    </div>
+  {/if}
+{/snippet}
+
+{#snippet seg<T>(label: string, value: T, choices: readonly Choice<T>[], set: (v: T) => void)}
+  <span class="seg" role="radiogroup" aria-label={label}>
+    {#each choices as c (c.value)}
+      <button type="button" role="radio" aria-checked={c.value === value} onclick={() => set(c.value)}>{c.label}</button>
+    {/each}
+  </span>
+{/snippet}
+
+<div class="set" class:page={narrow.current}>
   <header>
-    <h3>Ρυθμίσεις χάρτη</h3>
-    <button type="button" class="x" aria-label="Κλείσιμο" onclick={onclose}><Icon name="close" size={16} /></button>
+    {#if narrow.current}
+      <button type="button" class="back" aria-label="Πίσω" onclick={onclose}><Icon name="back" size={22} /></button>
+      <h2>Ρυθμίσεις</h2>
+    {:else}
+      <h2>Ρυθμίσεις</h2>
+      <button type="button" class="x" aria-label="Κλείσιμο" onclick={onclose}><Icon name="close" size={16} /></button>
+    {/if}
   </header>
 
-  <h4>Στον χάρτη</h4>
-  <div class="card">
-    {#each showRows as r (r.id)}{@render row(r)}{/each}
-  </div>
-
-  <h4>Εμφάνιση</h4>
-  <div class="card pad">
-    <span class="label">Θέμα</span>
-    <div class="picks" role="radiogroup" aria-label="Θέμα χάρτη">
-      {#each THEMES as [v, label] (v)}
-        <button type="button" class="pick" role="radio" aria-checked={app.theme === v} onclick={() => app.setTheme(v)}>
-          <span class="prev theme-{v}" aria-hidden="true"><i class="road a"></i><i class="road b"></i><i class="dot"></i></span>
-          <span class="plab">{#if app.theme === v}<Icon name="check" size={13} />{/if}{label}</span>
-        </button>
-      {/each}
-    </div>
-    <span class="label">3D <span class="beta">Beta</span></span>
-    <div class="picks two" role="radiogroup" aria-label="Εμφάνιση 3D">
-      {#each LOOKS as [v, label] (v)}
-        <button type="button" class="pick" role="radio" aria-checked={app.look3d === v} onclick={() => { app.setLook3d(v); if (!app.threeD) app.setThreeD(true); }}>
-          <span class="prev look-{v}" aria-hidden="true"><i class="b1"></i><i class="b2"></i><i class="b3"></i></span>
-          <span class="plab">{#if app.look3d === v}<Icon name="check" size={13} />{/if}{label}</span>
-        </button>
-      {/each}
-    </div>
-    {#if app.threeD}
-      <div class="row inset">
-        <span class="tile" style:--t="#0a7cc4" aria-hidden="true"><Icon name="metro" size={17} /></span>
-        <span class="txt"><span class="name">Υπόγεια</span><span class="sub">Το μετρό στα τούνελ του, κάτω από τον δρόμο.</span></span>
-        <button type="button" class="sw" role="switch" aria-checked={app.under} aria-label="Υπόγεια" onclick={() => (app.under = !app.under)}><i></i></button>
+  <section aria-labelledby="set-look">
+    <h3 id="set-look">Εμφάνιση</h3>
+    <div class="card">
+      <div class="row">
+        <span class="txt"><span class="name">Θέμα</span></span>
+        {@render seg("Θέμα", app.theme, THEMES, v => app.setTheme(v))}
       </div>
-    {/if}
-  </div>
+      {@render toggle({ id: "3d", title: "Χάρτης σε 3D", beta: true, on: app.threeD, set: v => app.setThreeD(v) }, !app.threeD)}
+      {#if app.threeD}
+        <div class="row">
+          <span class="txt"><span class="name">Στυλ 3D</span></span>
+          {@render seg("Στυλ 3D", app.look3d, LOOKS.map(([value, label]) => ({ value, label })), v => app.setLook3d(v))}
+        </div>
+        {@render toggle({ id: "under", title: "Μετρό κάτω από τη γη", sub: "οι σήραγγες και οι σταθμοί σε βάθος", on: app.under, set: v => (app.under = v) }, true)}
+      {/if}
+    </div>
+  </section>
 
-  <h4>Λεωφορεία</h4>
-  <div class="card">
-    <div class="row col">
-      <span class="name">Όταν πατάς ένα, τα άλλα</span>
-      <div class="seg3" role="radiogroup" aria-label="Τα άλλα λεωφορεία όταν πατάς ένα">
-        {#each OTHERS as [v, label] (v)}
-          <button type="button" role="radio" aria-checked={app.others === v} onclick={() => app.setOthers(v)}>
-            <i class="ghost {v}" aria-hidden="true"></i>{label}
-          </button>
-        {/each}
+  <section aria-labelledby="set-map">
+    <h3 id="set-map">Τι δείχνει ο χάρτης</h3>
+    <div class="card">
+      {#each shows as t (t.id)}{@render toggle(t)}{/each}
+      {@render pick("others", "Όταν πατάς ένα λεωφορείο", "τι γίνεται με τα υπόλοιπα", app.others, OTHERS, v => app.setOthers(v))}
+      {@render pick("stale", "Λεωφορεία με παλιά θέση", sends, app.only.fresh, STALE, v => app.setOnly({ fresh: v }))}
+      {@render pick("ages", "Ηλικία θέσης", "πριν πόσο έστειλε θέση", app.ageMode, AGES, v => app.setAgeMode(v))}
+      {#each vehicles as t, i (t.id)}{@render toggle(t, i === vehicles.length - 1)}{/each}
+    </div>
+  </section>
+
+  <section aria-labelledby="set-off">
+    <h3 id="set-off">Χωρίς σύνδεση</h3>
+    <div class="card">
+      <div class="row sub last">
+        <span class="txt">
+          <span class="name">Τα δρομολόγιά σου</span>
+          <span class="note">{saving ? `κατεβάζω ${saving.done} από ${saving.total} γραμμές…` : saved ? `${saved.lines} γραμμές · ${savedDay}` : "για να δουλεύει χωρίς ίντερνετ"}</span>
+        </span>
+        <button type="button" class="dl" disabled={!!saving} onclick={saveOffline}>{saving ? "…" : saved ? "Ανανέωση" : "Κατέβασε"}</button>
       </div>
+      {#if saving}<div class="bar" aria-hidden="true"><i style:width="{saving.total ? (saving.done / saving.total) * 100 : 0}%"></i></div>{/if}
+      {#if saveNote}<p class="more" role="status">{saveNote}</p>{/if}
     </div>
-    {#each vehicleRows as r (r.id)}{@render row(r)}{/each}
-    <div class="row col">
-      <span class="name">Ηλικία θέσης <b class="age">24″</b></span>
-      <span class="sub">Πριν πόσο έστειλε θέση. Μετρό και τραμ: από το πρόγραμμα, όχι GPS.</span>
-      <div class="seg3" role="radiogroup" aria-label="Ηλικία θέσης">
-        {#each AGES as [m, t] (m)}
-          <button type="button" role="radio" aria-checked={app.ageMode === m} onclick={() => app.setAgeMode(m)}>{t}</button>
-        {/each}
-      </div>
-    </div>
-    <button type="button" class="row how" aria-expanded={howOpen} onclick={() => (howOpen = !howOpen)}>
-      <span class="tile" style:--t="#64748b" aria-hidden="true"><Icon name="map" size={17} /></span>
-      <span class="txt"><span class="name">Πώς κινούνται τα οχήματα</span></span>
-      <span class="chev" class:open={howOpen} aria-hidden="true"><Icon name="chevron" size={16} /></span>
-    </button>
-    {#if howOpen}
-      <p class="howtext">
-        {app.cityInfo.id === "athens" ? "Ο ΟΑΣΑ στέλνει θέσεις κάθε 20–60″." : `Ο ${app.cityInfo.agency} στέλνει θέσεις ανά διαστήματα.`} Όταν η νέα θέση είναι πολύ μπροστά, το όχημα πηγαίνει γρήγορα ως εκεί, πάνω στον
-        δρόμο, και αφήνει για λίγο μπλε ίχνος. Όταν είναι πίσω, γυρίζει αχνό με γκρι διακεκομμένο ίχνος: διόρθωση θέσης, όχι
-        όπισθεν. Αχνό όχημα με πορτοκαλί ηλικία: δεν έστειλε θέση για πάνω από 1½ λεπτό, άρα μπορεί να είναι αλλού.
-      </p>
-    {/if}
-  </div>
+  </section>
 
-  <h4>Χωρίς σύνδεση</h4>
-  <div class="card">
-    <div class="row">
-      <span class="tile" style:--t="#475569" aria-hidden="true"><Icon name="down" size={17} /></span>
-      <span class="txt">
-        <span class="name">Τα δρομολόγιά σου</span>
-        <span class="sub">{saving ? `Κατεβάζω ${saving.done} από ${saving.total} γραμμές…` : saved ? `${saved.lines} γραμμές · ${savedDay}` : "Οι αγαπημένες σου και όσες περνούν κοντά από Σπίτι και Δουλειά, για να βλέπεις το πρόγραμμα χωρίς σύνδεση."}</span>
-      </span>
-      <button type="button" class="dl" disabled={!!saving} onclick={saveOffline}>{saving ? "…" : saved ? "Ανανέωση" : "Κατέβασε"}</button>
+  <section aria-labelledby="set-about">
+    <h3 id="set-about">Σχετικά</h3>
+    <div class="card">
+      <button type="button" class="row" onclick={() => info("whatsnew")}>
+        <span class="txt"><span class="name">Τι νέο</span></span>
+        <span class="val">v{__APP_VERSION__}<span class="chev side" aria-hidden="true"><Icon name="chevron" size={14} /></span></span>
+      </button>
+      <button type="button" class="row" onclick={() => info("sources")}>
+        <span class="txt"><span class="name">Από πού έρχονται τα δεδομένα</span></span>
+        <span class="val">{#if age != null}<span title={ageTitle}>πριν {duration(age)}</span>{/if}<span class="chev side" aria-hidden="true"><Icon name="chevron" size={14} /></span></span>
+      </button>
+      <button type="button" class="row" aria-expanded={howOpen} aria-controls="set-how" onclick={() => (howOpen = !howOpen)}>
+        <span class="txt"><span class="name">Πώς κινούνται τα οχήματα</span></span>
+        <span class="val"><span class="chev" class:open={howOpen} aria-hidden="true"><Icon name="chevron" size={14} /></span></span>
+      </button>
+      {#if howOpen}
+        <p class="more how" id="set-how">
+          {sends[0].toUpperCase() + sends.slice(1)}. Πολύ μπροστά, το όχημα πηγαίνει γρήγορα ως εκεί και αφήνει για λίγο μπλε ίχνος. Πίσω, γυρίζει
+          αχνό με γκρι διακεκομμένο ίχνος: διόρθωση θέσης, όχι όπισθεν. Αχνό με πορτοκαλί ηλικία: δεν έστειλε θέση για πάνω από 1½ λεπτό.
+        </p>
+      {/if}
+      <button type="button" class="row last" onclick={() => info("feedback")}>
+        <span class="txt"><span class="name">Γράψε μας</span></span>
+        <span class="val"><span class="chev side" aria-hidden="true"><Icon name="chevron" size={14} /></span></span>
+      </button>
     </div>
-    {#if saving}<div class="bar" aria-hidden="true"><i style:width="{saving.total ? (saving.done / saving.total) * 100 : 0}%"></i></div>{/if}
-    {#if saveNote}<p class="dlnote" role="status">{saveNote}</p>{/if}
-  </div>
-
-  {#if oldest != null || (cityAge != null && app.cityOn)}
-    <p class="fresh">
-      {#if oldest != null}<span title="Ώρα δεδομένων {clock(oldest)}">Γραμμές: πριν {duration(Math.max(0, app.serverNow / 1000 - oldest))}</span>{/if}
-      {#if cityAge != null && app.cityOn}<span title="Ώρα δεδομένων {clock(app.city!.updated_at)}">Πόλη: πριν {duration(cityAge)}</span>{/if}
-    </p>
-  {/if}
+  </section>
 </div>
 
 <style>
-  .set { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
-  header { display: flex; align-items: center; gap: 10px; margin: -2px 0 4px; }
-  h3 { flex: 1; margin: 0; font-size: 18px; font-weight: 800; letter-spacing: -.01em; line-height: 1.2; }
+  .set { display: flex; flex-direction: column; gap: 16px; font-size: 13px; color: var(--fg); }
+  .set.page { padding: calc(12px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom)); }
+
+  header { height: 44px; display: flex; align-items: center; gap: 6px; }
+  h2 { flex: 1; margin: 0; font-size: 22px; font-weight: 700; line-height: 1; letter-spacing: -.01em; }
+  .set:not(.page) h2 { font-size: 18px; }
+  .back { flex: none; width: 40px; height: 44px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0;
+    border-radius: 12px; background: none; color: var(--fg); cursor: pointer; }
+  .back :global(svg) { stroke-width: 2.4; }
   .x { flex: none; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 50%;
     background: var(--control); color: var(--muted); cursor: pointer; }
   .x:hover { background: var(--control-hover); color: var(--fg); }
-  h4 { margin: 10px 4px 0; font-size: 12px; font-weight: 700; letter-spacing: .04em; color: var(--muted); }
-  .card { display: flex; flex-direction: column; border-radius: 18px; background: var(--card); border: 1px solid var(--card-border); overflow: hidden; }
-  .card.pad { padding: 12px; gap: 10px; }
-  .label { font-size: 12px; font-weight: 600; color: var(--muted); line-height: 1; }
-  .beta { display: inline-flex; align-items: center; height: 16px; margin-left: 6px; padding: 0 6px; border-radius: 8px; vertical-align: middle;
-    background: color-mix(in srgb, var(--late1) 18%, transparent); color: var(--late1); font: 800 10px/1 var(--font); letter-spacing: .04em; text-transform: uppercase; }
 
-  /* A row: tile, name and line, the switch. */
-  .row { display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 10px 12px; box-sizing: border-box; text-align: left;
-    width: 100%; border: 0; background: none; color: inherit; font: inherit; }
-  .row + .row, .row + .howtext { border-top: 1px solid var(--card-border); }
-  .row.inset { padding: 10px 0 0; min-height: 0; border-top: 1px solid var(--card-border); }
-  .row.off { opacity: .55; }
-  .row.col { flex-direction: column; align-items: stretch; gap: 8px; }
-  .tile { flex: none; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 10px;
-    background: var(--t); color: #fff; }
+  section { display: flex; flex-direction: column; gap: 6px; }
+  h3 { height: 18px; display: flex; align-items: center; margin: 0; padding: 0 4px; font-size: 13px; font-weight: 700; line-height: 1; color: var(--muted); }
+  .card { display: flex; flex-direction: column; border-radius: 16px; background: var(--card); overflow: hidden; }
+
+  /* A row: 46 px, 52 with a line under the name; a hairline between rows. */
+  .row { height: 46px; display: flex; align-items: center; gap: 12px; width: 100%; margin: 0; padding: 0 14px; box-sizing: border-box;
+    border: 0; border-bottom: 1px solid var(--border); background: none; color: inherit; font: inherit; text-align: left; }
+  .row.sub { height: 52px; }
+  .row.last { border-bottom: 0; }
+  button.row { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  @media (hover: hover) { button.row:hover:not(:disabled) { background: color-mix(in srgb, var(--fg) 4%, transparent); } }
+  button.row:active:not(:disabled) { background: color-mix(in srgb, var(--fg) 6%, transparent); }
+  button.row:disabled { cursor: default; opacity: .5; }
+  .row:focus-visible, .opt:focus-visible, .seg button:focus-visible, .dl:focus-visible, .back:focus-visible, .x:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: -2px; }
   .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-  .name { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; line-height: 1.2; }
-  .name em { height: 20px; display: inline-flex; align-items: center; padding: 0 8px; border-radius: 10px; background: var(--accent-bg); color: var(--accent);
-    font-size: 11px; font-weight: 700; font-style: normal; line-height: 1; white-space: nowrap; }
-  .sub { font-size: 12px; line-height: 1.35; color: var(--muted); }
-  .age { height: 20px; display: inline-flex; align-items: center; padding: 0 6px; border-radius: 6px; background: var(--control); font-size: 11px;
-    font-variant-numeric: tabular-nums; line-height: 1; }
+  .name { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 600; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .note { font-size: 12px; line-height: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .beta { flex: none; height: 18px; display: flex; align-items: center; padding: 0 6px; border-radius: 9px;
+    background: color-mix(in srgb, var(--late1) 22%, transparent); color: var(--late1); font-size: 11px; font-weight: 800; line-height: 1; }
 
-  /* The switch: a pill with a knob, its knob sliding over. */
-  .sw { flex: none; position: relative; width: 46px; height: 28px; padding: 0; border: 0; border-radius: 14px; background: var(--control-hover);
-    cursor: pointer; transition: background-color .2s; }
-  .sw i { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, .3); transition: transform .22s cubic-bezier(.34, 1.4, .64, 1); }
-  .sw[aria-checked="true"] { background: var(--accent); }
-  .sw[aria-checked="true"] i { transform: translateX(18px); }
-  .sw:disabled { cursor: default; }
-  .sw:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The switch. */
+  .sw { flex: none; position: relative; width: 44px; height: 26px; border-radius: 13px; background: color-mix(in srgb, var(--fg) 16%, var(--card));
+    transition: background-color .2s; }
+  .sw i { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+    transition: transform .22s cubic-bezier(.34, 1.4, .64, 1); }
+  [aria-checked="true"] > .sw { background: var(--accent); }
+  [aria-checked="true"] > .sw i { transform: translateX(18px); }
 
-  /* Pictures to pick: the themes and the 3D looks. */
-  .picks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-  .picks.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .pick { display: flex; flex-direction: column; gap: 6px; padding: 4px; border: 0; border-radius: 14px; background: none; color: inherit; font: inherit; cursor: pointer; }
-  .prev { position: relative; display: block; height: 58px; border-radius: 11px; overflow: hidden; box-shadow: inset 0 0 0 1px var(--card-border); }
-  .pick[aria-checked="true"] .prev { box-shadow: 0 0 0 2px var(--accent); }
-  .plab { display: flex; align-items: center; justify-content: center; gap: 4px; height: 18px; font-size: 12px; font-weight: 600; line-height: 1; color: var(--muted); }
-  .pick[aria-checked="true"] .plab { color: var(--accent); }
-  .theme-light { background: #eef1f4; }
-  .theme-dark { background: #1c2028; }
-  .theme-system { background: linear-gradient(135deg, #eef1f4 0 50%, #1c2028 50% 100%); }
-  .road { position: absolute; height: 6px; border-radius: 3px; }
-  .road.a { left: -10%; right: -10%; top: 22px; transform: rotate(-12deg); }
-  .road.b { top: -10%; bottom: -10%; left: 58%; width: 6px; height: auto; transform: rotate(18deg); }
-  .theme-light .road { background: #fff; box-shadow: 0 0 0 1px #d8dde4; }
-  .theme-dark .road { background: #353b47; }
-  .theme-system .road { background: #9aa3b0; }
-  .dot { position: absolute; left: 30%; top: 32px; width: 12px; height: 12px; border-radius: 50%; background: #2563eb; border: 2px solid #fff; box-sizing: border-box; }
-  .look-real { background: linear-gradient(#2b3039, #20242b); }
-  .look-toon { background: linear-gradient(#f3e6c9, #e8d6ae); }
-  .b1, .b2, .b3 { position: absolute; bottom: 10px; width: 22%; border-radius: 3px 3px 0 0; }
-  .b1 { left: 12%; height: 26px; } .b2 { left: 39%; height: 38px; } .b3 { left: 66%; height: 20px; }
-  .look-real .b1, .look-real .b2, .look-real .b3 { background: linear-gradient(90deg, #5a616d 0 55%, #474d58 55%); }
-  .look-toon .b1, .look-toon .b2, .look-toon .b3 { background: linear-gradient(#e2683c 0 8px, #fbf6ea 8px); border-radius: 4px 4px 1px 1px; }
-
-  /* Three choices in a row. */
-  .seg3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 13px; background: var(--control); }
-  .seg3 button { height: 34px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 6px; border: 0; border-radius: 10px;
+  /* Two or three choices in the row. */
+  .seg { flex: none; height: 30px; display: flex; gap: 2px; padding: 3px; box-sizing: border-box; border-radius: 15px; background: var(--bg); }
+  .seg button { height: 24px; display: flex; align-items: center; justify-content: center; margin: 0; padding: 0 10px; border: 0; border-radius: 12px;
     background: none; color: var(--muted); font: inherit; font-size: 12.5px; font-weight: 600; line-height: 1; white-space: nowrap; cursor: pointer; }
-  .seg3 button[aria-checked="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 3px rgba(0, 0, 0, .15); }
-  .ghost { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #2563eb; }
-  .ghost.dim { opacity: .35; }
-  .ghost.hide { background: none; box-shadow: inset 0 0 0 1.5px currentColor; opacity: .5; }
+  .seg button[aria-checked="true"] { background: color-mix(in srgb, var(--fg) 18%, var(--card)); color: var(--fg); font-weight: 800; }
 
-  .how { cursor: pointer; border-top: 1px solid var(--card-border); }
-  .how:hover { background: var(--control); }
-  .chev { flex: none; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; color: var(--muted); transform: rotate(-90deg);
-    transition: transform .2s; }
+  /* A value that opens its choices under the row. */
+  .val { flex: none; display: flex; align-items: center; gap: 6px; max-width: 46%; font-size: 13.5px; font-weight: 600; line-height: 1; color: var(--muted);
+    white-space: nowrap; }
+  .chev { flex: none; width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; opacity: .8; transform: rotate(-90deg); transition: transform .2s; }
+  .chev :global(svg) { stroke-width: 2.6; }
   .chev.open { transform: rotate(0deg); }
-  .howtext { margin: 0; padding: 4px 14px 14px 58px; font-size: 12px; line-height: 1.5; color: var(--muted); }
-  .dl { flex: none; height: 34px; display: inline-flex; align-items: center; justify-content: center; padding: 0 14px; border: 0; border-radius: 17px;
-    background: var(--accent); color: #fff; font: inherit; font-size: 13px; font-weight: 700; line-height: 1; cursor: pointer; }
+  .opts { display: flex; flex-direction: column; padding: 4px 0; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--bg) 45%, var(--card)); }
+  .opts.last { border-bottom: 0; }
+  .opt { min-height: 42px; display: flex; align-items: center; gap: 12px; width: 100%; margin: 0; padding: 8px 14px 8px 26px; box-sizing: border-box;
+    border: 0; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+  .oname { font-size: 14px; font-weight: 600; line-height: 1; }
+  .opt[aria-checked="true"] .oname { color: var(--accent); }
+  .tick { flex: none; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; color: var(--accent); }
+
+  .dl { flex: none; height: 32px; display: flex; align-items: center; justify-content: center; margin: 0; padding: 0 12px; border: 0; border-radius: 10px;
+    background: var(--accent); color: #fff; font: inherit; font-size: 13px; font-weight: 800; line-height: 1; cursor: pointer; }
   .dl:disabled { opacity: .6; cursor: default; }
-  .bar { height: 4px; margin: 0 12px 12px; border-radius: 2px; background: var(--control); overflow: hidden; }
+  .bar { height: 4px; margin: 0 14px 12px; border-radius: 2px; background: var(--bg); overflow: hidden; }
   .bar i { display: block; height: 100%; border-radius: 2px; background: var(--accent); transition: width .2s; }
-  .dlnote { margin: 0; padding: 0 12px 12px; font-size: 12px; line-height: 1.35; color: var(--muted); }
-  .fresh { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 4px 4px 0; font-size: 11.5px; color: var(--muted); }
-  @media (pointer: coarse) { .seg3 button { height: 40px; } }
+  .more { margin: 0; padding: 0 14px 12px; font-size: 12px; line-height: 1.4; color: var(--muted); }
+  .more.how { padding-top: 10px; border-bottom: 1px solid var(--border); }
+
   @media (prefers-reduced-motion: reduce) { .sw, .sw i, .chev { transition: none; } }
 </style>

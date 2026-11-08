@@ -166,6 +166,15 @@ export class AppState {
   // «Πού πας;» (StartScreen): the first screen of a visit, and again from the search pill of «Τώρα». pickFor: which end
   // is being chosen on the map (the screen steps aside for a crosshair); mapCenter: the map's centre, [lat, lon].
   // Open, it has an entry in the browser's history (CardNav.openScreen): the phone's Back closes it.
+  // The settings as a page on a phone (compact mockup 11): a screen in the history, so the phone's Back closes it.
+  private settingsOn = $state(false);
+  get settings() { return this.settingsOn; }
+  set settings(on: boolean) {
+    if (on === this.settingsOn) return;
+    this.settingsOn = on;
+    if (on) this.nav?.openScreen("settings");
+    else this.nav?.closeScreen("settings");
+  }
   private startOn = $state(false);
   get start() { return this.startOn; }
   set start(on: boolean) {
@@ -707,6 +716,7 @@ export class AppState {
     if (s !== "start" && this.startOn) { this.startOn = false; this.pickFor = null; this.savingPlace = null; }
     else if (s === "start" && !this.startOn) this.startOn = true;
     if (s !== "guide" && this.guide) this.endGuide();
+    if (s !== "settings" && this.settingsOn) this.settingsOn = false;
   }
   open(c: Card) { this.nav?.open(c); }
   push(c: Card) { this.nav?.push(c); }

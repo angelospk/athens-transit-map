@@ -24,6 +24,9 @@
   // One popover at a time, opened from the buttons on the right: the map menu, what the symbols mean, or the
   // trip planner (loaded on first open). The idea box is in the ⓘ sheet (B10).
   let pop = $state<"layers" | "help" | "trip" | null>(null);
+  // On a phone the settings are a page in the history: open, it is a screen; the phone's Back closes it.
+  $effect(() => { const on = pop === "layers" && narrow.current; untrack(() => { app.settings = on; }); });
+  $effect(() => { if (!app.settings) untrack(() => { if (pop === "layers" && narrow.current) pop = null; }); });
   // On a phone a popover covers the panel: what it covers cannot be reached by the keyboard either.
   const narrow = new MediaQuery("(max-width: 719px)");
   // A phone with the planner or a card open: the map's buttons step aside (the rail here, the zoom and locate ones
@@ -148,7 +151,7 @@
   {#if home}
     <!-- «Τώρα» and «Ειδοποιήσεις»: the search, at the left with the rest of the column (the map's settings are on the
          rail at the right). -->
-    <div class="homebar">
+    <div class="homebar" hidden={narrow.current && app.stack.length > 0}>
       {#if app.tab !== "alerts"}
         <!-- «Πού πας;» is in the home sheet: here only the search for a line or a stop. -->
         <button type="button" class="round" aria-haspopup="dialog" aria-label="Βρες γραμμή, στάση ή μέρος" title="Βρες γραμμή, στάση ή μέρος" onclick={() => { app.finding = true; app.start = true; }}><Icon name="search" size={20} /></button>
@@ -311,7 +314,7 @@
 
 <!-- The popover of a map button opens on the right, beside the buttons (on a phone over the panel). -->
 {#if pop}
-  <div class="popwrap" class:raised={pop === "layers" || pop === "help"} class:tabbed={pop === "trip"} style:--ph="{panelH}px">
+  <div class="popwrap" class:raised={pop === "layers" || pop === "help"} class:tabbed={pop === "trip"} class:page={pop === "layers" && narrow.current} style:--ph="{panelH}px">
     {#if pop === "trip"}
       {#await import("./TripPlanner.svelte")}
         <div class="pop"><p class="hint">Φόρτωση…</p></div>
@@ -329,7 +332,7 @@
         <HelpPop />
       </div>
     {:else if pop === "layers"}
-      <div class="pop" id="pop-layers" role="dialog" aria-label="Ρυθμίσεις χάρτη">
+      <div class="pop" id="pop-layers" role="dialog" aria-label="Ρυθμίσεις" aria-modal={narrow.current}>
         <MapSettings {app} {cityMissing} {cityAge} {oldest} onclose={() => (pop = null)} />
       </div>
     {/if}
@@ -379,6 +382,7 @@
   .panel.home, .panel.home.compact { width: 400px; max-width: calc(100% - 32px); padding: 0; background: none; border: 0; box-shadow: none;
     -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: none; }
   .homebar { display: flex; gap: 10px; }
+  .homebar[hidden] { display: none; }
   .where { flex: 1; min-width: 0; height: 52px; display: flex; align-items: center; gap: 10px; padding: 0 18px; border: 0;
     border-radius: 26px; color: color-mix(in srgb, var(--fg) 82%, transparent); font: inherit; font-size: 16px; font-weight: 600; line-height: 1;
     cursor: pointer; background: var(--glass); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); text-shadow: var(--glass-text); }
@@ -558,4 +562,13 @@
     .popwrap { top: calc(16px + env(safe-area-inset-top)); max-width: none; max-height: calc(100dvh - 32px - env(safe-area-inset-top)); }
     .panel.compact { max-width: calc(100% - 88px); }
   }
+  /* A phone: the settings are a page of their own over the map, cards and tab bar (compact mockup 11). */
+  @media (max-width: 719px) {
+    :global(:root) .popwrap.page[class] { position: fixed; inset: 0 !important; z-index: 20; width: auto; max-width: none !important; max-height: none !important;
+      background: var(--bg); animation: pageIn .26s cubic-bezier(.2, .8, .2, 1); }
+    .popwrap.page .pop { flex: 1; padding: 0; border-radius: 0; background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none;
+      text-shadow: none; --card: inherit; --card-border: inherit; }
+    @keyframes pageIn { from { transform: translateX(24px); opacity: 0; } }
+  }
+  @media (max-width: 719px) and (prefers-reduced-motion: reduce) { :global(:root) .popwrap.page[class] { animation: none; } }
 </style>
