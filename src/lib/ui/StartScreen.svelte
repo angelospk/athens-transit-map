@@ -2491,6 +2491,15 @@
   .psheet { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; gap: 12px; padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
     border-radius: 24px 24px 0 0; background: var(--surface); box-shadow: 0 -10px 30px rgb(0 0 0 / .45); box-sizing: border-box; }
   .pme { position: absolute; right: 16px; top: -60px; color: var(--accent); }
+  /* A computer (desktop mockup Υ2): the pick's search and its sheet in the left column, the map free beside them; the
+     hint over the middle of that free map. */
+  @media (min-width: 720px) {
+    .ptop { right: auto; width: var(--col-w, 440px); }
+    .psheet { left: 16px; right: auto; bottom: 16px; width: var(--col-w, 440px); padding: 8px 16px 16px; border-radius: var(--radius);
+      box-shadow: var(--shadow); }
+    .pgrip { display: none; }
+    .phint { left: calc(50% + (var(--col-w, 440px) + 16px) / 2); }
+  }
   .pgrip { width: 40px; height: 5px; border-radius: 3px; background: var(--grip); align-self: center; display: block; }
   .phead { height: 44px; display: flex; align-items: center; gap: 12px; }
   .pmk { flex: none; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #ff7a2f; background: rgb(255 122 47 / .16); }

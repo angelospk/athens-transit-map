@@ -90,14 +90,14 @@
     const w = window as Window & { requestIdleCallback?: (f: () => void) => number };
     if (w.requestIdleCallback) w.requestIdleCallback(go); else setTimeout(go, 2000);
   });
-  // A phone: a trip asked from elsewhere (a stop's «Πώς πάω», a place on the map, Σπίτι) opens in «Πού πας;», which shows
+  // A phone and a computer alike: a trip asked from elsewhere (a stop's «Πώς πάω», a place on the map, Σπίτι) opens in «Πού πας;», which shows
   // its routes (compact mockup 14); the old planner with its own fields is only the picked route's sheet there (it
   // comes with app.tripPrefs, from «Πού πας;» itself).
   $effect(() => {
     const t = app.tripTo, f = app.tripFrom;
     if (!t && !f) return;
     untrack(() => {
-      if (narrow.current && !app.tripPrefs) {
+      if (!app.tripPrefs) {
         app.tripTo = null; app.tripFrom = null;
         app.startEnds = { from: f ?? (app.myPos ? { label: "Η θέση μου", pts: [app.myPos], lines: [], kind: "me" } : null), to: t };
         if (pop === "trip") pop = null;
@@ -113,7 +113,7 @@
     const t = app.tab;
     untrack(() => {
       // A phone, a trip on its way to «Πού πας;» (above): not the old planner.
-      if (t === "trip" && narrow.current && !app.tripPrefs && (app.tripTo || app.tripFrom || app.startEnds)) return;
+      if (t === "trip" && !app.tripPrefs && (app.tripTo || app.tripFrom || app.startEnds)) return;
       if (t === "trip") pop = "trip"; else if (pop === "trip") pop = null;
     });
   });
@@ -410,7 +410,7 @@
     </svg>
   </button>
   <button type="button" class="tool tripb" class:on={pop === "trip"} class:pinned={!!app.tripEnds && pop !== "trip"} aria-expanded={pop === "trip"} bind:this={tripButton}
-    aria-label="Διαδρομή: ποιες γραμμές με πάνε" data-tip="Διαδρομή: διάλεξε Α και Β και δες ποιες γραμμές σε πάνε" onclick={() => toggle("trip")}>
+    aria-label="Διαδρομή: ποιες γραμμές με πάνε" data-tip="Διαδρομή: διάλεξε Α και Β και δες ποιες γραμμές σε πάνε" onclick={() => (pop === "trip" ? toggle("trip") : (app.start = true))}>
     <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
       <circle cx="10" cy="10" r="8" /><path d="M12.8 7.2l-1.6 4-4 1.6 1.6-4z" />
     </svg>
