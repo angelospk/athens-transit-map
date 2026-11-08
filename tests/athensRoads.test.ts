@@ -57,7 +57,7 @@ describe("decode", () => {
     a: [[0, 0, 100, 0, 0, 100, -100, -100]],
     x: [[2500, 0, 0, 60]],
   };
-  const r = decode(f);
+  const r = decode(f, true);
 
   it("makes the streets, their markings, squares and crossings into features", () => {
     const kinds = r.features.map(x => `${x.properties!.kind}${x.properties!.t ?? ""}`);
@@ -99,7 +99,7 @@ describe("markings at junctions", () => {
     const p = (x: number, y: number): [number, number] => [23.73 + x / kx, 37.99 + y / 110540];
     f.r.push([0, 70, 0, 0, 0, enc([p(-50, 0), p(0, 0), p(50, 0)]), [[1, enc([p(-50, 1), p(50, 1)])]]] as never);
     f.r.push([0, 100, 0, 0, 0, enc([p(0, -50), p(0, 0), p(0, 50)]), []] as never);
-    const lines = decode(f).features.filter(x => x.properties!.kind === "mark").map(x => (x.geometry as GeoJSON.LineString).coordinates);
+    const lines = decode(f, true).features.filter(x => x.properties!.kind === "mark").map(x => (x.geometry as GeoJSON.LineString).coordinates);
     expect(lines.length).toBe(2);   // the line, cut in two by the crossing street
     for (const l of lines) for (const [lo] of l) expect(Math.abs((lo - 23.73) * kx)).toBeGreaterThan(5);
   });
@@ -116,7 +116,7 @@ describe("a bridge over a street", () => {
     const p = (x: number, y: number): [number, number] => [23.73 + x / kx, 37.99 + y / 110540];
     f.r.push([0, 70, 0, 0, 0, enc([p(-50, 0), p(50, 0)]), [[1, enc([p(-50, 1), p(50, 1)])]]] as never);
     f.r.push([0, 100, 0, 0, 0, enc([p(0, -50), p(0, 50)]), [], 1, 0] as never);   // over it, no shared point
-    const out = decode(f);
+    const out = decode(f, true);
     expect(out.roads.every(r => !("lv" in r))).toBe(true);
     const lines = out.features.filter(x => x.properties!.kind === "mark").map(x => (x.geometry as GeoJSON.LineString).coordinates);
     expect(lines.length).toBe(2);
@@ -147,7 +147,7 @@ describe("a junction", () => {
     // A cross: two 10 m streets meeting at (0, 0), each with a centre line.
     f.r.push([0, 100, 30, 0, 0, enc([p(-60, 0), p(0, 0), p(60, 0)]), [[1, enc([p(-60, 0.1), p(60, 0.1)])]]] as never);
     f.r.push([0, 100, 30, 0, 0, enc([p(0, -60), p(0, 0), p(0, 60)]), [[1, enc([p(0.1, -60), p(0.1, 60)])]]] as never);
-    const out = decode(f).features;
+    const out = decode(f, true).features;
     expect(out.filter(x => x.properties!.kind === "patch")).toHaveLength(1);
     expect(out.filter(x => x.properties!.kind === "patchKerb")).toHaveLength(4);   // four corners
     for (const l of out.filter(x => x.properties!.kind === "mark").map(x => (x.geometry as GeoJSON.LineString).coordinates))
@@ -164,10 +164,10 @@ describe("a road changing width", () => {
   const kx = 111320 * Math.cos((37.99 * Math.PI) / 180);
   const p = (x: number, y: number): [number, number] => [23.73 + x / kx, 37.99 + y / 110540];
   const wide = [0, 100, 30, 1, 0, enc([p(-60, 0), p(0, 0)]), []] as never, narrow = [0, 60, 30, 1, 0, enc([p(0, 0), p(60, 0)]), []] as never;
-  const kinds = (g: RoadsFile) => decode(g).features.map(x => x.properties!.kind);
+  const kinds = (g: RoadsFile) => decode(g, true).features.map(x => x.properties!.kind);
 
   it("widens gradually, with its kerbs and its pavement, not in a step", () => {
-    const out = decode({ ...f, r: [wide, narrow] }).features;
+    const out = decode({ ...f, r: [wide, narrow] }, true).features;
     const patch = out.find(x => x.properties!.kind === "patch")!;
     const ring = (patch.geometry as GeoJSON.Polygon).coordinates[0].map(([lo, la]) => [(lo - 23.73) * kx, (la - 37.99) * 110540]);
     expect(Math.max(...ring.map(q => q[0]))).toBeCloseTo(24, 0);           // 6 m per metre of difference: 4 m -> 24 m
@@ -199,7 +199,7 @@ describe("the points of one junction", () => {
         g.r.push([0, wDm, 30, oneway, 0, enc([p(-80, c), p(-gap / 2, c), p(gap / 2, c), p(80, c)]), []] as never);
         g.r.push([0, wDm, 30, oneway, 0, enc([p(c, -80), p(c, -gap / 2), p(c, gap / 2), p(c, 80)]), []] as never);
       }
-      return decode(g).features.filter(x => x.properties!.kind === "patch").length;
+      return decode(g, true).features.filter(x => x.properties!.kind === "patch").length;
     };
     expect(grid(22, 100, 1)).toBe(1);   // two divided roads, 10 m halves 22 m apart: one junction, one patch
     expect(grid(40, 60, 0)).toBe(4);    // streets 6 m wide round a 40 m block: four junctions
@@ -218,7 +218,7 @@ describe("junctions worked out with polygons (scripts/junctions.py)", () => {
   const street = [0, 100, 30, 0, 0, enc([p(-60, 0), p(60, 0)]), [[0, enc([p(-60, 1), p(60, 1)])]]] as never;
 
   it("draws the surfaces this tile owns, their kerbs and islands, a roundabout's lane line, and cuts lane lines on them", () => {
-    const out = decode({ ...f, r: [street], j: [[1, sq(10)], [0, sq(5)]], k: [enc([p(-10, 10), p(10, 10)])], i: [[sq(2)]], o: [[...enc([p(0, 0)]), 2000, 400]] }).features;
+    const out = decode({ ...f, r: [street], j: [[1, sq(10)], [0, sq(5)]], k: [enc([p(-10, 10), p(10, 10)])], i: [[sq(2)]], o: [[...enc([p(0, 0)]), 2000, 400]] }, true).features;
     expect(out.filter(x => x.properties!.kind === "patch")).toHaveLength(1);    // the other is the next tile's
     expect(out.filter(x => x.properties!.kind === "patchKerb")).toHaveLength(1);
     expect(out.filter(x => x.properties!.kind === "island")).toHaveLength(1);

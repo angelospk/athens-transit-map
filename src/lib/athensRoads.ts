@@ -95,7 +95,9 @@ export function zebra(at: LngLat, bearingDeg: number, half: number): LngLat[][] 
 
 /** The file as map features (properties: kind, w carriageway m, p pavement m each side, t marking type), and the
  *  carriageways for snapping. Marking types: 0 lane line, 1 centre line, 2 bus-lane line, 3 zebra, 4 edge line. */
-export function decode(f: RoadsFile): AthensRoads {
+/** The street is drawn plain (2026-11-09, as nextstopsg.app draws Singapore): asphalt, kerbs and pavements, no lane
+ *  lines, zebras, stop lines, arrows, bus-lane words or junction islands. `marks` true paints them all (the tests). */
+export function decode(f: RoadsFile, marks = false): AthensRoads {
   const { origin, unit } = f;
   const features: GeoJSON.Feature[] = [], roads: Road[] = [], streets: Street[] = [];
   const box: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
@@ -110,7 +112,7 @@ export function decode(f: RoadsFile): AthensRoads {
   // Its own roads, then the neighbours' (seen, not drawn): `all` for what looks round a point, `roads` its own.
   const all: Road[] = [];
   const raw: [RawRoad, boolean][] = [...f.r.map(r => [r, true] as [RawRoad, boolean]), ...(f.c ?? []).map(r => [r, false] as [RawRoad, boolean])];
-  for (const [[kind, wDm, pDm, oneway, busDm, pts, marks, lv = 0], own] of raw) {
+  for (const [[kind, wDm, pDm, oneway, busDm, pts, rawMarks, lv = 0], own] of raw) {
     const coords = points(origin, unit, pts);
     if (coords.length < 2) continue;
     const w = wDm / 10, p = pDm / 10;
@@ -134,7 +136,7 @@ export function decode(f: RoadsFile): AthensRoads {
     roads.push(rd);
     all.push(rd);
     if (kind === 0 && !lv) streets.push({ coords, half: w / 2, pave: p, box: b });   // lamps: not along a bridge
-    for (const [t, mp] of marks) {
+    if (marks) for (const [t, mp] of rawMarks) {
       const m = points(origin, unit, mp);
       if (m.length < 2) continue;
       if (t !== 3) (rd.marks ??= []).push([t, m]);   // drawn below, once every road is known
@@ -160,9 +162,9 @@ export function decode(f: RoadsFile): AthensRoads {
         (grid.get(`${x},${y}`) ?? grid.set(`${x},${y}`, []).get(`${x},${y}`)!).push(sh);
     }
     for (const k of f.k ?? []) features.push(line(points(origin, unit, k), { kind: "patchKerb" }));
-    for (const isl of f.i ?? []) features.push({ type: "Feature", properties: { kind: "island" }, geometry: { type: "Polygon", coordinates: isl.map(q => points(origin, unit, q)) } });
+    if (marks) for (const isl of f.i ?? []) features.push({ type: "Feature", properties: { kind: "island" }, geometry: { type: "Polygon", coordinates: isl.map(q => points(origin, unit, q)) } });
     for (const w of f.w ?? []) features.push({ type: "Feature", properties: { kind: "walkPatch" }, geometry: { type: "Polygon", coordinates: w.map(q => points(origin, unit, q)) } });
-    for (const [dx, dy, rc, hc] of f.o ?? []) {
+    if (marks) for (const [dx, dy, rc, hc] of f.o ?? []) {
       const [c] = points(origin, unit, [dx, dy]), kx = kxOf(c[1]), rad = rc / 100;
       const ring: LngLat[] = [];
       for (let n = 0; n <= 96; n++) { const a = (n / 96) * 2 * Math.PI; ring.push([c[0] + (Math.cos(a) * rad) / kx, c[1] + (Math.sin(a) * rad) / KY]); }
@@ -180,8 +182,8 @@ export function decode(f: RoadsFile): AthensRoads {
     onJunction = (r, p) => forks.inside(r, p) || boxes.inside(r, p);
   }
   features.push(...taperPatches(all, N, level, p => mine(p) && !onJunction(all[0], p)));
-  const clip = junctionClip(all, N, onJunction, level);
-  for (const r of roads) for (const [t, m] of r.marks ?? []) {
+  const clip = marks ? junctionClip(all, N, onJunction, level) : null;
+  if (clip) for (const r of roads) for (const [t, m] of r.marks ?? []) {
     for (const piece of clip(r, m)) {
       if (t === 4 && lengthOf(piece) < EDGE_MIN) continue;   // what a junction left of an edge line: a stub, not a line
       if (t === 0) { const d = dashes(piece); if (d.length) features.push(line(d, { kind: "mark", t })); }
@@ -192,14 +194,14 @@ export function decode(f: RoadsFile): AthensRoads {
     const ring = points(origin, unit, a);
     if (ring.length >= 4) features.push({ type: "Feature", properties: { kind: "area" }, geometry: { type: "Polygon", coordinates: [ring] } });
   }
-  for (const [dx, dy, bearing, halfDm] of f.x) {
+  if (marks) for (const [dx, dy, bearing, halfDm] of f.x) {
     const [at] = points(origin, unit, [dx, dy]);
     features.push(line(zebra(at, bearing / 10, halfDm / 10), { kind: "mark", t: 3 }));
   }
   // The stop lines before the zebras (type 5), the word ΛΕΩΦΟΡΕΙΑ in the bus lanes, the turn arrows (when the file
   // has them): painted as on the street.
-  features.push(...stopLines(f, all, N), ...busWords(roads));
-  for (const [dx, dy, bearing, code] of f.t ?? []) {
+  if (marks) features.push(...stopLines(f, all, N), ...busWords(roads));
+  if (marks) for (const [dx, dy, bearing, code] of f.t ?? []) {
     const [at] = points(origin, unit, [dx, dy]);
     const polys = arrow(at, bearing / 10, code);
     if (polys.length) features.push({ type: "Feature", properties: { kind: "arrow" }, geometry: { type: "MultiPolygon", coordinates: polys } });

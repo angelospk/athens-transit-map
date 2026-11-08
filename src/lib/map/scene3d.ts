@@ -69,8 +69,12 @@ const XRAY = 1;
 // tiles, 48 MB, which the map's worker then held at every zoom: 3 GB, and the browser dropped the page.)
 const ROAD_REACH = 0.012;
 const NO_ROADS: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
-const STREET_LAYERS = ["x3d-roofs", "x3d-area", "x3d-mark-0", "x3d-mark-2", "x3d-mark-3", "x3d-mark-4", "x3d-mark-5", "x3d-arrows", "x3d-busword", "x3d-pools", "x3d-buildings", "x3d-route-edge", "x3d-hl-edge",
-  "x3d-tram-bed", "x3d-tram-sleepers", "x3d-tram-rail-1", "x3d-tram-rail-2"];
+// The street drawn plain (as nextstopsg.app draws Singapore): asphalt, kerbs and pavements, no lane lines, zebras,
+// arrows, bus-lane words or junction islands. MARKINGS true paints them all again (athensRoads.decode too).
+const MARKINGS = false;
+const STREET_LAYERS = ["x3d-roofs", "x3d-area", "x3d-pools", "x3d-buildings", "x3d-route-edge", "x3d-hl-edge",
+  "x3d-tram-bed", "x3d-tram-sleepers", "x3d-tram-rail-1", "x3d-tram-rail-2",
+  ...(MARKINGS ? ["x3d-mark-0", "x3d-mark-2", "x3d-mark-3", "x3d-mark-4", "x3d-mark-5", "x3d-arrows", "x3d-busword"] : [])];
 
 const COLORS = {
   // «Ρεαλιστική», light and dark: the 2D map's own colours (basemap.ts PALETTE): its ground, parks, water and buildings,
@@ -608,7 +612,13 @@ export class Scene3D {
     if (!near) return { pos, heading };
     const h = idx.lane(near, dir);
     let hd = (Math.atan2(h.tx, h.ty) * 180) / Math.PI;   // the road's bearing, one of its two ways
-    if (heading != null && Math.abs(((hd - heading + 540) % 360) - 180) > 90) hd += 180;
+    if (heading != null) {
+      const off = Math.abs(((hd - heading + 540) % 360) - 180);
+      if (off > 90) hd += 180;
+      // A road across its way (a crossing, its own street not in the index): it is not on that one. It stays on its
+      // route, facing the way it travels, rather than sliding onto the cross street sideways.
+      if (Math.min(off, 180 - off) > 40) return { pos, heading };
+    }
     return { pos: idx.ll(h.x, h.y), heading: (hd + 360) % 360 };
   }
 
@@ -629,7 +639,8 @@ export class Scene3D {
     if (!m || !A || !m.getSource("x3d-roads") || this.streetIds.some(id => m.getLayer(id))) return;
     this.streetIds = [];   // none on the map (a new style dropped them): add them again
     const c = this.pal(), lat = m.getCenter().lat;
-    const under = m.getLayer("x3d-mark-0") ? "x3d-mark-0" : before;
+    // Under the markings when painted, else under the tram's tracks (the first layer over the street).
+    const under = m.getLayer("x3d-mark-0") ? "x3d-mark-0" : m.getLayer("x3d-tram-bed") ? "x3d-tram-bed" : before;
     // Streets end round, so where two meet at an angle the corner is filled. Motorways end square: their ways meet
     // in line, but change width at every ramp (a lane more or less), and a round end of the wider one would bulge
     // out past the narrower one as a half disc.
@@ -657,9 +668,10 @@ export class Scene3D {
       layout: { "line-cap": "round", visibility: this.under ? "none" : "visible" },
       paint: { "line-color": c.kerbA, "line-width": metres(0.3, lat) } } as never, under);
     // A junction's islands (scripts/junctions.py): pavement, over its surface, under its kerbs' line.
-    m.addLayer({ id: "x3d-island", type: "fill", source: "x3d-roads", minzoom: STREET_ZOOM, filter: ["==", ["get", "kind"], "island"],
+    if (MARKINGS) m.addLayer({ id: "x3d-island", type: "fill", source: "x3d-roads", minzoom: STREET_ZOOM, filter: ["==", ["get", "kind"], "island"],
       layout: { visibility: this.under ? "none" : "visible" }, paint: { "fill-color": c.walk, "fill-antialias": true } } as never, "x3d-patch-kerb");
-    this.streetIds.push("x3d-patch", "x3d-patch-kerb", "x3d-island");
+    this.streetIds.push("x3d-patch", "x3d-patch-kerb");
+    if (MARKINGS) this.streetIds.push("x3d-island");
   }
 
   // ---- The metro under the street.
@@ -1027,7 +1039,7 @@ export class Scene3D {
     // The edge lines (t 4) and stop lines (t 5, 40 cm) white and whole, as painted; lane and centre lines in the
     // street's marking colour.
     const toonMarks = this.look === "toon";
-    for (const [t, w] of [[0, 0.15], [4, 0.15], [5, 0.4], [2, 0.25], [3, 0.5]] as const) {
+    if (MARKINGS) for (const [t, w] of [[0, 0.15], [4, 0.15], [5, 0.4], [2, 0.25], [3, 0.5]] as const) {
       const filter = t === 0 ? ["all", kind("mark"), ["in", ["get", "t"], ["literal", [0, 1]]]] : ["all", kind("mark"), ["==", ["get", "t"], t]];
       // Calibrated (Roads3D mockup): the edge line a soft guide, not a white wall; the zebras a little under full.
       const white = (t === 4 || t === 5) && !toonMarks;
@@ -1041,10 +1053,10 @@ export class Scene3D {
     }
     // The turn arrows, white, and ΛΕΩΦΟΡΕΙΑ down the bus lanes, in the lane's yellow: painted flat on the street,
     // their size in metres (letters 1.5 m).
-    m.addLayer({ id: "x3d-arrows", type: "fill", source: "x3d-roads", minzoom: STREET_ZOOM + 0.5, filter: kind("arrow"),
+    if (MARKINGS) m.addLayer({ id: "x3d-arrows", type: "fill", source: "x3d-roads", minzoom: STREET_ZOOM + 0.5, filter: kind("arrow"),
       paint: { "fill-color": toonMarks ? c.mark : "#ffffff", "fill-antialias": true,
         "fill-opacity": ["interpolate", ["linear"], ["zoom"], STREET_ZOOM + 0.5, 0, STREET_ZOOM + 1.2, toonMarks ? c.markOpacity : this.dark ? 0.72 : 0.9] } } as never, before);
-    m.addLayer({ id: "x3d-busword", type: "symbol", source: "x3d-roads", minzoom: 17.5, filter: kind("busword"),
+    if (MARKINGS) m.addLayer({ id: "x3d-busword", type: "symbol", source: "x3d-roads", minzoom: 17.5, filter: kind("busword"),
       layout: { "text-field": "ΛΕΩΦΟΡΕΙΑ", "text-font": ["Noto Sans Bold"], "text-size": metres(1.5, lat), "text-letter-spacing": 0.12,
         "text-rotate": ["get", "rot"], "text-rotation-alignment": "map", "text-pitch-alignment": "map",
         "text-allow-overlap": true, "text-ignore-placement": true, "symbol-placement": "point" },
