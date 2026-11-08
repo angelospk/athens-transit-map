@@ -19,6 +19,7 @@ import type { DelayClass } from "../format";
 import { depthAt, ISLANDS, TRACK_GAP, trackGapAt, type Livery, DEPTH, metroStops } from "./metroDepth";
 import { EntranceModels } from "./entrance/models";
 import type { Entrance3D } from "../entrances";
+import { Turners } from "../turn";
 
 export type VehicleKind = "bus" | "trolley" | "tram" | "metro";
 // trail (trams): where its front has been, oldest first, in metres east and north of TRAIL_ORIGIN, about 1 m apart.
@@ -527,7 +528,12 @@ export class Scene3D {
   }
 
   /** A vehicle to draw, every frame: `label` is its line's number, shown on its destination displays. */
+  /** A bus's, a trolley's and a tram's model turns toward its heading (a road's or a track's bearing changes at each
+   *  vertex); the metro's cars already lie along their rails. `busy` while one is still turning. */
+  readonly turns = new Turners();
+
   upsert(key: string, pos: LngLat, heading: number | null, color: string, kind: VehicleKind = "bus", label = "", glow: DelayClass = "none", livery?: Livery) {
+    if (kind !== "metro" && heading != null) heading = this.turns.toward(key, heading, performance.now() / 1000);
     const b = this.buses.get(key);
     if (b) { b.pos = pos; if (heading != null) b.heading = heading; b.color = color; b.kind = kind; b.label = label; b.glow = glow; b.livery = livery; }
     else this.buses.set(key, { pos, heading, color, kind, label, glow, livery });
@@ -609,6 +615,7 @@ export class Scene3D {
   drop(key: string) {
     this.buses.delete(key);
     this.onTrack.delete(key);
+    this.turns.drop(key);
     const g = this.groups.get(key);
     if (g) { g.removeFromParent(); this.groups.delete(key); }
   }

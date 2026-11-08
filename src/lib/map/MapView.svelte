@@ -40,6 +40,7 @@
   import type { AppState } from "../state.svelte";
   import SpeedLegend from "../ui/SpeedLegend.svelte";
   import { paintBase } from "./basemap";
+  import { Turners } from "../turn";
   import { addRelief, RELIEF_LAYER, reliefStrength, setMountains } from "./relief";
   import { AppleBase, MAPKIT_TOKEN } from "./appleBase";
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
@@ -189,7 +190,7 @@
   function setHeading(d: Dom, north: number | null) {
     rawHeading.set(d, north);
     const h = north == null ? null : north - (map?.getBearing() ?? 0);
-    if (h != null && d.heading != null && Math.abs(((h - d.heading + 540) % 360) - 180) < 2) return;
+    if (h != null && d.heading != null && Math.abs(((h - d.heading + 540) % 360) - 180) < 0.5) return;
     d.heading = h;
     d.dir.hidden = h == null;
     if (h == null) return;
@@ -866,6 +867,9 @@
   let lastData = 0;
   // Each vehicle's feature, kept and moved, not made anew every tick (less garbage between frames).
   const cityFeatures = new Map<string, GeoJSON.Feature<GeoJSON.Point>>();
+  // Every vehicle's drawn heading turns toward its true one (turn.ts): no pictogram, pointer or arrow snaps round.
+  const turners = new Turners();
+  const turnersTrain = new Set<string>();
   // A phone with «Πού πας;» open: the screen covers the map whole, so nothing on it is stepped (the screen scrolls and
   // types smoothly); the vehicles snap to where they are when it closes.
   const phoneMQ = typeof matchMedia === "function" ? matchMedia("(max-width: 719px)") : null;
@@ -895,6 +899,9 @@
       cull = p => p[0] < W || p[0] > E || p[1] < S || p[1] > N;
     }
     let fixing = false;
+    turners.busy = false;
+    scene3d.turns.busy = false;
+    const turnNow = t / 1000;
     const features: GeoJSON.Feature<GeoJSON.Point>[] = [];
     const trails: GeoJSON.Feature<GeoJSON.LineString>[] = [];
     const s = app.selection, selKey = s?.kind === "vehicle" ? `${s.line}/${s.id}` : null, only = app.only;
@@ -950,7 +957,7 @@
         d.el.classList.toggle("rewind", rewind);
       }
       else {
-        const h = headingOf(e, still);
+        const h = turners.toward(e.key, headingOf(e, still), turnNow);
         // A city vehicle (a line not followed) being chased: the camera rides behind it and it is a model too (the
         // city layer is hidden while chasing).
         if (app.chase === e.key && scene3d.on) {
@@ -1033,6 +1040,8 @@
     // steps the whole city, 4 fps.
     // In 3D close in (the models, their labels riding on them, the near street seen large at a slant): every frame.
     // With motion off nothing steps: between fixes (a new one leaves a trail, fast again) once a second is enough.
+    if (turners.busy || scene3d.turns.busy) fixing = true;   // a turn under way: smooth to its end
+    if (cityFeatures.size + 200 < turners.size) turners.keep([...fleet.entries.keys(), ...[...turnersTrain]]);
     // Never under DATA_MS: a step of under a pixel is not seen, and the sources are not sent faster anyway.
     const idle = scene3d.on && z >= BUS_ZOOM ? 0 : still ? 1000 : Math.min(1000, Math.max(DATA_MS, (0.5 * mpp / 20) * 1000));
     nextDue = t + (fixing ? Math.min(idle, z >= 13 ? 33 : 250) : idle);
@@ -1059,7 +1068,7 @@
       d.el.classList.add(cls);
     }
     d.el.classList.toggle("faded", fadedKeys.has(e.key));
-    setHeading(d, headingOf(e, still));
+    setHeading(d, turners.toward(e.key, headingOf(e, still), performance.now() / 1000));
     return d;
   }
 
@@ -1888,6 +1897,14 @@
       nowS: now / 1000, sel: app.train, tracks, motions: app.stasyMotion, glide: t => glide.at(t.train, now) });
     // icon-offset is in the image's pixels, times icon-size: TRACK_SHIFT of them land on the track's line-offset.
     if (focusLines) fc.features = fc.features.filter(f => focusLines!.has(String(f.properties!.line)));   // a picked trip: its own lines only
+    const tNow = performance.now() / 1000;
+    turnersTrain.clear();
+    for (const f of fc.features) {
+      const pr = f.properties!, key = `train/${pr.id}`;
+      turnersTrain.add(key);
+      const h = turners.toward(key, (pr.h as number | undefined) ?? null, tNow);
+      if (h != null) pr.h = h;
+    }
     for (const f of fc.features) { const [x, y] = f.properties!.side as number[]; f.properties!.q = ((Math.round(Math.atan2(y, x) / (2 * Math.PI / SIDES)) % SIDES) + SIDES) % SIDES; }
     // In 3D, close in, each tram is a model too (scene3d.ts buildTram): its cars follow the track it has driven, and
     // its disc gives way (m3d).

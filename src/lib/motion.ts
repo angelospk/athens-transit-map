@@ -7,6 +7,7 @@
 
 import { distanceM, type LngLat } from "./glide";
 import { bearingDeg } from "./heading";
+import { headingAlong } from "./turn";
 
 export const TAU_S = 10;       // a gap closes with this time constant...
 export const CATCH_MAX = 6;    // ...at most this much faster than the target (m/s): no burst after new data
@@ -178,9 +179,12 @@ export function subLine(geom: LngLat[], cum: number[], s1: number, s2: number): 
 }
 
 export function headingAtLL(geom: LngLat[], cum: number[], s: number): number | null {
-  for (let i = 1; i < geom.length; i++)
-    if (cum[i] > cum[i - 1] && (cum[i] >= s || i === geom.length - 1)) return bearingDeg(geom[i - 1], geom[i]);
-  return null;
+  // The heading turns through each corner over a few metres (turn.ts), not in one jump at the vertex.
+  const bearing: number[] = [], at: number[] = [];
+  for (let i = 1; i < geom.length; i++) if (cum[i] > cum[i - 1]) { bearing.push(bearingDeg(geom[i - 1], geom[i])); at.push(cum[i - 1]); }
+  if (!bearing.length) return null;
+  at.push(cum[geom.length - 1]);
+  return headingAlong(bearing, at, s);
 }
 
 const rad = Math.PI / 180;
