@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  AGREE_M, MAX_MOVE_M, applyCorrections, deviceId, gpsFromAudit, markReported, parseCsv, reportedStops, decideCorrection, distM, offsetPoint, parseStopReports, sheetReportRows, handCheck, stopReportText,
+  AGREE_M, MAX_MOVE_M, applyCorrections, deviceId, gpsFromAudit, markReported, parseCsv, reportedStops, decideCorrection, distM, offsetPoint, parseStopReports, sheetReportRows, handCheck, stopReportText, streetViewUrl,
   type GpsMeasure, type StopReport,
 } from "../src/lib/stopfix";
 
@@ -247,5 +247,15 @@ describe("bot check (Turnstile) in the Sheet", () => {
     // The bot check proves a person, not three: reports alone still need a look.
     expect(handCheck({ basis: "reports", unverified: 0 })).toMatch(/^CHECK BY HAND \(reports only\)/);
     expect(handCheck({ basis: "reports", unverified: 1 })).toMatch(/^CHECK BY HAND \(reports only, 1 unverified\)/);
+  });
+});
+
+describe("streetViewUrl", () => {
+  it("opens Google Street View at the pin (Maps URLs API, no key)", () => {
+    expect(streetViewUrl([37.9488221234, 23.6775249876]))
+      .toBe("https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=37.948822,23.677525");
+  });
+  it("keeps the sign of negative coordinates", () => {
+    expect(streetViewUrl([-33.8567844, -151.213108])).toContain("viewpoint=-33.856784,-151.213108");
   });
 });

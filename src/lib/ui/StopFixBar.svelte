@@ -7,7 +7,7 @@
   import type { IdeaStatus } from "../idea";
   import { sendFeedback } from "../feedback";
   import BotCheck from "./BotCheck.svelte";
-  import { MAX_MOVE_M, deviceId, distM, markReported, stopReportText } from "../stopfix";
+  import { MAX_MOVE_M, deviceId, distM, markReported, stopReportText, streetViewUrl } from "../stopfix";
   import { VERSION } from "../version";
 
   let { app, ondone }: { app: AppState; ondone: () => void } = $props();
@@ -54,6 +54,7 @@
       <button type="button" class="btn" onclick={close} disabled={status === "sending"}>Άκυρο</button>
       <button type="button" class="btn primary" onclick={send} disabled={!ok}>{status === "sending" ? "Αποστολή…" : "Αποστολή"}</button>
     </div>
+    {#if at}<a class="sv" href={streetViewUrl(at)} target="_blank" rel="noopener">Δες το σημείο στο Street View ›</a>{/if}
     <BotCheck active={true} bind:this={bot} />
     <p class="fine">Στέλνεται η θέση της πινέζας, η στάση και ένας τυχαίος κωδικός συσκευής.</p>
   {/if}
@@ -72,6 +73,8 @@
   .primary { background: var(--accent); color: #fff; }
   .btn:disabled { opacity: .45; cursor: default; }
   .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sv { display: block; margin-top: 8px; padding: 4px 0; color: var(--accent); font-size: 13px; font-weight: 600; text-align: center; text-decoration: none; }
+  .sv:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
   .fine { margin-top: 6px; color: var(--muted); font-size: 11px; text-align: center; }
   @media (max-width: 719px) {
     .fixbar { left: 0; right: 0; bottom: 0; width: auto; border-radius: 16px 16px 0 0; border-width: 1px 0 0;

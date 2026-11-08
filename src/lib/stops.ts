@@ -139,7 +139,7 @@ export const toward = (headsign: string) => places(headsign).pop()!.trim() || he
 // is the headsign's first place (or the first stop). The turn: the stop named as the headsign's end, else the
 // stop farthest from the start. Anything unknown: the headsign's end.
 export function headTo(ix: TripIndex, line: string, variant: string, k: number, headsign: string): { to: string; back: boolean } {
-  const end = toward(headsign), plain = { to: end, back: false };
+  const end = toward(headsign), plain = { to: destinationOf(ix, line, variant) ?? end, back: false };
   const seq = ix.l[line]?.[variant];
   const p = seq ? seq.indexOf(k) : -1;
   if (!seq || p < 0 || seq.length < 3) return plain;
@@ -155,6 +155,23 @@ export function headTo(ix: TripIndex, line: string, variant: string, k: number, 
   if (p <= turn) return plain;
   const parts = places(headsign);
   return { to: parts.length > 1 ? parts[0].trim() : ix.s[first][0], back: true };
+}
+
+// The variant's end as the stop index has it (destination.ts, built into trips*.json), or null.
+export function destinationOf(ix: TripIndex, line: string, variant: string): string | null {
+  const k = ix.d?.h?.[line]?.[variant];
+  return k == null || ix.d!.n[k] == null ? null : ix.d!.n[k].toLocaleUpperCase("el");
+}
+
+// The end of a line at stop k: the end of its variants that pass there (not those that end there), when they
+// all have one and it is the same; else null. For a row with no variant, and the lines with no bus near.
+export function lineTowardAt(ix: TripIndex, line: string, k: number): string | null {
+  const names = new Set<string | null>();
+  for (const [v, seq] of Object.entries(ix.l[line] ?? {})) {
+    const p = seq.indexOf(k);
+    if (p >= 0 && p < seq.length - 1) names.add(destinationOf(ix, line, v));
+  }
+  return names.size === 1 ? [...names][0] : null;
 }
 
 const GONE_MS = 60_000;

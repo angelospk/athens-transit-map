@@ -24,6 +24,11 @@ export function offsetPoint(p: LatLon, n: number, e: number): LatLon {
   return [p[0] + n / 111_320, p[1] + e / (111_320 * Math.cos((p[0] * Math.PI) / 180))];
 }
 
+/** Google Street View at p (Maps URLs API: a plain link, no key), so the user can see where the pole stands. */
+export function streetViewUrl(p: LatLon): string {
+  return `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${p[0].toFixed(6)},${p[1].toFixed(6)}`;
+}
+
 // verified: the feedback endpoint's bot check (Turnstile) passed; missing or false: unchecked.
 export interface StopReport { stop: string; lat: number; lon: number; device: string; at: number; verified?: boolean }
 

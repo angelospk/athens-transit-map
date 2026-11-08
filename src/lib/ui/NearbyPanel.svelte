@@ -13,6 +13,7 @@
   import Icon from "./Icon.svelte";
   import { CITIES, findCities, MAIN_CITIES, nearestCity, type CityId } from "../cities";
   import { busId, isBusId } from "../busNs";
+  import { serviceTag } from "../service";
 
   let { app }: { app: AppState } = $props();
 
@@ -106,7 +107,9 @@
   {#if found.length}
     <div class="picks" role="group" aria-label="Πόλεις">
       {#each found as id (id)}
-        <button type="button" class="chip" aria-pressed={app.cityId === id} title={CITIES[id].name} onclick={() => pickCity(id)}>{CITIES[id].name}</button>
+        {@const tag = serviceTag(CITIES[id].service)}
+        <button type="button" class="chip" aria-pressed={app.cityId === id} title={tag ? `${CITIES[id].name} · ${tag}` : CITIES[id].name}
+          onclick={() => pickCity(id)}>{CITIES[id].name}{#if tag}<small class="tag">{tag}</small>{/if}</button>
       {/each}
     </div>
   {:else}
@@ -212,6 +215,7 @@
   .picks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 0 0 4px; }
   .picks .chip { padding: 8px 2px; letter-spacing: -0.01em; border: 1px solid var(--border); border-radius: 9px; background: none; color: var(--fg); font: inherit;
     font-size: 12.5px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+  .picks .tag { display: block; margin-top: 1px; color: var(--muted); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; }
   .picks .chip[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
   .stop { margin: 0 0 10px; padding: 10px 12px 2px; border: 1px solid var(--border); border-radius: 14px; }
   .stop:last-child { margin-bottom: 2px; }

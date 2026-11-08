@@ -7,15 +7,16 @@ import { bearingDeg } from "./heading";
 import { distanceM } from "./glide";
 import { fold } from "./search";
 
-// n: the unique cleaned terminus names; s: per stop, [] or [bearing, ...indexes into n].
-export interface StopDirs { n: string[]; s: (number | null)[][] }
+// n: the unique cleaned terminus names; s: per stop, [] or [bearing, ...indexes into n]; h: line → variant →
+// index into n, the variant's readable end (destination.ts; files before it lack it, loops and unclear names have none).
+export interface StopDirs { n: string[]; s: (number | null)[][]; h?: Record<string, Record<string, number>> }
 
 const rad = Math.PI / 180;
 const circ = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
 
 // Latin capitals that look Greek, inside a word with Greek letters, made Greek.
 const LATIN: Record<string, string> = { A: "Α", B: "Β", E: "Ε", Z: "Ζ", H: "Η", I: "Ι", K: "Κ", M: "Μ", N: "Ν", O: "Ο", P: "Ρ", T: "Τ", X: "Χ", Y: "Υ" };
-const greek = (w: string) => (/\p{Script=Greek}/u.test(w) ? w.replace(/[ABEZHIKMNOPTXY]/g, c => LATIN[c]) : w);
+export const greek = (w: string) => (/\p{Script=Greek}/u.test(w) ? w.replace(/[ABEZHIKMNOPTXY]/g, c => LATIN[c]) : w);
 
 // A terminus name without its numbers and ΑΦΕΤΗΡΙΑ/ΤΕΡΜΑ words: the place a bus ends at.
 // OASTH also marks a terminus «Τ.Σ.», ends it with a platform letter («ΙΚΕΑ B») and slips Latin capitals
