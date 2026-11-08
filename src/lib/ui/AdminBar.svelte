@@ -54,6 +54,9 @@
   const changes = $derived(moved + edited);
   // The entrance picked on the map (MapView's move handle), as shown now.
   const sel = $derived(app.entranceSel ? app.entrancesShown.find(e => e.id === app.entranceSel) ?? null : null);
+  // The numbered entrance picked on the map (a station open), and its place in the list.
+  const entK = $derived(app.entranceKeySel ? app.stationEntrances.findIndex(e => e.key === app.entranceKeySel) : -1);
+  const ent = $derived(entK >= 0 ? app.stationEntrances[entK] : null);
   const edit = (patch: Partial<Entrance3D>) => { if (sel) app.editEntrance({ ...sel, ...patch }); };
   const turnBy = (d: number) => { if (sel) edit({ heading: normHeading(Math.round(sel.heading + d)) }); };
   const raiseBy = (d: number) => { if (sel) edit({ elevation: normElevation((sel.elevation ?? 0) + d) }); };
@@ -187,10 +190,29 @@
   </div>
 {/if}
 
+{#if app.admin && ent && !sel}
+  <div class="ent" role="group" aria-label="Επιλεγμένη είσοδος σταθμού">
+    <div class="head">
+      <span class="kind">Είσοδος {entK + 1}</span>
+      <b>{ent.name ?? `Είσοδος ${entK + 1}`}</b>
+      <button type="button" class="x" aria-label="Κλείσιμο" onclick={() => (app.entranceKeySel = null)}><Icon name="close" size={14} /></button>
+    </div>
+    {#if ent.added}
+      <label><span>Όνομα</span><input id="st-ent-name" type="text" value={ent.name ?? ""}
+        onchange={e => app.renameStationEntrance(ent.key!, e.currentTarget.value.trim())}
+        onkeydown={e => { if (e.key === "Enter") e.currentTarget.blur(); }} /></label>
+    {:else}
+      <small class="hint">Από τον χάρτη (OSM): το όνομα μένει όπως είναι εκεί.</small>
+    {/if}
+    <button type="button" class="del" onclick={() => app.dropStationEntrance(ent.key!)}>Διαγραφή</button>
+  </div>
+{/if}
+
 {#if app.admin}
   <div class="bar" role="toolbar" aria-label="Διαχείριση σταθμών">
     <span class="tag">Διαχείριση</span>
     <span class="n">{changes ? `${changes} ${changes === 1 ? "αλλαγή" : "αλλαγές"}` : "Σύρε έναν σταθμό, ή πάτα μια στάση και σύρ’ την"}</span>
+    {#if app.metroStation}<button type="button" onclick={() => (app.entranceAddAt += 1)} title="Νέα είσοδος του σταθμού στο κέντρο του χάρτη"><span>+ Είσοδος</span></button>{/if}
     <button type="button" class="sat" aria-pressed={app.adminSat} onclick={() => (app.adminSat = !app.adminSat)} title="Δορυφορική εικόνα κάτω από τον χάρτη"><span>Δορυφόρος</span></button>
     <button type="button" onclick={() => add("stairs")} title="Νέα σκάλα μετρό στο κέντρο του χάρτη (3D)"><span>+ Σκάλα</span></button>
     <button type="button" onclick={() => add("elevator")} title="Νέο ασανσέρ μετρό στο κέντρο του χάρτη (3D)"><span>+ Ασανσέρ</span></button>
@@ -253,5 +275,6 @@
   .ent .pics { display: flex; flex-direction: column; gap: 6px; }
   .ent .pic { flex-direction: row; align-items: center; gap: 8px; }
   .ent .pic span { flex: none; width: 58px; }
+  .ent .hint { font-size: 12px; line-height: 1.35; color: var(--muted); }
   .ent .del { align-self: flex-start; background: transparent; color: var(--late3, #ff8a8a); box-shadow: inset 0 0 0 1px currentColor; }
 </style>

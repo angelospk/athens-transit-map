@@ -208,7 +208,7 @@ export class AppState {
   startEnds = $state.raw<{ from: import("./trip").Place | null; to: import("./trip").Place | null } | null>(null);
   // The open metro station's entrances (MapView reads them off the base map's tiles, OpenStreetMap's
   // railway=subway_entrance, as the station opens): one per name, nearest the station first.
-  stationEntrances = $state.raw<{ name: string | null; at: [number, number]; key?: string }[]>([]);
+  stationEntrances = $state.raw<{ name: string | null; at: [number, number]; key?: string; added?: boolean }[]>([]);
   lineShortcuts = $state.raw<LineShortcut[]>(stored("lineShortcuts", [], isShortcuts));
   addShortcut(sc: LineShortcut) {
     const next = [...this.lineShortcuts.filter(x => !(x.line === sc.line && x.variant === sc.variant && x.stop === sc.stop)), sc].slice(-6);
@@ -398,6 +398,38 @@ export class AppState {
     this.adminFixes = { ...this.adminFixes, [key]: [+at[0].toFixed(6), +at[1].toFixed(6)] };
     store("adminFixes", this.adminFixes);
     this.stationEntrances = this.stationEntrances.map(e => (e.key === key ? { ...e, at } : e));
+  }
+  // Admin mode: an entrance added to the open station (at `at`, «Είσοδος N»), renamed, or removed. entranceKeySel:
+  // the numbered entrance picked on the map, for its card in the admin bar.
+  entranceKeySel = $state<string | null>(null);
+  entranceAddAt = $state(0);   // the admin bar's «+ Είσοδος»: MapView adds one at the map's centre
+  addStationEntrance(at: [number, number]) {
+    const st = this.metroStation;
+    if (!st) return;
+    const taken = new Set(this.stationEntrances.map(e => e.name));
+    let n = this.stationEntrances.length + 1;
+    while (taken.has(`Είσοδος ${n}`)) n++;
+    const key = `ent:${st}|Είσοδος ${n}`;
+    this.adminFixes = { ...this.adminFixes, [key]: [+at[0].toFixed(6), +at[1].toFixed(6)] };
+    store("adminFixes", this.adminFixes);
+    this.stationEntrances = [...this.stationEntrances, { name: `Είσοδος ${n}`, at, key, added: true }];
+    this.entranceKeySel = key;
+  }
+  dropStationEntrance(key: string) {
+    this.adminFixes = { ...this.adminFixes, [key]: null };
+    store("adminFixes", this.adminFixes);
+    this.stationEntrances = this.stationEntrances.filter(e => e.key !== key);
+    if (this.entranceKeySel === key) this.entranceKeySel = null;
+  }
+  // Only an added one: the name is its key (an entrance of the map's tiles keeps the tiles' name).
+  renameStationEntrance(key: string, name: string) {
+    const e = this.stationEntrances.find(x => x.key === key), st = this.metroStation, nk = st ? `ent:${st}|${name}` : null;
+    if (!e || !nk || nk === key || !name || this.stationEntrances.some(x => x.key === nk)) return;
+    const { [key]: _, ...rest } = this.adminFixes;
+    this.adminFixes = { ...rest, [key]: null, [nk]: [+e.at[0].toFixed(6), +e.at[1].toFixed(6)] };
+    store("adminFixes", this.adminFixes);
+    this.stationEntrances = this.stationEntrances.map(x => (x.key === key ? { ...x, key: nk, name } : x));
+    this.entranceKeySel = nk;
   }
   clearStationMoves() {
     this.adminFixes = {};

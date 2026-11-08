@@ -47,8 +47,16 @@ export function stopsWithFixes<T extends unknown[]>(rows: T[], fixes: StationFix
 }
 
 // Station places moved by hand (the admin mode, AdminBar.svelte): STASY's point is a few metres off the map's own
-// station in places. public/station-fixes.json, by stationKey: [lat, lon].
-export type StationFixes = Record<string, [number, number]>;
+// station in places. public/station-fixes.json, by stationKey: [lat, lon]. A station's entrances there too
+// ("ent:" station | name): one moved, one the map's tiles do not have (added), or null for one removed.
+export type StationFixes = Record<string, [number, number] | null>;
+export const entranceKey = (station: string, name: string) => `ent:${station}|${name}`;
+/** The entrances a station has in the fixes but the map's tiles do not (the admin added them): name and place. */
+export function addedEntrances(fixes: StationFixes, station: string, known: Set<string>): { name: string; at: [number, number]; key: string; added: true }[] {
+  const pre = entranceKey(station, "");
+  return Object.entries(fixes).flatMap(([key, at]) =>
+    key.startsWith(pre) && at && !known.has(key) ? [{ name: key.slice(pre.length), at, key, added: true as const }] : []);
+}
 export const stationKey = (s: MetroStation) => `${s.name}|${s.lines[0] ?? ""}`;
 export function withFixes(data: MetroData, fixes: StationFixes): MetroData {
   if (!Object.keys(fixes).length) return data;

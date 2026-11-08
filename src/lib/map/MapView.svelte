@@ -10,7 +10,7 @@
   import { MediaQuery } from "svelte/reactivity";
   import type { LngLat } from "../glide";
   import { vehicleHeading } from "../heading";
-  import { loadFixes, metroFC, stationKey } from "../metro";
+  import { addedEntrances, loadFixes, metroFC, stationKey, type StationFixes } from "../metro";
   import { ahead, bearing, loadEntrances, newId, normHeading, stationOpen, stationStop, type Entrance3D } from "../entrances";
   import { suburbanFC } from "../suburban";
   import { trainsFC } from "../trains";
@@ -2672,7 +2672,7 @@
       filter: ["==", ["get", "subclass"], "subway_entrance"], paint: { "circle-opacity": 0, "circle-radius": 1, "circle-stroke-width": 0 } });
   });
   // Entrances moved by hand (admin mode): public/station-fixes.json, and this device's own moves while in it.
-  let pubFixes: Record<string, [number, number]> = {};
+  let pubFixes: StationFixes = {};
   void loadFixes().then(f => { pubFixes = f; });
   function readEntrances(at: LngLat): { name: string | null; at: [number, number]; key?: string }[] {
     const m = map;
@@ -2686,10 +2686,13 @@
     const out = [...named].map(([name, c]) => ({ name: name as string | null, c }));
     for (const x of pts) if (!x.name && !out.some(o => distM([o.c[1], o.c[0]], [x.c[1], x.c[0]]) < 60) && !out.some(o => !o.name && distM([o.c[1], o.c[0]], [x.c[1], x.c[0]]) < 30)) out.push({ name: null, c: x.c });
     const fixes = { ...pubFixes, ...(app.admin ? app.adminFixes : {}) }, st = app.metroStation ?? "";
-    return out.sort((a, b) => near(a.c) - near(b.c)).map(o => {
+    const fromTiles = out.sort((a, b) => near(a.c) - near(b.c)).map(o => {
       const key = `ent:${st}|${o.name ?? `${o.c[1].toFixed(5)},${o.c[0].toFixed(5)}`}`;
-      return { name: o.name, at: fixes[key] ?? [o.c[1], o.c[0]] as [number, number], key };
+      return { name: o.name, at: fixes[key] ?? [o.c[1], o.c[0]] as [number, number], key, gone: key in fixes && fixes[key] === null };
     });
+    // Removed by the admin (null) left out; added ones (in the fixes only) after the map's own.
+    const known = new Set(fromTiles.map(e => e.key));
+    return [...fromTiles.filter(e => !e.gone).map(({ gone: _, ...e }) => e), ...addedEntrances(fixes, st, known)];
   }
   let entMarks: Marker[] = [];
   $effect(() => {
@@ -2724,8 +2727,11 @@
       // Admin mode: each one a handle to drag.
       if (!app.admin || !e.key) return new Marker({ element: el, anchor: "center" }).setLngLat([e.at[1], e.at[0]]).addTo(m);
       el.classList.add("adm");
+      if (e.key === app.entranceKeySel) el.classList.add("sel");
+      el.title = `${e.name ?? `Είσοδος ${k + 1}`}: σύρε για μετακίνηση, πάτα για μετονομασία ή διαγραφή`;
+      el.addEventListener("click", ev => { ev.stopPropagation(); app.entranceKeySel = e.key!; });
       const mk = new Marker({ element: el, anchor: "center", draggable: true }).setLngLat([e.at[1], e.at[0]]).addTo(m);
-      mk.on("dragend", () => { const p = mk.getLngLat(); app.moveEntrance(e.key!, [p.lat, p.lng]); });
+      mk.on("dragend", () => { const p = mk.getLngLat(); app.moveEntrance(e.key!, [p.lat, p.lng]); app.entranceKeySel = e.key!; });
       return mk;
     });
     return () => { entMarks.forEach(x => x.remove()); entMarks = []; };
@@ -2866,6 +2872,13 @@
       app.editEntrance(e);
       app.entranceSel = e.id;
     });
+  });
+
+  // Admin mode, a station open: «+ Είσοδος» puts a new numbered entrance at the map's centre, to drag where it is.
+  $effect(() => {
+    const n = app.entranceAddAt, m = map;
+    if (!n || !m) return;
+    untrack(() => { const c = m.getCenter(); app.addStationEntrance([c.lat, c.lng]); });
   });
 
   // «Σπίτι» and «Δουλειά» on the map: a round mark with its icon and the name beside it, where each was set.
@@ -3200,6 +3213,7 @@
   :global(.ent-mark) { pointer-events: none; width: 24px; height: 24px; border-radius: 7px; display: flex; align-items: center; justify-content: center;
     background: #262a32; color: #e8eaed; box-shadow: 0 0 0 2px #ffffff, 0 2px 6px rgb(0 0 0 / 0.4); font-size: 12px; font-weight: 800; line-height: 1; }
   :global(.ent-mark.adm) { pointer-events: auto; cursor: grab; box-shadow: 0 0 0 3px #f0ae45, 0 2px 8px rgb(0 0 0 / .5); }
+  :global(.ent-mark.adm.sel) { box-shadow: 0 0 0 3px #ffffff, 0 0 0 6px #f0ae45, 0 2px 8px rgb(0 0 0 / .5); }
   :global(.ent-mark.best) { background: #2f9e5b; color: #ffffff; }
   /* Admin mode: the 3D entrances' handles (move: round, at the top step; turn: down the stairs' way, with its heading) */
   :global(.e3d-move) { cursor: grab; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
