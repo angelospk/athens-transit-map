@@ -2187,15 +2187,17 @@
 
   // The guide's ring (the stop to wait at, until the bus is boarded) and the bus's lane to it.
   $effect(() => {
-    const g = app.guide, leg = g?.legs[app.guideStep], lane = app.guideApproach;
+    const g = app.guide, leg = g?.legs[app.guideStep], lane = app.guideApproach, kerb = app.guideKerb;
     if (!loaded) return;
+    // At the stop's kerb (NavGuide), once known.
+    const at = (s: { id: string | null; at: [number, number] }) => { const p = kerb[s.id ?? s.at.join()] ?? s.at; return [p[1], p[0]]; };
     const feats: GeoJSON.Feature[] = [];
     if (leg?.kind === "ride" && !app.guideOn) {
-      feats.push({ type: "Feature", properties: { kind: "ring" }, geometry: { type: "Point", coordinates: [leg.board.at[1], leg.board.at[0]] } });
+      feats.push({ type: "Feature", properties: { kind: "ring" }, geometry: { type: "Point", coordinates: at(leg.board) } });
       if (lane && lane.length > 1) feats.push({ type: "Feature", properties: { kind: "approach" }, geometry: { type: "LineString", coordinates: lane.map(p => [p[1], p[0]]) } });
     } else if (leg?.kind === "walk" && g) {
       const next = g.legs[app.guideStep + 1];
-      if (next?.kind === "ride") feats.push({ type: "Feature", properties: { kind: "ring" }, geometry: { type: "Point", coordinates: [next.board.at[1], next.board.at[0]] } });
+      if (next?.kind === "ride") feats.push({ type: "Feature", properties: { kind: "ring" }, geometry: { type: "Point", coordinates: at(next.board) } });
     }
     (map!.getSource("guide") as GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features: feats });
   });

@@ -577,6 +577,7 @@
         void (async () => {
           const [a, b, road] = await Promise.all([snapStop(r.board.at), snapStop(r.alight.at), routeAlong(slice)]);
           kerb = { ...kerb, [kid(r.board)]: a, [kid(r.alight)]: b };
+          app.guideKerb = kerb;
           if (!road) return;
           shapes = { ...shapes, [k]: sliceShape(road, a, b, 60)?.pts ?? [a, ...road, b] };
         })().catch(() => {});
@@ -620,7 +621,7 @@
         geometry: { type: "LineString" as const, coordinates: pts.map(p => [p[1], p[0]]) } };
     });
     app.tripPlan = { type: "FeatureCollection", features };
-    app.tripStops = gg.legs.flatMap(l => (l.kind === "ride" ? [{ at: l.board.at, name: l.board.name }, { at: l.alight.at, name: l.alight.name }] : []));
+    app.tripStops = gg.legs.flatMap(l => (l.kind === "ride" ? [{ at: kerb[kid(l.board)] ?? l.board.at, name: l.board.name }, { at: kerb[kid(l.alight)] ?? l.alight.at, name: l.alight.name }] : []));
     const first = gg.legs[0], last = gg.legs[gg.legs.length - 1];
     app.tripEnds = { from: first.kind === "walk" ? first.from : first.board.at, to: last.kind === "walk" ? last.to : last.alight.at };
   });

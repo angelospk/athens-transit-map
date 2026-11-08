@@ -425,6 +425,9 @@ export class AppState {
   tripPrefs = $state.raw<TripPrefs | null>(null);
   // The planner's timed trip (/v2/plan, plan.ts) on the map: rides in their line's colour, walks dotted.
   tripPlan = $state.raw<FeatureCollection<LineString> | null>(null);
+  // The guide's stops at their street's kerb ([lat, lon], by stop id, or by "lat,lon" for one with none): NavGuide
+  // finds them (stopSnap), the map's ring and labels stand there, not among the buildings where some stops are given.
+  guideKerb = $state.raw<Record<string, [number, number]>>({});
   // The route chosen on «Πού πας;» (StartScreen), drawn on the map while that screen is open; the planner's own after.
   startPreview = $state.raw<FeatureCollection<LineString> | null>(null);
 
@@ -467,6 +470,7 @@ export class AppState {
   endGuide() {
     this.nav?.closeScreen("guide");
     this.guide = null;
+    this.guideKerb = {};
     this.guideFrame = null;
     this.headingUp = false;
     this.guideWalk = null;
