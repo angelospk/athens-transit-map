@@ -130,7 +130,24 @@ export async function matchRoads(pts: Pt[], signal?: AbortSignal, piece: (ps: Pt
 export const CAR_ROUTE_URL = (import.meta.env.VITE_CAR_ROUTE_URL as string | undefined) || CAR_MATCH_URL.replace("/match/", "/route/");
 const ROUTE_STEP = 220, ROUTE_MAX = 90, ROUTE_R = 40, ROUTE_WAIT_MS = 9000, ROUTE_KEEP_S = 7 * 86400;
 const routed = new Map<string, Promise<Pt[] | null>>();
-const storeKey = (k: string) => `roads:${k}`;
+const OFF_M = 32;
+/** How far a line goes from another at most (metres; each of its points to the nearest piece of the other). */
+function strays(line: Pt[], from: Pt[]): number {
+  const k = Math.cos((line[0][0] * Math.PI) / 180) * 111_320, kl = 110_540;
+  let worst = 0;
+  for (const p of line) {
+    let best = Infinity;
+    for (let i = 1; i < from.length; i++) {
+      const ax = from[i - 1][1] * k, ay = from[i - 1][0] * kl, bx = from[i][1] * k, by = from[i][0] * kl, px = p[1] * k, py = p[0] * kl;
+      const vx = bx - ax, vy = by - ay, L = vx * vx + vy * vy || 1e-9, t = Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / L));
+      best = Math.min(best, Math.hypot(ax + t * vx - px, ay + t * vy - py));
+    }
+    if (from.length < 2) best = metres(p, from[0]);
+    worst = Math.max(worst, best);
+  }
+  return worst;
+}
+const storeKey = (k: string) => `roads2:${k}`;
 
 /** The stretches of `line` between the points `at` (their nearest vertices, in order). */
 function splitAt(line: Pt[], at: Pt[]): Pt[][] {
@@ -179,7 +196,9 @@ export async function routeAlong(pts: Pt[], signal?: AbortSignal): Promise<Pt[] 
     const pieces: Pt[][] = roads.map((r, i) => {
       const a = Math.min(pos[i], pos[i + 1] ?? pos[i]), b = Math.max(pos[i], pos[i + 1] ?? pos[i]);
       const own: Pt[] = [ws[i], ...pts.filter((_, k) => cum[k] > a && cum[k] < b), ws[i + 1] ?? ws[i]];
-      return r.length > 1 && length(r) <= Math.max(length(own), step * 0.5) * 1.35 + 60 ? r : own;
+      // Kept only if about as long as the shape there and never more than OFF_M from it: a turn into a side street
+      // and back (round a block, to a stop's other side) is short but strays off the line.
+      return r.length > 1 && length(r) <= Math.max(length(own), step * 0.5) * 1.25 + 40 && strays(r, own) <= OFF_M ? r : own;
     });
     // A stretch the route went round: matched on its own (10 points of it, /match), else the shape's points stay.
     const bad = roads.map((r, i) => (pieces[i] !== r ? i : -1)).filter(i => i >= 0).slice(0, 12);
@@ -188,7 +207,7 @@ export async function routeAlong(pts: Pt[], signal?: AbortSignal): Promise<Pt[] 
       while (nb < bad.length) {
         const i = bad[nb++], own = pieces[i];
         const m = await matchPiece(resample(own, 25, MATCH_CHUNK), signal).catch(() => null);
-        if (m && m.line.length > 1 && length(m.line) <= length(own) * 1.35 + 40) pieces[i] = m.line;
+        if (m && m.line.length > 1 && length(m.line) <= length(own) * 1.25 + 30 && strays(m.line, own) <= OFF_M) pieces[i] = m.line;
       }
     }));
     const out: Pt[] = [];

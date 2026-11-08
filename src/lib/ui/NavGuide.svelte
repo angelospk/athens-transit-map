@@ -8,6 +8,7 @@
   import { tick, untrack } from "svelte";
   import { fetchLineStatic, fetchV2Line, fetchV2LineVehicles, fetchV2Run, fetchV2Stop } from "../api";
   import { routeAlong, sensibleWalk, sliceShape } from "../planShape";
+  import { snapStop } from "../stopSnap";
   import { toThe, along, distSaid, fetchFoot, isMetro, lengthOf, metres, railSeq, ridePassed, stepArrow, stepText, walkNow, WALK_MPS,
     type ChangeStep, type GuideRide, type GuideWalk, type Pt, type WalkRoute } from "../guide";
   import { metroRide } from "../metroRide.svelte";
@@ -571,35 +572,49 @@
         if (j <= i) return;
         const slice: Pt[] = [r.board.at, ...shape.slice(i + 1, j), r.alight.at];
         shapes = { ...shapes, [k]: slice };
-        // Then onto the roads themselves (planShape.routeAlong; kept, so a ride seen in the overview is there at once).
-        void routeAlong(slice).then(road => {
+        // Then onto the roads themselves (planShape.routeAlong; kept, so a ride seen in the overview is there at once),
+        // from and to each stop's kerb (stopSnap: some stops stand off their street, among the buildings).
+        void (async () => {
+          const [a, b, road] = await Promise.all([snapStop(r.board.at), snapStop(r.alight.at), routeAlong(slice)]);
+          kerb = { ...kerb, [kid(r.board)]: a, [kid(r.alight)]: b };
           if (!road) return;
-          shapes = { ...shapes, [k]: sliceShape(road, r.board.at, r.alight.at, 60)?.pts ?? [r.board.at, ...road, r.alight.at] };
-        }, () => {});
+          shapes = { ...shapes, [k]: sliceShape(road, a, b, 60)?.pts ?? [a, ...road, b] };
+        })().catch(() => {});
       }, () => {});
     }
   });
   // Every walk along the streets (the foot router), not only the one being walked: a straight line crossed blocks.
+  // To and from the stops' kerbs once known (kerb, by stop id).
   let walks = $state.raw<Record<string, Pt[]>>({});
+  let kerb = $state.raw<Record<string, Pt>>({});
+  const kid = (s: { id: string | null; at: Pt }) => s.id ?? s.at.join();
+  const walkEnds = (gg: NonNullable<typeof g>, k: number): [Pt, Pt] | null => {
+    const l = gg.legs[k];
+    if (l.kind !== "walk") return null;
+    const prev = gg.legs[k - 1], next = gg.legs[k + 1];
+    return [prev?.kind === "ride" ? kerb[kid(prev.alight)] ?? l.from : l.from, next?.kind === "ride" ? kerb[kid(next.board)] ?? l.to : l.to];
+  };
   $effect(() => {
     const gg = g;
     if (!gg) return;
-    for (const l of gg.legs) {
-      if (l.kind !== "walk") continue;
-      const k = `${l.from.join()}|${l.to.join()}`;
-      if (walks[k]) continue;
-      void fetchFoot(l.from, l.to, AbortSignal.timeout(8000)).then(w => {
-        const line = sensibleWalk(w?.line, l.from, l.to);
+    gg.legs.forEach((_, i) => {
+      const e = walkEnds(gg, i);
+      if (!e) return;
+      const k = `${e[0].join()}|${e[1].join()}`;
+      if (walks[k]) return;
+      void fetchFoot(e[0], e[1], AbortSignal.timeout(8000)).then(w => {
+        const line = sensibleWalk(w?.line, e[0], e[1]);
         if (line) walks = { ...walks, [k]: line };
       }, () => {});
-    }
+    });
   });
   $effect(() => {
     const gg = g;
     if (!gg) return;
     const cur = app.guideStep, wl = app.guideWalk;
     const features = gg.legs.map((l, k) => {
-      const pts: Pt[] = l.kind === "walk" ? (k === cur && wl ? wl : walks[`${l.from.join()}|${l.to.join()}`] ?? [l.from, l.to])
+      const we = walkEnds(gg, k);
+      const pts: Pt[] = l.kind === "walk" ? (k === cur && wl ? wl : (we && walks[`${we[0].join()}|${we[1].join()}`]) || [l.from, l.to])
         : shapes[`${l.line}|${l.variant}|${l.board.id}|${l.alight.id}`] ?? (l.shape && l.shape.length > 1 ? l.shape : l.seq.map(s => s.at));
       return { type: "Feature" as const, properties: { kind: l.kind, color: l.kind === "walk" ? "#5b9dff" : colorOf(l.line).bg },
         geometry: { type: "LineString" as const, coordinates: pts.map(p => [p[1], p[0]]) } };
@@ -1078,7 +1093,7 @@
   .mb { pointer-events: auto; width: 48px; height: 48px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 50%;
     background: var(--surface); color: var(--fg); cursor: pointer; box-shadow: 0 6px 18px rgba(0, 0, 0, .3); }
   .mb.on { background: var(--accent); color: var(--on-accent, #fff); border-color: transparent; }
-  .minbtn { position: absolute; top: 4px; right: 8px; z-index: 1; }
+  .minbtn { position: absolute; top: 14px; right: 16px; z-index: 1; }   /* inside the sheet's rounded corner, not on it */
   .muted { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
   .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding-right: 40px; }
   .dest { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
