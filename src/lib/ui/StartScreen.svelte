@@ -1240,7 +1240,7 @@
     </div>
     <div class="pgo">
       <button type="button" class="pcancel" onclick={() => (app.pickFor = null)}>{checking ? "Πίσω" : "Άκυρο"}</button>
-      <button type="button" class="pmain" disabled={!app.mapCenter} onclick={takeCentre}><Icon name="route" size={18} /><span>{checking ? "Άλλαξε εδώ" : app.pickFor === "from" ? "Ξεκίνα από εδώ" : "Πήγαινέ με εδώ"}</span></button>
+      <button type="button" class="pgomain" disabled={!app.mapCenter} onclick={takeCentre}><Icon name="route" size={18} /><span>{checking ? "Άλλαξε εδώ" : app.pickFor === "from" ? "Ξεκίνα από εδώ" : "Πήγαινέ με εδώ"}</span></button>
     </div>
   </div>
   {:else}
@@ -2444,10 +2444,10 @@
   .pk.round { width: 36px; padding: 0; justify-content: center; }
   .pk.on { background: var(--accent-bg); color: var(--accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
   .pgo { display: flex; gap: 8px; margin-top: 4px; }
-  .pcancel, .pmain { height: 52px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 16px; font: inherit; line-height: 1; cursor: pointer; }
+  .pcancel, .pgomain { height: 52px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 16px; font: inherit; line-height: 1; cursor: pointer; }
   .pcancel { flex: none; padding: 0 18px; background: var(--control); color: var(--fg); font-size: 15px; font-weight: 700; }
-  .pmain { flex: 1; background: #4d8af0; color: #ffffff; font-size: 16px; font-weight: 800; }
-  .pmain:disabled { opacity: .5; cursor: default; }
+  .pgomain { flex: 1; background: #4d8af0; color: #ffffff; font-size: 16px; font-weight: 800; }
+  .pgomain:disabled { opacity: .5; cursor: default; }
 
   .scut.sc { gap: 7px; padding: 0 12px 0 4px; }
   .sct { font-size: 13px; font-weight: 600; line-height: 1; white-space: nowrap; }
