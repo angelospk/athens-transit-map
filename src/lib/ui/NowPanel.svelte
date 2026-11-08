@@ -262,7 +262,8 @@
     const p = app.places[k], me = app.myPos;
     if (!p || !me) return;
     app.tripFrom = { label: "Η θέση μου", pts: [me], lines: [], kind: "me" };
-    app.tripTo = { label: p.label, pts: [p.at], lines: [], kind: "street" };
+    // As «Πού πας;» shows it: «Σπίτι» or «Δουλειά» (the address as the hint), not the address itself.
+    app.tripTo = { label: k === "home" ? "Σπίτι" : "Δουλειά", hint: p.label, pts: [p.at], lines: [], kind: k };
     app.setTab("trip");
   }
   $effect(() => {
