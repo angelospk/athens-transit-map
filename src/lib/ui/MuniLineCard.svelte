@@ -6,6 +6,7 @@
   import type { AppState } from "../state.svelte";
   import { athensClock } from "../muniTimes";
   import { routeLabel, simulate, stitch, todayRuns } from "../muniLine";
+  import { muniGapNote, muniGaps } from "../service";
   import CardSheet from "./CardSheet.svelte";
 
   let { app }: { app: AppState } = $props();
@@ -41,6 +42,9 @@
     const n = app.municipal!.stops[id]?.name;
     return n ? [{ id, name: n }] : [];
   }) : []);
+  const gaps = $derived(route ? muniGaps(route, app.muniTimes) : null);
+  const gapNote = $derived(gaps ? muniGapNote(gaps) : null);
+  const url = $derived(route?.timetable_url && /^https?:\/\//.test(route.timetable_url) ? route.timetable_url : null);
   const label = $derived(mc ? (mc.ref ? `${mc.ref} · ${mc.name}` : mc.name) : "");
 
   $effect(() => { if (mc) untrack(() => app.retitle(label)); });
@@ -80,7 +84,10 @@
     {#if !mc}
       <p class="muted">{app.municipal ? "Η γραμμή δεν βρέθηκε." : "Φόρτωση…"}</p>
     {:else}
-      <p class="muni">{mc.municipality} · <span class="sched">Προγραμματισμένα · όχι live</span></p>
+      <p class="muni">{mc.municipality} · <span class="sched">Προγραμματισμένα · όχι live</span>{#if gaps?.stops}{" "}<span class="sched">χωρίς στάσεις</span>{/if}{#if gaps?.times}{" "}<span class="sched">χωρίς ώρες</span>{/if}</p>
+      {#if gapNote}
+        <p class="gap">{gapNote}{#if url}{" "}<a href={url} target="_blank" rel="noopener">Σελίδα του δήμου ›</a>{/if}</p>
+      {/if}
       {#if mc.routes.length > 1}
         <div class="dirs" role="group" aria-label="Κατεύθυνση">
           {#each mc.routes.slice(0, 2) as r, d (r.id)}
@@ -125,9 +132,9 @@
           </div>
         {/if}
       {:else}
-        <p class="muted">Ο δήμος δεν δημοσιεύει ωράριο για αυτή τη γραμμή.</p>
-        {#if route?.timetable_url && /^https?:\/\//.test(route.timetable_url)}
-          <a href={route.timetable_url} target="_blank" rel="noopener">Σελίδα του δήμου ›</a>
+        {#if !gaps?.times}
+          <p class="muted">Ο δήμος δεν δημοσιεύει ωράριο για αυτή τη γραμμή.</p>
+          {#if url}<a href={url} target="_blank" rel="noopener">Σελίδα του δήμου ›</a>{/if}
         {/if}
       {/if}
 
@@ -152,8 +159,10 @@
 
 <style>
   h2 { margin: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .muni { margin: 0 0 8px; color: var(--muted); font-size: 12px; }
-  .sched { padding: 1px 6px; border-radius: 4px; background: var(--control); color: var(--fg); font-size: 11px; font-weight: 600; }
+  .muni { margin: 0 0 8px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+  .sched { padding: 1px 6px; border-radius: 4px; background: var(--control); color: var(--fg); font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .gap { margin: 0 0 8px; padding: 6px 10px; border-radius: 8px; background: var(--control); font-size: 12px; }
+  .gap a { color: var(--accent); white-space: nowrap; }
   .muted { margin: 4px 0; color: var(--muted); font-size: 12px; }
   .dirs { display: flex; gap: 2px; padding: 2px; border-radius: 10px; background: var(--control); }
   .dirs button { flex: 1; min-width: 0; min-height: 36px; padding: 4px 8px; border: 0; border-radius: 8px; background: none; color: inherit;
