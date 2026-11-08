@@ -635,9 +635,9 @@
      buttons go to the bottom right in one column (layers, 3D), above locate; the planner and the legend are elsewhere. */
   @media (max-width: 719px) {
     :global(:root[data-homepeek]) .homebar { display: none; }
-    :global(:root[data-homepeek]) .rail { top: auto; bottom: calc(64px + 16px + 52px + env(safe-area-inset-bottom)); }
+    :global(:root[data-homepeek]) .rail { top: auto; bottom: calc(var(--peek, 120px) + 16px + 52px + env(safe-area-inset-bottom)); }
     /* The compass shown (the map turned or in 3D): it sits over locate, the tools go up by it. */
-    :global(:root[data-homepeek]:has(.north-ctl .turned, .north-ctl .tilted)) .rail { bottom: calc(64px + 16px + 104px + env(safe-area-inset-bottom)); }
+    :global(:root[data-homepeek]:has(.north-ctl .turned, .north-ctl .tilted)) .rail { bottom: calc(var(--peek, 120px) + 16px + 104px + env(safe-area-inset-bottom)); }
     :global(:root[data-homepeek]) .rail .tripb, :global(:root[data-homepeek]) .rail .helpb { display: none; }
   }
   /* A phone with the home sheet (compact mockup 15Γ): its own search is on the map; the map's tools show only while

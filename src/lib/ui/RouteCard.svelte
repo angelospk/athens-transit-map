@@ -41,7 +41,6 @@
   const LOGO: Record<string, string> = { bus: "icons/oasa.png", trolley: "icons/oasa.png", metro: "icons/metro-logo.svg", tram: "icons/tram-logo.svg" };
   const logoOf = (m: string) => (logos && LOGO[m] ? `${import.meta.env.BASE_URL}${LOGO[m]}` : "");
   const tagShort = $derived(tag.replace(/^Η\s+/, "").replace(/\s+τώρα$/, ""));
-  const walkMin = $derived(Math.round(it.legs.filter(l => l.kind === "walk").reduce((s, l) => s + (l.arrive_at - l.depart_at), 0) / 60));
 
   // A walk's next ride is the metro or the tram: «ως τον σταθμό».
   const stationAfter = (k: number) => { const n = steps.slice(k + 1).find(x => x.kind === "ride"); return !!n && n.kind === "ride" && ["metro", "tram"].includes(legMode(n.leg)); };
@@ -96,6 +95,28 @@
     : n ? `πιο μακριά από ${n} στάσεις` : "ζωντανά");
 
   const steps = $derived(open && stepsOpen ? planSteps(it, r, others) : []);
+  // Opened, before «Βήματα» (compact mockup 17): only where you get on, each change, and where you get off.
+  const summary = $derived.by(() => {
+    if (!open) return [];
+    const all = planSteps(it, r, others), out: { kind: "on" | "change" | "off"; name: string; sub: string; at: number; color: string }[] = [];
+    const rides = all.filter(s => s.kind === "ride");
+    const first = rides[0], last = rides.at(-1);
+    if (!first || !last || first.kind !== "ride" || last.kind !== "ride") return [];
+    const w0 = all[0]?.kind === "walk" ? all[0] : null, wEnd = [...all].reverse().find(s => s.kind === "walk" || s.kind === "ride");
+    out.push({ kind: "on", name: name(first.from), sub: `Ανέβα στο ${first.label}${w0 ? ` · ${w0.min}′ με τα πόδια${w0.m ? ` · ${w0.m >= 1000 ? (w0.m / 1000).toFixed(1).replace(".", ",") + " χλμ" : Math.round(w0.m / 10) * 10 + " μ"}` : ""}` : ""}`, at: first.at, color: first.color });
+    for (const s of all) if (s.kind === "change") out.push({ kind: "change", name: name(s.stop), sub: `Αλλαγή στο ${s.label}${s.min ? ` · ${s.min}′ με τα πόδια` : ""}`, at: s.leaves, color: s.color });
+    const hops = last.hops, walkAfter = wEnd?.kind === "walk" ? wEnd.min : 0;
+    out.push({ kind: "off", name: name(last.to), sub: `${hops ? `${hops} ${hops === 1 ? "στάση" : "στάσεις"}` : "Κατέβα"}${walkAfter ? ` · μετά ${walkAfter}′ με τα πόδια` : ""}`, at: it.legs[last.leg]?.arrive_at ?? last.at, color: last.color });
+    return out;
+  });
+  // The live bus against the walk to its stop: whether it is caught, and with how much to spare.
+  const walkTo0 = $derived(Math.round(walkS / 60));
+  const verdict = $derived.by<{ tone: "ok" | "tight"; text: string } | null>(() => {
+    if (!bus?.live || busMin == null) return null;
+    if (leaveIn > 0) return { tone: "ok", text: `Φύγε σε ${leaveIn}′: είσαι στη στάση ${clockHM(nowS + (leaveIn + walkTo0) * 60)}, πριν έρθει` };
+    const spare = busMin - walkTo0;
+    return spare >= 0 ? { tone: "ok", text: `Είσαι στη στάση σε ${walkTo0}′ · ${spare}′ περιθώριο` } : { tone: "tight", text: `Φτάνεις στη στάση σε ${walkTo0}′: μάλλον δεν το προλαβαίνεις` };
+  });
   const etaText = $derived(!bus ? "" : busMin! < 60 ? (busMin === 0 ? "τώρα" : `σε ${busMin}′`) : clockHM(bus.at));
   const name = (s: string) => titleCase(placeNote(s).place) || s;
   const MODE_WORD: Record<string, string> = { bus: "το λεωφορείο", trolley: "το τρόλεϊ", metro: "το μετρό", tram: "το τραμ", suburban: "τον Προαστιακό" };
@@ -120,7 +141,7 @@
       <span class="tms">{clockHM(it.depart_at)} → {clockHM(it.arrive_at)}</span>
     </span>
     {#if target}<span class="r3 {target.tone}"><i></i>{targetText}</span>
-    {:else if bus?.live}<span class="q3"><i></i>{rideLabel} ζωντανά · {busMin === 0 ? "στη στάση τώρα" : busMin! < 60 ? `στη στάση σε ${busMin}′` : `στη στάση ${clockHM(bus.at)}`}</span>
+    {:else if bus?.live && !open}<span class="q3"><i></i>{rideLabel} ζωντανά · {busMin === 0 ? "στη στάση τώρα" : busMin! < 60 ? `στη στάση σε ${busMin}′` : `στη στάση ${clockHM(bus.at)}`}</span>
     {/if}
   {:else}
     <span class="r1">
@@ -144,12 +165,14 @@
   {#if open}
     <div class="body">
       {#if rideLeg && (bus || (!isLiveMode(mode) && live))}
+      <div class="lbox">
         <span class="where">
           <span class="wt">
             {#if bus?.live}<i class="dot"></i>{:else}<span class="clk"><Icon name="clock" size={12} /></span>{/if}
-            <b>{rideLabel}</b><span class="ws">· {bus ? busWhere : "κατά πρόγραμμα, χωρίς ζωντανή θέση"}</span>
+            {#if bus?.live}<b>Το {rideLabel} {busMin === 0 ? "είναι στη στάση" : busMin! < 60 ? `έρχεται σε ${busMin}′` : `έρχεται ${clockHM(bus.at)}`}</b>
+            {:else}<b>{rideLabel}</b><span class="ws">· {bus ? busWhere : "κατά πρόγραμμα, χωρίς ζωντανή θέση"}</span>{/if}
           </span>
-          <span class="eta" class:on={bus?.live}>{bus ? (busMin! < 60 ? (busMin === 0 ? "τώρα" : `${busMin}′`) : clockHM(bus.at)) : clockHM(rideLeg.depart_at)}</span>
+          <span class="eta">{bus?.live ? (bus.away === 0 ? "" : bus.away === 1 ? "1 στάση πριν" : bus.away != null ? `${bus.away} στάσεις πριν` : "") : bus ? (busMin! < 60 ? (busMin === 0 ? "τώρα" : `${busMin}′`) : clockHM(bus.at)) : clockHM(rideLeg.depart_at)}</span>
         </span>
         <span class="track" class:sched={!bus?.live} aria-hidden="true">
           <i class="base"></i>
@@ -162,25 +185,37 @@
           {/if}
           <i class="me"></i>
         </span>
+        {#if verdict}<span class="verd {verdict.tone}">{#if verdict.tone === "ok"}<Icon name="check" size={13} />{:else}<Icon name="warn" size={13} />{/if}<span>{verdict.text}</span></span>{/if}
+      </div>
       {/if}
-      <div class="facts">
-        <span class="fact"><b>{it.transfers}</b><small>{it.transfers === 1 ? "αλλαγή" : "αλλαγές"}</small></span>
-        <span class="fact"><b>{walkMin}′</b><small>με τα πόδια</small></span>
-        <span class="fact"><b>{clockHM(it.arrive_at)}</b><small>φτάνεις</small></span>
-      </div>
+      {#if !stepsOpen && summary.length}
+        <div class="sum">
+          {#each summary as s, k (k)}
+            <span class="srw">
+              <span class="sic {s.kind}" style:--lc={s.color}>{#if s.kind === "change"}<Icon name="swap" size={14} />{:else}<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{#if s.kind === "on"}<path d="M12 19V5M6 11l6-6 6 6" />{:else}<path d="M12 5v14M6 13l6 6 6-6" />{/if}</svg>{/if}</span>
+              <span class="stx"><b>{s.name}</b><small>{s.sub}</small></span>
+              <span class="stm">{clockHM(s.at)}</span>
+            </span>
+          {/each}
+        </div>
+      {/if}
+      {#if !stepsOpen}
       <div class="bacts">
-        <button type="button" class="stepsb" aria-expanded={stepsOpen} onclick={() => (stepsOpen = !stepsOpen)}><span>{stepsOpen ? "Λιγότερα" : "Βήματα"}</span><span class="chev" class:up={stepsOpen}><Icon name="chevron" size={15} /></span></button>
-        {#if onmap}<button type="button" class="mapb" aria-label="Δες τη στον χάρτη" title="Δες τη στον χάρτη" onclick={onmap}><Icon name="map" size={18} /></button>{/if}
+        <button type="button" class="stepsb" aria-expanded={stepsOpen} onclick={() => (stepsOpen = !stepsOpen)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="18" r="1.2" fill="currentColor" stroke="none" /></svg><span>Βήματα</span><span class="chev" class:up={stepsOpen}><Icon name="chevron" size={15} /></span></button>
+        {#if onmap}<button type="button" class="mapb" aria-label="Δες τη στον χάρτη" title="Δες τη στον χάρτη" onclick={onmap}><Icon name="map" size={17} /><span>Χάρτης</span></button>{/if}
       </div>
+      {/if}
 
       {#if stepsOpen}
         <ol class="steps">
           <li>
+            <span class="tc">{clockHM(it.depart_at)}</span>
             <span class="si here"><Icon name="locate" size={14} /></span>
-            <span class="sx"><span class="s1"><b>Ξεκίνα</b><span class="tm">{clockHM(it.depart_at)}</span></span><small>{leaveText}</small></span>
+            <span class="sx"><span class="s1"><b>Ξεκίνα</b></span><small>{leaveText}</small></span>
           </li>
           {#each steps as st, k (k)}
             <li class:ride={st.kind === "ride"} style:--lc={st.kind === "ride" ? st.color : undefined}>
+              <span class="tc">{st.kind === "walk" ? "" : clockHM(st.kind === "change" ? st.leaves : st.at)}</span>
               {#if st.kind === "walk"}
                 <span class="si"><Icon name="walk" size={14} /></span>
                 <span class="sx"><span class="s1"><b>Περπάτα {mins(st.min)}</b></span><small>ως {st.to === "στον προορισμό" ? "τον προορισμό" : `${stationAfter(k) ? "τον σταθμό" : "τη στάση"}${st.to === "στη στάση" ? "" : ` ${name(st.to)}`}`}{stationAfter(k) ? ", και κατέβα στο μετρό" : ""}</small></span>
@@ -205,15 +240,19 @@
               {:else if st.kind === "ride"}
                 {@const md = legMode(st.leg)}
                 <span class="si badge" style:background={st.color} style:color={st.text}>{st.label.length > 4 ? "" : st.label}{#if st.label.length > 4}<Icon name={md === "metro" ? "metro" : md === "tram" ? "tram" : "bus"} size={14} />{/if}</span>
-                <span class="sx"><span class="s1"><b>Πάρε {MODE_WORD[md] ?? "το λεωφορείο"} {st.label}</b><span class="tm">{clockHM(st.at)}</span></span>
+                <span class="sx"><span class="s1"><b>Πάρε {MODE_WORD[md] ?? "το λεωφορείο"} {st.label}</b></span>
                   <small>{st.headsign ? `προς ${name(toward(st.headsign))} · ` : ""}από {name(st.from)} · κατέβα {st.hops ? `σε ${st.hops} ${st.hops === 1 ? "στάση" : "στάσεις"}, ` : "στη στάση "}{name(st.to)}</small></span>
               {:else}
                 <span class="si end"><Icon name="pin" size={14} /></span>
-                <span class="sx"><span class="s1"><b>Έφτασες</b><span class="tm">{clockHM(st.at)}</span></span><small>Ο προορισμός σου</small></span>
+                <span class="sx"><span class="s1"><b>Έφτασες</b></span><small>Ο προορισμός σου</small></span>
               {/if}
             </li>
           {/each}
         </ol>
+        <div class="bacts">
+        <button type="button" class="stepsb" aria-expanded={stepsOpen} onclick={() => (stepsOpen = !stepsOpen)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="4.5" cy="18" r="1.2" fill="currentColor" stroke="none" /></svg><span>Βήματα</span><span class="chev" class:up={stepsOpen}><Icon name="chevron" size={15} /></span></button>
+        {#if onmap}<button type="button" class="mapb" aria-label="Δες τη στον χάρτη" title="Δες τη στον χάρτη" onclick={onmap}><Icon name="map" size={17} /><span>Χάρτης</span></button>{/if}
+        </div>
       {/if}
     </div>
   {/if}
@@ -265,17 +304,35 @@
   .veh { position: absolute; top: 0; width: 28px; height: 28px; margin-left: -14px; border-radius: 50%; color: #fff; display: flex; align-items: center; justify-content: center;
     box-shadow: 0 0 0 3px var(--pc-surf, var(--card)); transition: left .6s ease; }
   .veh.ghost { background: var(--pc-surf, var(--card)); border: 2px dashed; box-sizing: border-box; box-shadow: none; }
-  .facts { display: flex; gap: 6px; }
-  .fact { flex: 1; min-width: 0; height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border-radius: 12px;
-    background: color-mix(in srgb, var(--fg) 6%, transparent); }
-  .fact b { font-size: 15px; font-weight: 700; line-height: 1; }
-  .fact small { font-size: 12px; color: var(--muted); line-height: 1; }
   .bacts { display: flex; gap: 8px; }
-  .stepsb { flex: 1; height: 44px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 14px; border: 0; border-radius: 12px;
-    background: color-mix(in srgb, var(--fg) 9%, transparent); color: var(--fg); font: inherit; font-size: 15px; font-weight: 600; line-height: 1; cursor: pointer; }
-  .mapb { flex: none; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 12px;
-    background: color-mix(in srgb, var(--fg) 9%, transparent); color: var(--fg); cursor: pointer; }
-  .stepsb:hover, .mapb:hover { background: color-mix(in srgb, var(--fg) 14%, transparent); }
+  .stepsb { flex: 1; height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px; border: 0; border-radius: 14px;
+    background: color-mix(in srgb, var(--bg) 45%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 11%, transparent); color: var(--fg); font: inherit; font-size: 14.5px; font-weight: 800; line-height: 1; cursor: pointer; }
+  .stepsb .chev { color: var(--muted); }
+  .mapb { flex: none; height: 44px; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 0 16px; border: 0; border-radius: 14px;
+    background: color-mix(in srgb, var(--bg) 45%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 11%, transparent); color: var(--fg); font: inherit; font-size: 14.5px; font-weight: 700; line-height: 1; cursor: pointer; }
+  /* The live bus in a panel of its own (compact mockup 17): what it does, the line to your stop, whether it is caught. */
+  .lbox { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 14px;
+    background: color-mix(in srgb, var(--accent) 7%, color-mix(in srgb, var(--bg) 50%, transparent)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent); }
+  .lbox .where { height: 16px; }
+  .lbox .wt b { font-weight: 800; }
+  .lbox .eta { font-size: 12.5px; font-weight: 700; }
+  .lbox .track { margin: 0 9px 0 14px; }
+  .verd { min-height: 14px; display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; line-height: 1.2; color: var(--ontime); }
+  .verd :global(svg) { flex: none; }
+  .verd.tight { color: var(--late1, #f0ae45); }
+  /* Where you get on, change and get off (compact mockup 17): a row each, its time on the right. */
+  .sum { display: flex; flex-direction: column; padding: 2px 10px; border-radius: 14px; background: color-mix(in srgb, var(--bg) 40%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 9%, transparent); }
+  .srw { min-height: 50px; display: flex; align-items: center; gap: 12px; }
+  .srw + .srw { border-top: 1px solid color-mix(in srgb, var(--fg) 9%, transparent); }
+  .sic { flex: none; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  .sic.on { background: var(--lc, var(--accent)); color: #fff; }
+  .sic.off, .sic.change { background: color-mix(in srgb, var(--fg) 9%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 12%, transparent); color: var(--fg); }
+  .stx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 8px 0; }
+  .stx b { font-size: 14.5px; font-weight: 800; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stx small { font-size: 12px; font-weight: 600; line-height: 1.2; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stm { flex: none; font-size: 13px; font-weight: 700; line-height: 1; color: color-mix(in srgb, var(--fg) 85%, var(--muted)); font-variant-numeric: tabular-nums; }
+  @media (hover: hover) { .stepsb:hover, .mapb:hover { background: color-mix(in srgb, var(--fg) 14%, transparent); } }
   .chev { display: flex; transition: transform .2s; }
   .chev.up { transform: rotate(180deg); }
 
@@ -283,7 +340,9 @@
   .steps { list-style: none; margin: 2px 0 0; padding: 0; }
   .steps li { position: relative; display: flex; gap: 12px; padding-bottom: 14px; }
   .steps li:last-child { padding-bottom: 0; }
-  .steps li:not(:last-child)::before { content: ""; position: absolute; left: 13px; top: 31px; bottom: 3px; border-left: 2px dotted color-mix(in srgb, var(--fg) 28%, transparent); }
+  .tc { flex: none; width: 38px; padding-top: 8px; font-size: 12.5px; font-weight: 700; line-height: 1; color: color-mix(in srgb, var(--fg) 80%, var(--muted)); font-variant-numeric: tabular-nums; }
+  .steps li { gap: 10px; }
+  .steps li:not(:last-child)::before { content: ""; position: absolute; left: 61px; top: 31px; bottom: 3px; border-left: 2px dotted color-mix(in srgb, var(--fg) 28%, transparent); }
   .steps li.ride::before { border-left-style: solid; border-left-color: var(--lc, var(--pc-acc, var(--accent))); }
   .si { flex: none; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
     background: color-mix(in srgb, var(--fg) 10%, transparent); color: var(--muted); font-size: 11px; font-weight: 800; line-height: 1; }

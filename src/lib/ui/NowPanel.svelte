@@ -218,6 +218,10 @@
   const wayDeps = $derived(keep && !showAll ? allDeps.filter(d => keep.has(native(d.r.line))) : allDeps);
   const hidden = $derived(keep && !showAll ? new Set(allDeps.filter(d => !keep.has(native(d.r.line))).map(d => d.r.line)).size : 0);
   const deps = $derived(wayDeps.slice(0, wide ? 5 : 4));
+  // Lowered (compact mockup 18): the next bus of the first two lines (a line once, whichever way it goes).
+  const peekLines = $derived([...new Map(wayDeps.map(d => [d.r.line, d] as const)).values()]);
+  const peekDeps = $derived(peekLines.slice(0, 2));
+  const peekMore = $derived(peekLines.length - peekDeps.length);
   const tone = (t: StopRow["times"][number]) => (!t.live ? "sched" : (t.delay_s ?? 0) >= 120 ? "late" : "ok");
   const rowNote = (t: StopRow["times"][number]) => (!t.live ? `Πρόγραμμα · ${clock(t.at).slice(0, 5)}` : (t.delay_s ?? 0) >= 120 ? `Ζωντανά · αργεί ${Math.round((t.delay_s ?? 0) / 60)}′` : "Ζωντανά · στην ώρα του");
   const others = $derived(nearOthers.map(s => {
@@ -326,12 +330,14 @@
   let nowEl = $state<HTMLElement>(), savedEl = $state<HTMLElement>();
   let nowTop = $state<number | null>(null), dragging = $state(false), vh = $state(typeof innerHeight === "number" ? innerHeight : 800);
   let top0 = 0;
+  const PEEK_PX = 120;
   function tops(): Record<NSnap, number> {
     const { top: st, bottom: sb } = safeInsets();
     const foot = vh - Math.max(12, sb) - (narrow.current ? 0 : 88);   // a phone: no tab bar under it
     const peekH = nowEl && savedEl ? savedEl.getBoundingClientRect().bottom - nowEl.getBoundingClientRect().top + 16 : 190;
-    // A phone, lowered (compact mockup 15Γ): only its handle and «Κοντά σου» show; the search and the places are on the map.
-    return { full: st + 8, half: Math.max(220, vh * 0.32 + st), peek: narrow.current ? foot - 64 : Math.max(st + 72, foot - peekH) };
+    // A phone, lowered (compact mockup 18): its handle, the nearest stop and its next buses; the search and the places
+    // are on the map. PEEK_PX: as --peek in app.css (the map's buttons stand on it).
+    return { full: st + 8, half: Math.max(220, vh * 0.32 + st), peek: narrow.current ? foot - PEEK_PX : Math.max(st + 72, foot - peekH) };
   }
   // Let go after a slow drag, it stays where it is (freeAt), only named after the nearest place.
   let freeAt: number | null = null;
@@ -436,7 +442,33 @@
     onscroll={e => { if (narrow.current && nsnap !== "full" && (e.currentTarget as HTMLElement).scrollTop > 6) nsnap = "full"; }}>
     <div class="grip" role="button" tabindex="0" aria-label={nsnap === "full" ? "Μικρότερο" : "Μεγαλύτερο"} use:sheetDrag={nowDrag}
       onkeydown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); stepN(); } }}></div>
-    {#if peeked}<button type="button" class="peekl" onclick={() => (nsnap = "half")}><Icon name="chevron" size={13} /><span>Κοντά σου · αναχωρήσεις</span></button>{/if}
+    {#if peeked}
+      <!-- Lowered (compact mockup 18): still what the app is opened for, the nearest stop's next buses, live; a tap
+           raises the sheet. -->
+      {#if shownStop}
+        {@const pw = walkTo(app.myPos, shownStop)}
+        <div class="peekl">
+          <button type="button" class="pk1" onclick={() => (nsnap = "half")}>
+            <span class="stile" aria-hidden="true"><img src="{import.meta.env.BASE_URL}icons/oasa.png" alt="" /></span>
+            <span class="pkt"><b>{app.stopLabel(shownStop.id, shownStop.name)}</b><small>{#if pw != null}<Icon name="walk" size={12} />{pw}′ με τα πόδια{:else}η πιο κοντινή στάση{/if}</small></span>
+            <span class="pkc" aria-hidden="true"><Icon name="chevron" size={15} /></span>
+          </button>
+          <div class="pk2">
+            {#each peekDeps as d (d.r.line + d.r.headsign)}
+              {@const b = badge(d.r.line)}
+              <button type="button" class="pkd" onclick={() => openStop(shownStop)}>
+                <LineChip label={b.label} bg={b.bg} fg={b.fg} mode={modeOf(d.r.line)} city={app.cityId} />
+                {#if d.t.live}<i class="pkl" aria-label="ζωντανά"></i>{/if}<b class:live={d.t.live}>{minText(d.t.at)}</b>
+              </button>
+            {/each}
+            {#if peekMore > 0}<span class="pkm">+{peekMore} {peekMore === 1 ? "γραμμή" : "γραμμές"}</span>{/if}
+            {#if !deps.length}<span class="pkm">{loaded ? "Κανένα λεωφορείο τώρα" : "Φόρτωση…"}</span>{/if}
+          </div>
+        </div>
+      {:else}
+        <button type="button" class="peekl pkx" onclick={() => (nsnap = "half")}><Icon name="chevron" size={13} /><span>Κοντά σου · αναχωρήσεις</span></button>
+      {/if}
+    {/if}
 
     <!-- The one search: «Πού πας;» (StartScreen), for places, stops and lines, with our engine. -->
     <button type="button" class="where" aria-haspopup="dialog" onclick={openWhere}>
@@ -709,9 +741,24 @@
   .hlink { height: 28px; display: flex; align-items: center; padding: 0 4px; border: 0; background: none; color: var(--accent); font: inherit; font-size: 14px; font-weight: 700; line-height: 1; cursor: pointer; }
   /* Lowered on a phone (compact mockup 15Γ): the sheet is its handle and one line; the search and chips on the map. */
   .now.peeked > :not(.grip):not(.peekl) { visibility: hidden; }
-  .peekl { width: 100%; height: 28px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0; border: 0; background: none;
+  .peekl.pkx { width: 100%; height: 28px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0; border: 0; background: none;
     color: color-mix(in srgb, var(--fg) 82%, var(--muted)); font: inherit; font-size: 13.5px; font-weight: 700; line-height: 1; cursor: pointer; }
-  .peekl :global(svg) { transform: rotate(180deg); color: var(--muted); }
+  .peekl.pkx :global(svg) { transform: rotate(180deg); color: var(--muted); }
+  .peekl:not(.pkx) { display: flex; flex-direction: column; gap: 8px; }
+  .pk1 { width: 100%; height: 44px; display: flex; align-items: center; gap: 12px; padding: 0; border: 0; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+  .pk1 .stile { flex: none; width: 40px; height: 40px; border-radius: 50%; }
+  .pk1 .stile img { width: 24px; height: 24px; }
+  .pkt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .pkt b { font-size: 15.5px; font-weight: 800; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pkt small { height: 13px; display: flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 600; line-height: 1; color: var(--muted); }
+  .pkc { flex: none; display: flex; color: var(--muted); transform: rotate(-90deg); }
+  .pk2 { height: 30px; display: flex; align-items: center; gap: 6px; padding-left: 52px; min-width: 0; overflow: hidden; }
+  .pkd { flex: none; height: 30px; display: flex; align-items: center; gap: 7px; padding: 0 10px 0 3px; border: 0; border-radius: 15px; cursor: pointer;
+    background: color-mix(in srgb, var(--bg) 55%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 11%, transparent); color: var(--fg); font: inherit; }
+  .pkd b { font-size: 14px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+  .pkd b.live { color: var(--ontime); }
+  .pkl { width: 6px; height: 6px; border-radius: 50%; background: var(--ontime); display: block; flex: none; }
+  .pkm { flex: none; font-size: 12.5px; font-weight: 700; line-height: 1; color: var(--muted); padding-left: 4px; white-space: nowrap; }
   .mtop { position: fixed; z-index: 6; left: 16px; right: 16px; top: calc(16px + env(safe-area-inset-top)); display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
   .mtop > :global(*) { pointer-events: auto; }   /* :global: the status note is another component's */
   .mwhere { height: 52px; display: flex; align-items: center; gap: 10px; padding: 0 18px; border: 0; border-radius: 26px; text-align: left; cursor: pointer;
