@@ -6,7 +6,7 @@
   // and the geocoder). Shown at every plain visit (not a shared link), and again from «Πού πας;» on Τώρα. The same
   // box, one field only, sets «Σπίτι» and «Δουλειά» (app.savingPlace).
   import { busId, isBusId } from "../busNs";
-  import { tick, untrack } from "svelte";
+  import { flushSync, tick, untrack } from "svelte";
   import { centre, distM, geocode, reverseGeocode, loadTripIndex, places, placeStop, savedPlaces, stationPlaces, suggest, type Place, type TripIndex } from "../trip";
   import { distText, titleCase } from "../nearby";
   import type { AppState, TripMode, TripPrefs } from "../state.svelte";
@@ -1111,9 +1111,14 @@
   const SORT_WORD: Record<Sort, string> = { time: "Να φτάσω γρήγορα", price: "Να πληρώσω λιγότερο", dist: "Να περπατήσω λιγότερο" };
   const capital = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
   // A tap on «Από» or «Προς» of the band: back to the two fields, that one focused (its text selected).
-  function editEnd(f: Field) {
-    asking = true;
-    void tick().then(() => inputs[f]?.focus());
+  // Straight to typing in that field (no pass through the two fields, which flashed an empty screen), focused inside
+  // the tap so the keyboard comes up on iOS, its text selected to type over.
+  function editEnd(f: Field, e?: Event) {
+    e?.stopPropagation();
+    flushSync(() => { asking = true; open = f; typingOn = true; });
+    const el = inputs[f];
+    el?.focus();
+    el?.select();
   }
   const fromWord = (p: Place | null) => !p ? "" : p.kind === "me" ? "εδώ που είσαι" : p.kind === "home" ? "το σπίτι" : p.kind === "work" ? "τη δουλειά" : titleCase(p.label);
   const armed = $derived(!!best && app.leaveRemind?.key === `${best.at[0]}-${best.at[1]}` ? app.leaveRemind : null);
@@ -1229,6 +1234,7 @@
         {/each}
       </div>
     {/if}
+    {#if !app.savingPlace}
     <div class="pkeep">
       <span>Κράτα το ως</span>
       <button type="button" class="pk" class:on={keptAs("home")} aria-pressed={keptAs("home")} onclick={() => keepAs("home")}><Icon name="home" size={15} /><b>Σπίτι</b></button>
@@ -1239,9 +1245,10 @@
           onclick={() => app.toggleFavStop({ id: pickFav!, name: app.pickSnap!.name, lat: app.pickSnap!.at[0], lon: app.pickSnap!.at[1] })}><Icon name={on ? "star-filled" : "star"} size={16} /></button>
       {/if}
     </div>
+    {/if}
     <div class="pgo">
       <button type="button" class="pcancel" onclick={() => (app.pickFor = null)}>{checking ? "Πίσω" : "Άκυρο"}</button>
-      <button type="button" class="pgomain" disabled={!app.mapCenter} onclick={takeCentre}><Icon name="route" size={18} /><span>{checking ? "Άλλαξε εδώ" : app.pickFor === "from" ? "Ξεκίνα από εδώ" : "Πήγαινέ με εδώ"}</span></button>
+      <button type="button" class="pgomain" disabled={!app.mapCenter} onclick={takeCentre}><Icon name="route" size={18} /><span>{checking ? "Άλλαξε εδώ" : app.savingPlace ? `Κράτα το ως ${app.savingPlace === "home" ? "Σπίτι" : "Δουλειά"}` : app.pickFor === "from" ? "Ξεκίνα από εδώ" : "Πήγαινέ με εδώ"}</span></button>
     </div>
   </div>
   {:else}
@@ -1287,7 +1294,7 @@
               {#each ["from", "to"] as Field[] as f (f)}
                 {@const p = ends[f].place}
                 <div class="tfw">
-                  <button type="button" class="tfield" onclick={() => editEnd(f)}><i class="tmk {f}" aria-hidden="true"></i><span class="tk">{f === "from" ? "Από" : "Προς"}</span>
+                  <button type="button" class="tfield" onclick={e => editEnd(f, e)}><i class="tmk {f}" aria-hidden="true"></i><span class="tk">{f === "from" ? "Από" : "Προς"}</span>
                     <span class="tv" class:tvme={p?.kind === "me"}>{f === "from" ? capital(fromWord(p)) : p ? titleCase(p.label) : ""}</span></button>
                   <button type="button" class="tview" aria-label="Δες το «{f === "from" ? "Από" : "Προς"}» στον χάρτη" title="Δες το στον χάρτη" onclick={() => checkOnMap(f)}><Icon name="map" size={14} /></button>
                 </div>
