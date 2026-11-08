@@ -713,7 +713,10 @@
     background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 4px 14px rgb(0 0 0 / .4), inset 0 0 0 1px var(--card-border, var(--border));
     color: color-mix(in srgb, var(--fg) 82%, var(--muted)); font: inherit; font-size: 16px; font-weight: 600; line-height: 1; }
   .mwhere :global(svg) { color: var(--accent); }
-  .mchips { display: flex; gap: 8px; overflow-x: auto; margin-right: -16px; padding-right: 16px; scrollbar-width: none; pointer-events: auto; }
+  /* A scrolling row clips what spills out of it: room around the chips (taken back by the margins) for their shadows,
+     and to the screen's edges on both sides. */
+  .mchips { display: flex; gap: 8px; overflow-x: auto; margin: -6px -16px -14px; padding: 6px 16px 14px; scrollbar-width: none; pointer-events: none; }
+  .mchips > * { pointer-events: auto; }   /* the room around them lets taps through to the map */
   .mchips::-webkit-scrollbar { display: none; }
   .mchips .chip { height: 34px; }
   .chip.glass { background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 2px 8px rgb(0 0 0 / .35), inset 0 0 0 1px var(--card-border, var(--border)); color: var(--fg); }
