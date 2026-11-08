@@ -226,6 +226,17 @@
 
   // Both ends set: the lines, applied to the map at once (a new trip replaces the picks).
   const from = $derived(ends.from.place), to = $derived(ends.to.place);
+  // A phone: a trip missing an end, or with both at one place, goes to «Πού πας;» (the new search), not to these fields.
+  $effect(() => {
+    if (!narrow.current || locating) return;   // a location on its way is not a missing end
+    const f = from, t = to;
+    if (f && t && !tooClose) return;
+    untrack(() => {
+      app.startEnds = { from: f ?? null, to: t && !tooClose ? t : null };
+      onclose();
+      app.start = true;
+    });
+  });
   const tooClose = $derived(!!from && !!to && Math.min(...from.pts.flatMap(a => to.pts.map(b => distM(a, b)))) < radius);
   const trips = $derived(data && from && to && !tooClose ? findTrips(data.ix, from.pts, to.pts, radius, data.known) : null);
   // With one change: when no line goes without, or a change saves 10 minutes.

@@ -627,6 +627,17 @@
     });
   });
   $effect(() => { if (!app.start) app.finding = false; });
+  // The ends the planner handed over (a phone): into the fields, the empty one open for typing.
+  $effect(() => {
+    const se = app.startEnds;
+    if (!se || !app.start) return;
+    untrack(() => {
+      app.startEnds = null;
+      if (se.from) ends.from = { text: se.from.label, place: se.from };
+      ends.to = se.to ? { text: se.to.label, place: se.to } : { text: "", place: null };
+      if (!se.to) setTimeout(() => inputs.to?.focus(), 120);
+    });
+  });
   $effect(() => { if (find && app.start && !app.pickFor) untrack(() => setTimeout(() => inputs.to?.focus(), 80)); });
   function showFound(p: Place) {
     app.finding = false; app.start = false; app.pickFor = null;
@@ -2256,7 +2267,9 @@
   .cancel { flex: none; height: 44px; display: flex; align-items: center; padding: 0 4px; border: 0; background: none; color: var(--accent);
     font: inherit; font-size: 15px; font-weight: 700; line-height: 1; cursor: pointer; }
   .ends.typing .opts { flex: 0 0 100%; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
-  .ends.typing .opts > li { display: flex; align-items: center; }
+  .ends.typing .opts > li { display: flex; align-items: center; flex-shrink: 0; }
+  .lrow { min-height: 44px; }
+  .lchips { height: 44px; align-items: center; }
   .ends.typing .opt { flex: 1; min-width: 0; min-height: 52px; gap: 12px; padding: 0 0 0 10px; border-radius: 14px; }
   .ends.typing .opt:hover, .ends.typing .opt.active { background: none; }
   .ends.typing li:has(.opt.top), .ends.typing li:has(.opt.active) { border-radius: 14px; background: color-mix(in srgb, var(--accent) 14%, var(--bg)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, var(--bg)); }
