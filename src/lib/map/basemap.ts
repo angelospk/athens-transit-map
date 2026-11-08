@@ -1,4 +1,4 @@
-// The base map in Apple Maps' colours, light and dark, on OpenFreeMap's tiles: green parks, blue water, buildings
+// The base map, light and dark, on OpenFreeMap's tiles: green parks, blue water, buildings
 // a shade off the land, roads by class, names in Greek only (the style writes "ANO LIOSIA\nΑΝΩ ΛΙΟΣΙΑ"). No points of
 // interest (parks, museums, shops): their names crowd the stops and the vehicles.
 // One style for both themes (OpenFreeMap's "dark", keyed by its layer ids): only the colours change. A layer it
@@ -14,13 +14,15 @@ export interface Palette {
 }
 
 export const PALETTE: Record<"light" | "dark", Palette> = {
+  // Light: a cool grey ground with white streets (the avenues and motorways wider, with a grey edge, not yellow),
+  // so the coloured lines and buses are the brightest thing on the map.
   light: {
-    land: "#f1eee8", residential: "#f1eee8", building: "#dedad2", buildingEdge: "#ccc6bc",
-    park: "#c5e6bb", wood: "#bbdfae", water: "#9fcff1",
-    path: "#e3dfd8", minor: "#ffffff", major: "#ffffff", majorEdge: "#d6d1c9", motorway: "#fbd47f", motorwayEdge: "#e3b459",
-    rail: "#cdc8c1", airport: "#e6e3dd", runway: "#d7d3cc",
-    halo: "#ffffff", street: "#5e626a", place: "#2d3035", suburb: "#6a6e76", waterName: "#3b76ae", border: "#b9b4ad",
-    oneway: 0.35,
+    land: "#e9ebef", residential: "#e6e8ec", building: "#dadde2", buildingEdge: "#cdd1d7",
+    park: "#cde6cd", wood: "#c2dfc3", water: "#b9d6ef",
+    path: "#f6f7f9", minor: "#ffffff", major: "#ffffff", majorEdge: "#d2d6dc", motorway: "#ffffff", motorwayEdge: "#bfc5ce",
+    rail: "#c6cad1", airport: "#e2e5e9", runway: "#d3d7dd",
+    halo: "#ffffff", street: "#5d6470", place: "#2b3038", suburb: "#6b727d", waterName: "#36689c", border: "#b6bcc5",
+    oneway: 0.3,
   },
   dark: {
     land: "#24252e", residential: "#282934", building: "#36344b", buildingEdge: "#403d57",

@@ -30,6 +30,9 @@
   // «Τώρα» and «Ειδοποιήσεις» with no card: the phone hides the map's own buttons (app.css), as the mockup has none.
   $effect(() => { document.documentElement.toggleAttribute("data-pick", !!app.start && !!app.pickFor); });
   $effect(() => { document.documentElement.toggleAttribute("data-start", !!app.start && !app.pickFor); });
+  // A card or a list in the left column (a computer: the bar above it steps aside, Panel.svelte).
+  $effect(() => { document.documentElement.toggleAttribute("data-col", app.stack.length > 0 || app.favsOpen || app.nearShown); });
+  $effect(() => { document.documentElement.dataset.tab = app.tab; });
   $effect(() => { document.documentElement.toggleAttribute("data-home", (app.tab === "now" || app.tab === "alerts") && !app.stack.length); });
   // iOS leaves the page scrolled up after the keyboard closes (the screen is one fixed page): the top banner goes under
   // the clock and a gap opens at the foot. Back to the top whenever no field has the keyboard.

@@ -824,4 +824,6 @@
   .opencard { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, var(--card-border, var(--border))); }
   .opencard .dwrap.open { background: none; }
   .dir { margin: 2px 0 0; font-size: 13px; line-height: 1.2; }
+  /* A computer (desktop mockups Υ5, Υ6): the left column, from the top of the window down, in the home panel's place. */
+  @media (min-width: 720px) { .card { left: 16px; width: 400px; top: calc(16px + env(safe-area-inset-top)); bottom: auto; max-height: calc(100dvh - 32px - env(safe-area-inset-top)); } }
 </style>

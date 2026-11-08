@@ -3,16 +3,33 @@
   // computer as the popover beside the rail. Groups of rows: a name, at most one short line under it, the control at
   // the right (a switch, two or three choices, or the current value that opens its choices under the row).
   import { MediaQuery } from "svelte/reactivity";
+  import type { Snippet } from "svelte";
   import type { AppState } from "../state.svelte";
   import Icon from "./Icon.svelte";
   import { clock, duration } from "../format";
   import { LOOKS } from "../map/look3d";
   import { lastSaved, markSaved, ownLines, saveLines } from "../offline";
+  import { resolveDark } from "../theme";
+  import SettingPreview, { type PreviewKind } from "./SettingPreview.svelte";
 
   let { app, cityMissing, cityAge, oldest, onclose }:
     { app: AppState; cityMissing: boolean; cityAge: number | null; oldest: number | null; onclose: () => void } = $props();
 
   const narrow = new MediaQuery("(max-width: 719px)");
+  // A computer: a window over the map (desktop mockup Υ8), the look chosen from pictures, the rest in two columns.
+  const wide = $derived(!narrow.current);
+  const systemDark = new MediaQuery("(prefers-color-scheme: dark)");
+  const dark = $derived(resolveDark(app.theme, systemDark.current));
+  type Pic = { value: string; label: string; sub?: string };
+  const THEME_PICS: Pic[] = [{ value: "system", label: "Αυτόματο", sub: "όπως η συσκευή" }, { value: "dark", label: "Σκούρο" }, { value: "light", label: "Ανοιχτό" }];
+  const LOOK_PICS: Pic[] = [{ value: "off", label: "2D", sub: "ο χάρτης από πάνω" }, { value: "real", label: "Ρεαλιστική", sub: "με σκιές" }, { value: "toon", label: "Μινιατούρα", sub: "χρώματα και περίγραμμα" }];
+  const OTHER_PICS: Pic[] = [{ value: "normal", label: "Όπως είναι" }, { value: "dim", label: "Αχνά" }, { value: "hide", label: "Κρυφά" }];
+  const look = $derived(app.threeD ? app.look3d : "off");
+  const setLook = (v: string) => {
+    if (v === "off") { app.setThreeD(false); return; }
+    app.setLook3d(v as typeof app.look3d);
+    if (!app.threeD) app.setThreeD(true);
+  };
 
   type Toggle = { id: string; title: string; sub?: string; on: boolean; disabled?: boolean; beta?: boolean; set: (v: boolean) => void };
   type Choice<T> = { value: T; label: string; short?: string; hint?: string };   // short: the value in the narrower popover
@@ -137,6 +154,65 @@
   </span>
 {/snippet}
 
+{#snippet pics(label: string, kind: PreviewKind, value: string, choices: Pic[], set: (v: string) => void)}
+  <div class="pics" role="radiogroup" aria-label={label}>
+    {#each choices as c (c.value)}
+      <button type="button" class="pic" role="radio" aria-checked={c.value === value} onclick={() => set(c.value)}>
+        <span class="art"><SettingPreview {kind} v={c.value} {dark} />{#if c.value === value}<span class="ok" aria-hidden="true"><Icon name="check" size={12} /></span>{/if}</span>
+        <span class="pl"><b>{c.label}</b>{#if c.sub}<small>{c.sub}</small>{/if}</span>
+      </button>
+    {/each}
+  </div>
+{/snippet}
+
+{#snippet group(title: string, sub: string, inner: Snippet)}
+  <div class="grp"><span class="gt"><b>{title}</b><small>{sub}</small></span>{@render inner()}</div>
+{/snippet}
+
+{#if wide}
+<div class="set wide">
+  <header>
+    <h2>Ρυθμίσεις</h2>
+    <button type="button" class="x" aria-label="Κλείσιμο" onclick={onclose}><Icon name="close" size={18} /></button>
+  </header>
+  <div class="wbody">
+    <section aria-labelledby="set-look-w">
+      <h3 id="set-look-w">Εμφάνιση</h3>
+      <div class="card look">
+        {#snippet themeP()}{@render pics("Θέμα", "theme", app.theme, THEME_PICS, v => app.setTheme(v as typeof app.theme))}{/snippet}
+        {#snippet lookP()}{@render pics("Χάρτης σε 3D", "look", look, LOOK_PICS, setLook)}{/snippet}
+        {@render group("Θέμα", "η εφαρμογή και ο χάρτης", themeP)}
+        {@render group("Χάρτης σε 3D", "κτίρια, δέντρα και τα λεωφορεία ως μοντέλα · beta", lookP)}
+      </div>
+      {#if app.threeD}
+        <div class="card">{@render toggle({ id: "under", title: "Μετρό κάτω από τη γη", sub: "οι σήραγγες και οι σταθμοί σε βάθος", on: app.under, set: v => (app.under = v) }, true)}</div>
+      {/if}
+    </section>
+    <div class="cols">
+      <section aria-labelledby="set-others-w">
+        <h3 id="set-others-w">Όταν πατάς ένα λεωφορείο</h3>
+        <div class="card look one">
+          {#snippet othersP()}{@render pics("Τα άλλα οχήματα", "others", app.others, OTHER_PICS, v => app.setOthers(v as typeof app.others))}{/snippet}
+          {@render group("Τα άλλα οχήματα", "ακολουθείς ένα· τα υπόλοιπα στον χάρτη", othersP)}
+        </div>
+      </section>
+      <section aria-labelledby="set-map-w">
+        <h3 id="set-map-w">Τι δείχνει ο χάρτης</h3>
+        <div class="card">
+          {#each shows as t (t.id)}{@render toggle(t)}{/each}
+          {@render pick("stale", "Λεωφορεία με παλιά θέση", sends, app.only.fresh, STALE, v => app.setOnly({ fresh: v }))}
+          {@render pick("ages", "Ηλικία θέσης", "πριν πόσο έστειλε θέση", app.ageMode, AGES, v => app.setAgeMode(v))}
+          {#each vehicles as t, i (t.id)}{@render toggle(t, i === vehicles.length - 1)}{/each}
+        </div>
+      </section>
+    </div>
+    <div class="cols">
+      {@render offline()}
+      {@render about()}
+    </div>
+  </div>
+</div>
+{:else}
 <div class="set" class:page={narrow.current}>
   <header>
     {#if narrow.current}
@@ -177,6 +253,12 @@
     </div>
   </section>
 
+  {@render offline()}
+  {@render about()}
+</div>
+{/if}
+
+{#snippet offline()}
   <section aria-labelledby="set-off">
     <h3 id="set-off">Χωρίς σύνδεση</h3>
     <div class="card">
@@ -192,6 +274,9 @@
     </div>
   </section>
 
+{/snippet}
+
+{#snippet about()}
   <section aria-labelledby="set-about">
     <h3 id="set-about">Σχετικά</h3>
     <div class="card">
@@ -219,7 +304,7 @@
       </button>
     </div>
   </section>
-</div>
+{/snippet}
 
 <style>
   .set { display: flex; flex-direction: column; gap: 16px; font-size: 13px; color: var(--fg); }
@@ -293,4 +378,35 @@
   .more.how { padding-top: 10px; border-bottom: 1px solid var(--border); }
 
   @media (prefers-reduced-motion: reduce) { .sw, .sw i, .chev { transition: none; } }
+
+  /* The computer's window (desktop mockup Υ8): a header, then the sections in a scrolling body; the look as pictures. */
+  .set.wide { height: 100%; min-height: 0; gap: 0; }
+  .wide header { flex: none; height: 72px; padding: 0 16px 0 28px; border-bottom: 1px solid var(--border); }
+  .set.wide h2 { font-size: 22px; font-weight: 800; }
+  .wide .x { width: 44px; height: 44px; background: var(--card); color: var(--fg); }
+  .wbody { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 24px 28px 28px; display: flex; flex-direction: column; gap: 24px; }
+  .wide section { gap: 10px; }
+  .wide h3 { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+  .wide .card { box-shadow: inset 0 0 0 1px var(--card-border); }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; align-items: start; }
+  .look { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; padding: 16px; }
+  .grp { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .gt { display: flex; flex-direction: column; gap: 5px; }
+  .gt b { font-size: 14.5px; font-weight: 700; line-height: 1.2; }
+  .gt small { font-size: 12.5px; line-height: 1.3; color: var(--muted); }
+  .pics { display: flex; gap: 10px; }
+  .pic { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin: 0; padding: 0; border: 0;
+    background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .art { position: relative; display: block; aspect-ratio: 3 / 2; border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 1px var(--card-border); transition: box-shadow .15s; }
+  .pic:hover .art { box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 30%, transparent); }
+  .pic[aria-checked="true"] .art { box-shadow: 0 0 0 2px var(--accent); }
+  .pic:focus-visible { outline: none; }
+  .pic:focus-visible .art { box-shadow: 0 0 0 2px var(--accent), 0 0 0 5px var(--accent-bg); }
+  .ok { position: absolute; top: 6px; right: 6px; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; background: var(--accent); color: var(--on-accent); }
+  .ok :global(svg) { stroke-width: 3; }
+  .pl { display: flex; flex-direction: column; gap: 4px; padding: 0 2px; }
+  .pl b { font-size: 13px; font-weight: 700; line-height: 1; color: var(--muted); }
+  .pic[aria-checked="true"] .pl b { color: var(--fg); }
+  .pl small { font-size: 11.5px; line-height: 1.2; color: var(--muted); }
 </style>

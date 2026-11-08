@@ -485,6 +485,20 @@
       {/if}
     {/if}
 
+    <!-- A computer (desktop mockup Υ1): the app's name and its three ways out at the top of the column: the map with
+         its lines, the alerts, the settings. A phone has these on the map and in the chips. -->
+    {#if !narrow.current}
+      <div class="brand">
+        <span class="logo" aria-hidden="true"><Icon name="bus" size={17} /></span>
+        <b>Στάσεις</b>
+        <button type="button" class="bb" aria-label="Χάρτης: διάλεξε γραμμές" title="Χάρτης: διάλεξε γραμμές" onclick={() => app.setTab("map")}><Icon name="map" size={18} /></button>
+        <button type="button" class="bb" aria-label={armed ? "Ειδοποιήσεις, μία ενεργή" : "Ειδοποιήσεις"} title="Ειδοποιήσεις" onclick={() => app.setTab("alerts")}>
+          <Icon name="bell" size={18} />{#if armed}<i class="bdot" aria-hidden="true"></i>{/if}
+        </button>
+        <button type="button" class="bb" aria-label="Ρυθμίσεις" title="Ρυθμίσεις" onclick={() => dispatchEvent(new Event("opensettings"))}><Icon name="gear" size={18} /></button>
+      </div>
+    {/if}
+
     <!-- The one search: «Πού πας;» (StartScreen), for places, stops and lines, with our engine. -->
     <button type="button" class="where" aria-haspopup="dialog" onclick={openWhere}>
       <Icon name="search" size={18} /><span>Πού πας;</span><kbd class="pc" aria-hidden="true">/</kbd>
@@ -494,8 +508,12 @@
          where the user is. A long press changes the place. The bell (alerts) at the end. -->
     <div class="chips" bind:this={savedEl}>
       {@render placeChips()}
-      <!-- A phone has no tab bar: the alerts are this bell (a dot while one is set). -->
-      <button type="button" class="bell" aria-label={armed ? "Ειδοποιήσεις, μία ενεργή" : "Ειδοποιήσεις"} title="Ειδοποιήσεις" onclick={() => app.setTab("alerts")}>
+      {#if !narrow.current}
+        <button type="button" class="chip" onclick={() => app.toggleFavs()}><Icon name="star" size={16} /><b>Αγαπημένα</b></button>
+        <button type="button" class="chip" onclick={openLines}><Icon name="route" size={16} /><b>Γραμμές</b></button>
+      {/if}
+      <!-- A phone has no tab bar: the alerts are this bell (a dot while one is set). A computer has it at the top. -->
+      <button type="button" class="bell" hidden={!narrow.current} aria-label={armed ? "Ειδοποιήσεις, μία ενεργή" : "Ειδοποιήσεις"} title="Ειδοποιήσεις" onclick={() => app.setTab("alerts")}>
         <Icon name="bell" size={16} />{#if armed}<i class="bdot" aria-hidden="true"></i>{/if}
       </button>
     </div>
@@ -707,6 +725,22 @@
   .pc { display: none; }
   @media (min-width: 720px) and (pointer: fine) { .pc { display: inline-flex; } }
   @media (min-width: 1024px) { .now { width: 400px; } }
+  .bell[hidden] { display: none; }
+  /* A computer (desktop mockup Υ1): the home column runs the window's height, the map beside it; the name and the
+     map, alerts and settings buttons at its top, the chips wrap. */
+  @media (min-width: 720px) {
+    .now { top: calc(16px + env(safe-area-inset-top)); bottom: 16px; max-height: none; width: 400px; padding-top: 6px; }
+    .chips { flex-wrap: wrap; }
+  }
+  .brand { flex: none; height: 52px; display: flex; align-items: center; gap: 4px; margin: 0 -6px 0 0; }
+  .brand b { flex: 1; min-width: 0; margin-left: 6px; font-size: 17px; font-weight: 800; line-height: 1; }
+  .logo { flex: none; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 9px;
+    background: var(--accent); color: var(--on-accent); }
+  .bb { position: relative; flex: none; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; padding: 0;
+    border: 0; border-radius: 50%; background: none; color: var(--fg); cursor: pointer; }
+  .bb:hover { background: var(--control); }
+  .bb:focus-visible, .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .bb .bdot { top: 8px; right: 9px; box-shadow: 0 0 0 2px var(--glass-strong); }
 
   /* The notice on the map: an amber pill under the search field. */
   .mapnote { position: absolute; z-index: 5; left: 12px; top: calc(72px + env(safe-area-inset-top)); max-width: min(380px, calc(100% - 32px));
@@ -772,7 +806,7 @@
   .pkc { flex: none; display: flex; color: var(--muted); transform: rotate(-90deg); }
   .pk2 { height: 30px; display: flex; align-items: center; gap: 6px; padding-left: 52px; min-width: 0; overflow: hidden; }
   .pkd { flex: none; height: 30px; display: flex; align-items: center; gap: 7px; padding: 0 10px 0 3px; border: 0; border-radius: 15px; cursor: pointer;
-    background: color-mix(in srgb, var(--bg) 55%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 11%, transparent); color: var(--fg); font: inherit; }
+    background: var(--tile); box-shadow: inset 0 0 0 1px var(--tile-line); color: var(--fg); font: inherit; }
   .pkd b { font-size: 14px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
   .pkd b.live { color: var(--ontime); }
   .pkl { width: 6px; height: 6px; border-radius: 50%; background: var(--ontime); display: block; flex: none; }
@@ -788,7 +822,7 @@
   .mchips { display: flex; gap: 8px; overflow-x: auto; margin: -6px -16px -14px; padding: 6px 16px 14px; scrollbar-width: none; pointer-events: auto; }   /* auto: iOS scrolls the row only so */
   .mchips::-webkit-scrollbar { display: none; }
   .mchips .chip { height: 34px; }
-  .chip.glass { background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 2px 8px rgb(0 0 0 / .35), inset 0 0 0 1px var(--card-border, var(--border)); color: var(--fg); }
+  .chip.glass { background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: var(--float), inset 0 0 0 1px var(--card-border, var(--border)); color: var(--fg); }
   .mwhere, .chip.glass { background: color-mix(in srgb, var(--surface) 62%, transparent); -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%); }
   /* A phone: the search and the chips are on the map (compact mockup 15Γ), not in the sheet. */
   @media (max-width: 719px) { .now > .where, .now > .chips { display: none; } }
@@ -796,6 +830,6 @@
   .chip.glass.round .bdot { position: absolute; right: 6px; top: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
   /* On the see-through sheet the cards stand out without turning grey: a darker glass than the sheet, a fine light
      edge and a shadow under them. */
-  .board, .srow, .dest { background: color-mix(in srgb, var(--bg) 55%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 11%, transparent), 0 4px 14px rgb(0 0 0 / .32); }
-  .srow:hover, .dest:hover { background: color-mix(in srgb, var(--bg) 35%, transparent); }
+  .board, .srow, .dest { background: var(--tile); box-shadow: inset 0 0 0 1px var(--tile-line), var(--tile-lift); }
+  .srow:hover, .dest:hover { background: var(--tile-hover); }
 </style>

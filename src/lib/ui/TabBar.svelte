@@ -60,6 +60,9 @@
   /* A phone has no tab bar at all (mockup 41, B): home is the sheet, the map is the sheet lowered, the alerts a bell
      beside «Πού πας;» (NowPanel); the alerts page has its own way back. */
   @media (max-width: 719px) { .tabs { display: none !important; } }
+  /* A computer's home column has the map and the alerts at its top (NowPanel): the bar shows only away from it, to
+     come back. */
+  @media (min-width: 720px) { :global(:root[data-tab="now"]) .tabs { display: none; } }
   .ind { position: absolute; z-index: -1; top: 6px; bottom: 6px; left: 6px; width: calc((100% - 12px) / 3); border-radius: 26px;
     background: var(--accent-bg); transform: translateX(calc(var(--i) * 100%)); transition: transform .35s cubic-bezier(.34, 1.3, .64, 1); }
   .tab { transition: color .2s, background-color .15s; }

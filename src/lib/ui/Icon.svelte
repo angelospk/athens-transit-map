@@ -1,7 +1,7 @@
 <script lang="ts" module>
   export type IconName = "star" | "star-filled" | "bus" | "metro" | "tram" | "suburban" | "pin" | "stop" | "area" | "street" | "dot" | "walk" | "chevron"
     | "clock" | "map" | "route" | "bell" | "layers" | "back" | "close" | "swap" | "search" | "share" | "vibrate" | "shield" | "check"
-    | "down" | "cube" | "warn" | "plus" | "chevron-up" | "locate" | "home" | "work" | "ticket" | "pushpin" | "sliders" | "trolley" | "fill";
+    | "down" | "cube" | "warn" | "plus" | "chevron-up" | "locate" | "home" | "work" | "ticket" | "pushpin" | "sliders" | "trolley" | "fill" | "gear";
 </script>
 
 <script lang="ts">
@@ -82,6 +82,8 @@
     <path d="M3 6.2a1.5 1.5 0 0 1 1.5-1.5h11A1.5 1.5 0 0 1 17 6.2v2a2 2 0 0 0 0 3.6v2a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 13.8v-2a2 2 0 0 0 0-3.6z" /><path d="M12 4.7v10.6" stroke-dasharray="1.6 1.8" />
   {:else if name === "pushpin"}
     <path d="M7.5 3h5l-.8 5 2.8 2.8H5.5L8.3 8z" /><path d="M10 10.8V17.5" />
+  {:else if name === "gear"}
+    <circle cx="10" cy="10" r="2.6" /><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4" /><circle cx="10" cy="10" r="5.4" />
   {:else if name === "sliders"}
     <path d="M3.5 6h7M14.5 6h2M3.5 14h2M9.5 14h7" /><circle cx="12.5" cy="6" r="2" /><circle cx="7.5" cy="14" r="2" />
   {:else if name === "plus"}

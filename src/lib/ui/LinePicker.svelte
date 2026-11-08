@@ -127,7 +127,7 @@
     .picker { align-items: center; }
     .chips { margin: 0; gap: 8px; }
     .tail { height: 36px; margin: 0; gap: 8px; }
-    .chip { min-height: 36px; height: 36px; border-radius: 18px; box-shadow: 0 2px 8px rgb(0 0 0 / .35); }
+    .chip { min-height: 36px; height: 36px; border-radius: 18px; box-shadow: var(--float); }
     .chip .open { padding: 0 2px 0 14px; }
     .chip .x { min-width: 32px; padding: 0 10px 0 4px; }
   }

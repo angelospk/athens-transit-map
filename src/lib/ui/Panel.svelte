@@ -78,6 +78,12 @@
     f?.focus();
     f?.click();
   }
+  // The home column's gear (NowPanel, a computer): after this click has passed the window (which closes popovers).
+  $effect(() => {
+    const open = () => setTimeout(() => { if (pop !== "layers") toggle("layers"); });
+    addEventListener("opensettings", open);
+    return () => removeEventListener("opensettings", open);
+  });
   // The planner's code, fetched once the page is idle: asked for later, it opens at once (no «Φόρτωση» first).
   $effect(() => {
     const go = () => { void import("./TripPlanner.svelte"); };
@@ -354,7 +360,7 @@
 
 <!-- The popover of a map button opens on the right, beside the buttons (on a phone over the panel). -->
 {#if pop}
-  <div class="popwrap" class:raised={pop === "layers" || pop === "help"} class:tabbed={pop === "trip"} class:page={pop === "layers" && narrow.current} style:--ph="{panelH}px">
+  <div class="popwrap" class:raised={pop === "layers" || pop === "help"} class:tabbed={pop === "trip"} class:page={pop === "layers" && narrow.current} class:modal={pop === "layers" && !narrow.current} style:--ph="{panelH}px">
     {#if pop === "trip"}
       {#if !app.cityInfo.plan}
         <div class="pop"><p class="hint">Οι οδηγίες (από εδώ ως εκεί) έρχονται σύντομα {app.cityInfo.inName}. Ως τότε, δες τις γραμμές και τις στάσεις στον χάρτη.</p></div>
@@ -514,7 +520,7 @@
     .mbar .bar :global(.find) { display: none; }   /* the pill above is the search */
     .mbar .tool, .mbar .fold { width: 36px; height: 36px; min-width: 36px; padding: 0; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 18px;
       background: color-mix(in srgb, var(--surface) 62%, transparent); -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%);
-      box-shadow: 0 2px 8px rgb(0 0 0 / .35), inset 0 0 0 1px var(--card-border, var(--border)); color: var(--fg); }
+      box-shadow: var(--float), inset 0 0 0 1px var(--card-border, var(--border)); color: var(--fg); }
     .mbar .favbtn.on { width: auto; padding: 0 12px; background: color-mix(in srgb, var(--star) 22%, var(--surface)); color: var(--star); }
     .mbar #panel-body:not([hidden]) { margin-top: 10px; padding: 12px 14px; border-radius: 20px; background: var(--glass-strong);
       -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); }
@@ -641,6 +647,21 @@
      tools stay at the top right in one column under them (app.css: --col-top), wherever the sheet is: it does not take
      them along, and only covers them when pulled up past them (as a native sheet). The planner and the legend have
      their own places in the sheet. */
+  /* A computer: the settings are a window over the map, dimmed behind it (desktop mockup Υ8); a press beside it closes it. */
+  @media (min-width: 720px) {
+    .popwrap.modal { position: fixed; inset: 0; z-index: 20; width: auto; max-width: none; max-height: none; display: grid; place-items: center;
+      padding: 40px 16px; box-sizing: border-box; background: rgb(10 13 18 / .38); animation: scrimIn .18s ease-out; }
+    .popwrap.modal .pop { width: min(1120px, 100%); height: 100%; max-height: 880px; padding: 0; border-radius: 28px; overflow: hidden;
+      display: flex; flex-direction: column; animation: winIn .24s cubic-bezier(.2, .8, .2, 1); }
+    @keyframes scrimIn { from { background: rgb(10 13 18 / 0); } }
+    @keyframes winIn { from { transform: translateY(12px) scale(.985); opacity: 0; } }
+  }
+  @media (min-width: 720px) and (prefers-reduced-motion: reduce) { .popwrap.modal, .popwrap.modal .pop { animation: none; } }
+  /* A computer: the home column (NowPanel) has its own search at the top, and a card or list in the left column its
+     own header: the bar steps aside for them (desktop mockups Υ1, Υ5). */
+  @media (min-width: 720px) {
+    :global(:root[data-home]) .panel, :global(:root[data-col]) .panel, :global(:root[data-col]) .under { display: none; }
+  }
   @media (max-width: 719px) {
     :global(:root[data-home]) .homebar { display: none; }
     :global(:root[data-home]) .rail .tripb, :global(:root[data-home]) .rail .helpb { display: none; }
