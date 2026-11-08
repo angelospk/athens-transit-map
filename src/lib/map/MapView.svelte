@@ -130,8 +130,11 @@
   // 3D on a computer: the mountains round the city rise, under the sky's haze (relief.ts setMountains). Not in the
   // metro mode: there the camera goes under the street (its elevation below 0), which a terrain would not let it do,
   // and coming up again it stayed under the ground (the map blank).
+  // Not at street level either: a terrain has MapLibre draw every layer to a texture per tile, and with the street's
+  // own layers that made a pan stutter badly (2026-11-09, PC); zoomed out, where the mountains are seen, it is light.
+  // The basin is flat at 0 either way (relief.ts FLAT_M), so nothing moves when it comes and goes.
   $effect(() => {
-    const on = app.threeD && !app.under && mouseMap.current;
+    const on = app.threeD && !app.under && mouseMap.current && !streetZoom;
     void baseGen;
     untrack(() => { if (map?.isStyleLoaded() || map?.getLayer(RELIEF_LAYER)) try { setMountains(map, on); } catch { /* an old WebGL: the flat map */ } });
   });
