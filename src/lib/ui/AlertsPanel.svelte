@@ -352,5 +352,5 @@
   @keyframes fireIn { from { transform: translateY(-8px) scale(.98); opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .sw i, .day, .new, .fstop, .allow, .primary { transition: none; } .fire { animation: none; } }
   /* A computer (desktop mockups Υ5, Υ6): the left column, from the top of the window down, in the home panel's place. */
-  @media (min-width: 720px) { .alerts { left: 16px; width: 400px; top: calc(16px + env(safe-area-inset-top)); bottom: auto; max-height: calc(100dvh - 32px - env(safe-area-inset-top)); } .alerts { bottom: 16px; max-height: none; } }
+  @media (min-width: 720px) { .alerts { left: 16px; width: var(--col-w); top: calc(16px + env(safe-area-inset-top)); bottom: auto; max-height: calc(100dvh - 32px - env(safe-area-inset-top)); } .alerts { bottom: 16px; max-height: none; } }
 </style>

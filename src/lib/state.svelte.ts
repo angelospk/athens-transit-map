@@ -999,12 +999,15 @@ export class AppState {
     this.favsOpen = false;
     this.nearOpen = false;
     if (this.stack.length) this.closeCards();
-    // A phone has no tab bar (mockup 41, B): the map is the home sheet lowered to its handle.
-    if (t === "map" && typeof matchMedia === "function" && matchMedia("(max-width: 719px)").matches) { this.tab = "now"; this.homePeek++; return; }
+    // No tab bar, on a phone or a computer (mockup 41, B): the map is the home sheet lowered to its handle (a
+    // computer's home column stays beside the map).
+    if (t === "map") { this.tab = "now"; this.homePeek++; return; }
     this.tab = t;
   }
   // Asks the phone's home sheet to lower itself to its handle, so the map shows (NowPanel watches it).
   homePeek = $state(0);
+  // A vehicle pointed at in a list (a computer: the line's spread strip): the map makes its marker bigger.
+  hotVehicle = $state<string | null>(null);
 
   toggleFavs() {
     this.nearOpen = false;

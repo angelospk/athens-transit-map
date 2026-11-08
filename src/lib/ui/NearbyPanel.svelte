@@ -343,7 +343,7 @@
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   /* Beside the trip planner, not over it (Panel sets data-planner on a computer while it is open). */
-  @media (min-width: 900px) { :global(:root[data-planner]) .near { left: 432px; } }
+  @media (min-width: 900px) { :global(:root[data-planner]) .near { left: calc(32px + var(--col-w)); } }
   /* ---- A phone (compact mockup 5): a sheet from the screen's edges, its handle on top. */
   @media (max-width: 719px) {
     .near { left: 0; right: 0; bottom: 0; width: auto; border-radius: 24px 24px 0 0; padding: 8px 16px calc(16px + env(safe-area-inset-bottom)); max-height: 78dvh; }
@@ -362,5 +362,5 @@
     font-size: 12.5px; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
   .picks .chip[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
   /* A computer (desktop mockups Υ5, Υ6): the left column, from the top of the window down, in the home panel's place. */
-  @media (min-width: 720px) { .near { left: 16px; width: 400px; top: calc(16px + env(safe-area-inset-top)); bottom: auto; max-height: calc(100dvh - 32px - env(safe-area-inset-top)); } }
+  @media (min-width: 720px) { .near { left: 16px; width: var(--col-w); top: calc(16px + env(safe-area-inset-top)); bottom: auto; max-height: calc(100dvh - 32px - env(safe-area-inset-top)); } }
 </style>

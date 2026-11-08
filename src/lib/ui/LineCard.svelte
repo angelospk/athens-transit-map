@@ -453,7 +453,8 @@
   </div>
   <div class="track" style:--lc={color.bg}>
     <i class="rail"></i>
-    {#each sp.dots as d (d.id)}<span class="sd" class:bunched={d.bunched} style:left="{d.x * 100}%"></span>{/each}
+    {#each sp.dots as d (d.id)}<span class="sd" class:bunched={d.bunched} style:left="{d.x * 100}%" role="presentation"
+      onpointerenter={e => { if (e.pointerType === "mouse") app.hotVehicle = d.id; }} onpointerleave={() => { if (app.hotVehicle === d.id) app.hotVehicle = null; }}></span>{/each}
   </div>
   <div class="spe"><span>{titleCase((diagram[firstStop] as { name: string } | undefined)?.name ?? "")}</span><span>{titleCase(lastStop)}</span></div>
 {/snippet}
@@ -798,8 +799,10 @@
   .track { position: relative; height: 22px; margin: 0 10px; }
   .rail { position: absolute; left: -10px; right: -10px; top: 9px; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--lc) 35%, var(--control)); }
   .sd { position: absolute; top: 3px; width: 16px; height: 16px; margin-left: -8px; box-sizing: border-box; border-radius: 50%; background: var(--lc);
-    border: 3px solid var(--surface); transition: left .8s cubic-bezier(.2, .8, .2, 1); }
+    border: 3px solid var(--surface); transition: left .8s cubic-bezier(.2, .8, .2, 1), scale .2s cubic-bezier(.34, 1.56, .64, 1); }
   .sd.bunched { background: var(--late1); }
+  /* A computer: a dot under the pointer grows, and its vehicle on the map with it (MapView, app.hotVehicle). */
+  @media (hover: hover) { .sd { cursor: default; } .sd:hover { scale: 1.35; } }
   .spe { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; line-height: 1.2; color: var(--muted); }
   .spe span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 48%; }
   @media (prefers-reduced-motion: reduce) { .sd { transition: none; } .spread.float { animation: none; } }

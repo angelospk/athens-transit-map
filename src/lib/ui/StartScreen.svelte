@@ -1835,13 +1835,17 @@
             <span class="oi"><Icon name="map" size={17} /></span><span class="ot"><b>{typing && ends[f].text.trim() ? "Δεν είναι εδώ; Διάλεξε στον χάρτη" : "Διάλεξε στον χάρτη"}</b>{#if !ends[f].text.trim()}<small class="phone">{app.savingPlace ? "σύρε τον χάρτη ως την πόρτα σου" : "Μετακίνησε τον χάρτη και πάτα «Εδώ»"}</small><small class="pc">Κάνε κλικ στο σημείο</small>{/if}</span>
           {:else if r.place}
             {@const p = r.place}
-            {#if typing && p.kind === "metro" && app.cityId === "athens"}<img class="oimg" src="{import.meta.env.BASE_URL}icons/metro-logo.svg" alt="" />
+            <!-- A station: the metro's (or, tram only, the tram's) own mark, as on a phone, typing or not. -->
+            {#if p.kind === "metro" && app.cityId === "athens"}<img class="oimg" class:tramimg={p.lines.length > 0 && p.lines.every(l => l.startsWith("T"))}
+              src="{import.meta.env.BASE_URL}icons/{p.lines.length > 0 && p.lines.every(l => l.startsWith("T")) ? "tram" : "metro"}-logo.svg" alt="" />
             {:else if iconOf(p) === "stop"}<span class="oi oasa"><img src="{import.meta.env.BASE_URL}icons/oasa.png" alt="" /></span>
             {:else}<span class="oi"><Icon name={iconOf(p)} size={17} /></span>{/if}
             <span class="ot"><b>{#each hl(titleCase(p.label), ends[f].text) as [t, m], j (j)}{#if m}<mark>{t}</mark>{:else}{t}{/if}{/each}</b>
               {#if p.kind === "metro" && p.lines.length}
                 <!-- A station: its lines in their colours, then what runs there (and how far, near the user). -->
-                <small class="lm st">{#each p.lines as l (l)}<i class="lc" style:--c={LINE_TINT[l] ?? "#6b7280"}>{l}</i>{/each}<span>{p.hint}</span></small>
+                <small class="lm st">{#each p.lines as l (l)}{#if app.cityId === "athens" && (l.startsWith("M") || l.startsWith("T"))}<LineChip
+                  label={l.slice(1)} bg={LINE_TINT[l] ?? "#6b7280"} fg="#fff" mode={l.startsWith("M") ? "metro" : "tram"} size="sm" city={app.cityId} />{:else}<i
+                  class="lc" style:--c={LINE_TINT[l] ?? "#6b7280"}>{l}</i>{/if}{/each}<span>{p.hint}</span></small>
               {:else if p.hint}<small>{p.hint}</small>
               {:else if p.kind === "stop"}<small>{stopHint(p)}</small>{/if}</span>
           {/if}
@@ -2176,7 +2180,8 @@
   /* A wide window: the panel on the left, full height; the map beside it stays live and uncovered. */
   @media (min-width: 1024px) {
     .start { justify-content: flex-start; align-items: stretch; padding: 16px; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; pointer-events: none; }
-    .box { pointer-events: auto; max-width: 540px; max-height: none !important; height: 100%; padding: 36px 44px 32px; border-radius: 24px; gap: 22px; }
+    /* As wide as the home column and with its padding: «Πού πας;» and «Γραμμές» open in its place (NowPanel). */
+    .box { pointer-events: auto; max-width: var(--col-w); max-height: none !important; height: 100%; padding: 14px 16px 16px; border-radius: var(--radius); gap: 14px; }
     .box > :global(*) { flex: none; }
     .acts { margin-top: auto; }
   }
@@ -2437,6 +2442,7 @@
   .ends.typing .ot small { font-size: 12.5px; line-height: 1; }
   .ends.typing .oh { height: 20px; display: flex; align-items: center; padding: 10px 2px 6px; text-transform: none; letter-spacing: 0; font-size: 13px; }
   .oimg { flex: none; width: 32px; height: 32px; display: block; }
+  .oimg.tramimg { object-fit: contain; }
   .ofill { flex: none; width: 40px; height: 44px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; }
   .lrow { overflow: hidden; }
   .lchips { flex: 1; display: flex; gap: 8px; overflow-x: auto; margin-right: -16px; padding-right: 16px; scrollbar-width: none; }

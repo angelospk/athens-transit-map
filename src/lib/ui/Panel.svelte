@@ -187,7 +187,7 @@
 <svelte:window onclick={e => { if (pop && pop !== "trip" && !(e.target as Element).closest?.(".pop, .tool")) pop = null; }}
   onkeydowncapture={onEscape} />
 
-<section class="panel" class:compact class:home class:mbar={narrow.current && !home} inert={!!pop && narrow.current} aria-label="Πίνακας ελέγχου" bind:offsetHeight={panelH}>
+<section class="panel" class:compact class:home class:mbar={!home} inert={!!pop && narrow.current} aria-label="Πίνακας ελέγχου" bind:offsetHeight={panelH}>
   <h1 class="sr">Στάσεις: συγκοινωνίες live</h1>
 
   <!-- Always shown: the picked lines, the search, and the chevron. The map buttons are on the right (.rail). -->
@@ -205,7 +205,7 @@
   {:else}
   <div class="bar">
     <!-- A phone (compact mockup 15Γ): «Πού πας;» on top of the map as on the home screen, the lines as pills under it. -->
-    {#if narrow.current}<button type="button" class="where mwhere" aria-haspopup="dialog" onclick={openWhere}><Icon name="search" size={19} /><span>Πού πας;</span></button>{/if}
+    <button type="button" class="where mwhere" aria-haspopup="dialog" onclick={openWhere}><Icon name="search" size={19} /><span>Πού πας;</span></button>
     <LinePicker {app} expanded={!collapsed} onsearch={() => (app.start = true)} {tail} />
   </div>
   {/if}
@@ -425,11 +425,11 @@
 
 <style>
   /* One floating glass card over the map (the glass recipe: app.css): top left, 16 px in from the edges. */
-  .panel { position: absolute; z-index: 5; top: calc(16px + env(safe-area-inset-top)); left: 16px; width: 400px;
+  .panel { position: absolute; z-index: 5; top: calc(16px + env(safe-area-inset-top)); left: 16px; width: var(--col-w);
     max-width: calc(100% - 76px); padding: 12px 14px; border: 0; border-radius: var(--radius); background: var(--glass-strong); --card: var(--glass-fill); --card-border: var(--glass-line); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); text-shadow: var(--glass-text); }
-  .panel.compact { width: 400px; max-width: calc(100% - 76px); }   /* as wide as the cards below it */
+  .panel.compact { width: var(--col-w); max-width: calc(100% - 76px); }   /* as wide as the cards below it */
   /* The home bar: a search pill and a round layers button, floating on the map with no panel behind them. */
-  .panel.home, .panel.home.compact { width: 400px; max-width: calc(100% - 32px); padding: 0; background: none; border: 0; box-shadow: none;
+  .panel.home, .panel.home.compact { width: var(--col-w); max-width: calc(100% - 32px); padding: 0; background: none; border: 0; box-shadow: none;
     -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: none; }
   .homebar { display: flex; gap: 10px; }
   .homebar[hidden] { display: none; }
@@ -457,7 +457,7 @@
   .favbtn.on:hover { background: color-mix(in srgb, var(--star) 26%, transparent); color: var(--star); }
   @media (pointer: coarse) { .favbtn { height: 44px; min-width: 44px; } }
   /* The first time: what the star does, once. */
-  .under { position: absolute; z-index: 5; left: 16px; width: 400px; max-width: calc(100% - 76px); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+  .under { position: absolute; z-index: 5; left: 16px; width: var(--col-w); max-width: calc(100% - 76px); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
   .under > :global(*) { pointer-events: auto; }
   .favtip { box-sizing: border-box; display: flex; align-items: center; gap: 12px;
     padding: 12px 12px 12px 14px; border-radius: 22px; background: color-mix(in srgb, var(--star) 13%, var(--surface));
@@ -512,19 +512,20 @@
     font-weight: 600; line-height: 1; cursor: pointer; }
   /* A phone with lines on the map (compact mockup 15Γ): no panel behind; the search pill, then the lines' pills and the
      round glass buttons on one row, centred on each other. */
-  @media (max-width: 719px) {
-    .panel.mbar { padding: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: none; }
-    .mbar .mwhere { width: 100%; margin-bottom: 10px; }
-    .mbar .mwhere :global(svg) { color: var(--accent); }
-    .mbar .tool.add, .mbar .sep { display: none; }
-    .mbar .bar :global(.find) { display: none; }   /* the pill above is the search */
-    .mbar .tool, .mbar .fold { width: 36px; height: 36px; min-width: 36px; padding: 0; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 18px;
-      background: color-mix(in srgb, var(--surface) 62%, transparent); -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%);
-      box-shadow: var(--float), inset 0 0 0 1px var(--card-border, var(--border)); color: var(--fg); }
-    .mbar .favbtn.on { width: auto; padding: 0 12px; background: color-mix(in srgb, var(--star) 22%, var(--surface)); color: var(--star); }
-    .mbar #panel-body:not([hidden]) { margin-top: 10px; padding: 12px 14px; border-radius: 20px; background: var(--glass-strong);
-      -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); }
-  }
+  /* With lines on the map (compact mockup 15Γ), on a phone and a computer alike: no panel behind; the search pill,
+     then the lines' pills and the round glass buttons on one row. */
+  .panel.mbar { padding: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: none; }
+  .mbar .mwhere { width: 100%; margin-bottom: 10px; }
+  .mbar .mwhere :global(svg) { color: var(--accent); }
+  .mbar .tool.add, .mbar .sep { display: none; }
+  .mbar .bar :global(.find) { display: none; }   /* the pill above is the search */
+  .mbar .tool, .mbar .fold { width: 36px; height: 36px; min-width: 36px; padding: 0; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 18px;
+    background: color-mix(in srgb, var(--surface) 62%, transparent); -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%);
+    box-shadow: var(--float), inset 0 0 0 1px var(--card-border, var(--border)); color: var(--fg); }
+  .mbar .favbtn.on { width: auto; padding: 0 12px; background: color-mix(in srgb, var(--star) 22%, var(--surface)); color: var(--star); }
+  .mbar #panel-body:not([hidden]) { margin-top: 10px; padding: 12px 14px; border-radius: 20px; background: var(--glass-strong);
+    -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); }
+  
   .loadp { display: flex; align-items: center; justify-content: center; min-height: 64px; }
   .spin { width: 22px; height: 22px; border-radius: 50%; border: 2.5px solid color-mix(in srgb, var(--fg) 18%, transparent); border-top-color: var(--accent); animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -589,7 +590,7 @@
   /* On a computer the planner is the left column, under the panel and over the tab bar, as the cards are: the map
      and its buttons stay free on the right. */
   @media (min-width: 720px) {
-    .popwrap.tabbed { top: calc(28px + var(--ph, 60px) + env(safe-area-inset-top)); left: 16px; right: auto; width: 420px; max-width: calc(100% - 84px);
+    .popwrap.tabbed { top: calc(28px + var(--ph, 60px) + env(safe-area-inset-top)); left: 16px; right: auto; width: var(--col-w); max-width: calc(100% - 84px);
       max-height: calc(100dvh - 36px - var(--ph, 60px) - 92px - env(safe-area-inset-top)); }
   }
   /* Wide enough that the tab bar (in the middle) is clear of the column: the planner goes down to the window's foot. */

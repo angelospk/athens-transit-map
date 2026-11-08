@@ -75,7 +75,7 @@
         {@const c = colours(l)}
         {@const n = liveOf(l.id)}
         <button type="button" class="row two" onclick={() => onopen(l)}>
-          <LineChip label={label(l)} bg={c.bg} fg={c.fg} mode={l.mode} city={app.cityId} size="lg" />
+          <span class="cc"><LineChip label={label(l)} bg={c.bg} fg={c.fg} mode={l.mode} city={app.cityId} size="lg" /></span>
           <span class="tx"><b>{ends(l)}</b></span>
           {#if n}<span class="live"><i></i>{n} τώρα</span>{/if}
         </button>
@@ -89,7 +89,7 @@
       {#each g.items.slice(0, qf ? 60 : g.m === "bus" ? 40 : 20) as l (l.id)}
         {@const c = colours(l)}
         <button type="button" class="row" onclick={() => onopen(l)}>
-          <LineChip label={label(l)} bg={c.bg} fg={c.fg} mode={l.mode} city={app.cityId} size="lg" />
+          <span class="cc"><LineChip label={label(l)} bg={c.bg} fg={c.fg} mode={l.mode} city={app.cityId} size="lg" /></span>
           <span class="tx"><b>{ends(l)}</b></span>
         </button>
       {/each}
@@ -109,10 +109,17 @@
   .modes::-webkit-scrollbar { display: none; }
   .modes button { flex: none; height: 34px; display: flex; align-items: center; padding: 0 13px; border: 0; border-radius: 17px; background: var(--card, var(--control));
     box-shadow: inset 0 0 0 1px var(--card-border, transparent); color: var(--fg); font: inherit; font-size: 13.5px; font-weight: 700; line-height: 1; cursor: pointer; }
+  @media (hover: hover) { .modes button:not(.on):hover { background: var(--control-hover); } }
   .modes button.on { background: var(--fg); color: var(--bg); box-shadow: none; font-weight: 800; }
   .sec { display: flex; flex-direction: column; }
-  .sh { height: 24px; display: flex; align-items: center; padding: 0 2px; font-size: 13px; font-weight: 700; line-height: 1; color: var(--muted); }
-  .row { height: 48px; display: flex; align-items: center; gap: 12px; padding: 0; border: 0; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+  .sh { height: 28px; display: flex; align-items: center; padding: 0; font-size: 13px; font-weight: 700; line-height: 1; color: var(--muted); }
+  /* A row runs to the panel's edges (its hover too); the chips sit in one column so every name starts at one line. */
+  .row { height: 48px; display: flex; align-items: center; gap: 12px; margin: 0 -8px; padding: 0 8px; border: 0; border-radius: 12px; background: none;
+    color: var(--fg); font: inherit; text-align: left; cursor: pointer; transition: background-color .12s; }
+  @media (hover: hover) { .row:hover { background: var(--control); } }
+  .row:active { background: var(--control-hover); }
+  .row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .cc { flex: none; width: 76px; display: flex; align-items: center; }
   .row.two { height: 52px; }
   .tx { flex: 1; min-width: 0; }
   .tx b { display: block; font-size: 14.5px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

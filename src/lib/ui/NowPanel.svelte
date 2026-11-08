@@ -485,13 +485,12 @@
       {/if}
     {/if}
 
-    <!-- A computer (desktop mockup Υ1): the app's name and its three ways out at the top of the column: the map with
-         its lines, the alerts, the settings. A phone has these on the map and in the chips. -->
+    <!-- A computer (desktop mockup Υ1): the app's name and its two ways out at the top of the column: the alerts and
+         the settings. A phone has these on the map and in the chips. -->
     {#if !narrow.current}
       <div class="brand">
         <span class="logo" aria-hidden="true"><Icon name="bus" size={17} /></span>
         <b>Στάσεις</b>
-        <button type="button" class="bb" aria-label="Χάρτης: διάλεξε γραμμές" title="Χάρτης: διάλεξε γραμμές" onclick={() => app.setTab("map")}><Icon name="map" size={18} /></button>
         <button type="button" class="bb" aria-label={armed ? "Ειδοποιήσεις, μία ενεργή" : "Ειδοποιήσεις"} title="Ειδοποιήσεις" onclick={() => app.setTab("alerts")}>
           <Icon name="bell" size={18} />{#if armed}<i class="bdot" aria-hidden="true"></i>{/if}
         </button>
@@ -729,7 +728,7 @@
   /* A computer (desktop mockup Υ1): the home column runs the window's height, the map beside it; the name and the
      map, alerts and settings buttons at its top, the chips wrap. */
   @media (min-width: 720px) {
-    .now { top: calc(16px + env(safe-area-inset-top)); bottom: 16px; max-height: none; width: 400px; padding-top: 6px; }
+    .now { top: calc(16px + env(safe-area-inset-top)); bottom: 16px; max-height: none; width: var(--col-w); padding-top: 6px; }
     .chips { flex-wrap: wrap; }
   }
   .brand { flex: none; height: 52px; display: flex; align-items: center; gap: 4px; margin: 0 -6px 0 0; }

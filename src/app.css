@@ -17,6 +17,7 @@
      pale grey tiles; dark a see-through glass with darker glass tiles lifted by a shadow. */
   --see: 95%; --tile: #f3f5f8; --tile-hover: #eaedf2; --tile-line: #e3e7ed; --tile-lift: 0 0 0 transparent; --float: 0 3px 10px rgba(16, 24, 40, .14);
   --radius: 20px; --radius-sm: 12px;
+  --col-w: 440px;   /* a computer's left column: the home panel, the cards, the lists */
   --sheet-r: 28px;   /* the phone sheets' corners (below) */
   --font: "Commissioner", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   /* The floating controls and panels over the map (the names kept from the glass of 0.4): buttons and bars on the
@@ -67,25 +68,9 @@ html, body, #app { margin: 0; height: 100%; overflow: hidden; overscroll-behavio
   font: 14px/1.45 var(--font); font-feature-settings: "tnum" 1; -webkit-text-size-adjust: 100%; }
 button, input, select, textarea { font: inherit; color: inherit; }
 
-/* Scrollbars: thin, rounded, on the theme (Firefox and the WebKit/Blink pseudo-elements). */
-/* Blink and WebKit draw their own from the pseudo-elements below only while the standard properties are unset (else
-   Windows gets its wide bar with arrows): those are for Firefox alone. */
-@supports not selector(::-webkit-scrollbar) {
-  * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 45%, transparent) transparent; }
-}
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
-::-webkit-scrollbar-corner { background: transparent; }
-/* The track stops short of the ends: on a rounded panel the thumb stays inside its corners. */
-::-webkit-scrollbar-track { background: transparent; margin-block: 18px; }
-::-webkit-scrollbar-thumb { border-radius: 10px; background: color-mix(in srgb, var(--muted) 40%, transparent);
-  border: 3px solid transparent; background-clip: padding-box; min-height: 40px; }
-::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--muted) 70%, transparent); }
-/* A phone scrolls by touch: no scrollbar to see or to take room from the cards. */
-@media (pointer: coarse) {
-  * { scrollbar-width: none; }
-  ::-webkit-scrollbar { display: none; width: 0; height: 0; }
-}
+/* No scrollbars, on a phone or a computer: the lists scroll by wheel, trackpad or touch, and their edges fade. */
+* { scrollbar-width: none; }
+::-webkit-scrollbar { display: none; width: 0; height: 0; }
 
 /* Vehicle markers are MapLibre DOM markers, outside any component scope. The marker element is a
    plain wrapper (MapLibre owns its transform); .bus inside it is the visible pill. */
@@ -106,6 +91,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border-radius: 6px; background: var(--panel); color: var(--fg); font: 600 10px/14px var(--font);
   box-shadow: 0 0 2px rgba(0, 0, 0, .35); pointer-events: none; font-variant-numeric: tabular-nums; }
 .bus.faded { border-style: dashed; opacity: .7; }
+/* Pointed at in a list (the line's spread strip, app.hotVehicle): it grows, springing, over the others. */
+.bus { transition: scale .26s cubic-bezier(.34, 1.56, .64, 1); }
+.bus.hot { scale: 1.6; opacity: 1; }
+.maplibregl-marker:has(.bus.hot) { z-index: 4; }
+.hotdisc { width: 26px; height: 26px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border-radius: 50%;
+  background: var(--c); border: 2.5px solid #fff; box-shadow: 0 4px 14px rgba(0, 0, 0, .35); pointer-events: none;
+  scale: .7; opacity: 0; transition: scale .28s cubic-bezier(.34, 1.56, .64, 1), opacity .16s; }
+.hotdisc.on { scale: 1.6; opacity: 1; }
+.hotdisc img { width: 72%; height: 72%; display: block; }
+@media (prefers-reduced-motion: reduce) { .bus, .hotdisc { transition: none; } }
 .bus.stale { opacity: .45; }
 .bus.rewind { opacity: .5; transition: opacity .2s; }   /* gliding back to a fix behind (motion.ts) */
 .vm.stale .age { color: var(--late2); }
@@ -468,8 +463,12 @@ html.sheet-open .start, html.sheet-open .now, html.sheet-open .card, html.sheet-
   .homebar .round, .homebar .where, .maplibregl-ctrl-group:not(:empty), .recenter, .details-ctl button.details) {
   background: color-mix(in srgb, var(--surface) var(--see), transparent) !important;
   -webkit-backdrop-filter: blur(16px) saturate(160%) !important; backdrop-filter: blur(16px) saturate(160%) !important;
-  /* Its own layer from the start: iOS Safari drew the blur only once a slide-in had ended. */
-  transform: translateZ(0); will-change: transform;
+}
+/* A phone: each its own layer from the start (iOS Safari drew the blur only once a slide-in had ended). Not on a
+   computer: a layer of its own there drew the text soft (blurry) at fractional positions. */
+@media (pointer: coarse) {
+  :root body :is(section.now, section.card, section.near, .psheet, section.panel:not(.home):not(.mbar), .popwrap:not(.page) .pop, div.sheet, section.fixbar, section.alerts,
+    .homebar .round, .homebar .where, .maplibregl-ctrl-group:not(:empty), .recenter, .details-ctl button.details) { transform: translateZ(0); will-change: transform; }
 }
 
 /* A phone: every sheet floats, 8 px in from the screen's sides and foot, rounded on all four corners (the home sheet,
@@ -485,7 +484,7 @@ html.sheet-open .start, html.sheet-open .now, html.sheet-open .card, html.sheet-
    own, 8 px apart, as the locate and compass buttons under them. */
 @media (min-width: 720px) {
   :root body div.rail[role="toolbar"] { background: color-mix(in srgb, var(--surface) var(--see), transparent) !important;
-    -webkit-backdrop-filter: blur(16px) saturate(160%) !important; backdrop-filter: blur(16px) saturate(160%) !important; transform: translateZ(0); }
+    -webkit-backdrop-filter: blur(16px) saturate(160%) !important; backdrop-filter: blur(16px) saturate(160%) !important; }
 }
 @media (max-width: 719px) {
   :root body div.rail[role="toolbar"] { background: none !important; box-shadow: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important;

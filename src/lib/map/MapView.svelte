@@ -1110,6 +1110,30 @@
   // 3D, close in: a chip above the selected bus (or the one under the mouse) with what its card would say first: the
   // line, where it goes, how late it is, and the minutes to its next stop. Rebuilt at most twice a second.
   let hoverKey: string | null = null;
+  // A vehicle pointed at in a list (app.hotVehicle): a bus's pill grows (app.css .bus.hot); a train, drawn by a
+  // symbol layer, gets a disc of its own over it that grows the same way.
+  let lastTrains: GeoJSON.FeatureCollection | null = null;
+  let hotMarker: Marker | null = null;
+  $effect(() => {
+    const id = app.hotVehicle;
+    untrack(() => {
+      for (const d of doms.values()) d.el.classList.toggle("hot", !!id && d.el.dataset.vid === id);
+      const old = hotMarker;
+      hotMarker = null;
+      if (old) { old.getElement().firstElementChild?.classList.remove("on"); setTimeout(() => old.remove(), 220); }
+      if (!id || !map || [...doms.values()].some(d => d.el.dataset.vid === id)) return;
+      const f = lastTrains?.features.find(x => String(x.properties?.id) === id);
+      if (!f) return;
+      const wrap = document.createElement("div"), disc = document.createElement("div"), img = document.createElement("img");
+      disc.className = "hotdisc";
+      disc.style.setProperty("--c", String(f.properties!.color ?? "#0a7cc4"));
+      img.src = `${import.meta.env.BASE_URL}icons/glyph-${f.properties!.glyph === "tram" ? "tram" : "metro"}.png`;
+      img.alt = "";
+      disc.append(img); wrap.append(disc);
+      hotMarker = new Marker({ element: wrap, anchor: "center" }).setLngLat((f.geometry as GeoJSON.Point).coordinates as LngLat).addTo(map);
+      requestAnimationFrame(() => requestAnimationFrame(() => disc.classList.add("on")));
+    });
+  });
   let info: { marker: Marker; el: HTMLDivElement; key: string; at: number } | null = null;
   function showInfo(key: string | null, at: LngLat | null, now: number) {
     if (!key || !at || !map) { if (info) info.el.hidden = true; return; }
@@ -1305,6 +1329,8 @@
     const marker = new Marker({ element: wrap, anchor: "center", subpixelPositioning: true }).setLngLat(pos).addTo(map!);
     paint(el, e.line);
     el.dataset.line = e.line;
+    el.dataset.vid = e.id;
+    if (app.hotVehicle === e.id) el.classList.add("hot");
     const d: Dom = { marker, wrap, el, dir, age, eta, width: el.offsetWidth, heading: null };
     doms.set(e.key, d);
     const s = app.selection;
@@ -1867,6 +1893,7 @@
     }
     if (dive) diveFrame(dive);
     (map!.getSource("trains") as GeoJSONSource).setData(fc);
+    lastTrains = fc;
     for (const k of trams3d) if (!now3d.has(k)) scene3d.drop(k);
     trams3d = now3d;
   }

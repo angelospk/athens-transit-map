@@ -13,7 +13,6 @@
   import NearbyPanel from "./lib/ui/NearbyPanel.svelte";
   import NowPanel from "./lib/ui/NowPanel.svelte";
   import LeaveReminder from "./lib/ui/LeaveReminder.svelte";
-  import TabBar from "./lib/ui/TabBar.svelte";
   import AlertsPanel from "./lib/ui/AlertsPanel.svelte";
   import RideBar from "./lib/ui/RideBar.svelte";
   import StartScreen from "./lib/ui/StartScreen.svelte";
@@ -71,7 +70,6 @@
 <NearbyPanel {app} />
 <NowPanel {app} />
 <AlertsPanel {app} />
-<TabBar {app} />
 <RideBar {app} />
 <StartScreen {app} />
 <NavGuide {app} />

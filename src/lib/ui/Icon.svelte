@@ -83,7 +83,8 @@
   {:else if name === "pushpin"}
     <path d="M7.5 3h5l-.8 5 2.8 2.8H5.5L8.3 8z" /><path d="M10 10.8V17.5" />
   {:else if name === "gear"}
-    <circle cx="10" cy="10" r="2.6" /><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4" /><circle cx="10" cy="10" r="5.4" />
+    <!-- A cog as the systems draw it: eight square-ended teeth round a wheel, a hole in the middle. -->
+    <path d="M18.00 8.21 L18.00 11.79 L16.28 11.23 L15.31 13.58 L16.92 14.39 L14.39 16.92 L13.58 15.31 L11.23 16.28 L11.79 18.00 L8.21 18.00 L8.77 16.28 L6.42 15.31 L5.61 16.92 L3.08 14.39 L4.69 13.58 L3.72 11.23 L2.00 11.79 L2.00 8.21 L3.72 8.77 L4.69 6.42 L3.08 5.61 L5.61 3.08 L6.42 4.69 L8.77 3.72 L8.21 2.00 L11.79 2.00 L11.23 3.72 L13.58 4.69 L14.39 3.08 L16.92 5.61 L15.31 6.42 L16.28 8.77Z" /><circle cx="10" cy="10" r="2.7" />
   {:else if name === "sliders"}
     <path d="M3.5 6h7M14.5 6h2M3.5 14h2M9.5 14h7" /><circle cx="12.5" cy="6" r="2" /><circle cx="7.5" cy="14" r="2" />
   {:else if name === "plus"}

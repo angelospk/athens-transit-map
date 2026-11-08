@@ -207,7 +207,7 @@
   @keyframes cardIn { from { transform: translateY(28px); opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .card { animation: none; } }
   /* Beside the trip planner, not over it (Panel sets data-planner on a computer while it is open). */
-  @media (min-width: 900px) { :global(:root[data-planner]) .card { left: 432px; } }
+  @media (min-width: 900px) { :global(:root[data-planner]) .card { left: calc(32px + var(--col-w)); } }
   /* A computer (desktop mockups Υ5, Υ6): the left column, from the top of the window down, in the home panel's place. */
-  @media (min-width: 720px) { .card { left: 16px; width: 400px; top: calc(16px + env(safe-area-inset-top)); bottom: auto; max-height: calc(100dvh - 32px - env(safe-area-inset-top)); } .body { max-height: calc(100dvh - 140px - env(safe-area-inset-top)); } }
+  @media (min-width: 720px) { .card { left: 16px; width: var(--col-w); top: calc(16px + env(safe-area-inset-top)); bottom: auto; max-height: calc(100dvh - 32px - env(safe-area-inset-top)); } .body { max-height: calc(100dvh - 140px - env(safe-area-inset-top)); } }
 </style>
