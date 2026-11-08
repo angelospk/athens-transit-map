@@ -31,6 +31,8 @@ export interface Fetched { status: number; body: unknown; date?: number }   // d
 export interface TgResult { ok: boolean; result?: unknown; error_code?: number; parameters?: { retry_after?: number } }
 export interface BotDeps {
   urls: { trips: string; static: string; api: string };
+  agency?: string;   // the bus operator the messages name (default ΟΑΣΑ: Athens)
+  prefix?: string;   // Telegram: the city's code before its buttons' data ("pat:b:…", bot/router.ts); none for Athens
   now(): number;
   sleep(ms: number): Promise<void>;
   save(s: BotState): void;
@@ -92,6 +94,7 @@ export const COMMANDS = [
   { command: "fav", description: "Οι στάσεις μου" },
   { command: "list", description: "Οι ειδοποιήσεις σου" },
   { command: "stop", description: "Σταμάτα όλες τις ειδοποιήσεις" },
+  { command: "city", description: "Άλλαξε πόλη" },
 ];
 const FAV_TEXT = "⭐ Οι στάσεις μου";
 const KEYBOARD = {
@@ -105,10 +108,13 @@ const HELP = "Γεια! Σου γράφω όταν το λεωφορείο σο�
   "/stasi: οι αφίξεις σε μια στάση.\n" +
   "/fav: οι στάσεις σου.\n" +
   "/list: οι ειδοποιήσεις σου.\n" +
-  "/stop: σταματάει όλες τις ειδοποιήσεις.";
+  "/stop: σταματάει όλες τις ειδοποιήσεις.\n" +
+  "/city: άλλαξε πόλη.";
 
 // A message button, or a row of them.
-interface Button { text: string; callback_data?: string; request_location?: boolean }
+export interface Button { text: string; callback_data?: string; request_location?: boolean }
+// Telegram takes at most 64 bytes of callback_data: a button that would not fit is left out.
+const fits = (data: string) => new TextEncoder().encode(data).length <= 64;
 
 // trips.json's places and search (src/lib/trip.ts) load on the first search. That file reads
 // import.meta.env as it loads, and the node build (bot/main.ts) has none: give it one first.
@@ -125,9 +131,9 @@ const placeList = new WeakMap<TripIndex, Place[]>();
 
 // The lines that call at stop k, short: the stop buttons.
 const lineText = (ix: TripIndex, k: number) => linesAt(ix, k).map(l => l.line).slice(0, 5).join(", ");
-const stopButton = (ix: TripIndex, k: number, sid: string, tail?: string): Button => {
+const stopButton = (ix: TripIndex, k: number, data: string, tail?: string): Button => {
   const lines = lineText(ix, k);
-  return { text: `${ix.s[k][0]}${tail ?? ""}${lines ? ` · ${lines}` : ""}`, callback_data: `b:${sid}` };
+  return { text: `${ix.s[k][0]}${tail ?? ""}${lines ? ` · ${lines}` : ""}`, callback_data: data };
 };
 
 // A stop's board: its name, one line per arrival group, and when this answer was made.
@@ -166,7 +172,10 @@ export class Bot {
   }
 
   private get rails(): SavedRail[] { return (this.state.rails ??= []); }
+  private get agency(): string { return this.d.agency ?? "ΟΑΣΑ"; }
   private get favs(): Record<string, FavStop[]> { return (this.state.favs ??= {}); }
+  // A button's data with the city's prefix ("all" stays bare: the router stops every city).
+  private cb(data: string): string { return this.d.prefix ? `${this.d.prefix}:${data}` : data; }
 
   // The command menu, once at start.
   init() {
@@ -189,7 +198,11 @@ export class Bot {
   get offset() { return this.state.offset; }
 
   // Telegram updates (getUpdates), in order; the new offset is saved with what they changed.
-  async handle(updates: Update[]) {
+  // False when that save failed: nothing of them stayed, and they must come again.
+  // once (the router): skip the updates this bot saved already, which a crash before the router's save sends again.
+  async handle(updates: Update[], once = false): Promise<boolean> {
+    if (once) updates = updates.filter(u => u.update_id >= this.state.offset);
+    if (!updates.length) return true;
     // What the batch starts from, moved on by every save inside it: a failed save at the end puts it back, so
     // nothing the batch changed or queued unsaved is left behind.
     this.mark = this.snap();
@@ -205,7 +218,8 @@ export class Bot {
     }
     const before = this.state.offset;
     this.state.offset = offset;
-    if (!this.save()) {   // Telegram sends them again: so nothing of them may stay or go out
+    const ok = this.save();
+    if (!ok) {   // Telegram sends them again: so nothing of them may stay or go out
       this.state.offset = before;
       const m = this.mark!;
       this.state.alerts = m.alerts; this.state.rails = m.rails; this.state.favs = m.favs;
@@ -213,6 +227,40 @@ export class Bot {
       this.queue = this.queue.filter(q => q.keep || m.queued.has(q));
     }
     this.mark = null;
+    return ok;
+  }
+
+  // For the router (bot/router.ts): a message of its own, sent with this bot's.
+  out(method: string, body: Record<string, unknown>) {
+    this.queue.push({ method, body });
+  }
+
+  // /stop for the router: ends the chat's alerts here, saved now. "failed": the save failed, all is as before.
+  stopChat(chat: number): "none" | "stopped" | "failed" {
+    const had = this.state.alerts.some(a => a.chat === chat) || this.rails.some(a => a.chat === chat);
+    if (!had) return "none";
+    const alerts = this.state.alerts, rails = this.state.rails, watches = new Map(this.watches);
+    this.remove(a => a.chat === chat);
+    this.state.rails = this.rails.filter(a => a.chat !== chat);
+    if (this.save()) return "stopped";
+    this.state.alerts = alerts; this.state.rails = rails; this.watches = watches;
+    return "failed";
+  }
+
+  // The chat's alerts as /list shows them: one text line and one "Σταμάτα" button row each.
+  chatAlerts(chat: number): { lines: string[]; buttons: Button[][] } {
+    const mine = this.state.alerts.filter(a => a.chat === chat), rails = this.rails.filter(a => a.chat === chat);
+    return {
+      lines: [
+        ...mine.map(a => (a.rep ? `🔁 ${repDays(a.rep.days)} ${hhmm(a.rep.start)}–${hhmm(a.rep.start + a.rep.len)}` : `🔔 έως ${clock(a.spec.until).slice(0, 5)}`) +
+          ` · ${lineList(a)} · ${a.label}`),
+        ...rails.map(a => `🚇 έως ${clock(a.spec.until).slice(0, 5)} · ${a.spec.label} προς ${a.spec.toward} · ${a.spec.name}`),
+      ],
+      buttons: [
+        ...mine.map(a => [{ text: `Σταμάτα ${lineList(a)} ${a.rep ? hhmm(a.rep.start) : clock(a.spec.until).slice(0, 5)}`, callback_data: this.cb(`stop:${a.id}`) }]),
+        ...rails.map(a => [{ text: `Σταμάτα ${a.spec.label} ${clock(a.spec.until).slice(0, 5)}`, callback_data: this.cb(`stop:${a.id}`) }]),
+      ],
+    };
   }
 
   private snap() {
@@ -313,19 +361,10 @@ export class Bot {
   }
 
   private list(chat: number) {
-    const mine = this.state.alerts.filter(a => a.chat === chat), rails = this.rails.filter(a => a.chat === chat);
-    if (!mine.length && !rails.length) return this.send(chat, "Δεν έχεις ειδοποιήσεις.");
-    const text = [
-      ...mine.map(a => (a.rep ? `🔁 ${repDays(a.rep.days)} ${hhmm(a.rep.start)}–${hhmm(a.rep.start + a.rep.len)}` : `🔔 έως ${clock(a.spec.until).slice(0, 5)}`) +
-        ` · ${lineList(a)} · ${a.label}`),
-      ...rails.map(a => `🚇 έως ${clock(a.spec.until).slice(0, 5)} · ${a.spec.label} προς ${a.spec.toward} · ${a.spec.name}`),
-    ].join("\n");
-    const inline_keyboard = [
-      ...mine.map(a => [{ text: `Σταμάτα ${lineList(a)} ${a.rep ? hhmm(a.rep.start) : clock(a.spec.until).slice(0, 5)}`, callback_data: `stop:${a.id}` }]),
-      ...rails.map(a => [{ text: `Σταμάτα ${a.spec.label} ${clock(a.spec.until).slice(0, 5)}`, callback_data: `stop:${a.id}` }]),
-      [{ text: "Απεγγραφή από όλα", callback_data: "all" }],
-    ];
-    this.queue.push({ method: "sendMessage", body: { chat_id: chat, text, disable_web_page_preview: true, reply_markup: { inline_keyboard } } });
+    const { lines, buttons } = this.chatAlerts(chat);
+    if (!lines.length) return this.send(chat, "Δεν έχεις ειδοποιήσεις.");
+    const inline_keyboard = [...buttons, [{ text: "Απεγγραφή από όλα", callback_data: "all" }]];
+    this.queue.push({ method: "sendMessage", body: { chat_id: chat, text: lines.join("\n"), disable_web_page_preview: true, reply_markup: { inline_keyboard } } });
   }
 
   // A plain message, with the reply keyboard or inline buttons when given.
@@ -347,8 +386,8 @@ export class Bot {
       const key = fold(p.label);
       for (let k = 0; k < ix.s.length && rows.length < MAX_BUTTONS; k++) {
         const [name, lat, lon, sid] = ix.s[k];
-        if (!sid || fold(name) !== key || !p.pts.some(x => t.distM(x, [lat, lon]) <= 1)) continue;
-        rows.push([stopButton(ix, k, sid)]);
+        if (!sid || fold(name) !== key || !p.pts.some(x => t.distM(x, [lat, lon]) <= 1) || !fits(this.cb(`b:${sid}`))) continue;
+        rows.push([stopButton(ix, k, this.cb(`b:${sid}`))]);
       }
       if (rows.length >= MAX_BUTTONS) break;
     }
@@ -363,17 +402,17 @@ export class Bot {
     if (!ix) return this.send(chat, "Δεν φορτώνουν τα δεδομένα των στάσεων. Δοκίμασε σε λίγο.");
     const t = await trip();
     const near = ix.s.map((x, k) => ({ k, sid: x[3], m: t.distM([lat, lon], [x[1], x[2]]) }))
-      .filter((x): x is { k: number; sid: string; m: number } => !!x.sid && x.m <= NEAR_M)
+      .filter((x): x is { k: number; sid: string; m: number } => !!x.sid && x.m <= NEAR_M && fits(this.cb(`b:${x.sid}`)))
       .sort((a, b) => a.m - b.m).slice(0, MAX_BUTTONS);
     if (!near.length) return this.send(chat, `Καμία στάση σε ${NEAR_M} μ. Δοκίμασε όνομα στάσης.`);
-    this.say(chat, "Οι κοντινότερες στάσεις:", { reply_markup: { inline_keyboard: near.map(x => [stopButton(ix, x.k, x.sid, ` · ${Math.round(x.m)} μ`)]) } });
+    this.say(chat, "Οι κοντινότερες στάσεις:", { reply_markup: { inline_keyboard: near.map(x => [stopButton(ix, x.k, this.cb(`b:${x.sid}`), ` · ${Math.round(x.m)} μ`)]) } });
   }
 
   // ⭐ and /fav: the chat's saved stops, each to its board.
   private favList(chat: number) {
     const mine = this.favs[String(chat)] ?? [];
     if (!mine.length) return this.send(chat, "Δεν έχεις αποθηκευμένες στάσεις. Γράψε όνομα στάσης ή πάτα 📍 Κοντά μου.");
-    this.say(chat, "Οι στάσεις σου:", { reply_markup: { inline_keyboard: mine.map(f => [{ text: f.name, callback_data: `b:${f.id}` }]) } });
+    this.say(chat, "Οι στάσεις σου:", { reply_markup: { inline_keyboard: mine.filter(f => fits(this.cb(`b:${f.id}`))).map(f => [{ text: f.name, callback_data: this.cb(`b:${f.id}`) }]) } });
   }
 
   // b:<sid> sends the board, r:<sid> (🔄) edits the message it came from; one 🔄 per chat per 3 s.
@@ -419,20 +458,22 @@ export class Bot {
   // The board's buttons: 🔄, ⭐ or ★, a 🔔 per line, and the stop across the street.
   private boardButtons(chat: number, ix: TripIndex, k: number, sid: string): Button[][] {
     const saved = (this.favs[String(chat)] ?? []).some(f => f.id === sid);
-    const rows: Button[][] = [[
-      { text: "🔄 Ανανέωση", callback_data: `r:${sid}` },
-      { text: saved ? "★ Αφαίρεση" : "⭐ Αποθήκευση", callback_data: `f:${sid}` },
-    ]];
+    const top = [
+      { text: "🔄 Ανανέωση", callback_data: this.cb(`r:${sid}`) },
+      { text: saved ? "★ Αφαίρεση" : "⭐ Αποθήκευση", callback_data: this.cb(`f:${sid}`) },
+    ].filter(b => fits(b.callback_data));
+    const rows: Button[][] = top.length ? [top] : [];
     const bells: Button[] = [];
+    const room = 64 - this.cb("a:").length;
     for (const l of linesAt(ix, k)) {
-      const data = encodeAlert(ix, 3, alertLinesAt(ix, k, [l.line]));
-      if (!data || `a:${data}`.length > 64) continue;
-      bells.push({ text: `🔔 ${l.line}`, callback_data: `a:${data}` });
+      const data = encodeAlert(ix, 3, alertLinesAt(ix, k, [l.line]), undefined, room);
+      if (!data || !fits(this.cb(`a:${data}`))) continue;
+      bells.push({ text: `🔔 ${l.line}`, callback_data: this.cb(`a:${data}`) });
     }
     for (let i = 0; i < bells.length; i += 4) rows.push(bells.slice(i, i + 4));
     const twin = twins(ix, k)[0];
     const tid = twin ? ix.s[twin.i][3] : undefined;
-    if (twin && tid) rows.push([{ text: `↔ Απέναντι στάση · ${twin.m} μ`, callback_data: `b:${tid}` }]);
+    if (twin && tid && fits(this.cb(`b:${tid}`))) rows.push([{ text: `↔ Απέναντι στάση · ${twin.m} μ`, callback_data: this.cb(`b:${tid}`) }]);
     return rows;
   }
 
@@ -475,7 +516,7 @@ export class Bot {
         data: "Δεν φορτώνουν τα δεδομένα των στάσεων. Δοκίμασε σε λίγο.",
         old: "Ο σύνδεσμος είναι από παλιότερα δεδομένα στάσεων. Φτιάξε νέο από τον χάρτη.",
         bad: "Ο σύνδεσμος δεν είναι σωστός. Φτιάξε νέο από τον χάρτη: 🧭 → «Στο Telegram».",
-        updating: "Τα δεδομένα του ΟΑΣΑ ενημερώνονται. Δοκίμασε ξανά αργότερα.",
+        updating: `Τα δεδομένα του ${this.agency} ενημερώνονται. Δοκίμασε ξανά αργότερα.`,
         busy: "Πολλές ειδοποιήσεις αυτή τη στιγμή. Δοκίμασε σε λίγο.",
         full: `Έχεις ήδη ${REP_PER_CHAT} επαναλαμβανόμενες ειδοποιήσεις. Δες τες με /list και σταμάτα μία.`,
       }[m.why]);
@@ -692,7 +733,7 @@ export class Bot {
       }
       if (old.length || carried) {
         this.remove(a => old.includes(a));
-        if (this.save()) for (const a of old) this.tell(a, `Τα δρομολόγια του ΟΑΣΑ άλλαξαν: η ειδοποίηση για ${lineList(a)} σταμάτησε. Φτιάξε νέα από τον χάρτη.`);
+        if (this.save()) for (const a of old) this.tell(a, `Τα δρομολόγια του ${this.agency} άλλαξαν: η ειδοποίηση για ${lineList(a)} σταμάτησε. Φτιάξε νέα από τον χάρτη.`);
       }
     })().catch(e => console.error("data:", (e as Error).message)).finally(() => (this.loading = null));
     return this.loading;
@@ -820,7 +861,7 @@ export class Bot {
     if (alertId) body.reply_markup = { inline_keyboard: [
       ...(url ? [[{ text: "🚶 Πώς πάω στη στάση", url }]] : []),
       [
-        { text: "Σταμάτα", callback_data: `stop:${alertId}` }, { text: "Απεγγραφή από όλα", callback_data: "all" },
+        { text: "Σταμάτα", callback_data: this.cb(`stop:${alertId}`) }, { text: "Απεγγραφή από όλα", callback_data: "all" },
       ],
     ] };
     this.queue.push({ method: "sendMessage", body });

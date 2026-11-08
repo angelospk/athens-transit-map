@@ -1,6 +1,7 @@
 <script lang="ts">
   // «Νέα συντόμευση» (compact mockup 10): a line, its way and the stop it is caught at, shown on «Πού πας;» with its
   // minutes live; or a stop near the user (★), or «Σπίτι» / «Δουλειά».
+  import { busId, isBusId } from "../busNs";
   import type { AppState } from "../state.svelte";
   import type { V2Line } from "../v2";
   import { fold } from "../search";
@@ -23,7 +24,7 @@
 
   const ix = $derived(app.stopIx);
   const native = (id: string) => id.slice(id.indexOf(":") + 1);
-  const busLines = $derived(lines.filter(l => l.id.startsWith("oasa:")));
+  const busLines = $derived(lines.filter(l => isBusId(l.id)));
   const qf = $derived(fold(q.trim()));
   const hits = $derived(qf ? busLines.filter(l => fold(l.label ?? native(l.id)).startsWith(qf) || fold(l.name).includes(qf)).slice(0, 6) : []);
   const ends = (l: V2Line) => titleCase(l.name).replace(/\s+[-–]\s+/g, " ⇄ ");
@@ -72,7 +73,7 @@
     ix.s.forEach((x, k) => {
       if (!x[3] || Math.abs(x[1] - here[0]) > 0.006 || Math.abs(x[2] - here[1]) > 0.008) return;
       const m = distM([x[1], x[2]], here);
-      if (m < 600) out.push({ k, id: `oasa:${x[3]}`, name: titleCase(x[0]), m, lines: linesAt(ix, k).map(l => l.line) });
+      if (m < 600) out.push({ k, id: busId(x[3]), name: titleCase(x[0]), m, lines: linesAt(ix, k).map(l => l.line) });
     });
     return out.sort((a, b) => a.m - b.m).slice(0, 6);
   });

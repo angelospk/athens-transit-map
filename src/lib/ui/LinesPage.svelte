@@ -1,6 +1,7 @@
 <script lang="ts">
   // «Βρες γραμμή» (compact mockup 7): every line in one list, first the ones that pass near the user (with how many
   // run now), then by mode. Each line once («Α ⇄ Β», not one row per way), names in lower case, the mode's chip.
+  import { busId, isBusId } from "../busNs";
   import type { V2Line } from "../v2";
   import type { AppState } from "../state.svelte";
   import { fold } from "../search";
@@ -24,7 +25,7 @@
   const label = (l: V2Line) => (l.mode === "suburban" ? "Π" : l.label ?? native(l.id));
   const ends = (l: V2Line) => RAIL_ENDS[l.label ?? ""] ?? titleCase(l.name).replace(/\s+[-–]\s+/g, " ⇄ ");
   const colours = (l: V2Line) => {
-    if (l.id.startsWith("oasa:")) { const c = app.lineColor(native(l.id)); return { bg: c.bg, fg: c.fg }; }
+    if (isBusId(l.id)) { const c = app.lineColor(native(l.id)); return { bg: c.bg, fg: c.fg }; }
     return { bg: l.color || "#6b7280", fg: l.text_color || "#ffffff" };
   };
 
@@ -33,7 +34,7 @@
     const ix = app.stopIx;
     if (!ix) return [] as V2Line[];
     const ids = new Set<string>();
-    for (const g of app.nearGroups.slice(0, 2)) for (const i of g.idx) for (const x of linesAt(ix, i)) ids.add(`oasa:${x.line}`);
+    for (const g of app.nearGroups.slice(0, 2)) for (const i of g.idx) for (const x of linesAt(ix, i)) ids.add(busId(x.line));
     return lines.filter(l => ids.has(l.id)).slice(0, 6);
   });
   const qf = $derived(fold(q.trim()));

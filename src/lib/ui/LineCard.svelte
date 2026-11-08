@@ -16,6 +16,8 @@
   import LoadIcon from "./LoadIcon.svelte";
   import { clockHM } from "../trains";
   import Icon from "./Icon.svelte";
+  import { isBusId } from "../busNs";
+  import { fmtDelay } from "../format";
   import { busVehicleCard } from "../legacy";
   import { directionGroups } from "../directions";
   import { dirLabels, headsignName, lineVehicleRows, vehicleDir, withDirections, type LineDetail, type V2Run, type V2Vehicle } from "../v2";
@@ -79,7 +81,7 @@
   });
 
   const nativeLine = $derived(card ? native(card.id) : "");
-  const isBus = $derived(!!card && card.id.startsWith("oasa:"));
+  const isBus = $derived(!!card && isBusId(card.id));
   const pinId = $derived(isBus ? nativeLine : null);   // a bus or trolley line can be pinned on the map (PinSheet)
   // A bus line's directions come from its /v1 direction groups (withDirections), with their termini as labels.
   const groups = $derived(isBus && app.statics[nativeLine] ? directionGroups(app.statics[nativeLine]) : []);

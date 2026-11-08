@@ -2,6 +2,7 @@
 // comes with the page closed. The link payload is the Telegram one (tglink.ts). Loaded with the planner.
 // Rail alerts (railAlerts.ts) go the same way, with their own spec instead of a link.
 
+import type { CityId } from "./cities";
 import type { RailSpec } from "./railAlerts";
 
 export const PUSH_URL = (import.meta.env.VITE_PUSH_URL || "https://push.haroldpoi.dev").replace(/\/+$/, "");
@@ -37,7 +38,8 @@ async function startAlert(reg: ServiceWorkerRegistration, body: Record<string, u
   }
 }
 
-export const startPush = (reg: ServiceWorkerRegistration, payload: string) => startAlert(reg, { p: payload });
+// The bot watches each city on its own data: the payload's indexes are of that city's stop index.
+export const startPush = (reg: ServiceWorkerRegistration, payload: string, city: CityId) => startAlert(reg, { p: payload, city });
 
 // A metro, tram or suburban arrival alert (railAlerts.ts); until is the server's.
 export const startRailPush = (reg: ServiceWorkerRegistration, rail: Omit<RailSpec, "until">) => startAlert(reg, { rail });

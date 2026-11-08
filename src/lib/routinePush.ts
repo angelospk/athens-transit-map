@@ -7,6 +7,7 @@ import { alertLinesAt, stopIndex } from "./stops";
 import { canPush, startPush, stopPush } from "./push";
 import { routineRep, routineStops, type Routine } from "./routines";
 import type { TripIndex } from "./trip";
+import { PAGE_CITY } from "./config";
 
 const native = (id: string) => id.slice(id.indexOf(":") + 1);
 
@@ -28,7 +29,7 @@ export async function syncRoutine(ix: TripIndex | null, r: Routine, walkMin: num
   if (!p) return undefined;
   const reg = await navigator.serviceWorker?.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => null);
   const ready = reg && (await Promise.race([navigator.serviceWorker.ready, new Promise<null>(res => setTimeout(res, 5000, null))]));
-  const made = ready ? await startPush(ready, p) : null;
+  const made = ready ? await startPush(ready, p, PAGE_CITY) : null;
   return made?.id;
 }
 

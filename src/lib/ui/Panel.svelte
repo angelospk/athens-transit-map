@@ -316,13 +316,17 @@
 {#if pop}
   <div class="popwrap" class:raised={pop === "layers" || pop === "help"} class:tabbed={pop === "trip"} class:page={pop === "layers" && narrow.current} style:--ph="{panelH}px">
     {#if pop === "trip"}
-      {#await import("./TripPlanner.svelte")}
-        <div class="pop"><p class="hint">Φόρτωση…</p></div>
-      {:then m}
-        <m.default {app} onclose={closeTrip} />
-      {:catch}
-        <div class="pop"><p class="hint">Δεν φόρτωσε. Έλεγξε τη σύνδεση και πάτα ξανά την πυξίδα.</p></div>
-      {/await}
+      {#if !app.cityInfo.plan}
+        <div class="pop"><p class="hint">Οι οδηγίες (από εδώ ως εκεί) έρχονται σύντομα {app.cityInfo.inName}. Ως τότε, δες τις γραμμές και τις στάσεις στον χάρτη.</p></div>
+      {:else}
+        {#await import("./TripPlanner.svelte")}
+          <div class="pop"><p class="hint">Φόρτωση…</p></div>
+        {:then m}
+          <m.default {app} onclose={closeTrip} />
+        {:catch}
+          <div class="pop"><p class="hint">Δεν φόρτωσε. Έλεγξε τη σύνδεση και πάτα ξανά την πυξίδα.</p></div>
+        {/await}
+      {/if}
     {:else if pop === "help"}
       <div class="pop" id="pop-help" role="dialog" tabindex="-1" aria-label="Τι σημαίνει κάθε σύμβολο">
         <button type="button" class="feedback" onclick={() => { toggle("help"); dispatchEvent(new Event("openfeedback")); }}>

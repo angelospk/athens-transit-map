@@ -76,12 +76,12 @@ export const fileOf = (path: string) => {
   return p.endsWith("/") ? `${p}index.html` : `${p}.html`;
 };
 
-// "in the city", with the article Greek needs (στην Αθήνα, στη Θεσσαλονίκη).
-const IN_CITY: Record<CityId, string> = { athens: "στην Αθήνα", thessaloniki: "στη Θεσσαλονίκη" };
-const FOOTER_PHRASE: Record<CityId, string> = {
-  athens: `λεωφορείων, τρόλεϊ, μετρό και τραμ ${IN_CITY.athens}`,
-  thessaloniki: `λεωφορείων ${IN_CITY.thessaloniki}`,
-};
+// "in the city", with the article Greek needs (στην Αθήνα, στο Αγρίνιο): the city says it (cities.ts).
+const IN_CITY: Record<CityId, string> = Object.fromEntries(
+  (Object.keys(CITIES) as CityId[]).map(id => [id, CITIES[id].inName])) as Record<CityId, string>;
+// The footer's phrase: Athens names its rail too; the others have buses only (a citybus.gr city has no rail).
+const FOOTER_PHRASE: Record<CityId, string> = Object.fromEntries((Object.keys(CITIES) as CityId[]).map(id =>
+  [id, id === "athens" ? `λεωφορείων, τρόλεϊ, μετρό και τραμ ${IN_CITY.athens}` : `λεωφορείων ${IN_CITY[id]}`])) as Record<CityId, string>;
 
 // The footer's links; layout() wraps them in <footer>, an app page adds the tag itself.
 const footerLinks = (city: CityId) =>
@@ -354,10 +354,11 @@ export interface CityBuilt {
 // must not drop its pages); another city's error skips only that city, with no pages and no
 // sitemap entries for it. legacy: the old Athens paths move to the new one, outside the sitemap.
 // extraPaths: pages written by other scripts (the stats pages), listed in the same sitemap.
+// stopPages: false for a city writes no stop pages (its lines, home and the sitemap keep theirs).
 export async function build(
   outDir: string,
   getJsonFor: (city: CityId) => GetJson,
-  o: { shell: string; legacy?: boolean; extraPaths?: string[]; cities?: CityId[] },
+  o: { shell: string; legacy?: boolean; extraPaths?: string[]; cities?: CityId[]; stopPages?: (city: CityId) => boolean },
 ): Promise<{ cities: CityBuilt[] }> {
   const ids = o.cities ?? (Object.keys(CITIES) as CityId[]);
   const cities: CityBuilt[] = [];
@@ -394,14 +395,15 @@ export async function build(
     }
 
     const hasStats = (o.extraPaths ?? []).includes(`/${city}/stats/`);
+    const withStops = (o.stopPages ?? (() => true))(city);
     await writePath(homePath(city), homePage(city, lines, o.shell, hasStats));
     await writePath(linesPath(city), linesPage(city, lines));
     await Promise.all([
-      ...stops.map(s => writePath(stopPath(city, s[0]), stopPage(city, s, lines, o.shell))),
+      ...(withStops ? stops.map(s => writePath(stopPath(city, s[0]), stopPage(city, s, lines, o.shell))) : []),
       ...details.map(d => writePath(linePath(city, d.line.id), linePage(city, d, o.shell))),
     ]);
-    paths.push(homePath(city), linesPath(city), ...lines.map(l => linePath(city, l.id)), ...stops.map(s => stopPath(city, s[0])));
-    cities.push({ id: city, stops: stops.length, lines: lines.length });
+    paths.push(homePath(city), linesPath(city), ...lines.map(l => linePath(city, l.id)), ...(withStops ? stops.map(s => stopPath(city, s[0])) : []));
+    cities.push({ id: city, stops: withStops ? stops.length : 0, lines: lines.length });
 
     // The old Athens pages (before web#47) become small forwarders. Thessaloniki never had any.
     if (o.legacy && city === "athens") {
@@ -458,7 +460,10 @@ if (isMain) {
   };
   try {
     const stats = await buildStats(outDir, getText, statsBase);
-    const n = await build(outDir, getJsonFor, { shell, legacy, extraPaths: stats.paths });
+    // The preview (Cloudflare Pages, ~20,000 files) sets SEO_CITYBUS_STOPS=0: no stop pages for the 28
+    // citybus.gr cities, or the deploy would pass the file limit (web#54).
+    const stopPages = (c: CityId) => process.env.SEO_CITYBUS_STOPS !== "0" || c === "athens" || c === "thessaloniki";
+    const n = await build(outDir, getJsonFor, { shell, legacy, extraPaths: stats.paths, stopPages });
     for (const c of n.cities) console.log(`seo: ${c.id} ${c.skipped ? `skipped: ${c.skipped}` : `${c.stops} stops, ${c.lines} lines`}`);
     console.log(`stats: ${stats.cities.map(c => `${c.id} ${c.days} days${c.bad ? ` (${c.bad} unreadable)` : ""}`).join(", ") || "none"}`);
   } catch (err) {

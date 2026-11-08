@@ -7,6 +7,7 @@
 </script>
 
 <script lang="ts">
+  import { isBusId } from "../busNs";
   import { tick, untrack } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
   import { sheetDrag, type SheetDrag } from "../sheetDrag";
@@ -504,7 +505,7 @@
         if (l.kind === "walk") return (l.distance_m ?? 1) > 0 ? sensibleWalk((await fetchFoot(from, to, AbortSignal.timeout(8000)))?.line, from, to) : null;
         const id = l.line ?? "", native = id.slice(id.indexOf(":") + 1);
         const bare = (s: string | null) => (s ?? "").slice((s ?? "").indexOf(":") + 1);
-        if (id.startsWith("oasa:")) {
+        if (isBusId(id)) {
           const st = await fetchLineStatic(native);
           const vs = Object.values(st.variants);
           mids[k] = stopsBetween(vs, st.stops, bare(l.from.stop), bare(l.to.stop));

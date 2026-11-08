@@ -1,0 +1,52 @@
+name: citybus.gr stop indexes
+
+# Daily: rebuild public/trips-<slug>.json (scripts/trips.ts) for the 28 citybus.gr cities from the
+# staseis-rt instance (https://staseis-rt.haroldpoi.dev/<code>/static/v1). Only the instance is read,
+# never citybus.gr. Its gtfs_version changes only when a city's data changes (staseis-rt#121), so a
+# file changes only then. The bot's web push alerts need these files (bot/cities.ts).
+# A changed file is committed to main and deployed: a push by GITHUB_TOKEN starts no workflow, so the
+# deploy is dispatched.
+on:
+  schedule:
+    - cron: "45 3 * * *" # after the Thessaloniki index
+  workflow_dispatch:
+
+concurrency:
+  group: citybus-stops
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main # a run dispatched on another branch must not push that branch's commits to main
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Rebuild the indexes (a city that fails keeps its old file)
+        run: |
+          for pair in agrinio:agq alexandroupoli:axd arta:art veroia:ver volos:vol drama:dra heraklion:her \
+            ioannina:ioa kavala:kva kastoria:kso katerini:kat corfu:cfu kozani:kzi komotini:kom lamia:lam \
+            larissa:lra mesologgi:mes mitilini:mjt naousa:nao xanthi:xan patras:pat ptolemaida:pto serres:ser \
+            chalkida:cha chania:chq chios:jkh salamina:sal skiathos:jsi ; do
+            slug=${pair%%:*} code=${pair##*:}
+            VITE_STATIC_BASE=https://staseis-rt.haroldpoi.dev/$code/static/v1 TRIPS_OUT=public/trips-$slug.json \
+              bun scripts/trips.ts || echo "::warning::$slug: index not rebuilt"
+          done
+      - name: Commit and deploy changed indexes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- 'public/trips-*.json'; then echo "no change"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/trips-*.json
+          git commit -m "citybus.gr stop indexes: $(git diff --cached --name-only | sed 's|public/trips-||;s|\.json||' | paste -sd, -)"
+          git pull --rebase origin main
+          git push origin HEAD:main
+          gh workflow run deploy.yml --ref main

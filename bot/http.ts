@@ -50,3 +50,25 @@ export function pushApi(bot: { web: Web }, o: ApiOpts, after: () => void = () =>
     });
   };
 }
+
+// Several cities in one process (bot/main.ts), one bot each. A new alert goes to the city its body names;
+// no city is the first one (pages from before there were cities). Rail alerts exist only there. A DELETE
+// goes to every city: the ids are random, and each bot knows only its own.
+export function byCity(bots: Record<string, { web: Web }>, first: string): { web: Web } {
+  return {
+    async web(req) {
+      if (req.method === "POST" && req.path === "/alerts") {
+        const b = req.body as { city?: unknown; rail?: unknown } | null;
+        const city = b?.city ?? first;
+        if (typeof city !== "string" || !Object.hasOwn(bots, city)) return { status: 400, body: { error: "city" } };
+        if (city !== first && b?.rail !== undefined) return { status: 400, body: { error: "bad" } };
+        return bots[city].web(req);
+      }
+      if (req.method === "DELETE") {
+        const all = await Promise.all(Object.values(bots).map(b => b.web(req)));
+        return all.find(r => r.status !== 204) ?? { status: 204 };
+      }
+      return bots[first].web(req);
+    },
+  };
+}

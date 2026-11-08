@@ -44,7 +44,7 @@
     { id: "ontime", title: "Μόνο όσα είναι στην ώρα τους", sub: "έως 5′ καθυστέρηση", on: app.only.onTime, set: v => app.setOnly({ onTime: v }) },
     { id: "motion", title: "Ομαλή κίνηση", sub: "ανάμεσα στις θέσεις που στέλνουν", on: app.motion, set: v => app.setMotion(v) },
   ]);
-  const sends = $derived(app.cityInfo.id === "athens" ? "ο ΟΑΣΑ στέλνει θέση κάθε 20–60″" : `ο ${app.cityInfo.agency} στέλνει θέση ανά διαστήματα`);
+  const sends = $derived(app.cityInfo.id === "athens" ? "ο ΟΑΣΑ στέλνει θέση κάθε 20–60″" : `${app.cityInfo.agencyThe.charAt(0).toLowerCase()}${app.cityInfo.agencyThe.slice(1)} στέλνει θέση ανά διαστήματα`);
 
   // One value row open at a time: its choices show under it.
   let open = $state<string | null>(null);

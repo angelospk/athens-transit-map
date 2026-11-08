@@ -3,6 +3,7 @@
   // stop (or a routine's), the favourite stops' next buses as tiles, and the notices about the favourite lines (on
   // the map). The routine reminders run from here too. Live data from /v2, asked again every 30 s while it shows (at most 4 requests at a time).
   // On a phone a sheet over the map, above the tab bar; on a desktop a card in the map's left column.
+  import { busId } from "../busNs";
   import { untrack } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
   import { safeInsets, sheetDrag, type SheetDrag } from "../sheetDrag";
@@ -42,7 +43,7 @@
   const nearest = $derived.by<NowStop | null>(() => {
     const g = app.nearGroups[0], ix = app.stopIx;
     const s = g && ix ? ix.s[g.idx[0]] : undefined;
-    return s && s[3] ? { id: `oasa:${s[3]}`, name: titleCase(s[0]), lat: s[1], lon: s[2], fav: false } : null;
+    return s && s[3] ? { id: busId(s[3]), name: titleCase(s[0]), lat: s[1], lon: s[2], fav: false } : null;
   });
   const favStops = $derived(app.favs.stops.map(s => ({ ...s, fav: true })));
   // A «Κάθε μέρα» routine in force: its stop is planned from first, and only its line counts there.
@@ -57,7 +58,7 @@
     const ix = app.stopIx;
     return app.nearGroups.slice(1, 3).flatMap(g => {
       const s = ix?.s[g.idx[0]];
-      return s && s[3] ? [{ id: `oasa:${s[3]}`, name: titleCase(s[0]), lat: s[1], lon: s[2], fav: false }] : [];
+      return s && s[3] ? [{ id: busId(s[3]), name: titleCase(s[0]), lat: s[1], lon: s[2], fav: false }] : [];
     }).filter(s => !plan.some(p => p.id === s.id));
   });
   // The nearest stop's twin across the street (stops.ts twins): the board's other way, one tap on «Προς …».
@@ -65,7 +66,7 @@
     const g = app.nearGroups[0], ix = app.stopIx;
     if (!g || !ix || !plan[0] || plan[0].id !== nearest?.id) return null;
     const t = twins(ix, g.idx[0])[0], s = t ? ix.s[t.i] : undefined;
-    return s && s[3] ? { id: `oasa:${s[3]}`, name: titleCase(s[0]), lat: s[1], lon: s[2], fav: false } : null;
+    return s && s[3] ? { id: busId(s[3]), name: titleCase(s[0]), lat: s[1], lon: s[2], fav: false } : null;
   });
   let side = $state<0 | 1>(0);
   $effect(() => { void plan[0]?.id; side = 0; });
@@ -482,8 +483,8 @@
         {#each app.pins as pin (pin.kind + pin.id)}
           <li>
             <button type="button" class="pc-dot" style:--pc={pin.color} aria-label="Χρώμα και ρυθμίσεις: {pin.label}" onclick={() => (app.pinEdit = pin)}><i></i></button>
-            <button type="button" class="pin-open" onclick={() => app.open({ kind: pin.kind, id: `oasa:${pin.id}`, title: pin.label })}>
-              {#if pin.kind === "line"}{@const b = badge(`oasa:${pin.id}`)}<LineChip label={b.label} bg={b.bg} fg={b.fg} mode={modeOf(pin.id)} city={app.cityId} />
+            <button type="button" class="pin-open" onclick={() => app.open({ kind: pin.kind, id: busId(pin.id), title: pin.label })}>
+              {#if pin.kind === "line"}{@const b = badge(busId(pin.id))}<LineChip label={b.label} bg={b.bg} fg={b.fg} mode={modeOf(pin.id)} city={app.cityId} />
               {:else}<span class="stile" aria-hidden="true"><img src="{import.meta.env.BASE_URL}icons/oasa.png" alt="" /></span>{/if}
               <span class="dt"><b>{pin.kind === "line" ? (app.lineInfo.get(pin.id)?.name ? titleCase(app.lineInfo.get(pin.id)!.name) : `Γραμμή ${pin.label}`) : pin.label}</b>
                 <small>{pin.kind === "line" ? (pin.vehicles ? "Με τα οχήματά της" : "Μόνο η διαδρομή") : "Στάση"}{pin.top ? " · πάνω από όλα" : ""}</small></span>

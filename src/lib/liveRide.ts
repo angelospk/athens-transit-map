@@ -3,6 +3,7 @@
 // (a line on the card) and «Θύμισέ μου» (when to leave). The metro and the tram have no live positions: their rides
 // keep the timetable's time.
 
+import { busId } from "./busNs";
 import { fetchV2LineVehicles, fetchV2Stop } from "./api";
 import { metres, type Guide, type GuideRide } from "./guide";
 import { fold } from "./search";
@@ -45,7 +46,7 @@ export const isLiveMode = (mode: string) => mode !== "metro" && mode !== "tram" 
 /** The ride's bus now: the arrival nearest its planned time (within 20 min), and where its vehicle is. */
 export async function busNow(ride: GuideRide, plannedAt: number, nowS: number): Promise<BusNow | null> {
   if (!ride.board.id) return null;
-  const res = await fetchV2Stop(`oasa:${ride.board.id}`);
+  const res = await fetchV2Stop(busId(ride.board.id));
   const arr = (res.body as { arrivals?: V2Arrival[] } | null)?.arrivals ?? [];
   const rows = stopRows(arr, nowS).filter(x => x.line.replace(/^oasa:/, "") === ride.line);
   const same = rows.filter(x => fold(placeNote(toward(x.headsign)).place) === fold(ride.headsign));
@@ -56,7 +57,7 @@ export async function busNow(ride: GuideRide, plannedAt: number, nowS: number): 
   const later = times.filter(x => x.at > t.at + 30).sort((a, b) => a.at - b.at)[0];
   const out: BusNow = { at: t.at, live: t.live, away: null, before: ride.before.length, vehicle: t.vehicle, next: later?.at ?? null };
   if (!t.vehicle) return out;
-  const vr = await fetchV2LineVehicles(`oasa:${ride.line}`);
+  const vr = await fetchV2LineVehicles(busId(ride.line));
   const v = ((vr.body as { vehicles?: V2Vehicle[] } | null)?.vehicles ?? []).find(x => x.id === t.vehicle);
   if (!v) return out;
   const at: [number, number] = [v.position.lat, v.position.lon];

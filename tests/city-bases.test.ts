@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CITIES } from "../src/lib/cities";
-import { basesFor, cityUrl, favKey } from "../src/lib/cityBases";
+import { basesFor, cityUrl, favKey, recentKey } from "../src/lib/cityBases";
 
 describe("Thessaloniki live (web#40)", () => {
   it("Thessaloniki is ready; only Athens has rail (metro, tram, Proastiakos, municipal, OASA alerts)", () => {
@@ -29,6 +29,17 @@ describe("Thessaloniki live (web#40)", () => {
     });
   });
 
+  it("basesFor: a citybus.gr city is a path of the one staseis-rt instance, by its code (web#54)", () => {
+    expect(basesFor("patras", { VITE_API_BASE: "http://x:1" })).toEqual({
+      api: "https://staseis-rt.haroldpoi.dev/pat",
+      static: "https://staseis-rt.haroldpoi.dev/pat/static/v1",
+    });
+    expect(basesFor("heraklion", { VITE_API_BASE_CITYBUS: "http://minipc:10449/" })).toEqual({
+      api: "http://minipc:10449/her",
+      static: "http://minipc:10449/her/static/v1",
+    });
+  });
+
   it("cityUrl: a city switch opens the city's home (web#47); the old city's lines and cards mean nothing there", () => {
     expect(cityUrl("thessaloniki")).toBe("/thessaloniki/");
     expect(cityUrl("athens")).toBe("/athens/");
@@ -37,6 +48,11 @@ describe("Thessaloniki live (web#40)", () => {
   it("favKey: Athens keeps fav.v2 (no migration); other cities get their own key", () => {
     expect(favKey("athens")).toBe("fav.v2");
     expect(favKey("thessaloniki")).toBe("fav.v2.thessaloniki");
+  });
+
+  it("recentKey: the search's recent picks are per city too; Athens keeps recent.v2 (web#54 review)", () => {
+    expect(recentKey("athens")).toBe("recent.v2");
+    expect(recentKey("patras")).toBe("recent.v2.patras");
   });
 });
 
@@ -48,5 +64,8 @@ describe("per-city stop index and geocoder area (web#40 review)", async () => {
     const [w, s, e, n] = GEOCODE_BOX.thessaloniki.split(",").map(Number);
     expect(w < 22.94 && e > 22.94 && s < 40.63 && n > 40.63).toBe(true);   // Aristotelous inside
     expect(GEOCODE_BOX.athens).toBe("23.35,37.65,24.15,38.25");
+    expect(tripsFile("patras")).toBe("trips-patras.json");
+    const [w2, s2, e2, n2] = GEOCODE_BOX.patras.split(",").map(Number);
+    expect(w2 < 21.74 && e2 > 21.74 && s2 < 38.25 && n2 > 38.25).toBe(true);   // Patras centre inside
   });
 });

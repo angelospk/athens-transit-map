@@ -57,7 +57,7 @@
     <p class="sum">Κανένα δρομολόγιο σήμερα.</p>
   {/if}
 {:else if sched}
-  <p class="sum">{sched.directions.length ? "Δεν βρέθηκε το πρόγραμμα αυτής της κατεύθυνσης." : `Ο ${agency} δεν δίνει πρόγραμμα για αυτή τη γραμμή σήμερα.`}</p>
+  <p class="sum">{sched.directions.length ? "Δεν βρέθηκε το πρόγραμμα αυτής της κατεύθυνσης." : `${CITIES[PAGE_CITY].agencyThe} δεν δίνει πρόγραμμα για αυτή τη γραμμή σήμερα.`}</p>
 {:else if failed}
   <p class="sum">Δεν φόρτωσε το πρόγραμμα.</p>
 {:else}

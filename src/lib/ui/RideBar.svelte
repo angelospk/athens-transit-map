@@ -2,6 +2,7 @@
   // The ride, small: while the user rides a bus with its card closed, a bar of pills at the bottom centre shows how it
   // goes (live or not, stops left and arrival, the buzz, the 3D follow) and leaves the map free. Tapping the pills opens
   // the bus's card again.
+  import { busId } from "../busNs";
   import { busVehicleCard } from "../legacy";
   import { clockHM } from "../trains";
   import type { AppState } from "../state.svelte";
@@ -14,7 +15,7 @@
 
   const r = $derived(app.ride);
   const top = $derived(app.stack.at(-1));
-  const onCard = $derived(!!r && top?.kind === "vehicle" && top.id === `oasa:${r.vehicle}`);
+  const onCard = $derived(!!r && top?.kind === "vehicle" && top.id === busId(r.vehicle));
   const shown = $derived(!!r && !onCard);
 
   const ahead = $derived(app.rideAhead);

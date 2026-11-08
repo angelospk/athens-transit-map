@@ -2,6 +2,7 @@
   // «Ειδοποιήσεις» (the mockup's page): what is being watched now (a stop alert, a rail alert, the bus being ridden) in
   // the style of the notification it sends; «Κάθε μέρα», the trips the user takes on given days; which notices to get
   // about their lines; the notices in force today. On a phone a page above the tab bar; on a desktop a card.
+  import { busId } from "../busNs";
   import { dateRange, forLine, isActive, shortTitle, type Disruption } from "../disruptions";
   import { busVehicleCard } from "../legacy";
   import { titleCase } from "../nearby";
@@ -60,7 +61,7 @@
     const ix = app.stopIx;
     for (const g of app.nearGroups.slice(0, 3)) {
       const s = ix?.s[g.idx[0]];
-      if (s?.[3] && !out.some(o => o.id === `oasa:${s[3]}`)) out.push({ id: `oasa:${s[3]}`, name: titleCase(s[0]), lat: s[1], lon: s[2] });
+      if (s?.[3] && !out.some(o => o.id === busId(s[3]!))) out.push({ id: busId(s[3]!), name: titleCase(s[0]), lat: s[1], lon: s[2] });
     }
     return out;
   });
@@ -74,13 +75,13 @@
     return Object.entries(ix.l).filter(([, vs]) => Object.values(vs).some(list => list.includes(k))).map(([l]) => l)
       .sort((a, b) => a.localeCompare(b, "el", { numeric: true }));
   });
-  $effect(() => { if (!linesAt.includes(newLine)) newLine = linesAt.find(l => favIds.includes(`oasa:${l}`)) ?? linesAt[0] ?? ""; });
+  $effect(() => { if (!linesAt.includes(newLine)) newLine = linesAt.find(l => favIds.includes(busId(l))) ?? linesAt[0] ?? ""; });
   function save() {
     const s = stopChoices.find(x => x.id === newStop);
     if (!s || !newLine) return;
     const hour = new Date(app.serverNow).getHours();
     const r: Routine = { id: Math.random().toString(36).slice(2, 10), label: partOfDay(hour), on: true, stop: s,
-      line: `oasa:${newLine}`, days: [true, true, true, true, true, false, false], hour, when: "leave" };
+      line: busId(newLine), days: [true, true, true, true, true, false, false], hour, when: "leave" };
     app.setRoutines([...app.routines, r]);
     adding = false;
     void sync(r);

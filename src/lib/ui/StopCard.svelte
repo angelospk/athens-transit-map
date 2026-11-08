@@ -4,14 +4,17 @@
   import { freeSheet } from "../sheetDrag";
   import { fetchLineStatic, fetchSchedule, fetchStop, peekStop } from "../api";
   import { athensClock, matchDirection, timetableView, type Schedule } from "../timetable";
-  import { placeNote, alertLinesAt, arrivalGroups, arrivalNote, boardLines, headTo, linesAt, linesToWarm, timeText, toward, twins, usualRows, type ArrivalGroup, type ArrivalTime, type StopBoard } from "../stops";
+  import { placeNote, alertLinesAt, arrivalGroups, arrivalNote, boardLines, headTo, linesAt, linesToWarm, timeText, toward, twins, usualRows, scheduleRows, signCode, type UsualRow, type ArrivalGroup, type ArrivalTime, type StopBoard } from "../stops";
   import type { AppState } from "../state.svelte";
   import type { FetchResult } from "../poller";
   import Back from "./Back.svelte";
   import NameSheet from "./NameSheet.svelte";
+  import Toward from "./Toward.svelte";
+  import { towardsOf } from "../towards";
   import Icon from "./Icon.svelte";
   import DisruptionRows from "./DisruptionRows.svelte";
   import { forStop } from "../disruptions";
+  import { busId } from "../busNs";
   import { busStopCard, legacyOf } from "../legacy";
   import NearChanges from "./NearChanges.svelte";
   import { reportedStops } from "../stopfix";
@@ -43,14 +46,17 @@
   const id = $derived(stop ? stop[3] : early);
   const name = $derived(titleCase(stop?.[0] ?? board?.stop.name ?? top?.title ?? "Στάση"));
   const lines = $derived(ix && i != null ? linesAt(ix, i) : board ? boardLines(board) : []);
-  // The star: the stop's /v2 id is oasa:<GTFS id>; an index from before the ids has none.
-  const favId = $derived(id ? `oasa:${id}` : null);
+  // The star: the stop's /v2 id is <bus namespace>:<GTFS id>; an index from before the ids has none.
+  const favId = $derived(id ? busId(id) : null);
   const starred = $derived(!!favId && app.isFavStop(favId));
   let naming = $state(false);
   // The OASA notices about the stop or its lines (/v2 ids: oasa:<GTFS stop id>, oasa:<line>).
-  const lineIds = $derived(lines.map(l => `oasa:${l.line}`));
+  const lineIds = $derived(lines.map(l => busId(l.line)));
   const disruptions = $derived(favId ? forStop(app.disruptions, favId, lineIds, app.serverNow) : []);
+  const dir = $derived(ix && i != null ? towardsOf(ix, i) : null);   // which way the buses leave
   const across = $derived(ix && i != null ? twins(ix, i)[0] : undefined);
+  // The code on the stop sign, bottom right, so a rider can find the stop (rev 21).
+  const code = $derived(signCode(board?.stop.code, id, app.cityId === "athens"));
 
   // «Λάθος θέση;»: the card gives way to a short bar while the user drags a pin (StopFixBar, MapView).
   // sent: this device already reported this stop (one report per device per stop).
@@ -91,7 +97,7 @@
   let now = $state(Date.now());   // set from app.serverMs() when a stop opens
   const groups = $derived(board ? arrivalGroups(board.arrivals, now) : []);
   // The lines shown with no bus on its way: how often they usually pass now (backend rev 18, map#24).
-  const usual = $derived(board ? usualRows(board.usual, groups, now) : []);
+  const usual = $derived(board ? (app.cityInfo.gtfsHost === "citybus.gr" ? scheduleRows(board.arrivals, groups, now).map((r): UsualRow => ({ ...r, big: "", every: false, note: r.text })) : usualRows(board.usual, groups, now)) : []);
   // A terminus (a route's first stop): OASA predicts no arrivals there, so a line with no bus on its way shows its next
   // departures from today's timetable instead of «no bus». Asked once a minute.
   // With no arrivals at all (no connection), every line here shows its timetable instead: kept on the phone
@@ -205,8 +211,8 @@
     app.setTab("trip");
   }
   // Where a row's bus runs to; on a loop, after the turn, back to the start (headTo).
-  const dest = (g: ArrivalGroup) => {
-    const d = ix && i != null ? headTo(ix, g.line, g.variant, i, g.headsign) : { to: toward(g.headsign), back: false };
+  const dest = (g: { line: string; headsign: string; variant?: string }) => {
+    const d = ix && i != null && g.variant ? headTo(ix, g.line, g.variant, i, g.headsign) : { to: toward(g.headsign), back: false };
     return { ...d, to: titleCase(placeNote(d.to).place) };
   };
   const variantsOf = (line: string) => lines.find(l => l.line === line)?.variants ?? [];
@@ -320,6 +326,7 @@
       <div class="t">
         <h2>{app.stopLabel(id, name)}</h2>
         <p class="sub">{#if id && app.stopNames[id]?.name}{name} · {/if}{lines.some(l => app.lineInfo.get(l.line)?.kind === "trolley") && lines.every(l => app.lineInfo.get(l.line)?.kind === "trolley") ? "Στάση τρόλεϊ" : "Στάση λεωφορείου"}{#if walk != null} · {walk}′ με τα πόδια{/if}</p>
+        {#if dir && (dir.towards.length || dir.bearing != null)}<p class="dir"><Toward {dir} /></p>{/if}
       </div>
       {#if favId && (stop || board)}
         <button type="button" class="circle star" class:starred aria-pressed={starred} title={starred ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
@@ -502,6 +509,7 @@
           <button type="button" class="ghost" onclick={startFix}><Icon name="pin" size={15} /><span>Λάθος θέση;</span></button>
         {/if}
       {/if}
+      {#if code}<p class="code">Κωδ. στάσης <b>{code}</b></p>{/if}
     </div>
     </div>
   </section>
@@ -812,4 +820,6 @@
   .dcard:empty { display: none; }
   .opencard { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, var(--card-border, var(--border))); }
   .opencard .dwrap.open { background: none; }
+  .dir { margin: 2px 0 0; font-size: 13px; line-height: 1.2; }
+  .code { margin: 0 0 0 auto; font-size: 12px; line-height: 1; color: var(--muted); user-select: all; }
 </style>

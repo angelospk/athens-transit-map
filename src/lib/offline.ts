@@ -2,6 +2,7 @@
 // line file the app asks for; «Κατέβασέ τα» asks for the rider's own lines ahead of time, so they are there before
 // the first time they are needed: the favourite lines, and the lines that stop near the favourite stops and near
 // home and work. (The metro and the tram have no timetable file here: their times come with the live data.)
+import { isBusId } from "./busNs";
 import { lineStaticUrl } from "./api";
 import { scheduleUrl } from "./timetable";
 import { distM, type TripIndex } from "./trip";
@@ -16,11 +17,11 @@ export function linesNear(ix: TripIndex, at: Pt, m: number): string[] {
   return Object.entries(ix.l).filter(([, vs]) => Object.values(vs).some(v => v.some(i => near.has(i)))).map(([l]) => l);
 }
 
-/** The rider's own lines: favourite bus lines ("oasa:040" → "040"), and the lines near favourite stops (200 m) and
+/** The rider's own lines: favourite bus lines (e.g. «040» from its id), and the lines near favourite stops (200 m) and
  *  near home and work (500 m). Each once. */
 export function ownLines(ix: TripIndex, favLines: string[], favStops: Pt[], places: Pt[]): string[] {
   const out = new Set<string>();
-  for (const id of favLines) if (id.startsWith("oasa:") && ix.l[id.slice(5)]) out.add(id.slice(5));
+  for (const id of favLines) if (isBusId(id) && ix.l[id.slice(id.indexOf(":") + 1)]) out.add(id.slice(id.indexOf(":") + 1));
   for (const p of favStops) for (const l of linesNear(ix, p, 200)) out.add(l);
   for (const p of places) for (const l of linesNear(ix, p, 500)) out.add(l);
   return Object.keys(ix.l).filter(l => out.has(l));

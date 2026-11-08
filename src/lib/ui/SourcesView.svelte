@@ -72,7 +72,7 @@
     <li>
       <h3><span>2</span> Γραμμές και δρομολόγια</h3>
       <p>Οι διαδρομές, οι στάσεις και το πρόγραμμα του {city.agency}.</p>
-      <p class="src"><a href={city.gtfsPage} target="_blank" rel="noopener">Αρχείο GTFS του {city.agency} (data.gov.gr)</a></p>
+      <p class="src"><a href={city.gtfsPage} target="_blank" rel="noopener">{city.gtfsHost === "citybus.gr" ? `Δρομολόγια και στάσεις του ${city.agency} (citybus.gr)` : `Αρχείο GTFS του ${city.agency} (${city.gtfsHost})`}</a></p>
       {#if city.rail}
       <p>Μετρό, ΗΣΑΠ και τραμ: σταθμοί από το GTFS της ΣΤΑΣΥ, χάραξη γραμμών από το OpenStreetMap.</p>
       <p class="src"><a href={STASY_GTFS_PAGE} target="_blank" rel="noopener">GTFS της ΣΤΑΣΥ (data.gov.gr)</a><span aria-hidden="true">&nbsp;·&nbsp;</span><a

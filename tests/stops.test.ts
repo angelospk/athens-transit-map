@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrivalGroups, timeText, toward, headTo, linesAt, busStopsFC, stopIndex, twins, alertLinesAt, arrivalNote, stopBack, mineFirst, boardLines, linesToWarm, usualRows, type StopArrival, type Usual, type ArrivalGroup } from "../src/lib/stops";
+import { arrivalGroups, timeText, toward, headTo, linesAt, busStopsFC, stopIndex, twins, alertLinesAt, arrivalNote, stopBack, mineFirst, boardLines, linesToWarm, usualRows, scheduleRows, signCode, type StopArrival, type Usual, type ArrivalGroup } from "../src/lib/stops";
 import type { TripIndex } from "../src/lib/trip";
 
 // 0 and 1: one stop on both sides of a street (~44 m), 2: the same name 1 km away, 3: another name close by.
@@ -190,6 +190,10 @@ describe("arrivalNote", () => {
   it("says estimate, never a delay, for a bus with no trip", () => {
     expect(arrivalNote({ min: 6, vehicle: "v", late: 0, est: true, away: 2 })).toEqual({ text: "2 στάσεις πριν · εκτίμηση", tone: "muted" });
   });
+  it("in the citybus.gr cities a bus with no trip is a live GPS bus: live, not estimate", () => {
+    expect(arrivalNote({ min: 6, vehicle: "v", late: 0, est: true, away: 2 }, true)).toEqual({ text: "2 στάσεις πριν · ζωντανά", tone: "ok" });
+    expect(arrivalNote({ min: 6, vehicle: "v", late: 0, est: true }, true)).toEqual({ text: "ζωντανά", tone: "ok" });
+  });
   it("counts an early bus as on time", () => {
     expect(arrivalNote({ min: 6, vehicle: "v", late: -3 })).toEqual({ text: "στην ώρα του", tone: "ok" });
   });
@@ -297,5 +301,44 @@ describe("arrival times: a range when loose, and an old position", () => {
     expect(old.age).toBe(150);
     expect(arrivalNote(old)).toEqual({ text: "θέση πριν 3′", tone: "muted" });
     expect(arrivalNote({ ...old, away: 4 })).toEqual({ text: "4 στάσεις πριν · θέση πριν 3′", tone: "muted" });
+  });
+});
+
+describe("signCode", () => {
+  it("shows the code on the stop sign: the server's stop_code in Athens, the stop id elsewhere", () => {
+    expect(signCode("040054", "40054", true)).toBe("040054");
+    expect(signCode(undefined, "40054", true)).toBeNull();   // an older server: the id is not the sign's code
+    expect(signCode(undefined, "1011", false)).toBe("1011"); // Thessaloniki: stop_code is the stop id
+    expect(signCode("", null, false)).toBeNull();
+  });
+});
+
+describe("scheduleRows (citybus.gr cities: timetable runs with no bus)", () => {
+  const now = Date.UTC(2026, 10, 7, 20, 54) // 22:54 in Athens
+  const s = (line: string, hhmm: [number, number], o: Partial<StopArrival> = {}): StopArrival => ({
+    line, headsign: "ΚΟΥΤΣΕΛΙΟ", variant: "0302", vehicle: "", eta_s: 0, at: Date.UTC(2026, 10, 7, hhmm[0] - 2, hhmm[1]) / 1000,
+    delay_s: 0, position_at: 0, source: "schedule", trip_id: "10", ...o });
+  const live = (line: string): ArrivalGroup => ({ line, headsign: "x", variant: "v", times: [{ min: 3, vehicle: "1", late: 0 }] });
+
+  it("a line with no bus: its next two timetable times, in Athens time", () => {
+    expect(scheduleRows([s("03", [23, 29]), s("03", [22, 59]), s("03", [23, 59])], [], now)).toEqual([
+      { line: "03", headsign: "ΚΟΥΤΣΕΛΙΟ", variant: "0302", text: "Κατά πρόγραμμα 22:59, 23:29 · όχι live" }]);
+  });
+  it("nothing for a line with a live bus, for live rows, or for a time already past", () => {
+    expect(scheduleRows([s("03", [22, 59]), s("05", [23, 5])], [live("03")], now).map(r => r.line)).toEqual(["05"]);
+    expect(scheduleRows([s("03", [22, 59], { source: "live" })], [], now)).toEqual([]);
+    expect(scheduleRows([s("03", [22, 50])], [], now)).toEqual([]);
+  });
+  it("one row per line and headsign", () => {
+    expect(scheduleRows([s("03", [22, 59]), s("03", [23, 1], { headsign: "ΠΛΑΤΕΙΑ" })], [], now).map(r => r.headsign))
+      .toEqual(["ΚΟΥΤΣΕΛΙΟ", "ΠΛΑΤΕΙΑ"]);
+  });
+  it("one time once: the same run twice (two variants) does not hide the next one", () => {
+    expect(scheduleRows([s("03", [22, 59]), s("03", [22, 59], { variant: "0303" }), s("03", [23, 9])], [], now)[0].text)
+      .toBe("Κατά πρόγραμμα 22:59, 23:09 · όχι live");
+  });
+  it("on a loop, the return leg: the variant it keeps leads headTo back to the start", () => {
+    const r = scheduleRows([s("L", [23, 0], { variant: "v", headsign: "ΣΤ. ΚΟΡΩΠΙ - ΑΥΛΑΚΙ" })], [], now)[0];
+    expect(headTo(loop, r.line, r.variant, 3, r.headsign)).toEqual({ to: "ΣΤ. ΚΟΡΩΠΙ", back: true });
   });
 });

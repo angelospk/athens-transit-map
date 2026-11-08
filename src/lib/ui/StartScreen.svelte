@@ -5,6 +5,7 @@
   // location, a point picked on the map, or what they type (a stop, an area, a street with its number: the stop index
   // and the geocoder). Shown at every plain visit (not a shared link), and again from «Πού πας;» on Τώρα. The same
   // box, one field only, sets «Σπίτι» and «Δουλειά» (app.savingPlace).
+  import { busId, isBusId } from "../busNs";
   import { tick, untrack } from "svelte";
   import { centre, distM, geocode, reverseGeocode, loadTripIndex, places, placeStop, savedPlaces, stationPlaces, suggest, type Place, type TripIndex } from "../trip";
   import { distText, titleCase } from "../nearby";
@@ -286,7 +287,7 @@
   const native = (id: string) => id.slice(id.indexOf(":") + 1);
   function badge(l: V2Line) {
     const text = l.label ?? native(l.id);
-    if (l.id.startsWith("oasa:")) { const c = app.lineColor(native(l.id)); return { text, bg: c.bg, fg: c.fg }; }
+    if (isBusId(l.id)) { const c = app.lineColor(native(l.id)); return { text, bg: c.bg, fg: c.fg }; }
     return { text, bg: l.color ?? "#6b7280", fg: l.text_color ?? "#ffffff" };
   }
   function openCard(c: { kind: "line" | "stop"; id: string; title: string }) {
@@ -303,7 +304,7 @@
     app.setTab("map");
     app.open({ kind: "line", id: l.id, title: badge(l).text });
     // A bus line frames its route once the route loads; the other modes frame their stops.
-    if (!l.id.startsWith("oasa:")) app.fitPoints(lineStopPoints(allStops, l.id));
+    if (!isBusId(l.id)) app.fitPoints(lineStopPoints(allStops, l.id));
   }
   let active = $state(-1);
   $effect(() => { void open; void rows.length; active = -1; });
@@ -549,7 +550,7 @@
     if (!at) return;
     app.setPlace(k, keptAs(k) ? null : { label: pickTitle, at });
   }
-  const pickFav = $derived(app.pickSnap?.code ? `oasa:${app.pickSnap.code}` : null);
+  const pickFav = $derived(app.pickSnap?.code ? busId(app.pickSnap.code) : null);
 
   // Αντιστροφή: the two ends change places; the button turns and each text slides in from the other row.
   let turned = $state(false);
@@ -665,7 +666,7 @@
     ],
   };
   const QUICK = $derived(QUICK_BY[app.cityId] ?? []);
-  const OF_CITY: Record<CityId, string> = { athens: "της Αθήνας", thessaloniki: "της Θεσσαλονίκης" };
+  const OF_CITY: Partial<Record<CityId, string>> = { athens: "της Αθήνας", thessaloniki: "της Θεσσαλονίκης" };
   let quickMin = $state.raw<Record<string, number>>({});
   $effect(() => {
     const from = intro && app.start ? ends.from.place : null;
@@ -1337,7 +1338,7 @@
       {:else if find}
         <h1 id="start-h" in:item={{ i: 2 }}>Βρες</h1>
       {:else if wide}
-        <h1 id="start-h" class="hero" in:item={{ i: 2 }}>Κάθε λεωφορείο<br />{OF_CITY[app.cityId]},<br /><span>εκεί που είναι.</span></h1>
+        <h1 id="start-h" class="hero" in:item={{ i: 2 }}>Κάθε λεωφορείο<br />{OF_CITY[app.cityId] ?? app.cityInfo.inName},<br /><span>εκεί που είναι.</span></h1>
       {:else}
         <h1 id="start-h" class="sr">Πού πας;</h1>
       {/if}
@@ -1617,6 +1618,7 @@
             <!-- How many, the one fare when every option costs the same, and the order as a small button. -->
             <div class="rcount"><b>{routes.length} {routes.length === 1 ? "διαδρομή" : "διαδρομές"}</b>{#if sameFare}<span>· {routes.length === 1 ? "με" : "όλες με"} {sameFare}</span>{/if}
               <button type="button" class="rsort" aria-haspopup="dialog" onclick={() => (sheet = "opts")}>{SORT_LIST[sortId]}<Icon name="chevron" size={11} /></button></div>
+            {#if routes.some(o => railOld(o.it))}<p class="oldnote"><i></i>Μετρό και τραμ από παλιό πρόγραμμα: οι ώρες με την κουκκίδα είναι κατά προσέγγιση.</p>{/if}
           {/if}
           {#if when.kind === "arrive" && top.fit?.tone === "late"}<p class="pvn solo">Δεν προλαβαίνεις ως τις {clockHM(when.at)}. Αυτές φτάνουν όσο πιο νωρίς γίνεται.</p>{/if}
           <div class="cards" class:list={answer} aria-live="polite" data-peek="Διαδρομές" data-peek-icon="route">
@@ -2451,4 +2453,6 @@
   .sct { font-size: 13px; font-weight: 600; line-height: 1; white-space: nowrap; }
   .scm { display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 800; line-height: 1; color: var(--ontime); }
   .scm i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: block; }
+  .oldnote { margin: 4px 0 -6px; display: flex; align-items: center; gap: 7px; padding: 0 2px; font-size: 12px; font-weight: 600; line-height: 1.3; color: var(--muted); }
+  .oldnote i { width: 7px; height: 7px; border-radius: 50%; background: #ffb26b; display: block; flex: none; }
 </style>

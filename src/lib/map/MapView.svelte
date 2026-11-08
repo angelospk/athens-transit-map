@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { busId } from "../busNs";
   import { LngLatBounds, Map as MlMap, type LngLatLike, Marker, NavigationControl, Popup, setWorkerUrl, type ExpressionSpecification, type FilterSpecification, type GeoJSONSource,
     type MapGeoJSONFeature, type PaddingOptions } from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
@@ -762,10 +763,15 @@
       // A trip on the map (the planner fitted it) matters more than where the user stands: no fly to them.
       // Nor while «Θέλω να πάω» stands as a panel beside the map (a wide window): it shows the city, or the trip's ends.
       if (app.tripPlan || app.tripEnds || (app.start && innerWidth >= 1024)) return;
-      // Above «Κοντά σου», which may still be loading: keep the lower half free on a phone.
-      const pad = padNow();
-      if (innerWidth < 720) pad.bottom = Math.max(pad.bottom ?? 0, innerHeight * 0.5);
-      m.flyTo({ center: f.pos, zoom: Math.max(m.getZoom(), 15.5), padding: pad, duration: 1200 });
+      // A city the user chose stays on the map: no fly-to and no follow to a fix in another city.
+      const away = app.cityLocked && cityAt(f.pos) !== app.cityId;
+      if (away) follow = false;
+      else {
+        // Above «Κοντά σου», which may still be loading: keep the lower half free on a phone.
+        const pad = padNow();
+        if (innerWidth < 720) pad.bottom = Math.max(pad.bottom ?? 0, innerHeight * 0.5);
+        m.flyTo({ center: f.pos, zoom: Math.max(m.getZoom(), 15.5), padding: pad, duration: 1200 });
+      }
     }
   }
 
@@ -782,6 +788,9 @@
     if (locState === "off" || locState === "denied") {
       app.cityLocked = false;   // a tap asks for the city the user is in
       locateMe();
+    } else if (me && cityAt(me.fix.pos) && cityAt(me.fix.pos) !== app.cityId) {
+      // On, in another city than the chosen one: a tap goes to the user's city (its stops are what is near).
+      app.setCity(cityAt(me.fix.pos)!, false);
     } else if (!app.nearShown && !app.stack.length && app.tab !== "now" && app.tab !== "alerts") {
       // On, with «Κοντά σου» closed: open it again (also while the first fix is still on its way).
       follow = true;
@@ -1499,7 +1508,7 @@
       : Promise.resolve("unknown");
     void perm.then(p => {
       if (disposed) return;
-      const what = onOpen({ linked: app.linked, perm: p, asked: read("nearAsked"), last });
+      const what = onOpen({ linked: app.linked, perm: p, asked: read("nearAsked"), last, picked: app.cityPicked });
       if (what === "none") { if (p === "granted" && read("locOn")) locator.start(); return; }
       if (what === "ask") store("nearAsked", true);
       if (what === "button") app.showNear();
@@ -1522,7 +1531,7 @@
         return;
       }
       const pinned = m.getLayer("pin-stops") ? m.queryRenderedFeatures(e.point, { layers: ["pin-stops"] })[0] : undefined;
-      if (pinned) { app.push({ kind: "stop", id: `oasa:${pinned.properties.id}`, title: String(pinned.properties.name) }); return; }
+      if (pinned) { app.push({ kind: "stop", id: busId(pinned.properties.id), title: String(pinned.properties.name) }); return; }
       const hub = m.getLayer("line-hubs") ? m.queryRenderedFeatures(e.point, { layers: ["line-hubs"] })[0] : undefined;
       if (hub) { app.push({ kind: "stop", id: String(hub.properties.id), title: String(hub.properties.name) }); return; }
       const onTrain = nearestTrain(m, e.point, 4);
@@ -2508,7 +2517,7 @@
       if (Date.now() - h.at < HOLO_EVERY_MS - 1000) continue;
       h.at = Date.now();
       const hit = h;
-      void fetchV2Stop(`oasa:${id}`).then(r => {
+      void fetchV2Stop(busId(id)).then(r => {
         if (gen !== holoGen && !holos.has(id)) return;
         const arr = (r.body as { arrivals?: V2Arrival[] } | null)?.arrivals ?? [];
         const nowS = app.serverNow / 1000;

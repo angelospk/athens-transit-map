@@ -3,6 +3,12 @@
 //
 // Env: TELEGRAM_TOKEN (required), STATE_DIR (default ~/.local/state/oasa-bus-bot), and the data URLs
 // TRIPS_URL, STATIC_BASE, API_BASE. Never log the token: it is in every Telegram URL.
+// Thessaloniki: a second bot with its own state file and data, from its own atrt instance (THESS_API_BASE,
+// which serves its static/v1 too) and the map's THESS_TRIPS_URL; never OASTH itself.
+// citybus.gr cities (bot/cities.ts): one bot each, with its own state file, from the one staseis-rt
+// instance (CITYBUS_API_BASE) and the map's trips-<slug>.json (MAP_BASE).
+// Telegram (web#56): one getUpdates loop; bot/router.ts hands each update to its city's bot (router.json
+// keeps the offset and each chat's city). Every city sends through one gate: about 25 messages a second in all.
 // Web push (off without the keys): VAPID_PUBLIC, VAPID_PRIVATE (`npx web-push generate-vapid-keys`),
 // PUSH_PORT (default 8188, on 127.0.0.1 behind the Cloudflare tunnel), ORIGINS (default the map's: staseis.gr and the old bus.haroldpoi.dev).
 
@@ -11,8 +17,10 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import webpush from "web-push";
-import { pushApi } from "./http";
+import { byCity, pushApi } from "./http";
+import { CITYBUS, citybusUrls } from "./cities";
 import { Bot, type BotState, type Fetched, type PushSub, type TgResult } from "./bot";
+import { Router, type RouterState } from "./router";
 
 const token = process.env.TELEGRAM_TOKEN?.trim();
 if (!token) {
@@ -23,15 +31,15 @@ const dir = process.env.STATE_DIR || join(homedir(), ".local/state/oasa-bus-bot"
 const file = join(dir, "state.json");
 mkdirSync(dir, { recursive: true, mode: 0o700 });
 
-function load(): BotState | undefined {
-  try { return JSON.parse(readFileSync(file, "utf8")); } catch { return undefined; }
+function load<T = BotState>(f: string): T | undefined {
+  try { return JSON.parse(readFileSync(f, "utf8")); } catch { return undefined; }
 }
 
 // Written whole and renamed: a crash leaves the old file or the new one, never half of one.
-function save(s: BotState) {
-  writeFileSync(`${file}.tmp`, JSON.stringify(s), { mode: 0o600 });
-  renameSync(`${file}.tmp`, file);
-}
+const saver = (f: string) => (s: BotState | RouterState) => {
+  writeFileSync(`${f}.tmp`, JSON.stringify(s), { mode: 0o600 });
+  renameSync(`${f}.tmp`, f);
+};
 
 async function tg(method: string, body: Record<string, unknown>): Promise<TgResult> {
   try {
@@ -71,6 +79,14 @@ async function push(sub: PushSub, data: string): Promise<number> {
 }
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+// Sends of all cities one after the other, 40 ms apart (getUpdates does not wait here).
+let gate: Promise<unknown> = Promise.resolve();
+function send(method: string, body: Record<string, unknown>): Promise<TgResult> {
+  const r = gate.then(() => tg(method, body));
+  gate = r.then(() => sleep(40));
+  return r;
+}
 const strip = (s: string) => s.replace(/\/+$/, "");
 
 const bot = new Bot({
@@ -79,20 +95,45 @@ const bot = new Bot({
     static: strip(process.env.STATIC_BASE || "https://angelospk.github.io/staseis-rt/static/v1"),
     api: strip(process.env.API_BASE || "https://transit.haroldpoi.dev"),
   },
-  now: Date.now, sleep, save, tg, get, push,
-}, load());
+  now: Date.now, sleep, save: saver(file), tg: send, get, push,
+}, load(file));
+
+const thessFile = join(dir, "state-thessaloniki.json");
+const thessApi = strip(process.env.THESS_API_BASE || "https://transit-thess.haroldpoi.dev");
+const thess = new Bot({
+  urls: { trips: process.env.THESS_TRIPS_URL || "https://staseis.gr/trips-thessaloniki.json", static: `${thessApi}/static/v1`, api: thessApi },
+  agency: "ΟΣΕΘ", prefix: "skg", now: Date.now, sleep, save: saver(thessFile), tg: send, get, push,
+}, load(thessFile));
+const cityApi = process.env.CITYBUS_API_BASE || "https://staseis-rt.haroldpoi.dev";
+const mapBase = process.env.MAP_BASE || "https://staseis.gr";
+const citybus = CITYBUS.map((c): [string, Bot] => {
+  const f = join(dir, `state-${c.slug}.json`);
+  return [c.slug, new Bot({ urls: citybusUrls(cityApi, mapBase, c), agency: "Αστικού ΚΤΕΛ", prefix: c.code, now: Date.now, sleep,
+    save: saver(f), tg: send, get, push }, load(f))];
+});
+const cities: [string, Bot][] = [["athens", bot], ["thessaloniki", thess], ...citybus];
+const bots = cities.map(([, b]) => b);
+const flushAll = () => { for (const b of bots) void b.flush(); };
+
+const routerFile = join(dir, "router.json");
+const router = new Router({
+  cities: [{ code: "ath", name: "Αθήνα", bot }, { code: "skg", name: "Θεσσαλονίκη", bot: thess },
+    ...CITYBUS.map((c, k) => ({ code: c.code, name: c.name, bot: citybus[k][1] }))],
+  save: saver(routerFile),
+}, load<RouterState>(routerFile), bot.offset);   // the first start: on from the Athens bot's offset
 
 const ORIGINS = (process.env.ORIGINS || "https://staseis.gr,https://bus.haroldpoi.dev").split(",").map(s => s.trim());
 if (vapid.pub && vapid.priv)
-  createServer(pushApi(bot, { key: vapid.pub, origins: ORIGINS }, () => void bot.flush())).listen(Number(process.env.PUSH_PORT) || 8188, "127.0.0.1");
+  createServer(pushApi(byCity(Object.fromEntries(cities), "athens"), { key: vapid.pub, origins: ORIGINS }, flushAll))
+    .listen(Number(process.env.PUSH_PORT) || 8188, "127.0.0.1");
 else console.log("web push off: no VAPID keys");
 
 async function updates() {
   for (;;) {
-    const r = await tg("getUpdates", { offset: bot.offset, timeout: 50, allowed_updates: ["message", "callback_query"] });
+    const r = await tg("getUpdates", { offset: router.offset, timeout: 50, allowed_updates: ["message", "callback_query"] });
     if (r.ok && Array.isArray(r.result)) {
-      await bot.handle(r.result);
-      void bot.flush();
+      await router.handle(r.result);
+      flushAll();
     } else {
       console.error(`getUpdates: ${r.error_code ?? "network"}`);
       await sleep(r.error_code === 401 ? 600_000 : 5000);   // 401: wrong token
@@ -100,16 +141,19 @@ async function updates() {
   }
 }
 
-let ticking = false;
-setInterval(() => {
-  if (ticking) return;
-  ticking = true;
-  // Sending runs apart from the tick: a slow send or a Telegram wait must not pause polling.
-  bot.tick().catch(e => console.error("tick:", (e as Error).message)).finally(() => {
-    ticking = false;
-    void bot.flush();
-  });
-}, 1000);
+// One gate per city: a slow city does not pause the other.
+for (const [name, b] of cities) {
+  let ticking = false;
+  setInterval(() => {
+    if (ticking) return;
+    ticking = true;
+    // Sending runs apart from the tick: a slow send or a Telegram wait must not pause polling.
+    b.tick().catch(e => console.error(`tick ${name}:`, (e as Error).message)).finally(() => {
+      ticking = false;
+      void b.flush();
+    });
+  }, 1000);
+}
 
 // Rail stops on their own gate: a slow /v2 board does not pause the bus lines.
 let railTicking = false;
@@ -122,6 +166,6 @@ setInterval(() => {
   });
 }, 1000);
 
-console.log(`oasa-bus-bot started, state in ${file}`);
+console.log(`oasa-bus-bot started, ${cities.length} cities, state in ${dir}`);
 bot.init();
 void updates();

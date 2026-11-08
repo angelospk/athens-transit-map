@@ -107,7 +107,7 @@
   {#if row}
     <span class="q1">
       <b class="lv" class:now={soon}>{leaveRow}</b>{#if tag}<span class="tag">{tagShort}</span>{/if}
-      <span class="qdu">{durText(Math.round(it.duration_s / 60))}</span>
+      <span class="qdu">{#if stale}<i class="olddot" title={stale} aria-label={stale}></i>{/if}{durText(Math.round(it.duration_s / 60))}</span>
     </span>
     <span class="q2">
       <span class="qlegs">
@@ -121,7 +121,7 @@
     </span>
     {#if target}<span class="r3 {target.tone}"><i></i>{targetText}</span>
     {:else if bus?.live}<span class="q3"><i></i>{rideLabel} ζωντανά · {busMin === 0 ? "στη στάση τώρα" : busMin! < 60 ? `στη στάση σε ${busMin}′` : `στη στάση ${clockHM(bus.at)}`}</span>
-    {:else if stale}<span class="q3 old">{stale}</span>{/if}
+    {/if}
   {:else}
     <span class="r1">
       <span class="lvw"><b class="lv" class:now={tag !== ""}>{leaveShort}</b>{#if tag}<span class="tag">{tagShort}</span>{/if}</span>
@@ -337,4 +337,6 @@
   .rc.row .r3 { font-size: 12px; }
   .rc.row .body { margin: 0 2px; border-top: 1px solid var(--pc-edge, var(--card-border, transparent)); }
   @media (prefers-reduced-motion: reduce) { .veh, .chev { transition: none; } }
+  .rc.row .qdu { display: flex; align-items: center; gap: 7px; }
+  .olddot { width: 7px; height: 7px; border-radius: 50%; background: #ffb26b; display: block; flex: none; }
 </style>

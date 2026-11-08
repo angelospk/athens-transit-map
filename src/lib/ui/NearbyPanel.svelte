@@ -10,7 +10,7 @@
   import { MediaQuery } from "svelte/reactivity";
   import { fetchV2Line, fetchV2Stop, fetchV2Stops } from "../api";
   import { distanceM } from "../glide";
-  import { distText, titleCase, walkMin, type NearGroup } from "../nearby";
+  import { distText, elsewhere, titleCase, walkMin, type NearGroup } from "../nearby";
   import { freeSheet } from "../sheetDrag";
   import { toward } from "../stops";
   import { headsignName, stopRows, type LineDetail, type StopRow, type V2Arrival, type V2Line, type V2Stop } from "../v2";
@@ -19,7 +19,8 @@
   import { whenText } from "./CardSheet.svelte";
   import Icon from "./Icon.svelte";
   import LineChip from "./LineChip.svelte";
-  import { CITIES, nearestCity, type CityId } from "../cities";
+  import { CITIES, findCities, MAIN_CITIES, nearestCity, type CityId } from "../cities";
+  import { busId, isBusId } from "../busNs";
 
   let { app }: { app: AppState } = $props();
   const narrow = new MediaQuery("(max-width: 719px)");
@@ -31,6 +32,9 @@
   const close = () => (app.nearOpen = false);
 
   const POLL_MS = 30_000, PARALLEL = 6, RAIL_M = 1000, RAIL_MAX = 2, BUS_CHIPS = 3, RAIL_CHIPS = 2;
+  // The picker's search over the citybus.gr cities (the two big buttons need no search).
+  let query = $state("");
+  const found = $derived(findCities(query));
   const native = (id: string) => id.slice(id.indexOf(":") + 1);
 
   // Each stop's answer from /v2, by its /v2 id (oasa:<GTFS id>, stasy:…).
@@ -39,9 +43,9 @@
 
   $effect(() => { if (app.nearShown) void app.loadStops(); });
 
-  // The city of the last fix (myPos is [lat, lon]), and whether the map shows another one: then the user picks.
+  // The city of the last fix (myPos is [lat, lon]), and whether the map shows another one: then the user picks or taps.
   const fixCity = $derived(app.myPos ? nearestCity([app.myPos[1], app.myPos[0]]) : null);
-  const elsewhere = $derived(!!app.myPos && fixCity !== app.cityId);
+  const away = $derived(elsewhere({ fixCity, cityId: app.cityId, hasPos: !!app.myPos, locked: app.cityLocked }));
 
   // The metro, tram and suburban stops near: every stop of /v2 (cached an hour), asked for once it shows.
   let allStops = $state.raw<StopEntry[]>([]);
@@ -54,7 +58,7 @@
     const at = app.myPos;
     if (!at || !app.cityInfo.rail || !allStops.length) return [];
     return allStops.flatMap(s => {
-      if (s[0].startsWith("oasa:") || !s[4].some(m => RAIL_MODES.has(m))) return [];
+      if (isBusId(s[0]) || !s[4].some(m => RAIL_MODES.has(m))) return [];
       const m = Math.round(distanceM([at[1], at[0]], [s[3], s[2]]));
       return m <= RAIL_M ? [{ s, m }] : [];
     }).sort((a, b) => a.m - b.m).slice(0, RAIL_MAX);
@@ -64,7 +68,7 @@
   type Item = { key: string; kind: "bus" | "rail"; name: string; m: number; ids: string[]; g?: NearGroup; mode?: string };
   const MODE_WORD: Record<string, string> = { metro: "μετρό", tram: "τραμ", suburban: "προαστιακός", rail: "προαστιακός" };
   const items = $derived.by((): Item[] => {
-    const bus = app.nearGroups.map((g): Item => ({ key: `b|${g.ids.join("|")}`, kind: "bus", name: titleCase(g.name), m: g.m, ids: g.ids.map(id => `oasa:${id}`), g }));
+    const bus = app.nearGroups.map((g): Item => ({ key: `b|${g.ids.join("|")}`, kind: "bus", name: titleCase(g.name), m: g.m, ids: g.ids.map(id => busId(id)), g }));
     const rail = railNear.map(({ s, m }): Item => {
       const mode = s[4].find(x => RAIL_MODES.has(x)) ?? "metro";
       return { key: `r|${s[0]}`, kind: "rail", name: `${s[1]} · ${MODE_WORD[mode] ?? mode}`, m, ids: [s[0]], mode };
@@ -90,7 +94,7 @@
         let next = 0;
         const worker = async () => {
           while (next < want.length && !ac.signal.aborted && document.visibilityState !== "hidden") {
-            const id = want[next++], r = await fetchV2Stop(id);
+            const id = want[next++], r = await fetchV2Stop(busId(id));
             if (ac.signal.aborted) return;
             const b = r.body as { arrivals?: V2Arrival[]; lines?: V2Line[] } | null;
             if (r.status === 200 && b) boards = { ...boards, [id]: { arrivals: b.arrivals ?? [], lines: b.lines ?? [] } };
@@ -168,12 +172,22 @@
 <!-- The city picker: without a location the user says where they are; a pick moves the map there. -->
 {#snippet cities()}
   <div class="cities" role="group" aria-label="Πόλη">
-    {#each Object.values(CITIES) as c (c.id)}
-      <button type="button" class="city" aria-pressed={app.cityId === c.id} onclick={() => pickCity(c.id)}>
-        <b>{c.name}</b><small>{c.hint}</small>
+    {#each MAIN_CITIES as id (id)}
+      <button type="button" class="city" aria-pressed={app.cityId === id} onclick={() => pickCity(id)}>
+        <b>{CITIES[id].name}</b><small>{CITIES[id].hint}</small>
       </button>
     {/each}
   </div>
+  <input type="search" class="find" placeholder="Βρες πόλη…" aria-label="Βρες πόλη" bind:value={query} />
+  {#if found.length}
+    <div class="picks" role="group" aria-label="Πόλεις">
+      {#each found as id (id)}
+        <button type="button" class="chip" aria-pressed={app.cityId === id} title={CITIES[id].name} onclick={() => pickCity(id)}>{CITIES[id].name}</button>
+      {/each}
+    </div>
+  {:else}
+    <p class="muted">Καμία πόλη.</p>
+  {/if}
 {/snippet}
 
 {#snippet when(t: StopRow["times"][number])}
@@ -195,7 +209,10 @@
       <button type="button" class="x" aria-label="Κλείσιμο" title="Κλείσιμο" onclick={close}><Icon name="close" size={14} /></button>
     </header>
 
-    {#if elsewhere}
+    {#if away === "go" && fixCity}
+      <p class="muted">Η θέση σου είναι στην {CITIES[fixCity].name}.</p>
+      <button type="button" class="use" onclick={() => app.setCity(fixCity, false)}>Πήγαινε στην {CITIES[fixCity].name}</button>
+    {:else if away === "pick"}
       <p class="muted">{#if fixCity}Η θέση σου είναι στην {CITIES[fixCity].name}· δείχνεις {app.cityInfo.name}.{:else}Η θέση σου δεν είναι σε πόλη που ξέρω.{/if} Διάλεξε πόλη:</p>
       {@render cities()}
     {:else if !app.myPos || app.locState === "denied"}
@@ -338,4 +355,10 @@
   .near { animation: nearIn .32s cubic-bezier(.2, .8, .2, 1); }
   @keyframes nearIn { from { transform: translateY(28px); opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .near { animation: none; } }
+  .find { width: 100%; height: 40px; margin: 8px 0 6px; padding: 0 12px; box-sizing: border-box; border: 1px solid var(--border); border-radius: 10px;
+    background: none; color: var(--fg); font: inherit; font-size: 16px; line-height: 1; }
+  .picks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 0 0 4px; }
+  .picks .chip { height: 34px; display: flex; align-items: center; justify-content: center; padding: 0 2px; border: 1px solid var(--border); border-radius: 9px; background: none; color: var(--fg); font: inherit;
+    font-size: 12.5px; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+  .picks .chip[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 </style>

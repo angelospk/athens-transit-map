@@ -69,7 +69,7 @@ describe("menu and keyboard", () => {
     t.bot.init();
     await t.bot.flush();
     expect(t.last("setMyCommands").body).toEqual({ commands: COMMANDS });
-    expect(COMMANDS.map(c => c.command)).toEqual(["stasi", "fav", "list", "stop"]);
+    expect(COMMANDS.map(c => c.command)).toEqual(["stasi", "fav", "list", "stop", "city"]);
   });
 
   it("/start with no link greets with the keyboard: location and saved stops", async () => {

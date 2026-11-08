@@ -3,6 +3,7 @@
 // change (trip.ts), timed by the live arrivals at the stop to board (/v2/stops) and by the usual speed on the bus.
 // The answer has the plan's own shape (PlanResponse), marked `estimate`, so every screen shows it as it shows a plan.
 
+import { busId } from "./busNs";
 import { fetchV2Stop } from "./api";
 import { distM, findTransfers, findTrips, type TripIndex } from "./trip";
 import type { Itinerary, PlanLeg, PlanResponse } from "./plan";
@@ -29,14 +30,14 @@ export async function fallbackPlan(ix: TripIndex, from: Pt, to: Pt, nowS: number
   const boards = new Map<string, Promise<V2Arrival[]>>();
   const board = (id: string) => {
     let p = boards.get(id);
-    if (!p) boards.set(id, (p = fetchV2Stop(`oasa:${id}`).then(r => (r.body as { arrivals?: V2Arrival[] } | null)?.arrivals ?? [], () => [])));
+    if (!p) boards.set(id, (p = fetchV2Stop(busId(id)).then(r => (r.body as { arrivals?: V2Arrival[] } | null)?.arrivals ?? [], () => [])));
     return p;
   };
   const pt = (k: number): Pt => [ix.s[k][1], ix.s[k][2]];
   const stopId = (k: number) => ix.s[k][3] ?? `ix${k}`;
   const lines: Record<string, V2Line> = {}, stops: Record<string, V2Stop> = {};
   const addStop = (k: number) => {
-    const id = `oasa:${stopId(k)}`;
+    const id = busId(stopId(k));
     stops[id] ??= { id, name: ix.s[k][0], name_en: null, lat: ix.s[k][1], lon: ix.s[k][2], modes: ["bus"], lines: [], source: "oasa" };
     return id;
   };
@@ -58,12 +59,12 @@ export async function fallbackPlan(ix: TripIndex, from: Pt, to: Pt, nowS: number
       const walk = walkLeg(here, pt(kb), at, bId, hereStop);
       if (walk.distance_m! >= 20) legs.push(walk);
       const ready = walk.distance_m! >= 20 ? walk.arrive_at + (hereStop ? XFER_S : 0) : at;
-      const arr = (await board(stopId(kb))).filter(a => a.line === `oasa:${r.line}` && a.at >= ready - 30).sort((x, y) => x.at - y.at);
+      const arr = (await board(stopId(kb))).filter(a => a.line === busId(r.line) && a.at >= ready - 30).sort((x, y) => x.at - y.at);
       const next = arr[0];
       if (!next || next.at - nowS > LATER_S) { ok = false; break; }
       let ride = 0;
       for (let k = r.i + 1; k <= r.j; k++) ride += distM(pt(seq[k - 1]), pt(seq[k]));
-      const lk = look(r.line), id = `oasa:${r.line}`;
+      const lk = look(r.line), id = busId(r.line);
       lines[id] ??= { id, mode: lk.mode, label: lk.label, name: "", name_en: null, color: lk.color, text_color: lk.text, source: "oasa" };
       legs.push({ kind: "ride", from: { stop: bId, lat: pt(kb)[0], lon: pt(kb)[1] }, to: { stop: aId, lat: pt(ka)[0], lon: pt(ka)[1] },
         depart_at: next.at, arrive_at: next.at + ride / RIDE_MPS, shape: seq.slice(r.i, r.j + 1).map(pt), distance_m: Math.round(ride),

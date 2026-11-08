@@ -3,9 +3,12 @@
   // times, and a bell on each). A train, metro or tram: from /v2 (its run's stops ahead, a bell on each: web
   // push when this train nears that stop), asked again every 20 s.
   import { untrack } from "svelte";
+  import { busId, isBusId } from "../busNs";
   import { fetchV2Line, fetchV2LineVehicles, fetchV2Run } from "../api";
   import { upcomingStops } from "../eta";
-  import { ageLabel, fmtDelay } from "../format";
+  import { CITYBUS } from "../citybus";
+  import { PAGE_CITY } from "../config";
+  import { ageLabel, delayText, fmtDelay } from "../format";
   import { busStopCard, routeCard } from "../legacy";
   import { placeNote, stopIndex, toward } from "../stops";
   import { railHeads, type RailSpec } from "../railAlerts";
@@ -28,7 +31,7 @@
 
   const top = $derived(app.stack.at(-1));
   const card = $derived(top?.kind === "vehicle" ? top : null);
-  const isBus = $derived(!!card && card.id.startsWith("oasa:"));
+  const isBus = $derived(!!card && isBusId(card.id));
   const isRail = $derived(!!card && !isBus && (card.id.startsWith("stasy:") || card.id.startsWith("proastiakos:")));
   const native = (id: string) => id.slice(id.indexOf(":") + 1);
 
@@ -42,7 +45,9 @@
     const variant = sv.v.variant ? st?.variants[sv.v.variant] : undefined;
     return { line: sv.line, v: sv.v, variant, st };
   });
-  const driven = $derived(bus?.st && bus.variant ? upcomingStops(bus.variant, bus.st.stops, bus.v).map(a => ({ ...a, name: titleCase(a.name) })) : []);
+  // A citybus.gr city sends no path_speeds; its vehicle speed comes from citybus.gr's own time to the next stop.
+  const ownSpeed = CITYBUS.some(c => c.slug === PAGE_CITY);
+  const driven = $derived(bus?.st && bus.variant ? upcomingStops(bus.variant, bus.st.stops, bus.v, ownSpeed).map(a => ({ ...a, name: titleCase(a.name) })) : []);
   // A bus at the start of its route is waiting there, not driving: the drive estimate would say «τώρα» for the first
   // stops. Its run's time at the start (/v2 runs: when it leaves) moves every time on by the wait. Asked every 30 s
   // while the bus is at the start.
@@ -56,7 +61,7 @@
     let timer: ReturnType<typeof setTimeout> | undefined, dead = false;
     const load = async () => {
       const r = await fetchV2LineVehicles(lineId);
-      const v = r.status === 200 ? ((r.body as { vehicles?: V2Vehicle[] }).vehicles ?? []).find(x => x.id === `oasa:${vid}`) : undefined;
+      const v = r.status === 200 ? ((r.body as { vehicles?: V2Vehicle[] }).vehicles ?? []).find(x => x.id === busId(vid)) : undefined;
       const rr = v?.run && !dead ? await fetchV2Run(v.run) : null;
       if (dead) return;
       const s0 = rr?.status === 200 ? (rr.body as { run?: V2Run } | null)?.run?.stops?.[0] : undefined;
@@ -106,7 +111,7 @@
     const load = async () => {
       const r = await fetchV2LineVehicles(lineId);
       if (dead) return;
-      const v = r.status === 200 ? ((r.body as { vehicles?: V2Vehicle[] }).vehicles ?? []).find(x => x.id === `oasa:${vid}`) : undefined;
+      const v = r.status === 200 ? ((r.body as { vehicles?: V2Vehicle[] }).vehicles ?? []).find(x => x.id === busId(vid)) : undefined;
       occ = v?.occupancy ?? null;
       timer = setTimeout(load, 30_000);
     };

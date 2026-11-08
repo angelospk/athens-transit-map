@@ -27,6 +27,7 @@ describe("parsePath", () => {
     expect(parsePath("/athens/stop/oasa-400075")).toEqual({ city: "athens", card: { kind: "stop", id: "oasa:400075" } });
     expect(parsePath("/athens/stop/oasa-400075.html")).toEqual({ city: "athens", card: { kind: "stop", id: "oasa:400075" } });
     expect(parsePath("/thessaloniki/line/oasa-01A/")).toEqual({ city: "thessaloniki", card: { kind: "line", id: "oasa:01A" } });
+    expect(parsePath("/patras/stop/pat-403")).toEqual({ city: "patras", card: { kind: "stop", id: "pat:403" } });   // web#54
   });
   it("percent-encoded Greek ids decode", () => {
     expect(parsePath(encodeURI("/athens/stop/stasy-αγια-βαρβαρα-metro"))).toEqual({

@@ -4,6 +4,7 @@
   // under it says whether the bus can be caught, how far it is, and when the trip ends. It follows the location
   // (app.myFix) from leg to leg by itself; with no location the steps list moves it by hand. Spoken in Greek where
   // the device has a voice, with a vibration at the moments that matter.
+  import { busId } from "../busNs";
   import { tick, untrack } from "svelte";
   import { fetchLineStatic, fetchV2Line, fetchV2LineVehicles, fetchV2Run, fetchV2Stop } from "../api";
   import { toThe, along, distSaid, fetchFoot, isMetro, lengthOf, metres, railSeq, ridePassed, stepArrow, stepText, walkNow, WALK_MPS,
@@ -117,7 +118,7 @@
     if (!key || !r?.board.id) return;
     let dead = false;
     const tick = async () => {
-      const res = await fetchV2Stop(`oasa:${r.board.id}`);
+      const res = await fetchV2Stop(busId(r.board.id!));
       if (dead) return;
       const arr = (res.body as { arrivals?: V2Arrival[] } | null)?.arrivals ?? [];
       const rows = stopRows(arr, app.serverNow / 1000).filter(x => x.line.replace(/^oasa:/, "") === r.line);
@@ -126,7 +127,7 @@
       times = row ? row.times.map(t => ({ at: t.at, live: t.live, vehicle: t.vehicle })) : [];
       const vid = times[0]?.vehicle;
       if (!vid) { bus = null; app.guideApproach = null; app.guideBus = null; return; }
-      const vr = await fetchV2LineVehicles(`oasa:${r.line}`);
+      const vr = await fetchV2LineVehicles(busId(r.line));
       const v = ((vr.body as { vehicles?: V2Vehicle[] } | null)?.vehicles ?? []).find(x => x.id === vid);
       if (dead) return;
       if (!v) { bus = null; app.guideApproach = null; app.guideBus = null; return; }
@@ -330,7 +331,7 @@
     if (!key || !r?.board.id) return;
     let dead = false;
     const tick = async () => {
-      const res = await fetchV2Stop(`oasa:${r.board.id}`);
+      const res = await fetchV2Stop(busId(r.board.id!));
       if (dead) return;
       const rows = stopRows((res.body as { arrivals?: V2Arrival[] } | null)?.arrivals ?? [], app.serverNow / 1000).filter(x => x.line.replace(/^oasa:/, "") === r.line);
       const same = rows.filter(x => fold(placeNote(toward(x.headsign)).place) === fold(r.headsign));

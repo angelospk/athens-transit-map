@@ -9,7 +9,7 @@
   import { MAX_LINES } from "../selection";
   import { canPush, startPush, stopPush } from "../push";
   import { stopBack } from "../stops";
-  import { encodeAlert, MAX_N, type Rep } from "../tglink";
+  import { encodeAlert, MAX_N, tgStart, type Rep } from "../tglink";
   import { loadTripIndex, staleIndex, type BoardAt, type TripIndex } from "../trip";
   import type { AppState } from "../state.svelte";
 
@@ -68,8 +68,11 @@
   let repH = $state(h0), repM = $state(m0);
   let repLen = $state(60);
   const rep = $derived.by((): Rep | undefined => (repDays ? { days: repDays, start: repH * 60 + repM, len: repLen } : undefined));
-  const tgPayload = $derived(repDays ? (rep && data && !data.stale ? encodeAlert(data.ix, n, targets, rep) : null) : payload);
-  const tgLink = $derived(tgPayload && `https://t.me/${BOT}?start=${tgPayload}`);
+  // The start parameter: the city's prefix (none in Athens) and the payload (tglink.ts).
+  const tgPayload = $derived(data && !data.stale && (!repDays || rep) ? tgStart(app.cityId, data.ix, n, targets, rep) : null);
+  // Telegram only where the bot reads the city's links (cities.ts).
+  const tg = $derived(app.cityInfo.telegram);
+  const tgLink = $derived(tg && tgPayload ? `https://t.me/${BOT}?start=${tgPayload}` : null);
 
   const canNotify = typeof Notification !== "undefined";
   // iPhones give web push only to a web app opened from the Home Screen.
@@ -98,7 +101,7 @@
     let push: { id: string; until: number } | null = null;
     if (reg && p && canPush() && Notification.permission === "granted") {
       const ready = await Promise.race([navigator.serviceWorker.ready, new Promise<null>(r => setTimeout(r, 5000, null))]);
-      push = ready && (await startPush(ready, p));
+      push = ready && (await startPush(ready, p, app.cityInfo.id));
       if (closed || t !== targets || p !== payload) { if (push) void stopPush(push.id); return; }
       if (!push) err = "Η ειδοποίηση δουλεύει μόνο με τη σελίδα ανοιχτή: ο server ειδοποιήσεων δεν απάντησε.";
     }
@@ -107,7 +110,7 @@
       const add = t.map(l => l.line).filter(l => !app.selected.includes(l)).slice(0, MAX_LINES - app.selected.length);
       for (const l of add) app.toggleLine(l);
       if (!t.some(l => app.selected.includes(l.line))) {
-        err = `Έως ${MAX_LINES} γραμμές στον χάρτη: βγάλε μία για να έρθει η ειδοποίηση εδώ, ή διάλεξε Telegram.`;
+        err = `Έως ${MAX_LINES} γραμμές στον χάρτη: βγάλε μία για να έρθει η ειδοποίηση εδώ${tg ? ", ή διάλεξε Telegram" : ""}.`;
         return;
       }
     }
@@ -147,8 +150,8 @@
         {/each}
       </fieldset>
     {/if}
-    <button type="button" class="rep" aria-expanded={!!repDays} onclick={() => (repDays = repDays ? 0 : 31)}>
-      <span aria-hidden="true">⟳</span> Κάθε εβδομάδα τέτοια ώρα;<span class="chev" aria-hidden="true">{repDays ? "▾" : "›"}</span></button>
+    {#if tg}<button type="button" class="rep" aria-expanded={!!repDays} onclick={() => (repDays = repDays ? 0 : 31)}>
+      <span aria-hidden="true">⟳</span> Κάθε εβδομάδα τέτοια ώρα;<span class="chev" aria-hidden="true">{repDays ? "▾" : "›"}</span></button>{/if}
     {#if repDays}
       <label>Μέρες
         <select bind:value={repDays}>
@@ -178,7 +181,7 @@
     {:else}
       <p class="note">Για 2 ώρες,
         {#if canPush()}και με κλειστή σελίδα ή κλειδωμένη οθόνη.
-        {:else}όσο η σελίδα είναι ανοιχτή{canNotify ? "" : ", μόνο μέσα στη σελίδα"}. Στο Telegram και με κλειδωμένη οθόνη.{/if}</p>
+        {:else}όσο η σελίδα είναι ανοιχτή{canNotify ? "" : ", μόνο μέσα στη σελίδα"}.{tg ? " Στο Telegram και με κλειδωμένη οθόνη." : ""}{/if}</p>
     {/if}
     {#if iosTab && !repDays}
       <p class="note">iPhone, για ειδοποίηση εδώ με κλειδωμένη οθόνη: Κοινοποίηση → «Προσθήκη στην οθόνη Αφετηρίας», και άνοιξε τον χάρτη από το εικονίδιο.</p>

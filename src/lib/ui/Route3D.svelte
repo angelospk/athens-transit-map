@@ -5,6 +5,7 @@
   // opens its line. A phone has it as a sheet at the bottom; a wide screen as a panel over the map's foot.
   // A metro train ("metro/<trip>") has the same panel, with its run's stations and their times from the timetable
   // (the metro sends no positions: its times are the expected ones).
+  import { busId } from "../busNs";
   import type { AppState } from "../state.svelte";
   import { busRoute, lateness } from "../bus3d";
   import { busVehicleCard, routeCard } from "../legacy";
@@ -70,7 +71,7 @@
   function wholeLine() {
     if (metro) { app.open({ kind: "line", id: `stasy:${line}`, title: line }); app.bus3d = null; return; }
     const variant = v?.variant;
-    app.open(variant ? routeCard(line, variant) : { kind: "line", id: `oasa:${line}`, title: line });
+    app.open(variant ? routeCard(line, variant) : { kind: "line", id: busId(line), title: line });
     app.bus3d = null;
   }
 </script>

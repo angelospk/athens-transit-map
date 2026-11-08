@@ -10,6 +10,7 @@
 //   Athens) · len/15 (1, minutes) · entries of 5, as above
 
 import type { TripIndex } from "./trip";
+import { TG_CITIES } from "../../bot/cities";
 
 export const MAX_PAYLOAD = 64;
 // How many stops ahead an alert may fire (one base-36 digit holds up to 35).
@@ -29,7 +30,8 @@ export interface Rep { days: number; start: number; len: number }
 const validRep = (r: Rep) => Number.isInteger(r.days) && r.days >= 1 && r.days <= 127 && Number.isInteger(r.start) && r.start >= 0 && r.start % 5 === 0 &&
   Number.isInteger(r.len) && r.len >= 15 && r.len <= 240 && r.len % 15 === 0 && r.start + r.len <= 1440;
 
-export function encodeAlert(ix: TripIndex, n: number, lines: AlertLines[], rep?: Rep): string | null {
+// max: the room the payload has (a city prefix takes some of the 64).
+export function encodeAlert(ix: TripIndex, n: number, lines: AlertLines[], rep?: Rep, max = MAX_PAYLOAD): string | null {
   const v = ver(ix.v);
   if (!v || !Number.isInteger(n) || n < 1 || n > MAX_N) return null;
   let head = `1${v}${n}`;
@@ -46,12 +48,22 @@ export function encodeAlert(ix: TripIndex, n: number, lines: AlertLines[], rep?:
     for (const x of l.variants) {
       const vi = b36(vids.indexOf(x.id), 1), seq = ix.l[l.line][x.id];
       const i = seq && x.i < seq.length ? b36(x.i, 2) : null;
-      if (!vi || !i || out.length + 5 > MAX_PAYLOAD) continue;
+      if (!vi || !i || out.length + 5 > max) continue;
       out += li + vi + i;
       entries++;
     }
   }
   return entries ? out : null;
+}
+
+// The start parameter of a city's link: Athens's payload as it always was, any other city's after its
+// prefix ("pat_…", bot/router.ts), all in Telegram's 64 characters. Null for a city the bot does not know.
+export function tgStart(city: string, ix: TripIndex, n: number, lines: AlertLines[], rep?: Rep): string | null {
+  const c = TG_CITIES.find(x => x.slug === city);
+  if (!c) return null;
+  if (city === "athens") return encodeAlert(ix, n, lines, rep);
+  const p = encodeAlert(ix, n, lines, rep, MAX_PAYLOAD - c.code.length - 1);
+  return p && `${c.code}_${p}`;
 }
 
 export type Decoded = { ok: true; n: number; lines: AlertLines[]; rep?: Rep } | { ok: false; why: "bad" | "old" };

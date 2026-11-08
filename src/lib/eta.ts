@@ -12,11 +12,20 @@ const AHEAD_M = 30;                // GPS noise: a candidate this far past the n
 const sane = (mps: number) => Math.min(MAX_MPS, Math.max(MIN_MPS, mps));
 
 // Seconds to drive `dist` metres: each step at its own speed, the metres between the steps and
-// beyond the last one at the mean of the known steps (the fallback speed without any).
-export function driveSeconds(dist: number, steps: (number | null)[] | null | undefined): number {
+// beyond the last one at the mean of the known steps, else at the vehicle's own speed, else at
+// the fallback speed.
+export function driveSeconds(
+  dist: number,
+  steps: (number | null)[] | null | undefined,
+  speed?: number | null,
+): number {
   if (!(dist > 0)) return 0;
   const known = (steps ?? []).filter((x): x is number => typeof x === "number");
-  const base = known.length ? sane(known.reduce((a, b) => a + b, 0) / known.length) : FALLBACK_MPS;
+  const base = known.length
+    ? sane(known.reduce((a, b) => a + b, 0) / known.length)
+    : typeof speed === "number" && Number.isFinite(speed)
+      ? sane(speed)
+      : FALLBACK_MPS;
   let left = dist, sec = 0;
   for (let k = 0; left > 0; k++) {
     const run = Math.min(left, STEP_M);
@@ -27,11 +36,14 @@ export function driveSeconds(dist: number, steps: (number | null)[] | null | und
   return sec;
 }
 
-// The stop the vehicle is heading for and every stop after it on the variant, with its time.
+// The stop the vehicle is heading for and every stop after it on the variant, with its time. `useSpeed`:
+// without path_speeds, drive at the vehicle's own speed (a citybus.gr city: citybus.gr's time to the next
+// stop over the metres left); Athens and Thessaloniki keep the fallback (a parked bus there sends speed 0).
 export function upcomingStops(
   variant: { shape: [number, number][]; stops: string[] },
   stops: Record<string, { name: string; lat: number; lon: number }>,
-  v: { lat: number; lon: number; position_at: number; next_stop_id: string | null; path_speeds?: (number | null)[] | null },
+  v: { lat: number; lon: number; position_at: number; next_stop_id: string | null; path_speeds?: (number | null)[] | null; speed?: number | null },
+  useSpeed = false,
 ): { id: string; name: string; i: number; at: number }[] {
   if (v.next_stop_id === null) return [];
   // A stop the table does not know has no place on the shape; keep its variant index all the same. Every
@@ -64,6 +76,6 @@ export function upcomingStops(
     id: stop.id,
     name: stops[stop.id].name,
     i: stop.i,
-    at: Math.max(v.position_at, v.position_at + Math.round(driveSeconds(stopS[j] - s, v.path_speeds))),
+    at: Math.max(v.position_at, v.position_at + Math.round(driveSeconds(stopS[j] - s, v.path_speeds, useSpeed ? v.speed : null))),
   }));
 }
