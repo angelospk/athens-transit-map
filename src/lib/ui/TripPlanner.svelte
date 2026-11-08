@@ -13,7 +13,7 @@
   import { sheetDrag, type SheetDrag } from "../sheetDrag";
   import { slide } from "svelte/transition";
   import { fetchLines, fetchLineStatic, getJSON } from "../api";
-  import { bestSlice, matchRoads, sensibleWalk, sliceShape, stationsAlong, stopsBetween, type Mid } from "../planShape";
+  import { bestSlice, matchRoads, routeAlong, sensibleWalk, sliceShape, stationsAlong, stopsBetween, type Mid } from "../planShape";
   import { snapStop } from "../stopSnap";
   import { smoothLine } from "../map/layers";
   import { API_BASE } from "../config";
@@ -558,7 +558,8 @@
       }
       if (!bus[k] || !w) return w;
       const [a, b] = ends[k]!;
-      const road = await matchRoads(w).catch(() => null);
+      // One request along the line (routeAlong); the piece by piece matching only if that finds nothing.
+      const road = (await routeAlong(w).catch(() => null)) ?? (await matchRoads(w).catch(() => null));
       if (!road) return [a, ...w.slice(1, -1), b];
       return sliceShape(road, a, b, 60)?.pts ?? [a, ...road, b];
     }));

@@ -121,6 +121,89 @@ export async function matchRoads(pts: Pt[], signal?: AbortSignal, piece: (ps: Pt
   return out;
 }
 
+// A ride onto its roads in one request: the car router's /route through points every ROUTE_STEP metres along the
+// line's own shape (the public /match takes 10 points a request: a ride took dozens of requests and half a minute,
+// so the line showed off the road meanwhile, and the live guide never matched at all). Each stretch between two
+// points is checked against the shape: one the router takes round a block or back (a carriageway the bus does not
+// use, a turn it may not make) keeps the shape's own points there. Results are kept (memory, and the device's
+// storage for a week), so the same ride, in the overview and in the guide, is drawn at once the next time.
+export const CAR_ROUTE_URL = (import.meta.env.VITE_CAR_ROUTE_URL as string | undefined) || CAR_MATCH_URL.replace("/match/", "/route/");
+const ROUTE_STEP = 220, ROUTE_MAX = 90, ROUTE_R = 40, ROUTE_WAIT_MS = 9000, ROUTE_KEEP_S = 7 * 86400;
+const routed = new Map<string, Promise<Pt[] | null>>();
+const storeKey = (k: string) => `roads:${k}`;
+
+/** The stretches of `line` between the points `at` (their nearest vertices, in order). */
+function splitAt(line: Pt[], at: Pt[]): Pt[][] {
+  const out: Pt[][] = [];
+  let from = 0;
+  for (let i = 1; i < at.length; i++) {
+    let k = from, d = Infinity;
+    for (let j = from; j < line.length; j++) { const m = metres(line[j], at[i]); if (m < d) { d = m; k = j; } }
+    out.push(line.slice(from, k + 1));
+    from = k;
+  }
+  return out;
+}
+
+export async function routeAlong(pts: Pt[], signal?: AbortSignal): Promise<Pt[] | null> {
+  if (pts.length < 2) return null;
+  const ws = resample(pts, ROUTE_STEP, ROUTE_MAX);
+  const key = ws.map(p => `${p[0].toFixed(4)},${p[1].toFixed(4)}`).join(";");
+  const have = routed.get(key);
+  if (have) return have;
+  const job = (async (): Promise<Pt[] | null> => {
+    try {
+      const kept = JSON.parse(localStorage.getItem(storeKey(key)) ?? "null") as { at: number; line: Pt[] } | null;
+      if (kept && Date.now() / 1000 - kept.at < ROUTE_KEEP_S && kept.line.length > 1) return kept.line;
+    } catch { /* no storage */ }
+    const coords = ws.map(([lat, lon]) => `${lon.toFixed(6)},${lat.toFixed(6)}`).join(";");
+    const u = `${CAR_ROUTE_URL}/${coords}?overview=full&geometries=geojson&continue_straight=true&radiuses=${ws.map(() => ROUTE_R).join(";")}`;
+    let body: { code?: string; routes?: { geometry?: { coordinates?: [number, number][] } }[]; waypoints?: { location?: [number, number] }[] } | null = null;
+    for (let t = 0; t < 3 && !body; t++) {
+      if (t) await new Promise(ok => setTimeout(ok, 800 * t));
+      const r = await fetch(u, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(ROUTE_WAIT_MS)]) : AbortSignal.timeout(ROUTE_WAIT_MS) }).catch(() => null);
+      if (!r || r.status === 429 || r.status >= 500) continue;
+      body = await r.json().catch(() => null);
+      if (!body) break;
+    }
+    const line = (body?.routes?.[0]?.geometry?.coordinates ?? []).map(([lon, lat]) => [lat, lon] as Pt);
+    const at = (body?.waypoints ?? []).map(w => (w.location ? [w.location[1], w.location[0]] as Pt : null));
+    if (body?.code !== "Ok" || line.length < 2 || at.length !== ws.length || at.some(x => !x)) return null;
+    // Stretch by stretch: the road's way where it goes as the shape does, the shape's own points where it does not
+    // (between two points, the shape is the vertices whose distance along it falls between theirs).
+    const cum: number[] = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + metres(pts[i - 1], pts[i]));
+    const total = cum[cum.length - 1], step = Math.max(ROUTE_STEP, total / (ROUTE_MAX - 1));
+    const pos = ws.map((_, i) => Math.min(i * step, total));   // resample() puts them every `step` metres along it
+    const roads = splitAt(line, at as Pt[]);
+    const pieces: Pt[][] = roads.map((r, i) => {
+      const a = Math.min(pos[i], pos[i + 1] ?? pos[i]), b = Math.max(pos[i], pos[i + 1] ?? pos[i]);
+      const own: Pt[] = [ws[i], ...pts.filter((_, k) => cum[k] > a && cum[k] < b), ws[i + 1] ?? ws[i]];
+      return r.length > 1 && length(r) <= Math.max(length(own), step * 0.5) * 1.35 + 60 ? r : own;
+    });
+    // A stretch the route went round: matched on its own (10 points of it, /match), else the shape's points stay.
+    const bad = roads.map((r, i) => (pieces[i] !== r ? i : -1)).filter(i => i >= 0).slice(0, 12);
+    let nb = 0;
+    await Promise.all([0, 1].map(async () => {
+      while (nb < bad.length) {
+        const i = bad[nb++], own = pieces[i];
+        const m = await matchPiece(resample(own, 25, MATCH_CHUNK), signal).catch(() => null);
+        if (m && m.line.length > 1 && length(m.line) <= length(own) * 1.35 + 40) pieces[i] = m.line;
+      }
+    }));
+    const out: Pt[] = [];
+    for (const pc of pieces) for (const p of pc) if (!out.length || metres(out[out.length - 1], p) > 0.5) out.push(p);
+    if (out.length < 2) return null;
+    try { localStorage.setItem(storeKey(key), JSON.stringify({ at: Math.round(Date.now() / 1000), line: out.map(([a, b]) => [+a.toFixed(6), +b.toFixed(6)]) })); } catch { /* full */ }
+    return out;
+  })();
+  routed.set(key, job);
+  if (routed.size > 60) routed.delete(routed.keys().next().value!);
+  const r = await job;
+  if (!r) routed.delete(key);   // asked again next time
+  return r;
+}
+
 // The stops a ride passes between getting on and getting off, for the steps of «Οδηγίες» (each can become the trip's
 // end). A bus ride: from its line's variant that has both stops, in that order. A metro or tram ride: the line's
 // stations along the ride's track, in order along it.

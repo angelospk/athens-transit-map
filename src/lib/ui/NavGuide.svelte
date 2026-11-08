@@ -7,6 +7,7 @@
   import { busId } from "../busNs";
   import { tick, untrack } from "svelte";
   import { fetchLineStatic, fetchV2Line, fetchV2LineVehicles, fetchV2Run, fetchV2Stop } from "../api";
+  import { routeAlong, sensibleWalk, sliceShape } from "../planShape";
   import { toThe, along, distSaid, fetchFoot, isMetro, lengthOf, metres, railSeq, ridePassed, stepArrow, stepText, walkNow, WALK_MPS,
     type ChangeStep, type GuideRide, type GuideWalk, type Pt, type WalkRoute } from "../guide";
   import { metroRide } from "../metroRide.svelte";
@@ -567,7 +568,29 @@
         if (!shape?.length) return;
         const near = (p: Pt) => shape.reduce((b, q, i) => (metres(q, p) < metres(shape[b], p) ? i : b), 0);
         const i = near(r.board.at), j = near(r.alight.at);
-        if (j > i) shapes = { ...shapes, [k]: [r.board.at, ...shape.slice(i + 1, j), r.alight.at] };
+        if (j <= i) return;
+        const slice: Pt[] = [r.board.at, ...shape.slice(i + 1, j), r.alight.at];
+        shapes = { ...shapes, [k]: slice };
+        // Then onto the roads themselves (planShape.routeAlong; kept, so a ride seen in the overview is there at once).
+        void routeAlong(slice).then(road => {
+          if (!road) return;
+          shapes = { ...shapes, [k]: sliceShape(road, r.board.at, r.alight.at, 60)?.pts ?? [r.board.at, ...road, r.alight.at] };
+        }, () => {});
+      }, () => {});
+    }
+  });
+  // Every walk along the streets (the foot router), not only the one being walked: a straight line crossed blocks.
+  let walks = $state.raw<Record<string, Pt[]>>({});
+  $effect(() => {
+    const gg = g;
+    if (!gg) return;
+    for (const l of gg.legs) {
+      if (l.kind !== "walk") continue;
+      const k = `${l.from.join()}|${l.to.join()}`;
+      if (walks[k]) continue;
+      void fetchFoot(l.from, l.to, AbortSignal.timeout(8000)).then(w => {
+        const line = sensibleWalk(w?.line, l.from, l.to);
+        if (line) walks = { ...walks, [k]: line };
       }, () => {});
     }
   });
@@ -576,7 +599,7 @@
     if (!gg) return;
     const cur = app.guideStep, wl = app.guideWalk;
     const features = gg.legs.map((l, k) => {
-      const pts: Pt[] = l.kind === "walk" ? (k === cur && wl ? wl : [l.from, l.to])
+      const pts: Pt[] = l.kind === "walk" ? (k === cur && wl ? wl : walks[`${l.from.join()}|${l.to.join()}`] ?? [l.from, l.to])
         : shapes[`${l.line}|${l.variant}|${l.board.id}|${l.alight.id}`] ?? (l.shape && l.shape.length > 1 ? l.shape : l.seq.map(s => s.at));
       return { type: "Feature" as const, properties: { kind: l.kind, color: l.kind === "walk" ? "#5b9dff" : colorOf(l.line).bg },
         geometry: { type: "LineString" as const, coordinates: pts.map(p => [p[1], p[0]]) } };
