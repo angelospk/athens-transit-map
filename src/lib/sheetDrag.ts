@@ -78,10 +78,16 @@ export function pickDetent<T extends string>(places: Record<T, number>, at: numb
   return keys.reduce((a, b) => (Math.abs(places[b] - aim) < Math.abs(places[a] - aim) ? b : a));
 }
 
+/** iOS's rubber band: `o` px pulled past the end moves the sheet (1 − 1/(o·k/d + 1))·d, d the screen's height. It
+ *  gives k (0.55) of the finger from the first pixel and less and less after, toward d: an elastic, never a wall. */
+export function band(o: number, d: number, k = 0.55): number {
+  return (1 - 1 / ((o * k) / d + 1)) * d;
+}
+
 /** Past its first or last place the sheet still moves, but less and less (as an iOS list pulled past its end). */
-export function rubber(x: number, lo: number, hi: number, k = 0.55): number {
-  if (x < lo) return lo - (1 - 1 / ((lo - x) * k / 120 + 1)) * 120 / k;
-  if (x > hi) return hi + (1 - 1 / ((x - hi) * k / 120 + 1)) * 120 / k;
+export function rubber(x: number, lo: number, hi: number, d = typeof innerHeight === "number" && innerHeight > 0 ? innerHeight : 844, k = 0.55): number {
+  if (x < lo) return lo - band(lo - x, d, k);
+  if (x > hi) return hi + band(x - hi, d, k);
   return x;
 }
 

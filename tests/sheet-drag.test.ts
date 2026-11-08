@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickDetent, rubber, springStep } from "../src/lib/sheetDrag";
+import { band, pickDetent, rubber, springStep } from "../src/lib/sheetDrag";
 
 // The home sheet's places on a phone 800 px tall, as px from the top.
 const places = { full: 60, half: 376, peek: 640 };
@@ -23,11 +23,17 @@ describe("rubber", () => {
     expect(rubber(200, 60, 640)).toBe(200);
   });
   it("past an end, gives less and less", () => {
-    const a = rubber(700, 60, 640), b = rubber(800, 60, 640);
+    const a = rubber(700, 60, 640), b = rubber(760, 60, 640);   // 60 px past, then 60 more
     expect(a).toBeGreaterThan(640);
     expect(a - 640).toBeLessThan(60);
     expect(b - a).toBeLessThan(a - 640);
     expect(rubber(0, 60, 640)).toBeLessThan(60);
+  });
+  it("is iOS's band: 0.55 of the finger at first, toward the screen's height", () => {
+    expect(band(1, 844)).toBeCloseTo(0.55, 2);
+    expect(band(100, 844)).toBeCloseTo((1 - 1 / (100 * 0.55 / 844 + 1)) * 844, 6);
+    expect(band(1e6, 844)).toBeLessThan(844);
+    expect(rubber(740, 60, 640, 844)).toBeCloseTo(640 + band(100, 844), 6);
   });
 });
 

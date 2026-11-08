@@ -255,7 +255,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 @media (max-width: 719px) {
   /* No tab bar (mockup 41, B): the map's tools and locate stay at the top right, under the home's search and chips;
      its zoom and «Λεπτομέρειες» go (pinch, and the settings have it). */
-  :root[data-home] .maplibregl-ctrl-group:not(:has(> button.locate)), :root[data-home] .details-ctl { display: none; }
+  :root[data-home] .maplibregl-ctrl-group:not(:has(> button.locate)):not(.north-ctl), :root[data-home] .details-ctl { display: none; }
 }
 
 /* Following a bus in 3D on a phone: the street gets the screen. The top bar, the map's buttons and hints go; the card
