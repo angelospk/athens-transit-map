@@ -5,6 +5,7 @@
   // On a phone a sheet over the map, above the tab bar; on a desktop a card in the map's left column.
   import { busId } from "../busNs";
   import { flushSync, untrack } from "svelte";
+  import StatusBanner from "./StatusBanner.svelte";
   import { MediaQuery } from "svelte/reactivity";
   import { safeInsets, sheetDrag, type SheetDrag } from "../sheetDrag";
   import { fetchV2Stop } from "../api";
@@ -416,7 +417,8 @@
   {#if !narrow.current}{@render mapNote()}{/if}
   <!-- Kept under «Πού πας;» while it opens and closes (it covers the screen): hidden then, the map showed bare for a
        moment between the two. Not while picking on the map (the pick has its own field), nor with the sheet at the top. -->
-  {#if shown && narrow.current && nsnap !== "full" && !app.pickFor}
+  <!-- Not during the guide either: its own instruction card is at the top (the chips showed under it). -->
+  {#if shown && narrow.current && nsnap !== "full" && !app.pickFor && !app.guide}
     <!-- A phone (compact mockup 15Γ): the search on top of the map, your places and the lists as chips under it. -->
     <div class="mtop" transition:rise={{ y: -10, duration: 220 }}>
       <button type="button" class="mwhere" aria-haspopup="dialog" onclick={openWhere}><Icon name="search" size={19} /><span>Πού πας;</span></button>
@@ -427,6 +429,7 @@
         <button type="button" class="chip glass round" aria-label={armed ? "Ειδοποιήσεις, μία ενεργή" : "Ειδοποιήσεις"} onclick={() => app.setTab("alerts")}><Icon name="bell" size={16} />{#if armed}<i class="bdot" aria-hidden="true"></i>{/if}</button>
       </div>
       {@render mapNote()}
+      <StatusBanner {app} />
     </div>
   {/if}
   <section class="now" class:dragging class:peeked aria-label="Αρχική" in:rise bind:this={nowEl} style:top={nowTop != null ? `${nowTop}px` : undefined}
@@ -710,7 +713,7 @@
     color: color-mix(in srgb, var(--fg) 82%, var(--muted)); font: inherit; font-size: 13.5px; font-weight: 700; line-height: 1; cursor: pointer; }
   .peekl :global(svg) { transform: rotate(180deg); color: var(--muted); }
   .mtop { position: fixed; z-index: 6; left: 16px; right: 16px; top: calc(16px + env(safe-area-inset-top)); display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
-  .mtop > * { pointer-events: auto; }
+  .mtop > :global(*) { pointer-events: auto; }   /* :global: the status note is another component's */
   .mwhere { height: 52px; display: flex; align-items: center; gap: 10px; padding: 0 18px; border: 0; border-radius: 26px; text-align: left; cursor: pointer;
     background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 4px 14px rgb(0 0 0 / .4), inset 0 0 0 1px var(--card-border, var(--border));
     color: color-mix(in srgb, var(--fg) 82%, var(--muted)); font: inherit; font-size: 16px; font-weight: 600; line-height: 1; }

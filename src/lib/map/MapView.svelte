@@ -2249,13 +2249,14 @@
 
   // A marker on whole pixels: MapLibre centres an element with translate(-50%), which on an odd width puts it on a
   // half pixel, and its text blurs. Its size is taken once, off screen, and the centring done in whole pixels.
-  function crisp(el: HTMLElement, anchor: "center" | "bottom", gap = 0): Marker {
+  function crisp(el: HTMLElement, anchor: "center" | "bottom" | "right", gap = 0): Marker {
     // Measured as it will sit on the map: out of the flow (absolute), so it takes its own width, not the page's.
     el.style.cssText += ";visibility:hidden;position:absolute;left:0;top:0";
     document.body.append(el);
     const w = el.offsetWidth, h = el.offsetHeight;
     el.remove();
     el.style.visibility = el.style.position = el.style.left = el.style.top = "";
+    if (anchor === "right") return new Marker({ element: el, anchor: "top-left", offset: [gap, -Math.round(h / 2)] });
     return new Marker({ element: el, anchor: "top-left", offset: [-Math.round(w / 2), anchor === "center" ? -Math.round(h / 2) : -h - gap] });
   }
 
@@ -2310,6 +2311,22 @@
       c.append(b.label);
       return c;
     };
+    // Does the route run up and down at this point? Its nearest piece, east-west scaled to metres like north-south.
+    const segs = (app.tripPlan?.features ?? []).flatMap(f => f.geometry.coordinates.slice(1).map((c, k) => [f.geometry.coordinates[k], c] as const));
+    const upDown = (at: [number, number] | { lng: number; lat: number }) => {
+      const [x, y] = Array.isArray(at) ? at : [at.lng, at.lat];
+      const kx = Math.cos(y * Math.PI / 180);
+      let best = Infinity, dx = 1, dy = 0;
+      for (const [a, b] of segs) {
+        const ax = (a[0] - x) * kx, ay = a[1] - y, bx = (b[0] - x) * kx, by = b[1] - y;
+        const vx = bx - ax, vy = by - ay, L = vx * vx + vy * vy || 1e-18;
+        const t = Math.max(0, Math.min(1, -(ax * vx + ay * vy) / L));
+        const d = (ax + t * vx) ** 2 + (ay + t * vy) ** 2;
+        if (d < best) { best = d; dx = vx; dy = vy; }
+      }
+      // Beside it unless nearly level (under ~22°): above a slanting line, the wide pill still lay across it.
+      return Math.abs(dy) > 0.4 * Math.abs(dx);
+    };
     const WALK = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13" cy="4" r="1.6"/><path d="M10 21l2-6 3 3v3M9 12l1-4 4 1 2 3 3 1M8 9l-2 4"/></svg>`;
     const marks = labels.map(l => {
       const el = document.createElement("div");
@@ -2345,7 +2362,10 @@
         sub.textContent = l.sub;
         el.append(n, sub);
       }
-      return crisp(el, l.kind === "leg" ? "center" : "bottom", 14).setLngLat(l.at).addTo(m);
+      // A ride's pill beside its line, not on it: to the right of a line that runs up, down or slanting, above one
+      // that runs nearly level (the way of the route's nearest piece).
+      if (l.kind === "leg") return crisp(el, upDown(l.at) ? "right" : "bottom", 12).setLngLat(l.at).addTo(m);   // the first guess; besideLine settles it
+      return crisp(el, "bottom", 14).setLngLat(l.at).addTo(m);
     });
     // The change's card is wide: kept inside the screen (slid sideways from over its point) as the map moves.
     const wide = marks.filter(k => k.getElement().classList.contains("plan-chg"));
@@ -2358,7 +2378,32 @@
       }
     };
     if (wide.length) { keepIn(); m.on("move", keepIn); }
-    return () => { m.off("move", keepIn); marks.forEach(k => k.remove()); };
+    // A ride's pill: of the four sides of its point, the one where the fewest of the route's points (on the screen as
+    // it is now) fall under it; checked again when the map stops moving.
+    const legs = marks.filter(k => k.getElement().classList.contains("plan-leg"));
+    const pts = (app.tripPlan?.features ?? []).flatMap(f => f.geometry.coordinates) as [number, number][];
+    const besideLine = () => {
+      const scr = pts.map(c => m.project(c)), W = m.getContainer().clientWidth, H = m.getContainer().clientHeight;
+      for (const k of legs) {
+        const el = k.getElement(), w = el.offsetWidth, h = el.offsetHeight, p = m.project(k.getLngLat()), G = 12;
+        const sides: [number, number][] = [[G, -h / 2], [-w / 2, -h - G], [-w - G, -h / 2], [-w / 2, G]];   // right, above, left, below
+        let best = sides[0], fewest = Infinity;
+        for (const [ox, oy] of sides) {
+          const x0 = p.x + ox - 4, y0 = p.y + oy - 4, x1 = x0 + w + 8, y1 = y0 + h + 8;
+          let n = 0;
+          for (let i = 0; i < scr.length; i++) {
+            const a = scr[i], b = scr[i + 1] ?? a;
+            // the piece's middle too: the points of a straight stretch are far apart
+            for (const q of [a, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }]) if (q.x > x0 && q.x < x1 && q.y > y0 && q.y < y1) n++;
+          }
+          if (x0 < 0 || y0 < 0 || x1 > W || y1 > H) n += 1000;   // off the screen: the last choice
+          if (n < fewest) { fewest = n; best = [ox, oy]; }
+        }
+        k.setOffset([Math.round(best[0]), Math.round(best[1])]);
+      }
+    };
+    if (legs.length) { besideLine(); m.on("moveend", besideLine); }
+    return () => { m.off("move", keepIn); m.off("moveend", besideLine); marks.forEach(k => k.remove()); };
   });
 
   // The guide's bus, where it is now: its line on a pulsing marker, over the city layer.

@@ -331,7 +331,8 @@
        tip. Not while a popover or a card stands under the bar: they would cover it. -->
   {#if !pop && !app.stack.length}
   <div class="under" style:top="calc(16px + env(safe-area-inset-top) + {panelH}px + 10px)">
-    <StatusBanner {app} />
+    <!-- A phone's home screen has it under its search and chips (NowPanel): here it sat behind them. -->
+    {#if !(narrow.current && app.tab === "now")}<StatusBanner {app} />{/if}
     <!-- Favourites only (B7): its first-time tip, on its own under the bar (no panel behind it). -->
     {#if app.tab === "now" || app.tab === "alerts"}
       <!-- «Τώρα» holds the favourites and the notices itself: the bar stays a search bar. -->
