@@ -81,9 +81,9 @@ function pieces(name: string): Piece[] {
   return named;
 }
 
-// A piece of a name without what follows ΜΕΣΩ/ΑΠΟ («ΙΚΕΑ ΑΠΟ ΛΑΚΩΜΑ»): a place on the way, not the end. A place
-// in brackets refines the end («ΚΗΦΙΣΙΑ(ΠΛ.ΠΛΑΤΑΝΟΥ)», «ΠΕΡΙΣΤΕΡΙ (ΑΓ. ΙΕΡΟΘΕΟΣ)»): it matches, and is not shown.
-const core = (s: string) => s.replace(/(\S)\s+(ΜΕΣΩ|ΑΠΟ|μέσω|από)\s.*$/u, "$1");
+// A piece of a name without what follows ΜΕΣΩ/ΑΠΟ («ΙΚΕΑ ΑΠΟ ΛΑΚΩΜΑ», «ΓΛΥΦΑΔΑ (ΜΕΣΩ Λ. ΒΟΥΛΙΑΓΜΕΝΗΣ)»): a
+// place on the way, not the end. Another place in brackets refines the end («ΚΗΦΙΣΙΑ(ΠΛ.ΠΛΑΤΑΝΟΥ)», «ΠΕΡΙΣΤΕΡΙ (ΑΓ. ΙΕΡΟΘΕΟΣ)»): it matches, and is not shown.
+const core = (s: string) => s.replace(/\(\s*(ΜΕΣΩ|ΑΠΟ|μέσω|από)\s[^)]*\)?/gu, " ").replace(/(\S)\s+(ΜΕΣΩ|ΑΠΟ|μέσω|από)\s.*$/u, "$1");
 
 // A name as shown: no remark in brackets or after ΜΕΣΩ/ΑΠΟ («ΙΚΕΑ ΑΠΟ ΛΑΚΩΜΑ»), no Τ.Σ. or ΑΦΕΤΗΡΙΑ
 // (cleanTerminus), in capitals.
@@ -158,7 +158,6 @@ export interface VariantEnds {
   first: string[]; last: string[];                  // stop names near the start; near the end, the end first
   start: [number, number]; end: [number, number];   // [lon, lat]
   loop: boolean;                                    // back at its start
-  names: string[];                                  // every stop name, in order
 }
 
 const AREA_M = 400, NEAR_M = 300, LOOP_M = 50, AREA_STOPS = 4;
@@ -180,15 +179,14 @@ export function variantEnds(st: LineStatic): VariantEnds[] {
       return names;
     };
     out.push({ id, headsign: v.headsign, start, end, first: near(s, start), last: near([...s].reverse(), end),
-      loop: v.stops[0] === v.stops[v.stops.length - 1] || distanceM(start, end) < LOOP_M, names: s.map(x => x.name) });
+      loop: v.stops[0] === v.stops[v.stops.length - 1] || distanceM(start, end) < LOOP_M });
   }
   return out;
 }
 
 // The readable end of every variant of a line that the data can tell, by variant id; a loop has none.
 // The area at each end of a variant also holds the last stops of the line's other variants that end
-// there. Places away from the end are where other variants end and the variant's stops on the way
-// («ΠΑΛΟΥΚΙΑ-ΛΙΜΝΙΩΝΑ-ΓΥΑΛΑ-ΚΑΚΗ ΒΙΓΛΑ» ends at ΛΙΜΝΙΩΝΑ and stops at ΓΥΑΛΑ). A variant whose names give no clear cut takes the end of the variants that end where it ends,
+// there. A variant whose names give no clear cut takes the end of the variants that end where it ends,
 // when they agree on one.
 // one: the ids named from one end only (for a spot check).
 export function lineDestinations(lineName: string, vs: VariantEnds[], one?: Set<string>): Record<string, string> {
@@ -198,8 +196,7 @@ export function lineDestinations(lineName: string, vs: VariantEnds[], one?: Set<
   for (const v of runs) {
     const first = [...v.first, ...endingAt(v.start, v.id).flatMap(o => o.last)];
     const last = [...v.last, ...endingAt(v.end, v.id).flatMap(o => o.last)];
-    const elsewhere = [...runs.filter(o => distanceM(o.end, v.end) >= NEAR_M).map(o => o.last[0]),
-      ...v.names.filter(x => !v.last.includes(x))];
+    const elsewhere = runs.filter(o => distanceM(o.end, v.end) >= NEAR_M).map(o => o.last[0]);
     const d = endOf(v.headsign, first, last, elsewhere) ?? endOf(lineName, first, last, elsewhere);
     if (d) out[v.id] = d.name;
     if (d?.one) one?.add(v.id);
