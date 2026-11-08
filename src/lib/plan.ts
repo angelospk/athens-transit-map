@@ -284,9 +284,10 @@ export function changeWay(st: { m: number; min: number; gate: number }): string 
 // The picked option's words on the map ([lon, lat]): where to get on (and when), each change (and the minutes to
 // spare), the arrival, and on each ride its line and minutes, at the middle of its shape.
 export type PlanLabel =
-  | { kind: "leg"; at: [number, number]; label: string; color: string; text: string; min: number }
+  | { kind: "leg"; at: [number, number]; label: string; color: string; text: string; min: number; mode?: string }
   | { kind: "board" | "change" | "end"; at: [number, number]; name: string; sub: string; ok?: boolean;
-      lines?: { label: string; color: string; text: string; mode: string }[] };
+      lines?: { label: string; color: string; text: string; mode: string }[];
+      stop?: string; time?: string; walk?: number };   // a change: where, when the next leaves, the minutes on foot
 export function planLabels(it: Itinerary, r: PlanResponse, endName: string): PlanLabel[] {
   const out: PlanLabel[] = [];
   const steps = planSteps(it, r);
@@ -294,7 +295,7 @@ export function planLabels(it: Itinerary, r: PlanResponse, endName: string): Pla
   for (const l of rides) {
     const known = r.lines[l.line ?? ""], mid = l.shape[Math.floor(l.shape.length / 2)] ?? [l.from.lat, l.from.lon];
     out.push({ kind: "leg", at: flip(mid), label: badgeLabel(known?.label || idLabel(l.line ?? ""), l.mode ?? known?.mode ?? ""), color: known?.color || COLOR, text: known?.text_color || TEXT,
-      min: Math.max(1, Math.round((l.arrive_at - l.depart_at) / 60)) });
+      min: Math.max(1, Math.round((l.arrive_at - l.depart_at) / 60)), mode: l.mode ?? known?.mode ?? "" });
   }
   const first = rides[0];
   if (first) out.push({ kind: "board", at: [first.from.lon, first.from.lat], name: r.stops[first.from.stop ?? ""]?.name ?? "", sub: `Ανέβα ${hhmm(first.depart_at)}` });
@@ -305,7 +306,7 @@ export function planLabels(it: Itinerary, r: PlanResponse, endName: string): Pla
     const badge = (l: PlanLeg) => { const kn = r.lines[l.line ?? ""], mode = l.mode ?? kn?.mode ?? "";
       return { label: badgeLabel(kn?.label || idLabel(l.line ?? ""), mode), color: kn?.color || COLOR, text: kn?.text_color || TEXT, mode }; };
     if (prev) out.push({ kind: "change", at: [prev.to.lon, prev.to.lat], name: `Αλλαγή · ${st.stop}`, sub: `${changeWay(st)} · Περιθώριο ${Math.max(0, st.spare)}′`, ok: st.spare >= 3,
-      lines: next ? [badge(prev), badge(next)] : [badge(prev)] });
+      lines: next ? [badge(prev), badge(next)] : [badge(prev)], stop: st.stop, time: next ? hhmm(next.depart_at) : undefined, walk: st.min });
   }
   const last = it.legs[it.legs.length - 1];
   if (last) out.push({ kind: "end", at: [last.to.lon, last.to.lat], name: endName, sub: `Φτάνεις ${hhmm(it.arrive_at)}` });

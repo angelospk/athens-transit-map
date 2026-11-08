@@ -189,6 +189,8 @@
   }
   // A tap on a line opens it in the list: its times (the one gone by first), «Πες μου όταν έρχεται», «Όλη η γραμμή».
   let openRow = $state<string | null>(null);
+  const allRows = $derived(cards.flatMap(c => c.groups.map(g => ({ c, g }))));
+  const openIx = $derived(allRows.findIndex(x => `${x.g.line}|${x.g.headsign}` === openRow));
   $effect(() => { void i; openRow = null; });
 
   // The walk from the user to the stop (a location fix is needed).
@@ -378,8 +380,7 @@
 
     {#if board}
       <div class="deps" aria-live="polite">
-        <section class="dcard" aria-label="Αναχωρήσεις">
-        {#each cards.flatMap(c => c.groups.map(g => ({ c, g }))) as { c, g } (g.line + g.headsign)}
+        {#snippet liveRow(c: (typeof cards)[number], g: ArrivalGroup)}
           {@const k = g.line + "|" + g.headsign}
           {@const col = app.lineColor(g.line)}
           {@const gone = passed(g)}
@@ -419,7 +420,8 @@
               </div>
             {/if}
           </div>
-        {/each}
+        {/snippet}
+        {#snippet otherRows()}
 
             {#each leaving as d (d.line + d.to)}
               {@const col = app.lineColor(d.line)}
@@ -443,7 +445,23 @@
                     aria-label="Γραμμή {l.line}" onclick={() => app.openLineAt(l.line, l.variants)}>{l.line}</button>{/each}</span></span>
               </div>
             {/if}
-        </section>
+        {/snippet}
+        <!-- One list, a row per line; the open line on a card of its own between the rows before and after it (mockup 6). -->
+        {#if openIx < 0}
+          <section class="dcard" aria-label="Αναχωρήσεις">
+            {#each allRows as { c, g } (g.line + g.headsign)}{@render liveRow(c, g)}{/each}
+            {@render otherRows()}
+          </section>
+        {:else}
+          {#if openIx > 0}<section class="dcard" aria-label="Αναχωρήσεις">{#each allRows.slice(0, openIx) as { c, g } (g.line + g.headsign)}{@render liveRow(c, g)}{/each}</section>{/if}
+          <section class="dcard opencard" aria-label="Η γραμμή {allRows[openIx].g.line}">{@render liveRow(allRows[openIx].c, allRows[openIx].g)}</section>
+          {#if openIx < allRows.length - 1 || leaving.length || usualShown.length || quiet.length}
+            <section class="dcard" aria-label="Οι άλλες γραμμές">
+              {#each allRows.slice(openIx + 1) as { c, g } (g.line + g.headsign)}{@render liveRow(c, g)}{/each}
+              {@render otherRows()}
+            </section>
+          {/if}
+        {/if}
 
         {#if !cards.length && !leaving.length && !usualShown.length && !quiet.length}
           <p class="empty">{only ? `Κανένα ${only} καθ’ οδόν τώρα.` : "Κανένα λεωφορείο καθ’ οδόν τώρα."}</p>
@@ -790,4 +808,8 @@
   .across { display: inline-flex; align-items: center; gap: 3px; }
   .across :global(svg) { transform: rotate(-90deg); }
   @media (max-width: 719px) { .legend { visibility: hidden; } }
+  .deps { gap: 10px; }
+  .dcard:empty { display: none; }
+  .opencard { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, var(--card-border, var(--border))); }
+  .opencard .dwrap.open { background: none; }
 </style>

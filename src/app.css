@@ -365,9 +365,27 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .hub-mark:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* A picked trip's words on the map (MapView): a ride's line and minutes; where to get on, a change, the arrival. */
-.plan-leg { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px 0 4px; border-radius: 13px; background: var(--surface); color: var(--fg);
-  font: 700 12px/1 var(--font); box-shadow: 0 4px 12px rgba(0, 0, 0, .35); pointer-events: none; }
-.plan-leg b { display: flex; align-items: center; height: 18px; padding: 0 6px; border-radius: 9px; font-size: 11px; font-weight: 800; }
+.plan-leg { display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 9px 0 4px; box-sizing: border-box; border-radius: 15px; background: #1c2027; color: #e8eaed;
+  box-shadow: 0 0 0 3px #0f1115, 0 4px 12px rgba(0, 0, 0, .45); white-space: nowrap; }
+.pl-min { font: 700 13px/1 var(--font); font-variant-numeric: tabular-nums; }
+.pl-chip { height: 22px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 7px; box-sizing: border-box; border-radius: 11px;
+  font: 800 12.5px/1 var(--font); white-space: nowrap; flex: none; }
+.pl-chip:has(.pl-disc, .pl-mark, .pl-tram) { padding-left: 2px; }
+.pl-disc { width: 18px; height: 18px; border-radius: 50%; background: #ffffff; display: flex; align-items: center; justify-content: center; flex: none; }
+.pl-disc img { width: 11px; height: 11px; display: block; }
+.pl-mark { width: 18px; height: 18px; display: block; flex: none; }
+.pl-tram { width: 12px; height: 16px; object-fit: contain; display: block; flex: none; }
+.plan-chg { width: 230px; display: flex; flex-direction: column; gap: 7px; padding: 8px 10px; box-sizing: border-box; border-radius: 16px; background: rgba(28, 32, 39, .95); color: #e8eaed;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .45), inset 0 0 0 1px #2c313b; }
+.plan-chg .pc-top { height: 24px; display: flex; align-items: center; gap: 5px; }
+.plan-chg .pc-top .pl-chip { height: 24px; border-radius: 12px; }
+.plan-chg .pc-arr { display: flex; color: #9aa2ae; }
+.plan-chg .pc-time { margin-left: auto; font: 800 14px/1 var(--font); color: #ffffff; font-variant-numeric: tabular-nums; }
+.plan-chg .pc-bot { height: 20px; min-width: 0; display: flex; align-items: center; gap: 6px; }
+.plan-chg .pc-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 12.5px/1 var(--font); color: #cfd4dc; }
+.plan-chg .pc-walk { flex: none; display: flex; align-items: center; gap: 3px; font: 700 12.5px/1 var(--font); color: #9aa2ae; }
+.plan-chg .pc-tight { margin-left: auto; flex: none; height: 20px; padding: 0 7px; border-radius: 10px; display: flex; align-items: center; background: rgba(255, 159, 67, .16);
+  color: #ffb26b; font: 700 11.5px/1 var(--font); }
 .plan-pin { display: flex; flex-direction: column; gap: 4px; padding: 7px 10px; border-radius: 10px; background: var(--surface); color: var(--fg);
   box-shadow: 0 4px 14px rgba(0, 0, 0, .35); pointer-events: none; white-space: nowrap; }
 .plan-pin b { font: 800 12px/1 var(--font); }
@@ -379,7 +397,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .plan-pin .pc-lines b { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: 5px; font: 800 11px/1 var(--font); }
 .plan-pin .pc-lines i { font-style: normal; font: 700 12px/1 var(--font); color: var(--muted); }
 /* Crisp text on the map's labels: no subpixel smoothing tricks, whole-pixel places (MapView crisp). */
-.plan-pin, .plan-leg { -webkit-font-smoothing: antialiased; }
+.plan-pin, .plan-leg, .plan-chg { -webkit-font-smoothing: antialiased; }
 
 /* Underground (metro mode): nothing on the ground; the map's markers and pop-ups go, the trains' labels stay. */
 :root[data-under] .maplibregl-marker, :root[data-under] .maplibregl-popup { display: none; }

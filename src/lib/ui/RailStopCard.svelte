@@ -3,6 +3,7 @@
   // asked again every 20 s while it is open (cached 15 s). A tap on a row opens its train, else its line;
   // its bell opens the alert sheet for that line and direction (web push, bot/bot.ts).
   import { untrack } from "svelte";
+  import { MediaQuery } from "svelte/reactivity";
   import { fetchV2Line, fetchV2Stop } from "../api";
   import { clock } from "../format";
   import { railHeads, type RailSpec } from "../railAlerts";
@@ -11,10 +12,14 @@
   import Bell from "./Bell.svelte";
   import CardSheet, { whenText } from "./CardSheet.svelte";
   import Icon from "./Icon.svelte";
+  import LineChip from "./LineChip.svelte";
   import NearChanges from "./NearChanges.svelte";
   import { clockHM } from "../trains";
+  import { distM } from "../trip";
 
   let { app }: { app: AppState } = $props();
+  // A phone shows the compact mockup 12: the operator's mark and the lines in the header, one list of the next trains.
+  const narrow = new MediaQuery("(max-width: 719px)");
 
   const top = $derived(app.stack.at(-1));
   const card = $derived(top?.kind === "stop" && (top.id.startsWith("stasy:") || top.id.startsWith("proastiakos:")) ? top : null);
@@ -52,6 +57,21 @@
     return () => { ac.abort(); clearTimeout(timer); };
   });
 
+  // Its entrances (compact mockup 12, from the map's tiles: MapView), each with the walk from the user, the nearest
+  // first in green; «Πήγαινέ με» plans the trip to that entrance.
+  const ents = $derived.by(() => {
+    const me = app.myPos, list = card?.id.startsWith("stasy:") ? app.stationEntrances : [];
+    const rows = list.map(e => ({ ...e, m: me ? distM(me, e.at) : null }));
+    const best = rows.reduce<(typeof rows)[number] | null>((a, b) => (b.m != null && (a?.m == null || b.m < a.m) ? b : a), null);
+    return rows.map(r => ({ ...r, best: r === best && r.m != null }));
+  });
+  const entWalk = (m: number) => Math.max(1, Math.round((m * 1.3) / 80));
+  function goEntrance(e: { name: string | null; at: [number, number] }, k: number) {
+    if (app.myPos) app.tripFrom = { label: "Η θέση μου", pts: [app.myPos], lines: [], kind: "me" };
+    app.tripTo = { label: `${board?.stop.name ?? ""} · ${e.name ?? `Είσοδος ${k + 1}`}`, pts: [e.at], lines: [], kind: "poi" };
+    app.setTab("trip");
+  }
+
   // «Σταθμός μετρό · στάση τραμ»: what the stop is, by its modes.
   const MODES: Record<string, string> = { metro: "σταθμός μετρό", tram: "στάση τραμ", suburban: "σταθμός προαστιακού" };
   const modeText = $derived.by(() => {
@@ -81,6 +101,10 @@
     app.setTab("trip");
   }
   const lineOf = (id: string) => board?.lines.find(l => l.id === id) ?? details[id]?.line;
+  // The station's operator mark (metro, tram), else the mode's icon; and what its next departures are called.
+  const LOGO: Record<string, string> = { metro: "icons/metro-logo.svg", tram: "icons/tram-logo.svg" };
+  const mainMode = $derived(board?.stop.modes[0] ?? (card?.id.startsWith("proastiakos:") ? "suburban" : card?.id.endsWith("-tram") ? "tram" : "metro"));
+  const nextWord = $derived(mainMode === "tram" ? "Επόμενα τραμ" : "Επόμενοι συρμοί");
 
   $effect(() => { if (board) untrack(() => app.retitle(board!.stop.name)); });
 
@@ -103,16 +127,27 @@
 
 {#if card}
   {@const st = board?.stop}
-  <CardSheet {app} key={card.id} closeOnEscape={!alertFor} starred={!!st && app.isFavStop(st.id)} starLabel={st && app.isFavStop(st.id) ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
+  <CardSheet {app} key={card.id} compact closeOnEscape={!alertFor} starred={!!st && app.isFavStop(st.id)} starLabel={st && app.isFavStop(st.id) ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
     onstar={st ? () => app.toggleFavStop({ id: st.id, name: st.name, lat: st.lat, lon: st.lon }) : undefined}>
     {#snippet header()}
+      {#if narrow.current}
+        {#if LOGO[mainMode]}<img class="plogo" class:tram={mainMode === "tram"} src="{import.meta.env.BASE_URL}{LOGO[mainMode]}" alt="" />
+        {:else}<span class="pmode" aria-hidden="true"><Icon name={mainMode === "suburban" ? "suburban" : "metro"} size={20} /></span>{/if}
+      {/if}
       <span class="ht">
         <h2 class="stopname">{board?.stop.name ?? card.title ?? ""}</h2>
-        {#if modeText}<span class="kind">{modeText}</span>{/if}
+        {#if narrow.current && board?.lines.length}
+          <span class="plines" role="group" aria-label="Οι γραμμές του σταθμού">
+            {#each board.lines as l (l.id)}
+              <button type="button" class="pchip" style:--c={l.color} style:--t={l.text_color} aria-label="Γραμμή {l.label ?? l.name}"
+                onclick={() => app.push({ kind: "line", id: l.id, title: l.label ?? l.name })}>{l.label ?? l.name}</button>
+            {/each}
+          </span>
+        {:else if modeText}<span class="kind">{modeText}</span>{/if}
       </span>
     {/snippet}
     <div class="body">
-      {#if board?.lines.length}
+      {#if board?.lines.length && !narrow.current}
         <div class="lchips" role="group" aria-label="Οι γραμμές του σταθμού">
           {#each board.lines as l, k (l.id)}
             {#if k === 0 || board.lines[k - 1].mode !== l.mode}
@@ -126,8 +161,8 @@
       {/if}
       {#if st}
         <div class="acts">
-          <button type="button" class="primary" onclick={() => trip("to")}><Icon name="route" size={18} /><span>Πώς πάω</span></button>
-          <button type="button" class="second" onclick={() => trip("from")}><Icon name="locate" size={17} /><span>Από εδώ</span></button>
+          <button type="button" class="primary" onclick={() => trip("to")}><Icon name="route" size={narrow.current ? 16 : 18} /><span>Πώς πάω</span></button>
+          <button type="button" class="second" onclick={() => trip("from")}><Icon name="locate" size={narrow.current ? 16 : 17} /><span>Από εδώ</span></button>
         </div>
       {/if}
       {#if app.railAlert && app.railAlert.stop === card.id}
@@ -135,46 +170,99 @@
         <p class="armed"><Bell /> Ειδοποίηση: {a.label} προς {a.toward}, {a.min}′ πριν, έως {clock(a.until).slice(0, 5)}.
           <button type="button" class="link" onclick={() => app.setRailAlert(null)}>Ακύρωση</button></p>
       {/if}
-      <div class="dhead">
-        <h3>Αναχωρήσεις</h3>
-        {#if board && rows.length}<span class="fresh"><i class:hollow={!rows.some(r => r.times.some(t => t.live))}></i>{rows.some(r => r.times.some(t => t.live)) ? "ζωντανά" : "από το πρόγραμμα"} · {clockHM(app.serverNow / 1000)}</span>{/if}
-      </div>
-      {#if failed}
-        <p class="muted">Δεν φόρτωσε η στάση. Δοκίμασε ξανά.</p>
-      {:else if !board}
-        <p class="muted">Φόρτωση…</p>
-      {:else if !rows.length}
-        <p class="muted">Καμία άφιξη τώρα.</p>
-      {:else}
-        <div class="deps" aria-live="polite">
-          {#each cards as c (c.line)}
-            {@const ln = lineOf(c.line)}
-            {@const gaps = c.rows.map(every).filter(g => g != null) as number[]}
-            <section class="dcard" aria-label={titleOf(c.line)}>
-              <button type="button" class="dtop" onclick={() => app.push({ kind: "line", id: c.line, title: labelOf(c.line) })}>
-                <b class="lchip sm" class:round={ln?.mode === "metro"} style:--c={ln?.color ?? "#3b5bdb"} style:--t={ln?.text_color ?? "#ffffff"}>{labelOf(c.line)}</b>
-                <span>{titleOf(c.line)}</span>
-                {#if gaps.length}<small>κάθε {Math.min(...gaps)}′</small>{/if}
-              </button>
-              {#each c.rows as r (r.line + "|" + (r.dir ?? r.headsign))}
-                {@const plat = r.times.find(t => t.platform)?.platform}
-                {@const t0 = r.times[0]}
-                <div class="drow">
-                  <button type="button" class="dgo"
-                    onclick={() => app.push(r.vehicle ? { kind: "vehicle", id: r.vehicle, line: r.line } : { kind: "line", id: r.line, dir: r.dir ?? undefined })}>
-                    <span class="dmid"><span class="dto">{r.headsign}</span>
-                      <small class="dnote"><i class:hollow={!t0.live}></i>{[plat ? `Αποβάθρα ${plat}` : null, t0.live ? "ζωντανά" : "πρόγραμμα"].filter(Boolean).join(" · ")}</small></span>
-                    <span class="dwhen"><b class:live={t0.live}>{whenText(t0.at, app.serverNow)}</b>{#if r.times[1]}<small>{whenText(r.times[1].at, app.serverNow)}</small>{/if}</span>
-                  </button>
-                  <button type="button" class="bell" class:on={alertFor?.rail.line === r.line && alertFor.rail.toward === r.headsign}
-                    title="Ειδοποίηση άφιξης" aria-label="Ειδοποίηση άφιξης του {labelOf(r.line)} προς {r.headsign}" onclick={() => bell(r)}><Bell /></button>
-                </div>
-              {/each}
-            </section>
-          {/each}
+      {#if ents.length}
+        <div class="ents">
+          <span class="ecap">Είσοδοι και έξοδοι</span>
+          <div class="elist">
+            {#each ents as e, k (e.at.join())}
+              <div class="erow">
+                <span class="en" class:best={e.best}>{k + 1}</span>
+                <span class="et"><b>{e.name ?? `Είσοδος ${k + 1}`}</b>{#if e.m != null}<small class:best={e.best}>{e.best ? "η πιο κοντινή · " : ""}{entWalk(e.m)}′ με τα πόδια</small>{/if}</span>
+                <button type="button" class="ego" class:best={e.best} onclick={() => goEntrance(e, k)}><Icon name="route" size={14} /><span>Πήγαινέ με</span></button>
+              </div>
+            {/each}
+          </div>
         </div>
       {/if}
-      {#if st}<NearChanges {app} at={[st.lat, st.lon]} station={st.name} modes={st.modes} />{/if}
+      {#if narrow.current}
+        <!-- A phone (compact mockup 12): the changes first, then one list, a row per line and direction. -->
+        {#if st}<NearChanges {app} at={[st.lat, st.lon]} station={st.name} modes={st.modes} compact />{/if}
+        <div class="psec">
+          <div class="phead">
+            <h3>{nextWord}</h3>
+            {#if board && rows.length}<span class="pfresh">{rows.some(r => r.times.some(t => t.live)) ? "ζωντανά" : "από το πρόγραμμα"}</span>{/if}
+          </div>
+          {#if failed}
+            <p class="muted">Δεν φόρτωσε η στάση. Δοκίμασε ξανά.</p>
+          {:else if !board}
+            <p class="muted">Φόρτωση…</p>
+          {:else if !rows.length}
+            <p class="muted">Καμία άφιξη τώρα.</p>
+          {:else}
+            <div class="plist" aria-live="polite">
+              {#each cards as c (c.line)}
+                {@const ln = lineOf(c.line)}
+                {#each c.rows as r (r.line + "|" + (r.dir ?? r.headsign))}
+                  {@const t0 = r.times[0]}
+                  {@const plat = r.times.find(t => t.platform)?.platform}
+                  <div class="prow">
+                    <button type="button" class="pgo" aria-label="{labelOf(r.line)} προς {r.headsign}, {whenText(t0.at, app.serverNow)}"
+                      onclick={() => app.push(r.vehicle ? { kind: "vehicle", id: r.vehicle, line: r.line } : { kind: "line", id: r.line, dir: r.dir ?? undefined })}>
+                      <LineChip label={labelOf(r.line)} bg={ln?.color ?? "#3b5bdb"} fg={ln?.text_color ?? "#ffffff"} mode={ln?.mode ?? "metro"} city={app.cityId} />
+                      <span class="pto">προς {r.headsign}{#if plat}<small> · Αποβάθρα {plat}</small>{/if}</span>
+                      <b class="p1" class:live={t0.live}>{whenText(t0.at, app.serverNow)}</b>
+                      <span class="p2">{r.times[1] ? whenText(r.times[1].at, app.serverNow) : ""}</span>
+                    </button>
+                    <button type="button" class="pbell" class:on={alertFor?.rail.line === r.line && alertFor.rail.toward === r.headsign}
+                      title="Ειδοποίηση άφιξης" aria-label="Ειδοποίηση άφιξης του {labelOf(r.line)} προς {r.headsign}" onclick={() => bell(r)}><Bell /></button>
+                  </div>
+                {/each}
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {:else}
+        <div class="dhead">
+          <h3>Αναχωρήσεις</h3>
+          {#if board && rows.length}<span class="fresh"><i class:hollow={!rows.some(r => r.times.some(t => t.live))}></i>{rows.some(r => r.times.some(t => t.live)) ? "ζωντανά" : "από το πρόγραμμα"} · {clockHM(app.serverNow / 1000)}</span>{/if}
+        </div>
+        {#if failed}
+          <p class="muted">Δεν φόρτωσε η στάση. Δοκίμασε ξανά.</p>
+        {:else if !board}
+          <p class="muted">Φόρτωση…</p>
+        {:else if !rows.length}
+          <p class="muted">Καμία άφιξη τώρα.</p>
+        {:else}
+          <div class="deps" aria-live="polite">
+            {#each cards as c (c.line)}
+              {@const ln = lineOf(c.line)}
+              {@const gaps = c.rows.map(every).filter(g => g != null) as number[]}
+              <section class="dcard" aria-label={titleOf(c.line)}>
+                <button type="button" class="dtop" onclick={() => app.push({ kind: "line", id: c.line, title: labelOf(c.line) })}>
+                  <b class="lchip sm" class:round={ln?.mode === "metro"} style:--c={ln?.color ?? "#3b5bdb"} style:--t={ln?.text_color ?? "#ffffff"}>{labelOf(c.line)}</b>
+                  <span>{titleOf(c.line)}</span>
+                  {#if gaps.length}<small>κάθε {Math.min(...gaps)}′</small>{/if}
+                </button>
+                {#each c.rows as r (r.line + "|" + (r.dir ?? r.headsign))}
+                  {@const plat = r.times.find(t => t.platform)?.platform}
+                  {@const t0 = r.times[0]}
+                  <div class="drow">
+                    <button type="button" class="dgo"
+                      onclick={() => app.push(r.vehicle ? { kind: "vehicle", id: r.vehicle, line: r.line } : { kind: "line", id: r.line, dir: r.dir ?? undefined })}>
+                      <span class="dmid"><span class="dto">{r.headsign}</span>
+                        <small class="dnote"><i class:hollow={!t0.live}></i>{[plat ? `Αποβάθρα ${plat}` : null, t0.live ? "ζωντανά" : "πρόγραμμα"].filter(Boolean).join(" · ")}</small></span>
+                      <span class="dwhen"><b class:live={t0.live}>{whenText(t0.at, app.serverNow)}</b>{#if r.times[1]}<small>{whenText(r.times[1].at, app.serverNow)}</small>{/if}</span>
+                    </button>
+                    <button type="button" class="bell" class:on={alertFor?.rail.line === r.line && alertFor.rail.toward === r.headsign}
+                      title="Ειδοποίηση άφιξης" aria-label="Ειδοποίηση άφιξης του {labelOf(r.line)} προς {r.headsign}" onclick={() => bell(r)}><Bell /></button>
+                  </div>
+                {/each}
+              </section>
+            {/each}
+          </div>
+        {/if}
+        {#if st}<NearChanges {app} at={[st.lat, st.lon]} station={st.name} modes={st.modes} />{/if}
+      {/if}
     </div>
   </CardSheet>
   {#if alertFor}
@@ -243,4 +331,55 @@
     background: none; color: var(--muted); cursor: pointer; }
   .bell:hover, .bell.on { background: var(--control); color: var(--accent); }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---- A phone (compact mockup 12): the operator's mark, a 19px title over the line chips, the two actions at 40px, the changes
+     near, then one list of the next trains, a 48px row per line and direction. */
+  .plogo { flex: none; width: 36px; height: 36px; display: block; }
+  .plogo.tram { width: 26px; object-fit: contain; }
+  .pmode { flex: none; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 50%;
+    background: var(--control); color: var(--fg); }
+  .plines { display: flex; align-items: center; gap: 4px; height: 18px; }
+  .pchip { flex: none; height: 18px; display: flex; align-items: center; justify-content: center; padding: 0 6px; border: 0; border-radius: 9px;
+    background: var(--c); color: var(--t); font: inherit; font-size: 11px; font-weight: 800; line-height: 1; box-sizing: border-box; cursor: pointer; }
+  .psec { display: flex; flex-direction: column; gap: 6px; }
+  .phead { height: 18px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px; }
+  .phead h3 { font-size: 13px; font-weight: 700; color: var(--muted); }
+  .pfresh { color: var(--muted); font-size: 12px; font-weight: 600; line-height: 1; white-space: nowrap; }
+  .plist { display: flex; flex-direction: column; border-radius: 16px; background: var(--card); overflow: hidden; }
+  .prow { display: flex; align-items: center; height: 48px; padding-right: 6px; border-bottom: 1px solid var(--border); }
+  .prow:last-child { border-bottom: 0; }
+  .pgo { flex: 1; min-width: 0; align-self: stretch; display: flex; align-items: center; gap: 10px; padding: 0 4px 0 12px; border: 0;
+    background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .prow .pgo :global(.lc) { --h: 24px; padding: 0 8px 0 2px; gap: 4px; font-size: 12.5px; }
+  .pto { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; line-height: 1; }
+  .pto small { color: var(--muted); font-size: 12px; font-weight: 500; }
+  .p1 { flex: none; font-size: 16px; font-weight: 700; line-height: 1; color: color-mix(in srgb, var(--fg) 85%, var(--muted)); font-variant-numeric: tabular-nums; }
+  .p1.live { color: var(--ontime); }
+  .p2 { flex: none; min-width: 28px; text-align: right; color: var(--muted); font-size: 12.5px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .pbell { flex: none; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 50%;
+    background: none; color: var(--muted); cursor: pointer; }
+  .pbell:hover, .pbell.on { background: var(--control); color: var(--accent); }
+  @media (max-width: 719px) {
+    .ht { gap: 6px; }
+    .stopname { font-size: 19px; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .body { gap: 12px; }
+    .primary, .second { height: 40px; gap: 7px; border-radius: 12px; font-size: 14px; }
+    .second { background: var(--control); }
+    .muted { margin: 2px; font-size: 13px; }
+  }
+  .ents { display: flex; flex-direction: column; gap: 6px; flex: none; }
+  .ecap { height: 18px; display: flex; align-items: center; padding: 0 2px; font-size: 13px; font-weight: 700; line-height: 1; color: var(--muted); }
+  .elist { display: flex; flex-direction: column; border-radius: 16px; background: var(--card); }
+  .erow { height: 60px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid var(--border); }
+  .erow:last-child { border-bottom: 0; }
+  .en { flex: none; width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--fg) 18%, var(--card));
+    color: var(--fg); font-size: 14px; font-weight: 800; line-height: 1; }
+  .en.best { background: #2f9e5b; color: #ffffff; }
+  .et { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .et b { font-size: 14.5px; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .et small { font-size: 12.5px; line-height: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .et small.best { color: color-mix(in srgb, var(--ontime) 75%, #ffffff); }
+  .ego { flex: none; height: 32px; display: flex; align-items: center; gap: 5px; padding: 0 10px; border: 0; border-radius: 10px; background: var(--control); color: var(--fg);
+    font: inherit; font-size: 12.5px; font-weight: 800; line-height: 1; cursor: pointer; }
+  .ego.best { background: #4d8af0; color: #ffffff; }
 </style>

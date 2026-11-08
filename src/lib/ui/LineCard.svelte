@@ -2,8 +2,15 @@
   // The card of a line, any mode, from /v2: its two directions, the vehicles now of the chosen one and,
   // for a bus line, today's runs. The vehicles are asked again every 20 s while it is open.
   import { untrack } from "svelte";
+  import { MediaQuery } from "svelte/reactivity";
+  import { freeSheet } from "../sheetDrag";
+  import { cardTitle } from "../legacy";
+  import { alertLinesAt, stopIndex } from "../stops";
+  import { metresBetween, walkTo } from "../now";
+  import LineChip from "./LineChip.svelte";
+  import type { DiagramItem } from "../linediagram";
   import { fetchV2Line, fetchV2LineVehicles, fetchV2Run, peekV2Line, peekV2LineVehicles } from "../api";
-  import { glance, lineDiagram, lineSpeed, mainPattern, spread } from "../linediagram";
+  import { glance, lineDiagram, lineSpeed, mainPattern, nextIndex, spread } from "../linediagram";
   import { titleCase } from "../nearby";
   import { LOADS, loadLabel } from "../crowd";
   import LoadIcon from "./LoadIcon.svelte";
@@ -258,6 +265,161 @@
     app.replaceTop({ ...c, dir: d, pattern: undefined });
     if (g && groups.length === 2) app.setFocus(nativeLine, g.variants);   // the segments are the two groups
   }
+
+  // ---- A phone (compact mockup 13): a sheet to the screen's edges, the line's chip and where it goes, and the stop list
+  // folded round the user's stop, which opens inside the list with its next arrivals; «Ξεκίνα» and the bell at the foot.
+  // A computer keeps the card above (CardSheet).
+  const narrow = new MediaQuery("(max-width: 719px)");
+  const vName = $derived(detail?.line.mode === "trolley" ? "Τρόλεϊ" : isBus ? "Λεωφορείο" : "Όχημα");
+  type StopItem = Extract<DiagramItem, { kind: "stop" }>;
+  type VehItem = Extract<DiagramItem, { kind: "vehicle" }>;
+  let chosen = $state<string | null>(null);   // a stop tapped in the list: it opens instead
+  let openBefore = $state(false), openAfter = $state(false);
+  let alertFor = $state.raw<{ name: string; lines: ReturnType<typeof alertLinesAt> } | null>(null);
+  $effect(() => { void card?.id; void dir; chosen = null; openBefore = false; openAfter = false; alertFor = null; });
+
+  // The user's stop on this direction: the one tapped, the stop the line was opened from, the nearest (up to 1.5 km),
+  // a favourite stop, else the line's first stop (where the timetable's runs leave from).
+  const nearestId = $derived.by(() => {
+    const me = app.myPos;
+    if (!me || !pattern || !detail) return null;
+    let best: string | null = null, bm = 1500;
+    for (const id of pattern.stops) {
+      const s = detail.stops[id];
+      const m = s ? metresBetween(me, [s.lat, s.lon]) : Infinity;
+      if (m < bm) { bm = m; best = id; }
+    }
+    return best;
+  });
+  const focusId = $derived.by(() => {
+    if (!pattern) return null;
+    const has = (id: string | null | undefined): id is string => !!id && pattern.stops.includes(id);
+    const below = app.stack.length > 1 ? app.stack[app.stack.length - 2] : null;
+    if (has(chosen)) return chosen;
+    if (below?.kind === "stop" && has(below.id)) return below.id;
+    if (has(nearestId)) return nearestId;
+    return pattern.stops.find(id => app.favs.stops.some(s => s.id === id)) ?? pattern.stops[0] ?? null;
+  });
+  const focusAt = $derived(focusId ? diagram.findIndex(i => i.kind === "stop" && i.id === focusId) : -1);
+  const focusStop = $derived(focusAt >= 0 ? (diagram[focusAt] as StopItem) : null);
+  const focusWhy = $derived.by(() => {
+    const st = focusId ? detail?.stops[focusId] : undefined;
+    const walk = st ? walkTo(app.myPos, st) : null;
+    const why = focusId && focusId === nearestId ? "η πιο κοντινή" : focusId && app.favs.stops.some(s => s.id === focusId) ? "αγαπημένη στάση" : "";
+    return [why, walk != null ? `${walk}′ με τα πόδια` : ""].filter(Boolean).join(" · ");
+  });
+  // At the user's stop: the coming arrivals (soonest first, from the runs of the direction's vehicles), the last one gone.
+  const focusTimes = $derived.by(() => {
+    const next: { at: number; live: boolean; v: V2Vehicle; run: V2Run }[] = [];
+    let gone: number | null = null;
+    if (!focusId) return { next, gone };
+    for (const v of dirVehicles) {
+      const run = v.run ? runs[v.run] : undefined;
+      const s = run?.stops.find(x => x.stop === focusId);
+      if (!run || !s) continue;
+      if (s.passed || s.at < nowS - 60) gone = Math.max(gone ?? 0, s.at);
+      else next.push({ at: s.at, live: s.source === "live", v, run });
+    }
+    next.sort((a, b) => a.at - b.at);
+    return { next, gone };
+  });
+  const focusNote = $derived.by(() => {
+    const n = focusTimes.next[0];
+    const what = `το ${vName.toLocaleLowerCase("el")}`;
+    if (n && pattern && focusId) {
+      const k = nextIndex(n.v, pattern.stops, n.run), f = pattern.stops.indexOf(focusId);
+      const away = k != null && f >= k ? f - k : null;
+      const where = away == null ? "" : away === 0 ? `${what} πλησιάζει` : `${what} είναι ${away} ${away === 1 ? "στάση" : "στάσεις"} πριν`;
+      return [`${n.live ? "Ζωντανά" : "Από το πρόγραμμα"}: ${where || what}`, delayText(n.v.delay_s)].join(" · ");
+    }
+    if (vehicles === null) return vFailed ? "Δεν φόρτωσαν τα οχήματα. Νέα προσπάθεια σε λίγο." : "";
+    return `Κανένα ${label} με GPS τώρα${focusTimes.gone ? ` · πέρασε ${clockHM(focusTimes.gone)}` : ""}`;
+  });
+  // A stop after the user's: how much later the bus that comes to the user's stop gets there («+3′»).
+  const later = (id: string) => {
+    const n = focusTimes.next[0];
+    const s = n?.run.stops.find(x => x.stop === id && !x.passed);
+    if (!n || !s || s.at < n.at) return "";
+    return `+${Math.round((s.at - n.at) / 60)}′`;
+  };
+  // «Ξεκίνα»: riding behind the bus that comes to the user's stop (3D), else the first on the line.
+  const comingBus = $derived.by(() => {
+    if (focusAt < 0) return chaseTarget;
+    for (let k = focusAt - 1; k >= 0; k--) { const it = diagram[k]; if (it.kind === "vehicle") return it.vehicle; }
+    return chaseTarget;
+  });
+  function start() {
+    const v = comingBus;
+    if (!v) return;
+    open(v);
+    if (isBus) app.setChase(`${nativeLine}/${native(v.id)}`);
+  }
+
+  // The bell at the user's stop: the alert sheet for this line's variants of the direction (where the city has alerts).
+  const focusIx = $derived(isBus && focusId && app.stopIx ? stopIndex(app.stopIx, native(focusId)) : -1);
+  const bellLines = $derived.by(() => {
+    if (!app.cityInfo.alerts || !app.stopIx || focusIx < 0) return [];
+    const want = ends[dir].group?.variants ?? (groups.length === 2 ? groups[dir]?.variants : null);
+    return alertLinesAt(app.stopIx, focusIx, [nativeLine]).map(l => {
+      const vs = want ? l.variants.filter(v => want.includes(v.id)) : [];
+      return { ...l, variants: vs.length ? vs : l.variants };
+    }).filter(l => l.variants.length);
+  });
+  const bellOn = $derived(!!app.alert?.lines.some(l => l.line === nativeLine));
+  function bell() {
+    if (!bellLines.length || !focusStop) return;
+    alertFor = alertFor ? null : { name: titleCase(focusStop.name), lines: bellLines };
+  }
+
+  // The list's rows: the stops before the user's folded into one (the bus coming to it kept), the user's stop open,
+  // two stops after it, the rest folded.
+  type PRow =
+    | { kind: "fold"; side: "before" | "after"; open: boolean; text: string }
+    | { kind: "stop"; it: StopItem; past: boolean; first: boolean; last: boolean }
+    | { kind: "vehicle"; it: VehItem; past: boolean }
+    | { kind: "focus"; it: StopItem; first: boolean; last: boolean };
+  const prows = $derived.by<PRow[]>(() => {
+    const row = (it: DiagramItem, k: number, past: boolean): PRow =>
+      it.kind === "vehicle" ? { kind: "vehicle", it, past } : { kind: "stop", it, past, first: k === firstStop, last: k === lastStopAt };
+    if (focusAt < 0) return diagram.map((it, k) => row(it, k, false));
+    const out: PRow[] = [];
+    const before = diagram.slice(0, focusAt);
+    const nBefore = before.filter(i => i.kind === "stop").length;
+    if (nBefore > 1 && !openBefore) {
+      out.push({ kind: "fold", side: "before", open: false, text: `από ${titleCase((diagram[firstStop] as StopItem).name)} · οι στάσεις πριν` });
+      for (let k = before.length - 1; k >= 0; k--) if (before[k].kind === "vehicle") { out.push(row(before[k], k, true)); break; }
+    } else {
+      if (nBefore > 1) out.push({ kind: "fold", side: "before", open: true, text: "Λιγότερες στάσεις" });
+      before.forEach((it, k) => out.push(row(it, k, true)));
+    }
+    out.push({ kind: "focus", it: diagram[focusAt] as StopItem, first: focusAt === firstStop, last: focusAt === lastStopAt });
+    const after = diagram.slice(focusAt + 1);
+    let cut = after.length;
+    for (let j = 0, n = 0; j < after.length; j++) if (after[j].kind === "stop" && ++n === 2) { cut = j + 1; break; }
+    const rest = after.slice(cut).filter(i => i.kind === "stop").length;
+    (rest > 1 && !openAfter ? after.slice(0, cut) : after).forEach((it, j) => out.push(row(it, focusAt + 1 + j, false)));
+    if (rest > 1) out.push({ kind: "fold", side: "after", open: openAfter, text: openAfter ? "Λιγότερες στάσεις" : `ως ${titleCase(lastStop)} · οι υπόλοιπες` });
+    return out;
+  });
+  // The rail beside a row, its upper and lower half: grey up to the user's stop, the line's colour from it on, none
+  // above the line's first stop and below its last.
+  const OFF = "var(--rail-off)", ON = "var(--lc)", NONE = "transparent";
+  function railOf(r: PRow): { t: string; b: string } {
+    const past = r.kind !== "focus" && r.kind !== "fold" ? r.past : r.kind === "fold" && r.side === "before";
+    const first = (r.kind === "stop" || r.kind === "focus") && r.first, last = (r.kind === "stop" || r.kind === "focus") && r.last;
+    return { t: first ? NONE : past || r.kind === "focus" ? (focusAt >= 0 ? OFF : ON) : ON, b: last ? NONE : past ? OFF : ON };
+  }
+  const rowKey = (r: PRow) => (r.kind === "fold" ? `fold-${r.side}` : `${r.kind}-${r.it.id}`);
+  const toLabel = $derived(titleCase(labels[dir] ?? lastStop));
+  const below = $derived(app.stack.length > 1 ? app.stack[app.stack.length - 2] : null);
+  async function share() {
+    const text = `Γραμμή ${label} προς ${toLabel}`, url = location.href;
+    try {
+      if (navigator.share) { await navigator.share({ text, url }); return; }
+    } catch (e) { if ((e as Error).name === "AbortError") return; }
+    try { await navigator.clipboard.writeText(`${text} ${url}`); app.notify("Ο σύνδεσμος αντιγράφηκε"); }
+    catch { app.notify("Δεν έγινε η αποστολή"); }
+  }
 </script>
 
 {#snippet strip()}
@@ -272,7 +434,112 @@
   <div class="spe"><span>{titleCase((diagram[firstStop] as { name: string } | undefined)?.name ?? "")}</span><span>{titleCase(lastStop)}</span></div>
 {/snippet}
 
-{#if card}
+<svelte:window onkeydown={e => { if (e.key === "Escape" && card && narrow.current && !alertFor) app.closeCards(); }} />
+
+{#if card && narrow.current}
+  <!-- Over the map: back (to the card below, or closed) and share. -->
+  <div class="ptop">
+    <button type="button" class="pround" aria-label={below ? `Πίσω στο ${cardTitle(below)}` : "Πίσω"} title={below ? `Πίσω στο ${cardTitle(below)}` : "Πίσω"}
+      onclick={() => (below ? app.back() : app.closeCards())}><Icon name="back" size={20} /></button>
+    <button type="button" class="pround" aria-label="Μοιράσου τη γραμμή" title="Μοιράσου τη γραμμή" onclick={share}>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5" /><path d="M5 13v7h14v-7" /></svg>
+    </button>
+  </div>
+  <section class="psheet" aria-label="Γραμμή {label}" use:freeSheet={{ handles: ".grip, .psheet > header", keep: 120, on: () => narrow.current }}>
+    <div class="grip" aria-hidden="true"></div>
+    <header>
+      <LineChip {label} bg={color.bg} fg={color.fg} mode={detail?.line.mode ?? (isBus ? "bus" : "")} size="lg" city={app.cityId} />
+      <span class="pt">
+        <b>{detail ? `προς ${toLabel}` : label}</b>
+        {#if pattern && detail?.stops[pattern.stops[0]]}<small>από {titleCase(detail.stops[pattern.stops[0]].name)}</small>{/if}
+      </span>
+      {#if detail && labels.filter(l => l !== null).length === 2}
+        <button type="button" class="pcircle" aria-label="Άλλη κατεύθυνση: προς {titleCase(labels[1 - dir] ?? '')}" title="Άλλη κατεύθυνση: προς {titleCase(labels[1 - dir] ?? '')}"
+          onclick={() => pick((1 - dir) as 0 | 1)}><Icon name="swap" size={18} /></button>
+      {/if}
+      <button type="button" class="pcircle star" class:on={starred} aria-pressed={starred} aria-label={starred ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
+        title={starred ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"} onclick={() => app.toggleFavLine({ id: card.id, label })}><Icon name={starred ? "star-filled" : "star"} size={18} /></button>
+    </header>
+    <DisruptionRows alerts={disruptions} />
+    {#if missing}
+      <p class="muted">Η γραμμή δεν βρέθηκε.</p>
+    {:else if failed}
+      <p class="muted">Δεν φόρτωσε η γραμμή. Δοκίμασε ξανά.</p>
+    {:else if !detail || !diagram.length}
+      <p class="muted">Φόρτωση…</p>
+    {:else}
+      <div class="pscroll">
+        <ol class="plist" aria-live="polite" aria-label="Οι στάσεις, προς {titleCase(lastStop)}" style:--lc={color.bg} style:--lt={color.fg}>
+          {#each prows as r (rowKey(r))}
+            {@const rl = railOf(r)}
+            {#if r.kind === "fold"}
+              <li><button type="button" class="prow fold" aria-expanded={r.open}
+                onclick={() => (r.side === "before" ? (openBefore = !openBefore) : (openAfter = !openAfter))}>
+                <span class="rl" style:--t={rl.t} style:--b={rl.b}></span>
+                <span class="ft"><span>{r.text}</span><Icon name="chevron" size={12} /></span>
+              </button></li>
+            {:else if r.kind === "focus"}
+              {@const nx = focusTimes.next}
+              <li class="pfocus">
+                <span class="rl" style:--t={rl.t} style:--b={rl.b}><i class="fdot"></i></span>
+                <div class="fc">
+                  <div class="fch">
+                    <span class="fcl"><b>{titleCase(r.it.name)}</b>{#if focusWhy}<small>{focusWhy}</small>{/if}</span>
+                    {#if nx.length}
+                      <span class="fcr"><b>{etaText(nx[0].at)}</b><small>{(nx.length > 1 ? nx.slice(1, 3) : nx).map(n => clockHM(n.at)).join(" · ")}</small></span>
+                    {/if}
+                  </div>
+                  {#if focusNote}<p class="fcn">{focusNote}</p>{/if}
+                  {#if bellLines.length || isBus}
+                    <div class="fca">
+                      {#if bellLines.length}<button type="button" class="fbtn" class:on={bellOn} onclick={bell}><Icon name="bell" size={14} /><span>Πες μου</span></button>{/if}
+                      {#if isBus}<button type="button" class="fbtn" aria-expanded={showTimes} aria-controls="card-times" onclick={() => (showTimes = !showTimes)}><Icon name="clock" size={14} /><span>Όλο το πρόγραμμα</span></button>{/if}
+                    </div>
+                  {/if}
+                </div>
+              </li>
+            {:else if r.kind === "vehicle"}
+              {@const it = r.it}
+              <li><button type="button" class="prow veh" onclick={() => open(it.vehicle)} aria-label="{vName} {it.label ?? ''}, {delayText(it.delay_s)}">
+                <span class="rl" style:--t={rl.t} style:--b={rl.b}><i class="pbus"><Icon name="bus" size={13} /></i></span>
+                <span class="pn">{vName}{it.label ? ` #${it.label}` : ""}</span>
+                {#if it.vehicle.occupancy}{@const o = it.vehicle.occupancy}
+                  <span class="occ {o.level}" title="{loadLabel(o.level)}, από {o.reports} {o.reports === 1 ? 'επιβάτη' : 'επιβάτες'}"><LoadIcon level={LOADS.find(x => x.value === o.level)?.level ?? 0} size={11} /><span>{loadLabel(o.level)}</span></span>
+                {/if}
+                <span class="pv vt {delayTone(it.delay_s)}">{delayText(it.delay_s)}</span>
+              </button></li>
+            {:else}
+              {@const it = r.it}
+              {@const when = focusAt >= 0 && !r.past ? later(it.id) : etaText(it.at)}
+              <li><button type="button" class="prow" class:past={r.past} onclick={() => { chosen = it.id; openBefore = false; openAfter = false; }} aria-label="{titleCase(it.name)}{when ? `, ${when}` : ''}">
+                <span class="rl" style:--t={rl.t} style:--b={rl.b}><i class="pdot"></i></span>
+                <span class="pn">{titleCase(it.name)}</span>
+                {#if when}<span class="pv">{when}</span>{/if}
+              </button></li>
+            {/if}
+          {/each}
+        </ol>
+        {#if isBus && showTimes}
+          <div id="card-times" class="ptimes"><Timetable line={nativeLine} headsign={dirHeadsign} now={app.serverNow} /></div>
+        {/if}
+      </div>
+      <div class="pfoot">
+        <button type="button" class="pgo" disabled={!comingBus} title={isBus ? "Ακολούθησε σε 3D το λεωφορείο που έρχεται" : "Το επόμενο όχημα"} onclick={start}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12-7.5z" /></svg><span>Ξεκίνα</span>
+        </button>
+        {#if bellLines.length}
+          <button type="button" class="pbell" class:on={bellOn} aria-label="Ειδοποίησέ με" title="Ειδοποίησέ με" onclick={bell}><Icon name="bell" size={20} /></button>
+        {/if}
+      </div>
+    {/if}
+  </section>
+  {#if alertFor}
+    {@const a = alertFor}
+    {#await import("./AlertSheet.svelte") then m}
+      <m.default {app} lines={a.lines} label={a.name} line={nativeLine} toward={toLabel} ticked={[nativeLine]} onclose={() => (alertFor = null)} />
+    {/await}
+  {/if}
+{:else if card}
   <CardSheet {app} key={card.id} starred={starred} starLabel={starred ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
     onstar={() => app.toggleFavLine({ id: card.id, label })}
     pinColor={pinId ? app.pinOf("line", pinId)?.color : null}
@@ -509,4 +776,85 @@
   .spe { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; line-height: 1.2; color: var(--muted); }
   .spe span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 48%; }
   @media (prefers-reduced-motion: reduce) { .sd { transition: none; } .spread.float { animation: none; } }
+  /* ---- A phone (compact mockup 13). The sheet as the stop card's: to the screen's edges, the handle on top. */
+  .psheet { position: absolute; z-index: 6; left: 0; right: 0; bottom: 0; max-height: 78dvh; box-sizing: border-box;
+    display: flex; flex-direction: column; gap: 12px; padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
+    border-radius: 24px 24px 0 0; background: var(--glass-strong); --card: var(--glass-fill); --card-border: var(--glass-line);
+    -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); text-shadow: var(--glass-text);
+    --rail-off: color-mix(in srgb, var(--muted) 28%, var(--surface)); animation: cardIn .32s cubic-bezier(.2, .8, .2, 1); }
+  .psheet > * { flex-shrink: 0; }
+  @keyframes cardIn { from { transform: translateY(28px); opacity: 0; } }
+  .grip { display: flex; align-items: center; justify-content: center; align-self: stretch; height: 26px; margin: -10px -16px -6px; cursor: grab; }
+  .grip::after { content: ""; width: 40px; height: 5px; border-radius: 3px; background: var(--rail-off); }
+  .psheet > header { display: flex; align-items: center; gap: 10px; height: 44px; }
+  .pt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .pt b { font-size: 16px; font-weight: 700; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pt small { font-size: 12.5px; line-height: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pcircle { flex: none; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0;
+    border-radius: 50%; background: var(--control); color: var(--fg); cursor: pointer; }
+  .pcircle:hover { background: var(--control-hover); }
+  .pcircle.star.on { background: color-mix(in srgb, var(--star) 16%, var(--control)); color: var(--star); }
+  /* Back and share over the map, where the home bar's search was (it gives way while the sheet is open). */
+  .ptop { position: absolute; z-index: 6; top: calc(16px + env(safe-area-inset-top)); left: 16px; right: 16px; display: flex;
+    justify-content: space-between; pointer-events: none; }
+  .pround { pointer-events: auto; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0;
+    border-radius: 50%; color: var(--fg); cursor: pointer; background: var(--glass); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx);
+    box-shadow: var(--glass-rim); }
+  :global(body:has(.psheet) .panel.home .homebar) { visibility: hidden; }
+  /* The stop list: it alone scrolls (its bar inside the sheet), the header and the foot stay. */
+  .pscroll { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .plist { list-style: none; margin: 0; padding: 0; }
+  .prow { width: 100%; height: 44px; display: flex; align-items: center; gap: 12px; padding: 0; border: 0; background: none; color: var(--fg);
+    font: inherit; text-align: left; cursor: pointer; }
+  .prow.fold { height: 40px; }
+  /* The rail beside each row: its upper and lower half (--t, --b), and the stop's dot on it. */
+  .rl { position: relative; flex: none; width: 20px; align-self: stretch; }
+  .rl::before, .rl::after { content: ""; position: absolute; left: 8px; width: 4px; }
+  .rl::before { top: 0; height: 50%; background: var(--t); }
+  .rl::after { top: 50%; bottom: 0; background: var(--b); }
+  .pdot { position: absolute; z-index: 1; left: 4px; top: calc(50% - 6px); width: 12px; height: 12px; box-sizing: border-box; border-radius: 50%;
+    background: var(--surface); border: 3px solid var(--lc); }
+  .prow.past .pdot { border-color: var(--rail-off); }
+  .prow.past .pn { color: var(--muted); }
+  .pn { flex: 1; min-width: 0; font-size: 14.5px; font-weight: 600; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pv { flex: none; font-size: 12.5px; font-weight: 600; line-height: 1; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .ft { min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; line-height: 1; color: var(--muted); }
+  .ft > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ft :global(svg) { flex: none; transition: transform .2s; }
+  .fold[aria-expanded="true"] .ft :global(svg) { transform: rotate(180deg); }
+  /* A bus on the rail: a disc in the line's colour, where it is now. */
+  .pbus { position: absolute; z-index: 1; left: -3px; top: calc(50% - 13px); width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; background: var(--lc); color: var(--lt); box-shadow: 0 0 0 3px var(--surface); }
+  .pv.vt.ontime { color: var(--ontime); } .pv.vt.late1 { color: var(--late1); } .pv.vt.late2 { color: var(--late2); } .pv.vt.late3 { color: var(--late3); }
+  .pv.vt { background: none; }
+  /* The user's stop, open in the list. */
+  .pfocus { display: flex; gap: 12px; }
+  .pfocus .rl::before { height: 23px; }   /* the rail meets the dot's centre, not the row's middle */
+  .pfocus .rl::after { top: 23px; }
+  .fdot { position: absolute; z-index: 1; left: 1px; top: 14px; width: 18px; height: 18px; box-sizing: border-box; border-radius: 50%; background: #ffffff;
+    border: 3px solid var(--lc); }
+  .fc { flex: 1; min-width: 0; margin: 2px 0; padding: 12px; display: flex; flex-direction: column; gap: 10px; border-radius: 14px;
+    background: color-mix(in srgb, var(--accent) 17%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 52%, var(--surface)); }
+  .fch { display: flex; align-items: flex-start; gap: 10px; }
+  .fcl, .fcr { display: flex; flex-direction: column; gap: 6px; }
+  .fcl { flex: 1; min-width: 0; }
+  .fcr { flex: none; align-items: flex-end; font-variant-numeric: tabular-nums; }
+  .fcl b { font-size: 15.5px; font-weight: 700; line-height: 1; overflow-wrap: anywhere; }
+  .fcr b { font-size: 20px; font-weight: 700; line-height: 1; }
+  .fcl small, .fcr small { font-size: 12.5px; line-height: 1; color: color-mix(in srgb, var(--accent) 35%, var(--fg)); }
+  .fcn { margin: 0; font-size: 12.5px; line-height: 1.3; color: color-mix(in srgb, var(--fg) 85%, var(--muted)); }
+  .fca { display: flex; flex-wrap: wrap; gap: 6px; }
+  .fbtn { flex: none; height: 34px; display: flex; align-items: center; gap: 6px; padding: 0 11px; border: 0; border-radius: 17px;
+    background: color-mix(in srgb, var(--fg) 12%, var(--surface)); color: var(--fg); font: inherit; font-size: 13px; font-weight: 700; line-height: 1; cursor: pointer; }
+  .fbtn[aria-expanded="true"], .fbtn.on { background: var(--accent-bg); color: var(--accent); }
+  .ptimes { margin-top: 12px; }
+  /* The foot: «Ξεκίνα» and the bell. */
+  .pfoot { display: flex; gap: 8px; }
+  .pgo { flex: 1; height: 52px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 16px; border: 0; border-radius: 16px;
+    background: var(--accent); color: var(--on-accent); font: inherit; font-size: 16px; font-weight: 800; line-height: 1; cursor: pointer; }
+  .pgo:disabled { opacity: .45; cursor: default; }
+  .pbell { flex: none; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 16px;
+    background: var(--control); color: var(--fg); cursor: pointer; }
+  .pbell.on { background: var(--accent-bg); color: var(--accent); }
+  @media (prefers-reduced-motion: reduce) { .psheet { animation: none; } .ft :global(svg) { transition: none; } }
 </style>

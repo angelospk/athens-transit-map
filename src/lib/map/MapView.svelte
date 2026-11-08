@@ -60,7 +60,7 @@
     ...Array.from({ length: SIDES }, (_, q) => { const a = (q / SIDES) * 2 * Math.PI; return [q, ["literal", [Math.round(Math.cos(a) * TRACK_SHIFT * 100) / 100, Math.round(Math.sin(a) * TRACK_SHIFT * 100) / 100]]]; }).flat(),
     ["literal", [0, 0]]] as unknown as ExpressionSpecification;
   const POINTER_K = 0.68;  // a train's heading pointer, against its square
-  import type { TripIndex } from "../trip";
+  import { distM, type TripIndex } from "../trip";
 
   setWorkerUrl(workerUrl);
 
@@ -2281,32 +2281,50 @@
   $effect(() => {
     const labels = app.planLabels, m = map;
     if (!m || !labels.length || !app.tripPlan || app.tab !== "trip" || app.guide) return;
+    // A line's chip with its operator's mark (as LineChip.svelte): OASA's disc, the metro's and the tram's logos.
+    const base = import.meta.env.BASE_URL, athens = app.cityId === "athens";
+    const chip = (b: { label: string; color: string; text: string; mode?: string }) => {
+      const c = document.createElement("span");
+      c.className = "pl-chip";
+      c.style.background = b.color;
+      c.style.color = b.text;
+      const mode = b.mode ?? "";
+      if (athens && (mode === "bus" || mode === "trolley" || mode === "")) c.innerHTML = `<span class="pl-disc"><img src="${base}icons/oasa.png" alt=""></span>`;
+      else if (athens && mode === "metro") c.innerHTML = `<img class="pl-mark" src="${base}icons/metro-logo.svg" alt="">`;
+      else if (athens && mode === "tram") c.innerHTML = `<img class="pl-tram" src="${base}icons/tram-logo.svg" alt="">`;
+      c.append(b.label);
+      return c;
+    };
+    const WALK = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13" cy="4" r="1.6"/><path d="M10 21l2-6 3 3v3M9 12l1-4 4 1 2 3 3 1M8 9l-2 4"/></svg>`;
     const marks = labels.map(l => {
       const el = document.createElement("div");
       el.setAttribute("aria-hidden", "true");
       if (l.kind === "leg") {
+        // A ride (compact mockup 9, way Γ): the line's chip and its minutes on a dark pill.
         el.className = "plan-leg";
-        const b = document.createElement("b");
-        b.textContent = l.label;
-        b.style.background = l.color;
-        b.style.color = l.text;
-        el.append(b, durText(l.min));
+        const t = document.createElement("span");
+        t.className = "pl-min";
+        t.textContent = durText(l.min);
+        el.append(chip({ label: l.label, color: l.color, text: l.text, mode: l.mode }), t);
+      } else if (l.kind === "change" && l.lines?.length) {
+        // A change: [line left] › [line taken], the time it leaves; under it where, the walk, «σφιχτό» when tight.
+        el.className = "plan-chg";
+        const top = document.createElement("span"), bot = document.createElement("span");
+        top.className = "pc-top"; bot.className = "pc-bot";
+        l.lines.forEach((b, k) => {
+          if (k) { const a = document.createElement("i"); a.className = "pc-arr"; a.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>`; top.append(a); }
+          top.append(chip(b));
+        });
+        if (l.time) { const tm = document.createElement("b"); tm.className = "pc-time"; tm.textContent = l.time; top.append(tm); }
+        const nm = document.createElement("span");
+        nm.className = "pc-name";
+        nm.textContent = titleCase(l.stop ?? l.name.replace(/^Αλλαγή · /, ""));
+        bot.append(nm);
+        if (l.walk) { const w = document.createElement("span"); w.className = "pc-walk"; w.innerHTML = `${WALK}${l.walk}′`; bot.append(w); }
+        if (l.ok === false) { const tg = document.createElement("span"); tg.className = "pc-tight"; tg.textContent = "σφιχτό"; bot.append(tg); }
+        el.append(top, bot);
       } else {
         el.className = `plan-pin ${l.kind}${l.ok === false ? " tight" : ""}`;
-        // A change: the line left and the one taken, as their badges («Χ95 → Προαστιακός»), then where and how long.
-        if (l.kind === "change" && l.lines?.length) {
-          const row = document.createElement("span");
-          row.className = "pc-lines";
-          l.lines.forEach((b, k) => {
-            if (k) { const a = document.createElement("i"); a.textContent = "→"; row.append(a); }
-            const t = document.createElement("b");
-            t.textContent = b.label;
-            t.style.background = b.color;
-            t.style.color = b.text;
-            row.append(t);
-          });
-          el.append(row);
-        }
         const n = document.createElement("b"), sub = document.createElement("small");
         n.textContent = l.kind === "change" ? `Αλλαγή στο ${titleCase(l.name.replace(/^Αλλαγή · /, ""))}` : titleCase(l.name);
         sub.textContent = l.sub;
@@ -2521,6 +2539,86 @@
     if (loaded) map!.setFilter("bus-stop-selected", ["==", ["get", "i"], app.busStop ?? -1]);
   });
 
+  // A metro station's entrances: the base map's tiles carry them (OpenMapTiles «poi», subclass subway_entrance) once a
+  // layer asks for that layer, so an invisible one does. As a station opens, those within 300 m of it are read (again
+  // as more tiles come), merged by name (an unnamed one joins the named one beside it), and drawn numbered: the one
+  // nearest the user in green.
+  const ENT_LAYER = "subway-entrance-probe";
+  $effect(() => {
+    void baseGen;
+    const m = map;
+    if (!m || !loaded || m.getLayer(ENT_LAYER) || !m.getSource("openmaptiles")) return;
+    m.addLayer({ id: ENT_LAYER, type: "circle", source: "openmaptiles", "source-layer": "poi", minzoom: 14,
+      filter: ["==", ["get", "subclass"], "subway_entrance"], paint: { "circle-opacity": 0, "circle-radius": 1, "circle-stroke-width": 0 } });
+  });
+  function readEntrances(at: LngLat): { name: string | null; at: [number, number] }[] {
+    const m = map;
+    if (!m || !m.getLayer(ENT_LAYER)) return [];
+    const near = (p: [number, number]) => distM([p[1], p[0]], [at[1], at[0]]);
+    const pts = m.querySourceFeatures("openmaptiles", { sourceLayer: "poi", filter: ["==", ["get", "subclass"], "subway_entrance"] })
+      .map(f => ({ name: typeof f.properties?.name === "string" && f.properties.name.trim() ? f.properties.name.trim() : null, c: (f.geometry as GeoJSON.Point).coordinates as [number, number] }))
+      .filter(x => near(x.c) < 300);
+    const named = new Map<string, [number, number]>();
+    for (const x of pts) if (x.name) { const was = named.get(x.name); if (!was || near(x.c) < near(was)) named.set(x.name, x.c); }
+    const out = [...named].map(([name, c]) => ({ name: name as string | null, c }));
+    for (const x of pts) if (!x.name && !out.some(o => distM([o.c[1], o.c[0]], [x.c[1], x.c[0]]) < 60) && !out.some(o => !o.name && distM([o.c[1], o.c[0]], [x.c[1], x.c[0]]) < 30)) out.push({ name: null, c: x.c });
+    return out.sort((a, b) => near(a.c) - near(b.c)).map(o => ({ name: o.name, at: [o.c[1], o.c[0]] as [number, number] }));
+  }
+  let entMarks: Marker[] = [];
+  $effect(() => {
+    const m = map;
+    if (!m || !loaded) return;
+    const at = app.metroStation ? stopPin(app) : null;
+    if (!at) { untrack(() => { if (app.stationEntrances.length) app.stationEntrances = []; }); return; }
+    const read = () => {
+      const got = readEntrances(at);
+      if (got.length && JSON.stringify(got) !== JSON.stringify(untrack(() => app.stationEntrances))) app.stationEntrances = got;
+    };
+    untrack(() => { app.stationEntrances = []; });
+    // The tiles may come after the map last went idle: read again as the base map's source loads, and twice more.
+    const onData = (e: { sourceId?: string; isSourceLoaded?: boolean }) => { if (e.sourceId === "openmaptiles" && e.isSourceLoaded) read(); };
+    const t1 = setTimeout(read, 1500), t2 = setTimeout(read, 5000);
+    m.on("idle", read);
+    m.on("sourcedata", onData);
+    read();
+    return () => { m.off("idle", read); m.off("sourcedata", onData); clearTimeout(t1); clearTimeout(t2); };
+  });
+  $effect(() => {
+    const m = map, ents = app.stationEntrances, me = app.myPos;
+    entMarks.forEach(x => x.remove());
+    entMarks = [];
+    if (!m || !ents.length) return;
+    const best = me ? ents.reduce((a, b) => (distM(b.at, me) < distM(a.at, me) ? b : a)) : null;
+    entMarks = ents.map((e, k) => {
+      const el = document.createElement("div");
+      el.className = `ent-mark${e === best ? " best" : ""}`;
+      el.setAttribute("aria-hidden", "true");
+      el.textContent = String(k + 1);
+      return new Marker({ element: el, anchor: "center" }).setLngLat([e.at[1], e.at[0]]).addTo(m);
+    });
+    return () => { entMarks.forEach(x => x.remove()); entMarks = []; };
+  });
+
+  // «Σπίτι» and «Δουλειά» on the map: a round mark with its icon and the name beside it, where each was set.
+  const MINE_SVG = {
+    home: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11l8-7 8 7"/><path d="M6 10v10h12V10"/></svg>`,
+    work: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5h6v2"/></svg>`,
+  };
+  $effect(() => {
+    const m = map, pl = app.places;
+    if (!m || !loaded) return;
+    const marks = (["home", "work"] as const).flatMap(k => {
+      const p = pl[k];
+      if (!p) return [];
+      const el = document.createElement("div");
+      el.className = `mine-mark ${k}`;
+      el.setAttribute("aria-hidden", "true");
+      el.innerHTML = `<span class="mm-i">${MINE_SVG[k]}</span><b>${k === "home" ? "Σπίτι" : "Δουλειά"}</b>`;
+      return [new Marker({ element: el, anchor: "left", offset: [-14, 0] }).setLngLat([p.at[1], p.at[0]]).addTo(m)];
+    });
+    return () => marks.forEach(x => x.remove());
+  });
+
   // Picking on the map (compact mockup 8β): while the map moves, the stop or station nearest the centre within SNAP_PX
   // (let go past UNSNAP_PX, so it does not flicker at the edge) goes to app.pickSnap, with its place on the screen.
   const SNAP_PX = 34, UNSNAP_PX = 50;
@@ -2548,7 +2646,7 @@
         chips: b.st.lines.slice(0, 3).map(l => ({ t: l, bg: col[l] ?? "#3b5bdb", fg: l.startsWith("T") ? "#15181d" : "#ffffff" })) };
     } else {
       const x = ix!.s[b.i!], ls = linesAt(ix!, b.i!).map(l => l.line);
-      app.pickSnap = { at: b.at, x: b.x, y: b.y, name: app.stopLabel(x[3] ?? null, titleCase(x[0])), station: false, lines: ls,
+      app.pickSnap = { at: b.at, x: b.x, y: b.y, name: app.stopLabel(x[3] ?? null, titleCase(x[0])), station: false, lines: ls, code: x[3] ?? undefined,
         kind: ls.length && ls.every(l => app.lineInfo.get(l)?.kind === "trolley") ? "στάση τρόλεϊ" : "στάση λεωφορείου",
         chips: ls.slice(0, 3).map(l => { const k = app.lineColor(l); return { t: l, bg: k.bg, fg: k.fg }; }) };
     }
@@ -2809,6 +2907,15 @@
   :global(.applemap) { position: absolute; inset: 0; pointer-events: none; }
   :global(.applemap[hidden]) { display: none; }
   :global(.fix-pin) { cursor: grab; touch-action: none; filter: drop-shadow(0 3px 4px rgb(0 0 0 / 0.4)); }
+  :global(.ent-mark) { pointer-events: none; width: 24px; height: 24px; border-radius: 7px; display: flex; align-items: center; justify-content: center;
+    background: #262a32; color: #e8eaed; box-shadow: 0 0 0 2px #ffffff, 0 2px 6px rgb(0 0 0 / 0.4); font-size: 12px; font-weight: 800; line-height: 1; }
+  :global(.ent-mark.best) { background: #2f9e5b; color: #ffffff; }
+  :global(.mine-mark) { pointer-events: none; height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 10px 0 0; border-radius: 14px;
+    background: rgb(26 29 35 / 0.94); box-shadow: 0 2px 8px rgb(0 0 0 / 0.35), inset 0 0 0 1px #2c313b; color: #e8eaed; white-space: nowrap; }
+  :global(.mine-mark .mm-i) { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #4d8af0; color: #ffffff;
+    box-shadow: 0 0 0 2px #ffffff; }
+  :global(.mine-mark.work .mm-i) { background: #8a4fbf; }
+  :global(.mine-mark b) { font-size: 12.5px; font-weight: 800; line-height: 1; }
   :global(.stop-pin) { pointer-events: none; width: 44px; height: 44px; position: relative; }
   :global(.stop-pin .sp-halo) { position: absolute; left: 50%; top: 50%; width: 80px; height: 80px; margin: -40px 0 0 -40px; border-radius: 50%;
     background: radial-gradient(circle, rgb(77 138 240 / 0.18) 0 60%, rgb(77 138 240 / 0.10) 61% 100%); }

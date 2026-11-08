@@ -463,7 +463,7 @@
       </div>
     {/if}
     {#if others.length}
-      <div class="head"><h2>Κι άλλες κοντά</h2></div>
+      <div class="head"><h2>Κι άλλες κοντά</h2><button type="button" class="hlink" onclick={() => (app.nearOpen = true)}>Όλες</button></div>
       <div class="rows">
         {#each others as o (o.s.id)}
           <button type="button" class="srow" onclick={() => openStop(o.s)}>
@@ -644,4 +644,5 @@
   .where, .chip, .dep, .srow, .dest, .go { transition: transform .12s, background-color .15s; }
   .where:active, .chip:active, .srow:active, .dest:active, .go:active { transform: scale(.98); }
   @media (prefers-reduced-motion: reduce) { .where, .chip, .dep, .srow, .dest, .go { transition: none; } }
+  .hlink { height: 28px; display: flex; align-items: center; padding: 0 4px; border: 0; background: none; color: var(--accent); font: inherit; font-size: 14px; font-weight: 700; line-height: 1; cursor: pointer; }
 </style>

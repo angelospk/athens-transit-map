@@ -6,8 +6,8 @@
   // and the geocoder). Shown at every plain visit (not a shared link), and again from «Πού πας;» on Τώρα. The same
   // box, one field only, sets «Σπίτι» and «Δουλειά» (app.savingPlace).
   import { tick, untrack } from "svelte";
-  import { centre, distM, geocode, loadTripIndex, places, placeStop, savedPlaces, stationPlaces, suggest, type Place, type TripIndex } from "../trip";
-  import { titleCase } from "../nearby";
+  import { centre, distM, geocode, reverseGeocode, loadTripIndex, places, placeStop, savedPlaces, stationPlaces, suggest, type Place, type TripIndex } from "../trip";
+  import { distText, titleCase } from "../nearby";
   import type { AppState, TripMode, TripPrefs } from "../state.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
   import MoreHint from "./MoreHint.svelte";
@@ -20,18 +20,19 @@
   import { loadSuburban } from "../suburban";
   import { CITIES, type CityId } from "../cities";
   import { item, open as reveal, pop, rise, soft } from "../anim";
-  import { fetchV2Lines, fetchV2Stop, fetchV2Stops, getJSON } from "../api";
+  import { fetchStop, fetchV2Lines, fetchV2Stop, fetchV2Stops, getJSON } from "../api";
   import { findMuniLines, findMuniStops, lineStopPoints, type MuniStopHit, type StopEntry } from "../finder";
   import type { MuniCard } from "../muniLine";
   import { intents, lineAlias, modeWord, ownEnd, parseTrip, searchLines, searchNamed, type Ctx, type Intent } from "../searchEngine";
   import { fold } from "../search";
   import { checkLive, liveCount } from "../liveLines";
   import { stopRows, type V2Arrival, type V2Line } from "../v2";
-  import { placeNote, toward } from "../stops";
+  import { arrivalGroups, linesAt, placeNote, toward, type StopArrival } from "../stops";
   import { busStopCard } from "../legacy";
   import { destsOf, type Dest } from "../destinations";
   import DestIcon from "./DestIcon.svelte";
   import LineChip from "./LineChip.svelte";
+  import ShortcutSheet from "./ShortcutSheet.svelte";
   import LinesPage from "./LinesPage.svelte";
   import { clockHM } from "../trains";
   import { API_BASE } from "../config";
@@ -371,7 +372,7 @@
     const q = text.trim();
     if (q.length < 3) { busy = false; return; }
     busy = true;
-    // Near the trip's other end, else near the user (or the map's centre): of the many «Αγίας Μαρίνας» the near one first.
+    // Near the trip's other end, else near the user (or the map's centre): of the many «Ερμού» the near one first.
     const other = ends[f === "from" ? "to" : "from"].place;
     const near = other ? centre(other.pts) : app.myPos ?? app.mapCenter ?? undefined;
     timer = setTimeout(() => {
@@ -483,6 +484,72 @@
     }
     choose(f, { label: near ? `Κοντά στη στάση ${titleCase(near)}` : MAP, hint: `${c[0].toFixed(5)}, ${c[1].toFixed(5)}`, pts: [c], lines: [], kind: "area" });
   }
+
+  // ---- The map pick on a phone (compact mockups 8, 8β): the address field on top, and a sheet with the point (the
+  // stop the circle snapped onto, or the address there), the stops and the station a short walk from it, «Κράτα το ως»,
+  // «Πήγαινέ με εδώ».
+  const pickAt = $derived<[number, number] | null>(app.pickSnap?.at ?? app.mapCenter);
+  let pickAddr = $state.raw<Place | null>(null);
+  $effect(() => {
+    const c = app.mapCenter, on = !!app.pickFor && !wide;
+    pickAddr = null;
+    if (!on || !c) return;
+    const ac = new AbortController();
+    const t = setTimeout(() => reverseGeocode(c, ac.signal).then(p => { if (!ac.signal.aborted) pickAddr = p; }).catch(() => {}), 250);
+    return () => { clearTimeout(t); ac.abort(); };
+  });
+  const walkMin = (m: number) => Math.max(1, Math.round((m * 1.3) / 80));
+  const pickNear = $derived.by(() => {
+    const c = app.mapCenter;
+    if (!app.pickFor || wide || !c || !ix) return [] as { key: string; name: string; lines: string[]; at: [number, number]; walk: number; station: boolean }[];
+    const byName = new Map<string, { name: string; lines: Set<string>; at: [number, number]; m: number }>();
+    ix.s.forEach((x, i) => {
+      if (Math.abs(x[1] - c[0]) > 0.004 || Math.abs(x[2] - c[1]) > 0.005) return;
+      const m = distM([x[1], x[2]], c);
+      if (m > 350) return;
+      const k = fold(x[0]), g = byName.get(k);
+      const ls = linesAt(ix!, i).map(l => l.line);
+      if (!g) byName.set(k, { name: titleCase(x[0]), lines: new Set(ls), at: [x[1], x[2]], m });
+      else { ls.forEach(l => g.lines.add(l)); if (m < g.m) { g.m = m; g.at = [x[1], x[2]]; } }
+    });
+    const bus = [...byName.values()].sort((a, b) => a.m - b.m).slice(0, 2)
+      .map(g => ({ key: `b|${g.name}`, name: g.name, lines: [...g.lines].slice(0, 3), at: g.at, walk: walkMin(g.m), station: false }));
+    let st: { key: string; name: string; lines: string[]; at: [number, number]; walk: number; station: boolean } | null = null, best = 700;
+    for (const x of app.metro?.stations ?? []) {
+      const m = distM([x.lat, x.lon], c);
+      if (m < best) { best = m; st = { key: `m|${x.name}`, name: titleCase(x.name), lines: x.lines, at: [x.lat, x.lon], walk: walkMin(m), station: true }; }
+    }
+    return [...bus, ...(st ? [st] : [])];
+  });
+  const pickTitle = $derived(app.pickSnap?.name ?? pickAddr?.label ?? "Σημείο στον χάρτη");
+  const pickSub = $derived.by(() => {
+    const at = pickAt, me = app.myPos;
+    const far = at && me ? distM(me, at) : null;
+    const what = app.pickSnap ? app.pickSnap.kind : pickAddr?.hint ?? (at ? `${at[0].toFixed(5)}, ${at[1].toFixed(5)}` : "");
+    return [what, far != null && far > 40 ? `${distText(far)} από εδώ` : ""].filter(Boolean).join(" · ");
+  });
+  function pickType() {
+    const f = app.pickFor;
+    if (!f) return;
+    app.pickFor = null;
+    open = f;
+    startTyping(true);
+    void tick().then(() => inputs[f]?.focus());
+  }
+  const pickMe = () => { if (app.myPos) app.centerOn([app.myPos[1], app.myPos[0]]); };
+  async function pickShare() {
+    const at = pickAt;
+    if (!at) return;
+    const url = `https://www.openstreetmap.org/?mlat=${at[0].toFixed(6)}&mlon=${at[1].toFixed(6)}#map=18/${at[0].toFixed(6)}/${at[1].toFixed(6)}`;
+    try { if (navigator.share) await navigator.share({ title: pickTitle, url }); else await navigator.clipboard.writeText(url); } catch { /* closed */ }
+  }
+  const keptAs = (k: "home" | "work") => { const p = app.places[k], at = pickAt; return !!p && !!at && distM(p.at, at) < 30; };
+  function keepAs(k: "home" | "work") {
+    const at = pickAt;
+    if (!at) return;
+    app.setPlace(k, keptAs(k) ? null : { label: pickTitle, at });
+  }
+  const pickFav = $derived(app.pickSnap?.code ? `oasa:${app.pickSnap.code}` : null);
 
   // Αντιστροφή: the two ends change places; the button turns and each text slides in from the other row.
   let turned = $state(false);
@@ -663,6 +730,31 @@
       deps: (rows ?? []).slice(0, 3).map(r => ({ line: native(r.line), to: titleCase(placeNote(toward(r.headsign)).place), min: r.times[0] ? minOf(r.times[0].at) : null })) };
   }));
   const favLines = $derived(app.favs.lines.slice(0, 6));
+  // The line shortcuts' minutes, live: each stop asked once a minute while «Πού πας;» is open.
+  let scMin = $state<Record<string, number | null>>({});
+  $effect(() => {
+    const list = app.lineShortcuts, on = app.start;
+    if (!on || !list.length) return;
+    let stop = false;
+    const load = async () => {
+      for (const code of new Set(list.map(x => x.stop))) {
+        const r = await fetchStop(code).catch(() => null);
+        if (stop) return;
+        const b = r?.status === 200 ? (r.body as { arrivals?: StopArrival[] } | null) : null;
+        if (!b?.arrivals) continue;
+        const gs = arrivalGroups(b.arrivals, app.serverMs());
+        const next = { ...scMin };
+        for (const x of list.filter(y => y.stop === code)) {
+          const g = gs.find(g => g.line === x.line && g.variant === x.variant) ?? gs.find(g => g.line === x.line);
+          next[`${x.line}|${x.variant}|${x.stop}`] = g ? g.times[0].min : null;
+        }
+        scMin = next;
+      }
+    };
+    void load();
+    const t = setInterval(load, 60_000);
+    return () => { stop = true; clearInterval(t); };
+  });
   // A favourite stop as the trip's end (its own label, the stop's place).
   function goFav(st: { id: string; name: string; lat: number; lon: number }) {
     choose("to", { label: app.stopLabel(st.id, titleCase(st.name)), pts: [[st.lat, st.lon]], lines: [], kind: "stop" });
@@ -1039,15 +1131,6 @@
 
 {#if app.start && app.pickFor}
   <!-- Picking on the map: a crosshair at the centre and two buttons; the map stays free to move. -->
-  <div class="pickbar" class:check={!!checking} role="status" transition:rise={{ y: -16 }}>
-    <span class="dot {app.pickFor}"></span>
-    {#if checking}
-      <span class="chk"><b>{checking.f === "from" ? "Από" : "Προς"}: {checking.place.kind === "me" ? "Εδώ που είσαι" : titleCase(checking.place.label)}</b><small>Αυτό είναι το σημείο. Για άλλο, σύρε τον χάρτη και πάτα «Άλλαξε εδώ».</small></span>
-    {:else}
-      <span class="phone">{app.pickFor === "from" ? "Μετακίνησε τον χάρτη στην αφετηρία" : "Μετακίνησε τον χάρτη στον προορισμό"}</span>
-      <span class="pc">{app.pickFor === "from" ? "Κάνε κλικ στην αφετηρία" : "Κάνε κλικ στον προορισμό"}<kbd>Esc</kbd></span>
-    {/if}
-  </div>
   <!-- A blue circle at the centre; over a stop or a station it snaps onto it, grows round its mark, its name above. -->
   {@const sn = app.pickSnap}
   <div class="aim" class:snap={!!sn} style:--x="{sn?.x ?? 0}px" style:--y="{sn?.y ?? 0}px" aria-hidden="true">
@@ -1061,10 +1144,61 @@
       {/key}
     {/if}
   </div>
+  {#if !wide}
+  <div class="ptop" transition:rise={{ y: -16 }}>
+    <button type="button" class="pcirc" aria-label="Πίσω" onclick={() => (app.pickFor = null)}><Icon name="back" size={20} /></button>
+    <button type="button" class="pfield" onclick={pickType}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 20 20" /></svg><span>Ή γράψε διεύθυνση</span></button>
+  </div>
+  {#if !app.pickSnap}<span class="phint" transition:soft><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3" /></svg>Σύρε τον χάρτη ή πάτα ένα σημείο</span>{/if}
+  <div class="psheet" transition:rise={{ y: 40 }}>
+    {#if app.myPos}<button type="button" class="pcirc pme" aria-label="Η θέση μου" onclick={pickMe}><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5 3.8 10.6a.6.6 0 0 0 .05 1.12l6.6 2.03 2.03 6.6a.6.6 0 0 0 1.12.05z" fill="currentColor" /></svg></button>{/if}
+    <i class="pgrip" aria-hidden="true"></i>
+    <div class="phead">
+      <span class="pmk {app.pickFor}"><svg width="16" height="18" viewBox="0 0 24 28" aria-hidden="true"><path d="M12 27s-9-8.5-9-15a9 9 0 0 1 18 0c0 6.5-9 15-9 15zm0-11.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" fill="currentColor" /></svg></span>
+      <span class="ptx"><b>{pickTitle}</b><small>{pickSub}</small></span>
+      <button type="button" class="pcirc sm" aria-label="Μοιράσου το σημείο" onclick={pickShare}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5" /><path d="M5 13v7h14v-7" /></svg></button>
+    </div>
+    {#if pickNear.length}
+      <div class="pnear">
+        {#each pickNear as n (n.key)}
+          <button type="button" class="pn" onclick={() => app.centerOn([n.at[1], n.at[0]])}>
+            {#if n.station}<img class="pnm" src="{import.meta.env.BASE_URL}icons/{n.lines.every(l => l.startsWith("T")) ? "tram" : "metro"}-logo.svg" alt="" />
+            {:else}{@const c = app.lineColor(n.lines[0] ?? "")}<LineChip label={n.lines.join(" · ")} bg={c.bg} fg={c.fg} mode="bus" city={app.cityId} />{/if}
+            <b>{n.name}</b><span>{n.walk}′</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
+    <div class="pkeep">
+      <span>Κράτα το ως</span>
+      <button type="button" class="pk" class:on={keptAs("home")} aria-pressed={keptAs("home")} onclick={() => keepAs("home")}><Icon name="home" size={15} /><b>Σπίτι</b></button>
+      <button type="button" class="pk" class:on={keptAs("work")} aria-pressed={keptAs("work")} onclick={() => keepAs("work")}><Icon name="work" size={15} /><b>Δουλειά</b></button>
+      {#if pickFav && app.pickSnap}
+        {@const on = app.isFavStop(pickFav)}
+        <button type="button" class="pk round" class:on aria-pressed={on} aria-label={on ? "Αφαίρεση από τις αγαπημένες" : "Στα αγαπημένα"}
+          onclick={() => app.toggleFavStop({ id: pickFav!, name: app.pickSnap!.name, lat: app.pickSnap!.at[0], lon: app.pickSnap!.at[1] })}><Icon name={on ? "star-filled" : "star"} size={16} /></button>
+      {/if}
+    </div>
+    <div class="pgo">
+      <button type="button" class="pcancel" onclick={() => (app.pickFor = null)}>{checking ? "Πίσω" : "Άκυρο"}</button>
+      <button type="button" class="pmain" disabled={!app.mapCenter} onclick={takeCentre}><Icon name="route" size={18} /><span>{checking ? "Άλλαξε εδώ" : app.pickFor === "from" ? "Ξεκίνα από εδώ" : "Πήγαινέ με εδώ"}</span></button>
+    </div>
+  </div>
+  {:else}
+  <div class="pickbar" class:check={!!checking} role="status" transition:rise={{ y: -16 }}>
+    <span class="dot {app.pickFor}"></span>
+    {#if checking}
+      <span class="chk"><b>{checking.f === "from" ? "Από" : "Προς"}: {checking.place.kind === "me" ? "Εδώ που είσαι" : titleCase(checking.place.label)}</b><small>Αυτό είναι το σημείο. Για άλλο, σύρε τον χάρτη και πάτα «Άλλαξε εδώ».</small></span>
+    {:else}
+      <span class="phone">{app.pickFor === "from" ? "Μετακίνησε τον χάρτη στην αφετηρία" : "Μετακίνησε τον χάρτη στον προορισμό"}</span>
+      <span class="pc">{app.pickFor === "from" ? "Κάνε κλικ στην αφετηρία" : "Κάνε κλικ στον προορισμό"}<kbd>Esc</kbd></span>
+    {/if}
+  </div>
   <div class="pickacts" transition:rise>
     <button type="button" class="ghost" onclick={() => (app.pickFor = null)}>{checking ? "Πίσω" : "Άκυρο"}</button>
     <button type="button" class="primary" disabled={!app.mapCenter} onclick={takeCentre}>{checking ? "Άλλαξε εδώ" : "Εδώ"}</button>
   </div>
+  {/if}
 {:else if app.start}
   <div class="start" class:side={wide} role="dialog" aria-modal={!wide} aria-labelledby="start-h" transition:soft>
     <div class="box" class:ans={answer} class:typing bind:this={boxEl} in:rise={{ y: 32, duration: 360 }}>
@@ -1213,6 +1347,14 @@
               {@const c = app.lineColor(native(l.id))}
               <button type="button" class="scut ln" aria-label="Γραμμή {l.label}" onclick={() => openLine({ id: l.id, label: l.label } as V2Line)}>
                 <LineChip label={l.label} bg={c.bg} fg={c.fg} mode={app.lineInfo.get(native(l.id))?.kind === "trolley" ? "trolley" : "bus"} city={app.cityId} />
+              </button>
+            {/each}
+            {#each app.lineShortcuts as sc (sc.line + sc.variant + sc.stop)}
+              {@const c = app.lineColor(sc.line)}
+              {@const mn = scMin[`${sc.line}|${sc.variant}|${sc.stop}`]}
+              <button type="button" class="scut ln sc" aria-label="Γραμμή {sc.line} προς {sc.to} από {sc.stopName}" onclick={() => app.push(busStopCard(sc.stop, sc.stopName))}>
+                <LineChip label={sc.line} bg={c.bg} fg={c.fg} mode={app.lineInfo.get(sc.line)?.kind === "trolley" ? "trolley" : "bus"} city={app.cityId} />
+                <span class="sct">{sc.to.length > 8 ? `${sc.to.slice(0, 6)}.` : sc.to}</span>{#if mn != null}<span class="scm"><i></i>{mn}′</span>{/if}
               </button>
             {/each}
             <button type="button" class="scut add" onclick={() => (addSheet = true)}><Icon name="plus" size={15} /><b>Πρόσθεσε</b></button>
@@ -1458,14 +1600,7 @@
       {/if}
     </div>
     {#if addSheet}
-      <Sheet title="Νέα συντόμευση" onclose={() => (addSheet = false)}>
-        <div class="slist">
-          {#each mine as m (m.k)}
-            <button type="button" class="srow" onclick={() => { addSheet = false; app.savingPlace = m.k; }}><span class="ic"><Icon name={m.k} size={20} /></span><span class="tx">{m.place ? `Άλλαξε ${m.label === "Σπίτι" ? "το Σπίτι" : "τη Δουλειά"}` : `${m.label}: όρισέ ${m.k === "home" ? "το" : "τη"}`}</span></button>
-          {/each}
-          <button type="button" class="srow" onclick={() => { addSheet = false; findLine(); }}><span class="ic"><Icon name="route" size={20} /></span><span class="tx">Γραμμή: βρες τη και πάτα το ☆ στην κάρτα της</span></button>
-        </div>
-      </Sheet>
+      <ShortcutSheet {app} lines={allLines} onclose={() => (addSheet = false)} onplace={k => { addSheet = false; app.savingPlace = k; }} />
     {:else if sheet === "opts"}
       <Sheet title="Επιλογές" onclose={() => (sheet = null)}>
         <p class="sq">Με τι θέλεις να πας;</p>
@@ -2169,4 +2304,50 @@
   .schips { display: flex; gap: 4px; }
   .schips span { height: 22px; padding: 0 6px; border-radius: 6px; display: flex; align-items: center; font-size: 12px; font-weight: 800; line-height: 1; }
   @media (prefers-reduced-motion: reduce) { .aim, .aim .ring, .aim .core { transition: none; animation: none; } }
+
+  /* ---- The map pick on a phone (compact mockups 8, 8β). */
+  .ptop { position: fixed; z-index: 30; left: 16px; right: 16px; top: calc(16px + env(safe-area-inset-top)); display: flex; align-items: center; gap: 8px; }
+  .pcirc { flex: none; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 50%;
+    background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: inset 0 0 0 1px var(--card-border, var(--border)); color: var(--fg); cursor: pointer; }
+  .pcirc.sm { width: 40px; height: 40px; background: var(--control); box-shadow: none; }
+  .pfield { flex: 1; min-width: 0; height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 14px; border: 0; border-radius: 22px;
+    background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: inset 0 0 0 1px var(--card-border, var(--border)); color: var(--muted);
+    font: inherit; font-size: 15px; line-height: 1; text-align: left; cursor: text; }
+  .phint { position: fixed; z-index: 30; left: 50%; top: calc(74px + env(safe-area-inset-top)); translate: -50% 0; height: 32px; padding: 0 14px; display: flex; align-items: center; gap: 8px;
+    border-radius: 16px; background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: inset 0 0 0 1px var(--card-border, var(--border));
+    white-space: nowrap; font-size: 13px; font-weight: 600; line-height: 1; color: color-mix(in srgb, var(--fg) 82%, var(--muted)); pointer-events: none; }
+  .psheet { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; gap: 12px; padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
+    border-radius: 24px 24px 0 0; background: var(--surface); box-shadow: 0 -10px 30px rgb(0 0 0 / .45); box-sizing: border-box; }
+  .pme { position: absolute; right: 16px; top: -60px; color: var(--accent); }
+  .pgrip { width: 40px; height: 5px; border-radius: 3px; background: var(--border); align-self: center; display: block; }
+  .phead { height: 44px; display: flex; align-items: center; gap: 12px; }
+  .pmk { flex: none; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #ff7a2f; background: rgb(255 122 47 / .16); }
+  .pmk.from { color: var(--accent); background: var(--accent-bg); }
+  .ptx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .ptx b { font-size: 18px; font-weight: 800; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ptx small { font-size: 12.5px; line-height: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pnear { display: flex; gap: 8px; overflow-x: auto; margin-right: -16px; padding-right: 16px; scrollbar-width: none; }
+  .pnear::-webkit-scrollbar { display: none; }
+  .pn { flex: none; height: 36px; display: flex; align-items: center; gap: 6px; padding: 0 12px 0 4px; border: 0; border-radius: 18px; background: var(--card, var(--control));
+    box-shadow: inset 0 0 0 1px var(--card-border, var(--border)); color: var(--fg); font: inherit; line-height: 1; cursor: pointer; }
+  .pn b { font-size: 13px; font-weight: 700; white-space: nowrap; }
+  .pn span { font-size: 13px; font-weight: 600; color: var(--muted); }
+  .pnm { width: 28px; height: 28px; display: block; flex: none; }
+  .pkeep { height: 36px; display: flex; align-items: center; gap: 8px; }
+  .pkeep > span { flex: none; font-size: 13px; font-weight: 600; line-height: 1; color: var(--muted); }
+  .pk { height: 36px; display: flex; align-items: center; gap: 6px; padding: 0 12px 0 10px; border: 0; border-radius: 18px; background: var(--card, var(--control));
+    box-shadow: inset 0 0 0 1px var(--card-border, var(--border)); color: var(--fg); font: inherit; line-height: 1; cursor: pointer; }
+  .pk b { font-size: 13.5px; font-weight: 700; }
+  .pk.round { width: 36px; padding: 0; justify-content: center; }
+  .pk.on { background: var(--accent-bg); color: var(--accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+  .pgo { display: flex; gap: 8px; margin-top: 4px; }
+  .pcancel, .pmain { height: 52px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 16px; font: inherit; line-height: 1; cursor: pointer; }
+  .pcancel { flex: none; padding: 0 18px; background: var(--control); color: var(--fg); font-size: 15px; font-weight: 700; }
+  .pmain { flex: 1; background: #4d8af0; color: #ffffff; font-size: 16px; font-weight: 800; }
+  .pmain:disabled { opacity: .5; cursor: default; }
+
+  .scut.sc { gap: 7px; padding: 0 12px 0 4px; }
+  .sct { font-size: 13px; font-weight: 600; line-height: 1; white-space: nowrap; }
+  .scm { display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 800; line-height: 1; color: var(--ontime); }
+  .scm i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: block; }
 </style>

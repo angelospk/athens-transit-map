@@ -110,7 +110,11 @@ const median = (xs: number[]) => {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
 
-export interface PickSnap { at: [number, number]; x: number; y: number; name: string; kind: string; station: boolean; lines: string[];
+// A line's shortcut on «Πού πας;» (compact mockup 10): the line, its way, the stop it is caught at.
+export interface LineShortcut { line: string; variant: string; to: string; stop: string; stopName: string }
+const isShortcuts = (v: unknown) => Array.isArray(v) && v.every(x => x && typeof x === "object" && typeof (x as LineShortcut).line === "string" && typeof (x as LineShortcut).stop === "string");
+
+export interface PickSnap { at: [number, number]; x: number; y: number; name: string; kind: string; station: boolean; lines: string[]; code?: string;
   chips: { t: string; bg: string; fg: string }[] }
 
 export class AppState {
@@ -178,6 +182,20 @@ export class AppState {
   // Picking on the map: the stop or station the centre is over (MapView, while the map moves), and where it sits on the
   // screen from the centre, in px. The blue circle snaps onto it; «Εδώ» takes it.
   pickSnap = $state.raw<PickSnap | null>(null);
+  // The open metro station's entrances (MapView reads them off the base map's tiles, OpenStreetMap's
+  // railway=subway_entrance, as the station opens): one per name, nearest the station first.
+  stationEntrances = $state.raw<{ name: string | null; at: [number, number] }[]>([]);
+  lineShortcuts = $state.raw<LineShortcut[]>(stored("lineShortcuts", [], isShortcuts));
+  addShortcut(sc: LineShortcut) {
+    const next = [...this.lineShortcuts.filter(x => !(x.line === sc.line && x.variant === sc.variant && x.stop === sc.stop)), sc].slice(-6);
+    this.lineShortcuts = next;
+    store("lineShortcuts", next);
+  }
+  removeShortcut(sc: LineShortcut) {
+    const next = this.lineShortcuts.filter(x => x !== sc);
+    this.lineShortcuts = next;
+    store("lineShortcuts", next);
+  }
   mapPick = $state.raw<[number, number] | null>(null);   // a click on the map while picking: that point
   // Riding a bus (VehicleCard): the vehicle, and the stop the rider gets off at (null until chosen). rideBuzz: vibrate one
   // stop before it (kept).
@@ -590,7 +608,9 @@ export class AppState {
     const linkedCard = cardFromUrl(location.pathname, location.search);
     this.linked = ids.length > 0 || !!linkedCard;
     if (this.linked) this.tab = "map";
-    else this.start = true;   // a plain visit opens on «Πού πας;» (StartScreen)
+    // A plain visit: on a phone the home sheet over the map (the departures near the user), on a computer «Πού πας;».
+    else if (typeof matchMedia === "function" && matchMedia("(max-width: 719px)").matches) this.tab = "now";
+    else this.start = true;
     this.cityLocked = cityInUrl(location.pathname, location.search);
     this.cityId = pageCityOf(location.pathname, location.search, stored<unknown>("city", null, () => true));
     store("city", this.cityId);

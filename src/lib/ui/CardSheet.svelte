@@ -20,7 +20,7 @@
   import Back from "./Back.svelte";
   import Icon from "./Icon.svelte";
 
-  let { app, key, header, children, starred, onstar, starLabel, pinColor, onpin, closeOnEscape = true, onclose }: {
+  let { app, key, header, children, starred, onstar, starLabel, pinColor, onpin, closeOnEscape = true, onclose, compact = false }: {
     app: AppState;
     key: string;                       // a new key opens the sheet again
     header: Snippet;
@@ -32,6 +32,7 @@
     onpin?: () => void;
     closeOnEscape?: boolean;
     onclose?: () => void;              // × and Escape; default: close the cards
+    compact?: boolean;                 // on a phone, the compact mockups' sheet: to the screen's edges, 40px circles, × not ‹ on its own
   } = $props();
   const close = () => (onclose ?? (() => app.closeCards()))();
 
@@ -101,7 +102,7 @@
 
 <svelte:window onkeydown={e => { if (e.key === "Escape" && closeOnEscape) close(); }} />
 
-<section class="card" class:dragging class:peek={narrow.current && sheet === "peek"} aria-label="Λεπτομέρειες" bind:this={card} bind:offsetHeight={cardH}
+<section class="card" class:compact class:dragging class:peek={narrow.current && sheet === "peek"} aria-label="Λεπτομέρειες" bind:this={card} bind:offsetHeight={cardH}
   style:transform={shift ? `translateY(${shift}px)` : undefined}>
   <!-- svelte-ignore a11y_no_static_element_interactions (the keyboard goes through the grab button) -->
   <div class="top" bind:offsetHeight={topH} onpointerdown={down} onpointermove={move} onpointerup={end} onpointercancel={end}
@@ -110,7 +111,7 @@
     <button type="button" class="grab" aria-expanded={sheet === "open"} aria-controls="card-body"
       aria-label={sheet === "open" ? "Σύμπτυξη λεπτομερειών" : "Ανάπτυξη λεπτομερειών"} onclick={e => { if (e.detail === 0) { sheet = flip(sheet); rest = null; } }}><span></span></button>
     <header>
-      <Back {app} onclose={close} />
+      {#if !(compact && narrow.current) || app.stack.length > 1}<Back {app} onclose={close} />{/if}
       <div class="hd">{@render header()}</div>
       {#if onpin}
         <button type="button" class="star pin" class:on={!!pinColor} style:--pc={pinColor} aria-pressed={!!pinColor}
@@ -170,6 +171,19 @@
   }
   /* A phone has Back for closing (the mockup's header); × stays on a desktop. */
   @media (max-width: 719px) { .close { display: none; } }
+  /* The compact mockups' sheet (as the stop card's): to the screen's edges, the handle on top, a 44px header with 40px circles,
+     × to close when no card is below. */
+  @media (max-width: 719px) {
+    .card.compact { left: 0; right: 0; bottom: 0; border-radius: 24px 24px 0 0; padding: 8px 16px calc(16px + env(safe-area-inset-bottom)); }
+    .compact .grab { display: flex; align-items: flex-start; justify-content: center; width: calc(100% + 32px); height: 25px; margin: -8px -16px 0; padding-top: 8px; box-sizing: border-box; }
+    .compact .grab span { margin: 0; }
+    .compact header { gap: 10px; min-height: 44px; margin-bottom: 12px; }
+    .compact .hd { gap: 10px; }
+    .compact .close, .compact .star { width: 40px; height: 40px; margin: 0; background: var(--control); }
+    .compact .close { display: flex; }
+    .compact .star.on { background: color-mix(in srgb, var(--star) 16%, var(--control)); }
+    .compact .body { max-height: min(64dvh, 600px); }
+  }
   /* A card comes up from below; under a press its round buttons give a little. */
   .card { animation: cardIn .32s cubic-bezier(.2, .8, .2, 1); }
   @keyframes cardIn { from { transform: translateY(28px); opacity: 0; } }

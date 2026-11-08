@@ -467,6 +467,19 @@ export function loadTripIndex(): Promise<TripIndex> {
 // as you type; the caller waits for a pause in typing). Answers are cached; a point biases them to the
 // places near it, and a house number the map does not know falls back to its street.
 const GEOCODE_URL = import.meta.env.VITE_GEOCODE_URL || "https://photon.komoot.io/api/";
+// The address at a point (the map pick's sheet): Photon's reverse lookup, its first answer, cached by ~10 m.
+const reversed = new Map<string, Place | null>();
+export async function reverseGeocode(at: Pt, signal?: AbortSignal): Promise<Place | null> {
+  const key = at.map(x => x.toFixed(4)).join(",");
+  if (reversed.has(key)) return reversed.get(key)!;
+  const u = new URL(GEOCODE_URL.replace(/api\/?$/, "reverse"));
+  Object.entries({ lat: String(at[0]), lon: String(at[1]), lang: "default", limit: "1" }).forEach(([k, v]) => u.searchParams.set(k, v));
+  const r = await fetch(u, { signal });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const p = parsePhoton(await r.json())[0] ?? null;
+  reversed.set(key, p);
+  return p;
+}
 const geocoded = new Map<string, Place[]>();
 export async function geocode(query: string, signal?: AbortSignal, near?: Pt): Promise<Place[]> {
   // About 1 km: the point is sent as it is cached, so one answer serves the points near it.
@@ -490,7 +503,7 @@ export async function geocode(query: string, signal?: AbortSignal, near?: Pt): P
   let found = await ask(q);
   const num = /\s+\d+(?:\s*-\s*\d+)?(?:\s*[α-ωa-z])?$/i;   // "30", "30-32", "30Α", "30 Α"
   if (!found.length && num.test(q)) found = await ask(q.replace(num, ""));
-  // «Πάροδος Αγίας Μαρίνας 5»: OpenStreetMap often names only the main street, not its side streets (and has no
+  // «Πάροδος Ερμού 3»: OpenStreetMap often names only the main street, not its side streets (and has no
   // number there); the full text then finds that number on streets of the name elsewhere. When no side street is
   // found, the main street (near the point given) comes first: the nearest the map knows.
   const side = /^(?:πάροδος|παροδος|παρ\.?|πάρ\.?)\s+/i;
