@@ -8,22 +8,31 @@
 // starts and its end (from a dash) the place where it ends, each the shortest that does. No such cut, or
 // one each way: no name (null), and the card shows the headsign as before.
 
-import { cleanTerminus } from "./towards";
+import { cleanTerminus, greek } from "./towards";
 import { fold } from "./search";
 import { distanceM } from "./glide";
 import type { LineStatic } from "./types";
 
 // Words that name no place on their own.
-const STOP = new Set(["αγ", "αγιοσ", "αγια", "αγιου", "αγιασ", "αγιοι", "αγιων", "νεα", "νεο", "νεοσ", "νεασ", "στ", "σμ", "μετρο",
-  "οδοσ", "λεωφ", "λεωφοροσ", "και", "αφετηρια", "τερμα", "δια", "μεσω", "του", "τησ", "των", "προσ", "απο", "στη", "στο", "εωσ"]);
+const STOP_RAW = ["αγ", "αγιοσ", "αγια", "αγιου", "αγιασ", "αγιοι", "αγιων", "νεα", "νεο", "νεοσ", "νεασ", "στ", "σμ", "μετρο",
+  "οδοσ", "λεωφ", "λεωφοροσ", "και", "αφετηρια", "τερμα", "δια", "μεσω", "του", "τησ", "των", "προσ", "απο", "στη", "στο", "εωσ"];
+
 // Words after a place that say when, not where: weekdays, night («ΚΤΕΛ-ΔΕΥΤΕΡΑ», «Κ.Τ.Ε.Λ. ΝΥΧΤΕΡΙΝΟ»).
 const WHEN = ["δευτερα", "τριτη", "τεταρτη", "πεμπτη", "παρασκευη", "σαββατο", "κυριακη", "νυχτερινο", "νυχτερινη", "νυχτερινα"];
 const DAYS = new Set(WHEN);
 
-// The words of a name, folded, for matching: «Κ.Τ.Ε.Λ» is «κτελ», «Α.Σ.ΙΚΕΑ» gives «ικεα».
+// One spelling of a folded Greek word: ει οι η υ are ι, ω is ο, αι is ε, a double letter one (ΛΥΣΙΜΑΧΕΙΑ and
+// ΛΥΣΙΜΑΧΙΑ, ΦΛΕΒΑΡΙΩΤΗΣΣΑ and ΦΛΕΒΑΡΙΩΤΙΣΣΑ are one place).
+const spell = (w: string) => w.replace(/ου/g, "\0").replace(/ει|οι|η|υ/g, "ι").replace(/ω/g, "ο").replace(/αι/g, "ε")
+  .replace(/\0/g, "ου").replace(/(\p{L})\1/gu, "$1");
+
+const STOP = new Set(STOP_RAW.map(spell));
+
+// The words of a name, folded, for matching: «Κ.Τ.Ε.Λ» is «κτελ», «Α.Σ.ΙΚΕΑ» gives «ικεα»; Latin capitals in a
+// Greek word are Greek («ΑΦEΤΗΡΙΑ»).
 export function words(s: string): string[] {
   const out = new Set<string>();
-  for (const w of fold(s).split(/[^\p{L}\p{N}.]+/u)) {
+  for (const w of fold(s.split(/\s+/).map(greek).join(" ")).split(/[^\p{L}\p{N}.]+/u).map(spell)) {
     const pieces = w.split(".").filter(Boolean);
     if (pieces.length > 1 && pieces.every(p => p.length === 1)) out.add(pieces.join(""));   // an abbreviation: Κ.Τ.Ε.Λ
     else for (const p of pieces) out.add(p);
@@ -31,11 +40,14 @@ export function words(s: string): string[] {
   return [...out].filter(w => w.length >= 3 && !STOP.has(w) && !/\d/.test(w));
 }
 
-// Two words name the same place: equal, or one a case ending of the other (ΠΕΙΡΑΙΑ, ΠΕΙΡΑΙΑΣ; ΔΙΚΕΛΛΑ, ΔΙΚΕΛΛΩΝ).
+// Two words name the same place: equal, or the same word with another Greek case ending (ΠΕΙΡΑΙΑ, ΠΕΙΡΑΙΑΣ;
+// ΔΙΚΕΛΛΑ, ΔΙΚΕΛΛΩΝ; ΚΟΜΠΟΤΙ, ΚΟΜΠΟΤΙΟΥ; ΝΕΑΠΟΛΗ, ΝΕΑΠΟΛΕΩΣ). Two words that only start alike are not (ΚΑΛΑΜΑΚΙ, ΚΑΛΑΜΑΤΑ).
+const ENDINGS = ["ιου", "ιον", "ιασ", "ιεσ", "εοσ", "ου", "ον", "ασ", "εσ", "οσ", "ισ", "σ", "α", "ο", "ι", "ε"];   // spelled (spell)
+const stems = (w: string) => [w, ...ENDINGS.filter(e => w.endsWith(e) && w.length - e.length >= 3).map(e => w.slice(0, -e.length))];
 function same(a: string, b: string): boolean {
   if (a === b) return true;
-  const [s, l] = a.length <= b.length ? [a, b] : [b, a];
-  return s.length >= 4 && l.length - s.length <= 3 && l.startsWith(s.slice(0, Math.max(4, s.length - 2)));
+  const x = stems(a);
+  return stems(b).some(y => x.includes(y));
 }
 
 // How many words of a piece of a name one of the area's stop names has.
@@ -69,10 +81,14 @@ function pieces(name: string): Piece[] {
   return named;
 }
 
+// A piece of a name without what follows ΜΕΣΩ/ΑΠΟ («ΙΚΕΑ ΑΠΟ ΛΑΚΩΜΑ»): a place on the way, not the end. A place
+// in brackets refines the end («ΚΗΦΙΣΙΑ(ΠΛ.ΠΛΑΤΑΝΟΥ)», «ΠΕΡΙΣΤΕΡΙ (ΑΓ. ΙΕΡΟΘΕΟΣ)»): it matches, and is not shown.
+const core = (s: string) => s.replace(/(\S)\s+(ΜΕΣΩ|ΑΠΟ|μέσω|από)\s.*$/u, "$1");
+
 // A name as shown: no remark in brackets or after ΜΕΣΩ/ΑΠΟ («ΙΚΕΑ ΑΠΟ ΛΑΚΩΜΑ»), no Τ.Σ. or ΑΦΕΤΗΡΙΑ
 // (cleanTerminus), in capitals.
 const label = (s: string) => {
-  const ws = cleanTerminus(s.replace(/\([^)]*\)?/g, " ").replace(/(\S)\s+(ΜΕΣΩ|ΑΠΟ|μέσω|από)\s.*$/u, "$1"))
+  const ws = cleanTerminus(core(s).replace(/\([^)]*\)?/g, " "))
     .replace(/^[-–—\s]+|[-–—\s]+$/gu, "").toLocaleUpperCase("el").split(" ");
   while (ws.length > 1 && DAYS.has(fold(ws[ws.length - 1]))) ws.pop();
   return ws.join(" ");
@@ -89,21 +105,20 @@ export function endOf(name: string, first: string[], last: string[], elsewhere: 
   if (n < 2) return null;
   const text = (i: number, j: number) => name.slice(ps[i][0], ps[j][1]).trim();
   const named = (t: string, area: string[][]) => score(words(t), area) > 0;
-  // A piece of the name names one area and not the other.
+  // A piece of the name names one area and not the other, by the words it shows (not its remarks).
   const clear = (t: string, own: string[][], other: string[][]) => {
-    const ws = words(t), s = score(ws, own);
+    const ws = words(core(t)), s = score(ws, own);
     return s > 0 && s > score(ws, other);
   };
-  // Past the matched piece m toward the outer end (step +1 to the name's end, -1 to its start), the pieces
-  // that are still this place: joined with no space and named nowhere else on the line.
-  const outer = (m: number, step: 1 | -1) => {
-    let k = m;
-    for (let q = m + step; q >= 0 && q < n; q += step) {
-      const joint = step > 0 ? ps[q][2] : ps[q + 1][2];
-      if (joint || named(text(q, q), away)) break;
-      k = q;
-    }
-    return step > 0 ? text(m, k) : text(k, m);
+  // The place around the matched piece m: the pieces joined to it with no space and named nowhere else on
+  // the line, toward its start down to lo and toward its end up to hi (a place's words read left to right:
+  // «ΚΤΕΛ-ΜΑΚΕΔΟΝΙΑ»).
+  const place = (m: number, lo: number, hi: number) => {
+    const joined = (q: number, joint: boolean) => !joint && !named(text(q, q), away);
+    let a = m, b = m;
+    while (a - 1 >= lo && joined(a - 1, ps[a][2])) a--;
+    while (b + 1 <= hi && joined(b + 1, ps[b + 1][2])) b++;
+    return text(a, b);
   };
   // The name read in one order: its start names area a, its end area b. [the end's name, one end only].
   // One end only (Harold, 2026-11-08): the start stop often has no place name (ΑΦΕΤΗΡΙΑ, ΣΤΑΘΜΟΣ
@@ -114,9 +129,12 @@ export function endOf(name: string, first: string[], last: string[], elsewhere: 
     let e = -1, s = -1;
     for (let i = n - 1; i >= 1 && e < 0; i--) if (clear(text(i, n - 1), b, a)) e = i;
     for (let j = 0; j < (e < 0 ? n - 1 : e) && s < 0; j++) if (clear(text(0, j), a, b)) s = j;
-    if (e >= 0 && s >= 0) return [endFirst ? outer(s, -1) : outer(e, 1), false];
-    if (!endFirst && e >= 0 && !named(text(e, n - 1), a) && !named(text(0, e - 1), b)) return [outer(e, 1), true];
-    if (endFirst && s >= 0 && !named(text(0, s), b) && !named(text(s + 1, n - 1), a)) return [outer(s, -1), true];
+    // The end of the name (read ahead): from its matched piece to the name's end. Its start (read the other way
+    // round): from the name's start through its matched piece and, when the other end matched too, on up to it.
+    const end = () => place(e, e, n - 1), start = (hi: number) => place(s, 0, hi);
+    if (e >= 0 && s >= 0) return [endFirst ? start(e - 1) : end(), false];
+    if (!endFirst && e >= 0 && !named(text(e, n - 1), a) && !named(text(0, e - 1), b)) return [end(), true];
+    if (endFirst && s >= 0 && !named(text(0, s), b) && !named(text(s + 1, n - 1), a)) return [start(s), true];
     return null;
   };
   // The name in the variant's order (its end is where the variant ends), or the other way round: the one that
@@ -140,6 +158,7 @@ export interface VariantEnds {
   first: string[]; last: string[];                  // stop names near the start; near the end, the end first
   start: [number, number]; end: [number, number];   // [lon, lat]
   loop: boolean;                                    // back at its start
+  names: string[];                                  // every stop name, in order
 }
 
 const AREA_M = 400, NEAR_M = 300, LOOP_M = 50, AREA_STOPS = 4;
@@ -161,14 +180,15 @@ export function variantEnds(st: LineStatic): VariantEnds[] {
       return names;
     };
     out.push({ id, headsign: v.headsign, start, end, first: near(s, start), last: near([...s].reverse(), end),
-      loop: v.stops[0] === v.stops[v.stops.length - 1] || distanceM(start, end) < LOOP_M });
+      loop: v.stops[0] === v.stops[v.stops.length - 1] || distanceM(start, end) < LOOP_M, names: s.map(x => x.name) });
   }
   return out;
 }
 
 // The readable end of every variant of a line that the data can tell, by variant id; a loop has none.
 // The area at each end of a variant also holds the last stops of the line's other variants that end
-// there. A variant whose names give no clear cut takes the end of the variants that end where it ends,
+// there. Places away from the end are where other variants end and the variant's stops on the way
+// («ΠΑΛΟΥΚΙΑ-ΛΙΜΝΙΩΝΑ-ΓΥΑΛΑ-ΚΑΚΗ ΒΙΓΛΑ» ends at ΛΙΜΝΙΩΝΑ and stops at ΓΥΑΛΑ). A variant whose names give no clear cut takes the end of the variants that end where it ends,
 // when they agree on one.
 // one: the ids named from one end only (for a spot check).
 export function lineDestinations(lineName: string, vs: VariantEnds[], one?: Set<string>): Record<string, string> {
@@ -178,7 +198,8 @@ export function lineDestinations(lineName: string, vs: VariantEnds[], one?: Set<
   for (const v of runs) {
     const first = [...v.first, ...endingAt(v.start, v.id).flatMap(o => o.last)];
     const last = [...v.last, ...endingAt(v.end, v.id).flatMap(o => o.last)];
-    const elsewhere = runs.filter(o => distanceM(o.end, v.end) >= NEAR_M).map(o => o.last[0]);
+    const elsewhere = [...runs.filter(o => distanceM(o.end, v.end) >= NEAR_M).map(o => o.last[0]),
+      ...v.names.filter(x => !v.last.includes(x))];
     const d = endOf(v.headsign, first, last, elsewhere) ?? endOf(lineName, first, last, elsewhere);
     if (d) out[v.id] = d.name;
     if (d?.one) one?.add(v.id);

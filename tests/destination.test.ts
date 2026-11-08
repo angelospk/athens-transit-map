@@ -65,6 +65,35 @@ describe("destination: the name cut at one dash into two ends, each matched to t
     expect(destination("ΙΚΕΑ-ΚΤΕΛ-ΜΑΚΕΔΟΝΙΑ", ["ΙΚΕΑ"], ["Τ.Σ. Κ.Τ.Ε.Λ  A"], ["ΑΝΑΤΟΛΙΚΟΣ ΣΤΑΘΜΟΣ ΙΚΕΑ A"])).toBe("ΚΤΕΛ-ΜΑΚΕΔΟΝΙΑ");
   });
 
+  it("review: a place named the other way round keeps its whole name", () => {
+    expect(destination("ΚΤΕΛ-ΜΑΚΕΔΟΝΙΑ-ΙΚΕΑ", ["ΙΚΕΑ"], ["Τ.Σ. Κ.Τ.Ε.Λ  A"])).toBe("ΚΤΕΛ-ΜΑΚΕΔΟΝΙΑ");
+    expect(destination("ΚΤΕΛ-ΜΑΚΕΔΟΝΙΑ-ΙΚΕΑ", ["Τ.Σ. Κ.Τ.Ε.Λ  A"], ["ΙΚΕΑ"])).toBe("ΙΚΕΑ");
+  });
+
+  it("review: two places that only start alike are not one (ΚΑΛΑΜΑΚΙ, ΚΑΛΑΜΑΤΑ); case endings are", () => {
+    expect(destination("ΑΘΗΝΑ - ΚΑΛΑΜΑΚΙ", ["ΑΘΗΝΑ"], ["ΚΑΛΑΜΑΤΑ"])).toBeNull();
+    expect(destination("ΑΡΤΑ-ΚΟΜΠΟΤΙ", ["ΑΡΤΑ"], ["ΤΕΡΜΑ ΚΟΜΠΟΤΙΟΥ"])).toBe("ΚΟΜΠΟΤΙ");
+    expect(destination("ΑΘΗΝΑ - ΚΗΦΙΣΙΑ", ["ΑΘΗΝΑ"], ["ΠΛ. ΚΗΦΙΣΙΑΣ"])).toBe("ΚΗΦΙΣΙΑ");
+    // One end read from the name's start: the place only, not the pieces after it (Patras 702).
+    expect(destination("PARKING ΠΕΡΙΒΟΛΑ-ΣΟΥΛΙ-ΣΑΡΑΒΑΛΙ-ΚΡΗΝΗ", ["ΕΡΜΟΥ-ΚΑΝΑΚΑΡΗ"], ["ΠΑΡΚΙΝΓΚ ΠΕΡΙΒΟΛΑ"])).toBe("PARKING ΠΕΡΙΒΟΛΑ");
+    expect(destination("ΒΕΝΙΖΕΛΟΥ - ΝΕΑΠΟΛΗ", ["Τ.Σ. ΒΕΝΙΖΕΛΟΥ ΓΡ25Α"], ["Τ.Σ. ΝΕΑΠΟΛΕΩΣ"])).toBe("ΝΕΑΠΟΛΗ");
+  });
+
+  it("review: a place after ΑΠΟ/ΜΕΣΩ (dropped from the name) does not make the match", () => {
+    expect(destination("ΛΙΜΑΝΙ - ΓΑΖΙ ΑΠΟ ΚΕΝΤΡΟ", ["ΛΙΜΑΝΙ"], ["ΚΕΝΤΡΟ"])).toBeNull();
+    expect(destination("ΛΙΜΑΝΙ - ΓΑΖΙ ΜΕΣΩ ΚΕΝΤΡΟΥ", ["ΛΙΜΑΝΙ"], ["ΚΕΝΤΡΟ"])).toBeNull();
+  });
+
+  it("a place in brackets refines the end: it matches, the name shows without it (Athens 500, 12)", () => {
+    expect(destination("ΠΕΙΡΑΙΑΣ - ΚΗΦΙΣΙΑ(ΠΛ.ΠΛΑΤΑΝΟΥ) (ΝΥΧΤΕΡΙΝΗ)", ["ΠΕΙΡΑΙΑΣ (ΚΑΡΑΙΣΚΑΚΗ)"], ["ΠΛ. ΠΛΑΤΑΝΟΥ"])).toBe("ΚΗΦΙΣΙΑ");
+    expect(destination("ΖΑΠΠΕΙΟ - ΠΕΡΙΣΤΕΡΙ (ΑΓ. ΙΕΡΟΘΕΟΣ)", ["ΖΑΠΠΕΙΟ"], ["ΑΓ. ΙΕΡΟΘΕΟΣ"])).toBe("ΠΕΡΙΣΤΕΡΙ");
+  });
+
+  it("spellings of one place match: ΕΙ/Ι, a Latin E in a Greek word (Agrinio 08)", () => {
+    expect(destination("ΑΓΡΙΝΙΟ - ΛΥΣΙΜΑΧΕΙΑ", ["ΑΦEΤΗΡΙΑ ΤΡEΝΑ"], ["EΚΚΛΗΣΙΑ", "ΛΥΣΙΜΑΧΙΑ"])).toBe("ΛΥΣΙΜΑΧΕΙΑ");
+    expect(destination("ΛΥΣΙΜΑΧΕΙΑ - ΤΡΕΝΑ", ["ΛΥΣΙΜΑΧΙΑ"], ["ΑΦEΤΗΡΙΑ ΤΡEΝΑ"])).toBe("ΤΡΕΝΑ");
+  });
+
   it("no clear cut: as today (null)", () => {
     // Athens 212: neither end of the name is where the variant ends (ΑΓ. ΜΑΡΙΝΑ).
     expect(destination("ΣΤ. ΔΑΦΝΗ - ΥΜΗΤΤΟΣ - ΒΥΡΩΝΑΣ - ΚΑΡΕΑΣ", ["ΣΤ. ΔΑΦΝΗ"], ["ΑΓ. ΜΑΡΙΝΑ"])).toBeNull();
@@ -82,7 +111,7 @@ describe("destination: the name cut at one dash into two ends, each matched to t
 });
 
 const ends = (id: string, headsign: string, first: string, last: string, start: [number, number], end: [number, number], loop = false): VariantEnds =>
-  ({ id, headsign, first: [first], last: [last], start, end, loop });
+  ({ id, headsign, first: [first], last: [last], names: [first, last], start, end, loop });
 
 describe("lineDestinations: every variant of a line", () => {
   const IKEA: [number, number] = [22.97, 40.6], KTEL: [number, number] = [22.91, 40.65];
@@ -112,6 +141,15 @@ describe("lineDestinations: every variant of a line", () => {
     expect(r).toEqual({ a: "ΓΑΖΙ", c: "ΓΑΖΙ" });
   });
 
+  it("a piece after the end that names a stop of the line elsewhere is a place on the way, not part of the end (Salamina 07)", () => {
+    const v = { ...ends("a", "ΠΑΛΟΥΚΙΑ-ΛΙΜΝΙΩΝΑ-ΓΥΑΛΑ-ΚΑΚΗ ΒΙΓΛΑ", "ΠΑΛΟΥΚΙΑ", "ΤΕΡΜΑ ΛΙΜΝΙΩΝΑ", [23.47, 37.96], [23.39, 37.9]),
+      names: ["ΠΑΛΟΥΚΙΑ", "ΠΑΡΑΛΙΑ ΓΥΑΛΑΣ", "ΠΑΡΑΛΙΑ ΚΑΚΗ ΒΙΓΛΑΣ", "ΤΕΡΜΑ ΛΙΜΝΙΩΝΑ"] };
+    expect(lineDestinations("ΠΑΛΟΥΚΙΑ-ΛΙΜΝΙΩΝΑ", [v])).toEqual({ a: "ΛΙΜΝΙΩΝΑ" });
+    // No stop of the line names ΜΑΚΕΔΟΝΙΑ: one place with ΚΤΕΛ.
+    const k = { ...ends("k", "ΙΚΕΑ-ΚΤΕΛ-ΜΑΚΕΔΟΝΙΑ", "ΙΚΕΑ", "Τ.Σ. Κ.Τ.Ε.Λ  A", [22.97, 40.6], [22.91, 40.65]), names: ["ΙΚΕΑ", "ΒΕΝΙΖΕΛΟΥ", "Τ.Σ. Κ.Τ.Ε.Λ  A"] };
+    expect(lineDestinations("ΙΚΕΑ-ΚΤΕΛ-ΜΑΚΕΔΟΝΙΑ", [k])).toEqual({ k: "ΚΤΕΛ-ΜΑΚΕΔΟΝΙΑ" });
+  });
+
   it("a loop gets none: the stop card keeps its loop rule", () => {
     const r = lineDestinations("ΚΤΕΛ-ΑΝΘΗΛΗ-ΚΤΕΛ", [ends("l", "ΚΤΕΛ-ΑΝΘΗΛΗ", "ΚΤΕΛ", "ΚΤΕΛ", [22.4, 38.9], [22.4, 38.9], true)]);
     expect(r).toEqual({});
@@ -132,7 +170,8 @@ describe("variantEnds: the ends of each variant from a line's static file", () =
       },
     };
     const [x, y] = variantEnds(st);
-    expect(x).toMatchObject({ id: "x", headsign: "Α - Δ", first: ["Α", "Β"], last: ["Δ", "Γ"], start: [22, 40], end: [22, 40.0505], loop: false });
+    expect(x).toMatchObject({ id: "x", headsign: "Α - Δ", first: ["Α", "Β"], last: ["Δ", "Γ"], start: [22, 40], end: [22, 40.0505], loop: false,
+      names: ["Α", "Β", "Γ", "Δ"] });
     expect(y.loop).toBe(true);
   });
 });
