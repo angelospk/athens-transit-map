@@ -2731,6 +2731,39 @@
     return () => { entMarks.forEach(x => x.remove()); entMarks = []; };
   });
 
+  // Admin mode: the satellite picture (Esri World Imagery) over the base map, to see where things really stand. It goes
+  // over the base map's own fills and lines and the 3D streets, under the raised buildings and everything of ours.
+  const SAT = "admin-satellite";
+  $effect(() => {
+    void baseGen;
+    const m = map, on = app.admin && app.adminSat && loaded;
+    if (!m || !loaded) return;
+    if (!on) { if (m.getLayer(SAT)) m.removeLayer(SAT); return; }
+    if (!m.getSource(SAT)) m.addSource(SAT, { type: "raster", tileSize: 256, maxzoom: 19,
+      tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+      attribution: "Δορυφόρος: Esri, Maxar, Earthstar Geographics" });
+    const place = () => {
+      const layers = m.getStyle()?.layers ?? [];
+      type L = (typeof layers)[number];
+      const src = (l: L) => ("source" in l && typeof l.source === "string" ? l.source : "");
+      const base = (l: L) => l.type === "background" || src(l) === "openmaptiles" || src(l).startsWith("x3d");
+      const flat = (l: L) => base(l) && l.type !== "symbol" && l.type !== "fill-extrusion";
+      // After the base map's last flat layer (its buildings and paths too), and before the first raised building
+      // or layer of ours, whichever comes first.
+      const lastFlat = layers.reduce((k, l, i) => (l.id !== SAT && flat(l) ? i : k), -1);
+      const firstUp = layers.findIndex(l => l.id !== SAT && (l.type === "fill-extrusion" || (!base(l) && src(l) !== SAT)));
+      const k = Math.min(lastFlat + 1, firstUp < 0 ? layers.length : firstUp);
+      const before = layers.slice(k).find(l => l.id !== SAT)?.id;
+      const at = layers.findIndex(l => l.id === SAT);
+      if (at < 0) m.addLayer({ id: SAT, type: "raster", source: SAT, paint: { "raster-fade-duration": 0 } }, before);
+      else if (layers[at + 1]?.id !== before) m.moveLayer(SAT, before);   // only when out of place: a move is a style change too
+    };
+    place();
+    // The 3D mode adds its streets after: keep the picture over them.
+    m.on("styledata", place);
+    return () => { m.off("styledata", place); };
+  });
+
   // The metro's street entrances as 3D models (entrances.ts, scene3d.setEntrances): public/entrances.json, read the
   // first time the 3D mode is on; in the admin mode with this device's edits.
   let entrancesRead = false;

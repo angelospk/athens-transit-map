@@ -135,10 +135,10 @@ function hidePois(m: BaseMap) {
   for (const l of m.getStyle().layers) if (l["source-layer"] === "poi") m.setLayoutProperty(l.id, "visibility", "none");
 }
 
-// Driveways, parking aisles and alleys (OSM's service=driveway, parking_aisle, alley): the stubs into a yard, a car park or behind a block drawn as
-// streets that lead nowhere a passenger walks. Off, in every road line of the style.
-const NOT_STREETS = ["driveway", "parking_aisle", "alley"];
-function hideDriveways(m: BaseMap) {
+// Alleys (OSM's service=alley): the lanes behind a block, drawn as streets that lead nowhere a passenger walks. Off,
+// in every road line of the style. Other service roads stay: the side roads along the avenues are among them.
+const NOT_STREETS = ["alley"];
+function hideAlleys(m: BaseMap) {
   if (!m.setFilter) return;
   for (const l of m.getStyle().layers) {
     if (l["source-layer"] !== "transportation" || l.type !== "line") continue;
@@ -176,5 +176,5 @@ export function paintBase(m: BaseMap, dark: boolean) {
   }
   addGreen(m, c);
   hidePois(m);
-  hideDriveways(m);
+  hideAlleys(m);
 }

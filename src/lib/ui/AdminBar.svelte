@@ -99,6 +99,7 @@
   function leave() {
     try { sessionStorage.removeItem("admin"); } catch { /* no storage */ }
     app.admin = false;
+    app.adminSat = false;
     app.metro = null;
     app.loadMetro();
     app.stopIx = null;
@@ -190,6 +191,7 @@
   <div class="bar" role="toolbar" aria-label="Διαχείριση σταθμών">
     <span class="tag">Διαχείριση</span>
     <span class="n">{changes ? `${changes} ${changes === 1 ? "αλλαγή" : "αλλαγές"}` : "Σύρε έναν σταθμό, ή πάτα μια στάση και σύρ’ την"}</span>
+    <button type="button" class="sat" aria-pressed={app.adminSat} onclick={() => (app.adminSat = !app.adminSat)} title="Δορυφορική εικόνα κάτω από τον χάρτη"><span>Δορυφόρος</span></button>
     <button type="button" onclick={() => add("stairs")} title="Νέα σκάλα μετρό στο κέντρο του χάρτη (3D)"><span>+ Σκάλα</span></button>
     <button type="button" onclick={() => add("elevator")} title="Νέο ασανσέρ μετρό στο κέντρο του χάρτη (3D)"><span>+ Ασανσέρ</span></button>
     <button type="button" onclick={exportFixes} disabled={!changes} title="Κατέβασε το station-fixes.json και το entrances.json"><Icon name="share" size={15} /><span>Εξαγωγή</span></button>
@@ -223,6 +225,7 @@
   .bar button { flex: none; height: 32px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border: 0; border-radius: 16px;
     background: var(--control); color: var(--fg); font: inherit; font-size: 13px; font-weight: 700; line-height: 1; cursor: pointer; }
   .bar button:disabled { opacity: .45; cursor: default; }
+  .bar .sat[aria-pressed="true"] { background: #f0ae45; color: #1a1200; }
   .bar .x { width: 32px; padding: 0; }
   /* The picked 3D entrance: a card above the bar */
   .ent { position: fixed; z-index: 40; left: 50%; bottom: calc(66px + env(safe-area-inset-bottom)); translate: -50% 0; width: 340px; max-width: calc(100% - 16px); box-sizing: border-box;

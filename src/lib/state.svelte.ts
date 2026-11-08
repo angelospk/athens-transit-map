@@ -377,6 +377,8 @@ export class AppState {
   // The admin mode (AdminBar.svelte, ?admin and a password): stations dragged on the map; the moves kept on this
   // device until exported as public/station-fixes.json.
   admin = $state(false);
+  // Admin mode: the satellite picture over the base map (MapView), to see where a station or an entrance really is.
+  adminSat = $state(false);
   adminFixes = $state.raw<import("./metro").StationFixes>(stored("adminFixes", {}, (v): v is import("./metro").StationFixes => !!v && typeof v === "object"));
   moveStation(key: string, at: [number, number]) {
     this.adminFixes = { ...this.adminFixes, [key]: [+at[0].toFixed(6), +at[1].toFixed(6)] };

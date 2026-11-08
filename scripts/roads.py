@@ -351,8 +351,8 @@ def main():
     prof = {}
     for w in ways:
         t = w["tags"]
-        if t["highway"].replace("_link", "") not in DRIVE or t.get("area") == "yes":
-            continue
+        if t["highway"].replace("_link", "") not in DRIVE or t.get("area") == "yes" or t.get("service") == "alley":
+            continue   # alleys (service=alley): left out, as on the base map (basemap.ts)
         prof[w["id"]] = profile(t)
         for n in set(w["nodes"]):
             seen[n] += 1
