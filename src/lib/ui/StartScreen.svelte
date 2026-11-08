@@ -32,6 +32,7 @@
   import { destsOf, type Dest } from "../destinations";
   import DestIcon from "./DestIcon.svelte";
   import LineChip from "./LineChip.svelte";
+  import LinesPage from "./LinesPage.svelte";
   import { clockHM } from "../trains";
   import { API_BASE } from "../config";
   import { durText } from "../format";
@@ -705,7 +706,10 @@
   const goDest = (d: Dest) => choose("to", { label: d.label, hint: d.hint, pts: [d.at], lines: [], kind: "area" });
   let addSheet = $state(false);
   function close() { app.savingPlace = null; app.pickFor = null; app.start = false; }
-  function findLine() { app.finding = true; }
+  // «Βρες γραμμή» (compact mockup 7): its own page in this screen; «‹» comes back here.
+  let linesPage = $state(false);
+  $effect(() => { if (!app.start) linesPage = false; });
+  function findLine() { linesPage = true; }
   function again(x: Recent) {
     // From «Η θέση μου»: from where the user is now (the start already set to it), not where they were then.
     if (x.from.label !== ME || !ends.from.place) ends.from = { text: x.from.label, place: x.from };
@@ -1039,6 +1043,10 @@
 {:else if app.start}
   <div class="start" class:side={wide} role="dialog" aria-modal={!wide} aria-labelledby="start-h" transition:soft>
     <div class="box" class:ans={answer} bind:this={boxEl} in:rise={{ y: 32, duration: 360 }}>
+      {#if linesPage}
+        <h1 id="start-h" class="sr">Βρες γραμμή</h1>
+        <LinesPage {app} lines={allLines} onopen={openLine} onclose={() => (linesPage = false)} />
+      {:else}
       {#snippet brandRow()}
         <div class="brandrow">
           <p class="brand" in:item={{ i: 1 }}><span class="logo" aria-hidden="true"><Icon name="bus" size={15} /></span>Στάσεις</p>
@@ -1424,6 +1432,7 @@
         {/if}
       </div>
       {/if}
+      {/if}
     </div>
     {#if addSheet}
       <Sheet title="Νέα συντόμευση" onclose={() => (addSheet = false)}>
@@ -1431,7 +1440,7 @@
           {#each mine as m (m.k)}
             <button type="button" class="srow" onclick={() => { addSheet = false; app.savingPlace = m.k; }}><span class="ic"><Icon name={m.k} size={20} /></span><span class="tx">{m.place ? `Άλλαξε ${m.label === "Σπίτι" ? "το Σπίτι" : "τη Δουλειά"}` : `${m.label}: όρισέ ${m.k === "home" ? "το" : "τη"}`}</span></button>
           {/each}
-          <button type="button" class="srow" onclick={() => { addSheet = false; findLine(); }}><span class="ic"><Icon name="route" size={20} /></span><span class="tx">Γραμμή: βρες τη και πάτα το ☆</span></button>
+          <button type="button" class="srow" onclick={() => { addSheet = false; findLine(); }}><span class="ic"><Icon name="route" size={20} /></span><span class="tx">Γραμμή: βρες τη και πάτα το ☆ στην κάρτα της</span></button>
         </div>
       </Sheet>
     {:else if sheet === "opts"}
