@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { addRelief, reliefPaint, RELIEF_LAYER } from "../src/lib/map/relief";
+import { addRelief, reliefPaint, reliefStrength, RELIEF_LAYER } from "../src/lib/map/relief";
 
 describe("relief", () => {
   it("fades out by street level, softer in dark", () => {
     const l = reliefPaint(false)["hillshade-exaggeration"] as unknown[], d = reliefPaint(true)["hillshade-exaggeration"] as unknown[];
+    expect((reliefStrength(false, true) as number[]).at(-1)).toBeGreaterThan(0);   // 3D: kept up close
     expect(l.at(-1)).toBe(0);
     expect(d[4] as number).toBeLessThan(l[4] as number);
   });

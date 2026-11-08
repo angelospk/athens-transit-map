@@ -6,6 +6,7 @@
 // MapView owns the vehicles: it calls upsert() for each drawn vehicle every frame and drop() when one goes. The
 // models are placed in metres around an origin near the view (re-anchored when the view moves far), so float32
 // precision holds; MapLibre's main matrix projects them.
+import { PALETTE } from "./basemap";
 import { MercatorCoordinate, type CustomLayerInterface, type GeoJSONSource, type Map as MlMap } from "maplibre-gl";
 import type * as Three from "three";
 import { metres, TREE_TILE_Z as TILE_Z, tilesIn, yaw, type LngLat } from "../map3d";
@@ -71,12 +72,14 @@ const STREET_LAYERS = ["x3d-roofs", "x3d-area", "x3d-mark-0", "x3d-mark-2", "x3d
   "x3d-tram-bed", "x3d-tram-sleepers", "x3d-tram-rail-1", "x3d-tram-rail-2"];
 
 const COLORS = {
-  light: { park: "#dde8d2", water: "#cddfee", bldA: "#eceef2", bldB: "#e6e9ee", bldC: "#f2f3f6",
-    road: "#d3d6dc", walk: "#f2f3f5", kerbA: "#ffffff", mark: "#ffffff", busMark: "#f0b400", markOpacity: 1, bldTop: "#f7f8fa",
+  // «Ρεαλιστική», light and dark: the 2D map's own colours (basemap.ts PALETTE): its ground, parks, water and buildings,
+  // its white (light) or slate (dark) streets; the pavements its paths', the kerbs its avenues' edge.
+  light: { park: PALETTE.light.park, water: PALETTE.light.water, bldA: PALETTE.light.building, bldB: "#d6d9df", bldC: "#dee1e5",
+    road: PALETTE.light.minor, walk: PALETTE.light.path, kerbA: PALETTE.light.majorEdge, mark: "#c3c8d0", busMark: "#f0b400", markOpacity: 1, bldTop: "#e8eaee",
     pool: "#ffffff", leaves: [0x8fc46e, 0x9bcd78, 0x84ba63, 0xa5d384], trunk: 0x7a5f45, white: "#fbfcfd", sky: 0xeef4ff, ground: 0x707060,
     hemi: 2.3, sun: 2.0, shadow: 0.34 },
-  dark: { park: "#243026", water: "#152230", bldA: "#33353f", bldB: "#2e3039", bldC: "#393b46",
-    road: "#33353d", walk: "#474a54", kerbA: "#7d818c", mark: "#dcdfe4", busMark: "#d9a521", markOpacity: 0.8, bldTop: "#3a3c47",
+  dark: { park: PALETTE.dark.park, water: PALETTE.dark.water, bldA: PALETTE.dark.building, bldB: "#322f45", bldC: "#3b3850",
+    road: PALETTE.dark.minor, walk: PALETTE.dark.path, kerbA: PALETTE.dark.major, mark: "#dcdfe4", busMark: "#d9a521", markOpacity: 0.8, bldTop: PALETTE.dark.buildingEdge,
     pool: "#f6e0a4", leaves: [0x557f3b, 0x5f8a43, 0x4d7536, 0x689350], trunk: 0x4a3d30, white: "#f2f4f6", sky: 0xd6deef, ground: 0x3a3a30,
     hemi: 1.9, sun: 1.5, shadow: 0.45 },
   // «Μινιατούρα»: a city model in warm daylight, as a toy town is painted: sand ground, mid-grey asphalt, cream walls
@@ -1105,7 +1108,7 @@ export class Scene3D {
     const bg = m.getStyle().layers.find(l => l.type === "background");
     if (bg) {
       this.ground3d = [bg.id, m.getPaintProperty(bg.id, "background-color")];
-      m.setPaintProperty(bg.id, "background-color", toon ? TOON.land : this.dark ? "#1d1f25" : "#e4e6e9");
+      m.setPaintProperty(bg.id, "background-color", toon ? TOON.land : PALETTE[this.dark ? "dark" : "light"].land);
     }
     if (this.isQuiet) this.quiet(true);   // returns at once if it already ran on this style
     // In Athens, the base map's own roads, bridges, tunnels, rails and tram markings go while the street style is
