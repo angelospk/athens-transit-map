@@ -467,7 +467,12 @@
     app.centerOn([at[1], at[0]]);
   }
   function takeAt(c: [number, number] | null) {
-    const f = app.pickFor, was = checking;
+    const f = app.pickFor, was = checking, sn = app.pickSnap;
+    if (f && sn && c === app.mapCenter) {   // «Εδώ» on a stop or a station the circle snapped onto: that place itself
+      app.pickFor = null;
+      choose(f, { label: sn.name, hint: sn.kind, pts: [sn.at], lines: sn.station ? sn.lines : [], kind: sn.station ? "metro" : "stop" });
+      return;
+    }
     app.pickFor = null;
     if (!f || !c) return;
     if (was && was.f === f && distM(centre(was.place.pts), c) < 25) return;
@@ -696,6 +701,14 @@
     try { localStorage.removeItem("recentTrips"); } catch { /* private mode */ }
   }
   // ↖: the place's name into «Προς», to go on typing from it.
+  // Typing (compact mockup 3): the row Enter would take is lit; the lines go in one row of chips, each with its other end.
+  const firstLine = $derived(rows.findIndex(r => r.line));
+  const topRow = $derived(rows[0] && !rows[0].line && !rows[0].map && !rows[0].me ? 0 : -1);   // what Enter takes
+  const lineHead = (q: string) => (/\d/.test(q) ? "Γραμμές" : "Γραμμές που περνούν");
+  function otherEnd(name: string, q: string): string {
+    const parts = titleCase(name).split(/\s+[-–]\s+/), fq = fold(q.trim());
+    return parts.find(x => !fq || !fold(x).includes(fq)) ?? parts[0];
+  }
   function fillTo(label: string) {
     edit("to", label);
     setTimeout(() => inputs.to?.focus(), 30);
@@ -1006,7 +1019,7 @@
      button is released, and the click lands on something else (a chip such as «Σύνταγμα» did nothing). -->
 <svelte:document onclick={e => {
   const t = e.target as Element;
-  if (open && t.isConnected && !t.closest?.(".field, .opts, .typeback, input")) stopTyping();
+  if (open && t.isConnected && !t.closest?.(".field, .opts, .cancel, input")) stopTyping();
 }} onpointerdown={e => {
   const t = e.target as Element;
   if (menu && !t.closest?.(".pickf, .opts")) menu = null;
@@ -1035,14 +1048,26 @@
       <span class="pc">{app.pickFor === "from" ? "Κάνε κλικ στην αφετηρία" : "Κάνε κλικ στον προορισμό"}<kbd>Esc</kbd></span>
     {/if}
   </div>
-  <div class="cross" aria-hidden="true"><span class="drop"><Icon name="pin" size={34} /></span><i class="shadow"></i></div>
+  <!-- A blue circle at the centre; over a stop or a station it snaps onto it, grows round its mark, its name above. -->
+  {@const sn = app.pickSnap}
+  <div class="aim" class:snap={!!sn} style:--x="{sn?.x ?? 0}px" style:--y="{sn?.y ?? 0}px" aria-hidden="true">
+    <i class="ring"></i><i class="core">{#if sn}<img src="{import.meta.env.BASE_URL}icons/{sn.station ? (sn.kind === "στάση τραμ" ? "tram-logo.svg" : "metro-logo.svg") : "oasa.png"}" alt="" />{/if}</i>
+    {#if sn}
+      {#key sn.at.join()}
+        <span class="slabel" in:rise={{ y: 6, duration: 220 }}><i class="stip"></i>
+          <span class="st2"><b>{sn.name}</b><small>{sn.kind}</small></span>
+          {#if sn.chips.length}<span class="schips">{#each sn.chips as c (c.t)}<span style:background={c.bg} style:color={c.fg}>{c.t}</span>{/each}</span>{/if}
+        </span>
+      {/key}
+    {/if}
+  </div>
   <div class="pickacts" transition:rise>
     <button type="button" class="ghost" onclick={() => (app.pickFor = null)}>{checking ? "Πίσω" : "Άκυρο"}</button>
     <button type="button" class="primary" disabled={!app.mapCenter} onclick={takeCentre}>{checking ? "Άλλαξε εδώ" : "Εδώ"}</button>
   </div>
 {:else if app.start}
   <div class="start" class:side={wide} role="dialog" aria-modal={!wide} aria-labelledby="start-h" transition:soft>
-    <div class="box" class:ans={answer} bind:this={boxEl} in:rise={{ y: 32, duration: 360 }}>
+    <div class="box" class:ans={answer} class:typing bind:this={boxEl} in:rise={{ y: 32, duration: 360 }}>
       {#if linesPage}
         <h1 id="start-h" class="sr">Βρες γραμμή</h1>
         <LinesPage {app} lines={allLines} onopen={openLine} onclose={() => (linesPage = false)} />
@@ -1127,13 +1152,10 @@
         <!-- the band above holds the trip asked -->
       {:else}
       <div class="fields" class:raised={menu !== null}>
-        <div class="ends" class:group={!intro && wide} class:asks={!wide && !app.savingPlace} class:pair={pair} in:item={{ i: 3, y: 12 }}>
+        <div class="ends" class:group={!intro && wide} class:asks={!wide && !app.savingPlace} class:pair={pair} class:typing in:item={{ i: 3, y: 12 }}>
         {#if pair}
           <button type="button" class="pback" aria-label="Πίσω" onclick={close}><Icon name="back" size={20} /></button>
           <button type="button" class="pswap" class:turned aria-label="Αντιστροφή αφετηρίας και προορισμού" onclick={swap}><Icon name="swap" size={19} /></button>
-        {/if}
-        {#if typing && open}
-          <button type="button" class="typeback" onclick={stopTyping}><span class="tbi"><Icon name="back" size={16} /></span><span>{app.savingPlace ? (app.savingPlace === "home" ? "Πού είναι το Σπίτι;" : "Πού είναι η Δουλειά;") : find ? "Βρες" : open === "from" ? "Από πού ξεκινάς;" : "Πού θέλεις να πας;"}</span></button>
         {/if}
         {#each (app.savingPlace || intro || find ? ["to"] : !wide ? ["from", "to"] : askFrom ? ["to", "from"] : ["to"]) as Field[] as f (f)}
           {#if !typing || f === open}
@@ -1141,15 +1163,15 @@
             {#if intro}<label class="fs" for="start-{f}"><Icon name="search" size={20} /><span class="sr">Πού πας;</span></label>
             {:else if find}<label class="sr" for="start-{f}">Βρες γραμμή, στάση ή μέρος</label><span class="fs2" aria-hidden="true"><Icon name="search" size={19} /></span>
             {:else if wide || app.savingPlace || pair}<span class="mk {f}" aria-hidden="true"></span><label class="fl" for="start-{f}">{f === "from" ? "Από" : pair ? "Προς" : "Πού"}</label>
-            {:else}<label class="sr" for="start-{f}">{f === "from" ? "Από πού ξεκινάς" : "Πού θέλεις να πας"}</label>{#if ends[f].place?.kind === "me"}<span class="mearr" aria-hidden="true"><svg class="arr" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5 3.8 10.6a.6.6 0 0 0 .05 1.12l6.6 2.03 2.03 6.6a.6.6 0 0 0 1.12.05z" fill="currentColor" /></svg></span>{:else if !ends[f].place}<span class="fs2" aria-hidden="true"><Icon name="search" size={19} /></span>{/if}{/if}
+            {:else}<label class="sr" for="start-{f}">{f === "from" ? "Από πού ξεκινάς" : "Πού θέλεις να πας"}</label>{#if typing}<span class="fs2 on" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 20 20" /></svg></span>{:else if ends[f].place?.kind === "me"}<span class="mearr" aria-hidden="true"><svg class="arr" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5 3.8 10.6a.6.6 0 0 0 .05 1.12l6.6 2.03 2.03 6.6a.6.6 0 0 0 1.12.05z" fill="currentColor" /></svg></span>{:else if !ends[f].place}<span class="fs2" aria-hidden="true"><Icon name="search" size={19} /></span>{/if}{/if}
             <input id="start-{f}" bind:this={inputs[f]} value={ends[f].text} autocomplete="off" spellcheck="false"
-              placeholder={find ? "Γραμμή, στάση ή μέρος" : f === "from" ? (wide ? "Από πού ξεκινάς;" : "Από πού;") : intro ? "Πού πας; Διεύθυνση, στάση ή γραμμή" : wide ? "Στάση, περιοχή, οδός" : "Πού πας;"} role="combobox" aria-expanded={open === f} aria-controls="start-{f}-list"
+              placeholder={find ? "Γραμμή, στάση ή μέρος" : typing && app.savingPlace ? (app.savingPlace === "home" ? "Πού είναι το Σπίτι;" : "Πού είναι η Δουλειά;") : f === "from" ? (wide ? "Από πού ξεκινάς;" : "Από πού;") : intro ? "Πού πας; Διεύθυνση, στάση ή γραμμή" : wide ? "Στάση, περιοχή, οδός" : "Πού πας;"} role="combobox" aria-expanded={open === f} aria-controls="start-{f}-list"
               onfocus={e => { open = f; menu = null; if (ends[f].place) e.currentTarget.select(); startTyping(); }} onclick={() => startTyping(true)} oninput={e => edit(f, e.currentTarget.value)}
               aria-activedescendant={open === f && active >= 0 ? `start-opt-${active}` : undefined} onkeydown={e => key(f, e)} />
-            {#if ends[f].text && locating !== f && !ends[f].place}
-              <button type="button" class="clear" aria-label="Καθάρισμα" title="Καθάρισμα" onclick={() => { ends[f] = { text: "", place: null }; inputs[f]?.focus(); }}><Icon name="close" size={13} /></button>
+            {#if ends[f].text && locating !== f && (!ends[f].place || typing)}
+              <button type="button" class="clear" aria-label="Καθάρισμα" title="Καθάρισμα" onclick={() => { ends[f] = { text: "", place: null }; inputs[f]?.focus(); }}>{#if typing}<span class="cx"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></span>{:else}<Icon name="close" size={13} />{/if}</button>
             {/if}
-            {#if ends[f].place}
+            {#if ends[f].place && !typing}
               {#if ends[f].place?.kind === "me" && !wide && app.myFix}<span class="melive">ζωντανά</span>{/if}
               <button type="button" class="chg" onclick={() => { ends[f] = { text: "", place: null }; inputs[f]?.focus(); }}>Αλλαγή</button>
             {:else if intro && !ends[f].text}
@@ -1158,6 +1180,7 @@
               <span class="fi"><span class="spin" aria-hidden="true"></span></span>
             {/if}
           </div>
+          {#if typing && open === f}<button type="button" class="cancel" onclick={stopTyping}>Άκυρο</button>{/if}
           {#if !wide && open === f}{@render list(f)}{/if}
           {#if f === "from" && !ends.from.place && !ends.from.text && open !== "from"}
             <div class="sugg" role="group" aria-label="Από πού ξεκινάς" transition:reveal>
@@ -1479,10 +1502,26 @@
       </li>
     {/if}
     {#each rows as r, k (r.key)}
-      {#if r.head}<li class="oh" role="presentation">{r.head}</li>{/if}
+      {#if typing && r.line}
+        {#if k === firstLine}
+          <li class="oh" role="presentation">{lineHead(ends[f].text)}</li>
+          <li class="lrow" role="presentation"><div class="lchips">
+            {#each rows.map((x, j) => ({ x, j })).filter(y => y.x.line) as { x, j } (x.key)}
+              {@const ln = x.line!}
+              {@const bd = badge(ln)}
+              <button type="button" id="start-opt-{j}" class="lpick" class:active={j === active} role="option" aria-selected={j === active} tabindex="-1"
+                onpointerenter={() => (active = j)} onclick={() => run(f, x)}>
+                <LineChip label={bd.text} bg={bd.bg} fg={bd.fg} mode={ln.mode} city={app.cityId} />
+                <span>{otherEnd(ln.name, ends[f].text)}</span>{#if liveOf(ln.id)}<i aria-label="κυκλοφορεί τώρα"></i>{/if}
+              </button>
+            {/each}
+          </div></li>
+        {/if}
+      {:else}
+      {#if r.head && !(typing && r.head === "Μέρη")}<li class="oh" role="presentation">{r.head}</li>{/if}
       <li in:item={{ i: k }}>
         <button type="button" id="start-opt-{k}" class="opt" class:quiet={r.map && !!ends[f].text.trim() && !ends[f].place} class:active={k === active} role="option"
-          aria-selected={k === active} tabindex="-1" onpointerenter={() => (active = k)} onclick={() => run(f, r)}>
+          class:top={typing && active < 0 && k === topRow && !!ends[f].text.trim()} aria-selected={k === active} tabindex="-1" onpointerenter={() => (active = k)} onclick={() => run(f, r)}>
           {#if r.ask}
             {#if r.ask.kind === "lineAt"}
               {@const bd = badge(r.ask.line)}
@@ -1516,10 +1555,11 @@
           {:else if r.me}
             <span class="oi meoi"><svg class="arr" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5 3.8 10.6a.6.6 0 0 0 .05 1.12l6.6 2.03 2.03 6.6a.6.6 0 0 0 1.12.05z" fill="currentColor" /></svg></span><span class="ot"><b>{ME}</b><small>{app.myFix ? "Ζωντανά, εδώ που είσαι τώρα" : "Εκεί που είσαι, από το κινητό σου"}</small></span>
           {:else if r.map}
-            <span class="oi"><Icon name="map" size={17} /></span><span class="ot"><b>Διάλεξε στον χάρτη</b>{#if !ends[f].text.trim()}<small class="phone">Μετακίνησε τον χάρτη και πάτα «Εδώ»</small><small class="pc">Κάνε κλικ στο σημείο</small>{/if}</span>
+            <span class="oi"><Icon name="map" size={17} /></span><span class="ot"><b>{typing && ends[f].text.trim() ? "Δεν είναι εδώ; Διάλεξε στον χάρτη" : "Διάλεξε στον χάρτη"}</b>{#if !ends[f].text.trim()}<small class="phone">Μετακίνησε τον χάρτη και πάτα «Εδώ»</small><small class="pc">Κάνε κλικ στο σημείο</small>{/if}</span>
           {:else if r.place}
             {@const p = r.place}
-            {#if iconOf(p) === "stop"}<span class="oi oasa"><img src="{import.meta.env.BASE_URL}icons/oasa.png" alt="" /></span>
+            {#if typing && p.kind === "metro" && app.cityId === "athens"}<img class="oimg" src="{import.meta.env.BASE_URL}icons/metro-logo.svg" alt="" />
+            {:else if iconOf(p) === "stop"}<span class="oi oasa"><img src="{import.meta.env.BASE_URL}icons/oasa.png" alt="" /></span>
             {:else}<span class="oi"><Icon name={iconOf(p)} size={17} /></span>{/if}
             <span class="ot"><b>{#each hl(titleCase(p.label), ends[f].text) as [t, m], j (j)}{#if m}<mark>{t}</mark>{:else}{t}{/if}{/each}</b>
               {#if p.kind === "metro" && p.lines.length}
@@ -1529,7 +1569,11 @@
               {:else if p.kind === "stop"}<small>{stopHint(p)}</small>{/if}</span>
           {/if}
         </button>
+        {#if typing && r.place && !r.me}
+          <button type="button" class="ofill" aria-label="Βάλε «{titleCase(r.place.label)}» στο πεδίο" onclick={() => { edit(f, titleCase(r.place!.label)); inputs[f]?.focus(); }}><Icon name="fill" size={16} /></button>
+        {/if}
       </li>
+      {/if}
     {/each}
   </ul>
 {/snippet}
@@ -2062,4 +2106,67 @@
   }
   .opt mark { background: none; color: var(--fg); font-weight: 800; }
   .opt .ot b:has(mark) { font-weight: 600; color: color-mix(in srgb, var(--fg) 82%, var(--muted)); }
+
+  /* ---- Typing on a phone (compact mockup 3): the field with «Άκυρο» beside it, the list flat under it: the row Enter
+     takes lit, ↖ on each place to go on typing from it, the lines in one row of chips. */
+  .box.typing { padding-top: calc(16px + env(safe-area-inset-top)); gap: 10px; }
+  .ends.typing { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .ends.typing .field.end { flex: 1; min-width: 0; height: 44px; min-height: 44px; gap: 10px; padding: 0 4px 0 12px; border: 0; border-radius: 14px;
+    background: var(--control); box-shadow: inset 0 0 0 2px var(--accent); }
+  .ends.typing .field.end input { height: 44px; padding: 0; font-size: 16px; font-weight: 400; line-height: 1; color: var(--fg); }
+  .ends.typing .field.end input::placeholder { font-size: 16px; font-weight: 400; color: var(--muted); }
+  .fs2.on { color: var(--accent); }
+  .ends.typing .clear { width: 36px; height: 36px; background: none; color: var(--bg); }
+  .cx { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--fg) 28%, var(--control)); }
+  .cancel { flex: none; height: 44px; display: flex; align-items: center; padding: 0 4px; border: 0; background: none; color: var(--accent);
+    font: inherit; font-size: 15px; font-weight: 700; line-height: 1; cursor: pointer; }
+  .ends.typing .opts { flex: 0 0 100%; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .ends.typing .opts > li { display: flex; align-items: center; }
+  .ends.typing .opt { flex: 1; min-width: 0; min-height: 52px; gap: 12px; padding: 0 0 0 10px; border-radius: 14px; }
+  .ends.typing .opt:hover, .ends.typing .opt.active { background: none; }
+  .ends.typing li:has(.opt.top), .ends.typing li:has(.opt.active) { border-radius: 14px; background: color-mix(in srgb, var(--accent) 14%, var(--bg)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, var(--bg)); }
+  .ends.typing .opt.top { min-height: 56px; }
+  .ends.typing .oi { width: 32px; height: 32px; background: color-mix(in srgb, var(--fg) 10%, var(--bg)); color: color-mix(in srgb, var(--fg) 80%, var(--muted)); }
+  .ends.typing .oi.oasa { background: #ffffff; }
+  .ends.typing .oi.oasa img { width: 19px; height: 19px; }
+  .ends.typing .oi.meoi { color: var(--accent); }
+  .ends.typing .ot { gap: 5px; }
+  .ends.typing .ot b { font-size: 15px; font-weight: 600; line-height: 1; color: color-mix(in srgb, var(--fg) 82%, var(--muted)); }
+  .ends.typing .ot small { font-size: 12.5px; line-height: 1; }
+  .ends.typing .oh { height: 20px; display: flex; align-items: center; padding: 10px 2px 6px; text-transform: none; letter-spacing: 0; font-size: 13px; }
+  .oimg { flex: none; width: 32px; height: 32px; display: block; }
+  .ofill { flex: none; width: 40px; height: 44px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; }
+  .lrow { overflow: hidden; }
+  .lchips { flex: 1; display: flex; gap: 8px; overflow-x: auto; margin-right: -16px; padding-right: 16px; scrollbar-width: none; }
+  .lchips::-webkit-scrollbar { display: none; }
+  .lpick { flex: none; height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 6px; border: 0; border-radius: 12px;
+    background: var(--card, var(--control)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 12%, var(--bg)); color: var(--fg);
+    font: inherit; font-size: 13px; font-weight: 600; line-height: 1; cursor: pointer; }
+  .lpick.active { box-shadow: inset 0 0 0 2px var(--accent); }
+  .lpick i { width: 6px; height: 6px; border-radius: 50%; background: var(--ontime); display: block; }
+
+  /* The map pick's aim (compact mockups 8, 8β): a blue circle at the centre; over a stop it slides onto it and opens
+     into a ring round the stop's own mark, with the dark label above. */
+  .aim { position: fixed; z-index: 29; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none;
+    transform: translate(var(--x), var(--y)); transition: transform .28s cubic-bezier(.34, 1.4, .64, 1); }
+  .aim .ring, .aim .core { position: absolute; left: 0; top: 0; display: block; border-radius: 50%; translate: -50% -50%;
+    transition: width .28s cubic-bezier(.34, 1.4, .64, 1), height .28s cubic-bezier(.34, 1.4, .64, 1), background-color .2s, box-shadow .2s; }
+  .aim .ring { width: 44px; height: 44px; background: rgb(77 138 240 / .2); box-shadow: inset 0 0 0 2px rgb(77 138 240 / .55); animation: aimPulse 1.8s ease-out infinite; }
+  .aim .core { width: 16px; height: 16px; background: #4d8af0; box-shadow: 0 0 0 3px #ffffff, 0 2px 8px rgb(0 0 0 / .4); }
+  .aim.snap .ring { width: 60px; height: 60px; background: rgb(77 138 240 / .16); box-shadow: inset 0 0 0 4px #4d8af0; animation: none; }
+  .aim.snap .core { width: 40px; height: 40px; background: #ffffff; box-shadow: 0 2px 8px rgb(0 0 0 / .4); }
+  .aim .core { display: flex; align-items: center; justify-content: center; }
+  .aim .core img { width: 22px; height: 22px; display: block; animation: aimIn .25s ease-out both; }
+  @keyframes aimIn { from { opacity: 0; transform: scale(.4); } }
+  @keyframes aimPulse { 0% { box-shadow: inset 0 0 0 2px rgb(77 138 240 / .55), 0 0 0 0 rgb(77 138 240 / .35); } 100% { box-shadow: inset 0 0 0 2px rgb(77 138 240 / .55), 0 0 0 14px rgb(77 138 240 / 0); } }
+  .slabel { position: absolute; left: 0; bottom: 42px; translate: -50% 0; padding: 8px 10px 8px 12px; display: flex; align-items: center; gap: 10px; white-space: nowrap;
+    border-radius: 14px; background: #262a32; color: #e8eaed; box-shadow: 0 8px 24px rgb(0 0 0 / .55), inset 0 0 0 1px #3a5a96; }
+  .stip { position: absolute; left: 50%; bottom: -7px; width: 14px; height: 14px; margin-left: -7px; background: #262a32; box-shadow: 1px 1px 0 0 #3a5a96;
+    transform: rotate(45deg); border-radius: 0 0 3px 0; display: block; }
+  .st2 { display: flex; flex-direction: column; gap: 5px; }
+  .st2 b { font-size: 14px; font-weight: 800; line-height: 1; }
+  .st2 small { font-size: 11.5px; font-weight: 600; line-height: 1; color: #9aa2ae; }
+  .schips { display: flex; gap: 4px; }
+  .schips span { height: 22px; padding: 0 6px; border-radius: 6px; display: flex; align-items: center; font-size: 12px; font-weight: 800; line-height: 1; }
+  @media (prefers-reduced-motion: reduce) { .aim, .aim .ring, .aim .core { transition: none; animation: none; } }
 </style>

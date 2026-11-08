@@ -110,6 +110,9 @@ const median = (xs: number[]) => {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
 
+export interface PickSnap { at: [number, number]; x: number; y: number; name: string; kind: string; station: boolean; lines: string[];
+  chips: { t: string; bg: string; fg: string }[] }
+
 export class AppState {
   lines = $state.raw<LineInfo[]>([]);
   linesFailed = $state(false);
@@ -172,6 +175,9 @@ export class AppState {
   finding = $state(false);
   pickFor = $state<"from" | "to" | null>(null);
   mapCenter = $state.raw<[number, number] | null>(null);
+  // Picking on the map: the stop or station the centre is over (MapView, while the map moves), and where it sits on the
+  // screen from the centre, in px. The blue circle snaps onto it; «Εδώ» takes it.
+  pickSnap = $state.raw<PickSnap | null>(null);
   mapPick = $state.raw<[number, number] | null>(null);   // a click on the map while picking: that point
   // Riding a bus (VehicleCard): the vehicle, and the stop the rider gets off at (null until chosen). rideBuzz: vibrate one
   // stop before it (kept).

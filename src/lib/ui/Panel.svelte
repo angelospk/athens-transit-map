@@ -122,7 +122,9 @@
 
   // «Τώρα» and «Ειδοποιήσεις» with no card open: the bar is a search field (as in the mockup), not the line picker. A
   // phone keeps that one round search over a card too, in the same place, unless lines are picked (their chips show).
-  const home = $derived((app.tab === "now" || app.tab === "alerts") && (!app.stack.length || narrow.current && !app.selected.length));
+  // A phone with a card open from a link (tab «map»): the same round search as «Τώρα», not the old bar (compact mockup 4).
+  const home = $derived((app.tab === "now" || app.tab === "alerts" || narrow.current && app.tab === "map" && app.stack.length > 0)
+    && (!app.stack.length || narrow.current && !app.selected.length));
 
   // A strike today (/v2/alerts, urgent): one line under the bar until the user closes it.
   const strike = $derived(app.notifyPrefs.strikes ? strikes(app.disruptions, app.serverNow, app.closedStrikes)[0] : undefined);
@@ -147,7 +149,7 @@
     <!-- «Τώρα» and «Ειδοποιήσεις»: the search, at the left with the rest of the column (the map's settings are on the
          rail at the right). -->
     <div class="homebar">
-      {#if app.tab === "now"}
+      {#if app.tab !== "alerts"}
         <!-- «Πού πας;» is in the home sheet: here only the search for a line or a stop. -->
         <button type="button" class="round" aria-haspopup="dialog" aria-label="Βρες γραμμή, στάση ή μέρος" title="Βρες γραμμή, στάση ή μέρος" onclick={() => { app.finding = true; app.start = true; }}><Icon name="search" size={20} /></button>
       {:else}

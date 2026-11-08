@@ -8,14 +8,16 @@
   import { fold } from "../search";
   import { titleCase } from "../nearby";
   import Icon from "./Icon.svelte";
+  import LineChip from "./LineChip.svelte";
 
-  let { app, at, stop = null, lines = [], station = null, modes = [] }: {
+  let { app, at, stop = null, lines = [], station = null, modes = [], compact = false }: {
     app: AppState;
     at: [number, number];            // [lat, lon]
     stop?: number | null;            // the bus stop of the card (index of trips.json): its lines are not changes
     lines?: string[];
     station?: string | null;         // the station of the card, and its modes: itself is not a change (its tram stop is)
     modes?: string[];
+    compact?: boolean;               // a phone's stop card (compact mockup 4): one row of chips, no field
   } = $props();
 
   $effect(() => { if (!app.stopIx) void app.loadStops(); });
@@ -41,7 +43,27 @@
   const walkOf = (k: number) => from.find(f => f.i === k)?.m ?? 0;
 </script>
 
-{#if near.rail.length || near.bus.length}
+{#if compact && (near.rail.length || near.bus.length)}
+  <div class="cwrap">
+    <h3 class="ch">Αλλαγές εδώ κοντά</h3>
+    <div class="crow">
+      {#each near.rail as r (r.name + r.mode)}
+        <button type="button" class="cchip" onclick={() => openRail(r)}>
+          {#each r.lines as l (l)}{@const b = railBadge(l, railColors)}<LineChip label={l.startsWith("T") ? l : b.label} bg={b.color} fg={l.startsWith("T") ? "#15181d" : "#ffffff"} mode={r.mode === "suburban" ? "rail" : r.mode} city={app.cityId} size="sm" />{/each}
+          <b>{titleCase(r.name)}</b><span>{r.walk}′</span>
+        </button>
+      {/each}
+      {#each near.bus.slice(0, 4) as b (b.name)}
+        {@const l = b.lines[0]}
+        {@const col = app.lineColor(l)}
+        <button type="button" class="cchip" onclick={() => openStop(b.stops[0])}>
+          <LineChip label={l} bg={col.bg} fg={col.fg} mode="bus" city={app.cityId} size="sm" />{#if b.lines.length > 1}<small>+{b.lines.length - 1}</small>{/if}
+          <b>{titleCase(b.name)}</b><span>{b.walk}′</span>
+        </button>
+      {/each}
+    </div>
+  </div>
+{:else if near.rail.length || near.bus.length}
   <div class="nhead"><h3>Αλλαγές εδώ κοντά</h3></div>
   {#if ix}
     <label class="goq"><Icon name="search" size={16} />
@@ -86,6 +108,14 @@
 {/if}
 
 <style>
+  .cwrap { flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; }
+  .ch { height: 16px; display: flex; align-items: center; padding: 0 2px; font-size: 14px; }
+  .crow { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px; padding: 0 16px; scrollbar-width: none; }
+  .crow::-webkit-scrollbar { display: none; }
+  .cchip { flex: none; height: 40px; display: flex; align-items: center; gap: 6px; padding: 0 12px 0 8px; border: 0; border-radius: 12px;
+    background: var(--card); box-shadow: inset 0 0 0 1px var(--card-border, var(--border)); color: var(--fg); font: inherit; line-height: 1; cursor: pointer; }
+  .cchip b { margin-left: 2px; font-size: 13.5px; font-weight: 700; white-space: nowrap; }
+  .cchip span, .cchip small { font-size: 13px; font-weight: 600; color: var(--muted); }
   /* In a card that scrolls (a flex column with a max height): never squeezed. */
   .nhead, .goq, .ncard { flex-shrink: 0; }
   .nhead { display: flex; align-items: center; min-height: 22px; margin-top: 2px; }

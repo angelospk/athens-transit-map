@@ -42,7 +42,7 @@
   import { AppleBase, MAPKIT_TOKEN } from "./appleBase";
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, smoothLine, stopsFC, variantFC, type DrawnLine } from "./layers";
-  import { STOPS_ZOOM, busStopsFC, placeNote, toward } from "../stops";
+  import { STOPS_ZOOM, busStopsFC, linesAt, placeNote, toward } from "../stops";
   import { pinLinesFC, pinStopsFC } from "../pins";
   import { fold } from "../search";
   import { titleCase } from "../nearby";
@@ -2521,19 +2521,88 @@
     if (loaded) map!.setFilter("bus-stop-selected", ["==", ["get", "i"], app.busStop ?? -1]);
   });
 
-  // A red pin on the open stop (bus, metro, tram or suburban); the map moves to it once, when it opens.
+  // Picking on the map (compact mockup 8β): while the map moves, the stop or station nearest the centre within SNAP_PX
+  // (let go past UNSNAP_PX, so it does not flicker at the edge) goes to app.pickSnap, with its place on the screen.
+  const SNAP_PX = 34, UNSNAP_PX = 50;
+  function snapNow() {
+    const m = map, ix = app.stopIx;
+    if (!m || !app.pickFor) { if (app.pickSnap) app.pickSnap = null; return; }
+    const box = m.getContainer(), cx = box.clientWidth / 2, cy = box.clientHeight / 2;
+    const c = m.unproject([cx, cy]), was = app.pickSnap;
+    const mpp = 156543.03 * Math.cos((c.lat * Math.PI) / 180) / 2 ** m.getZoom(), reach = (UNSNAP_PX * mpp) / 111_320;
+    let best: { at: [number, number]; d: number; x: number; y: number; i?: number; st?: { name: string; lines: string[] } } | null = null;
+    const test = (lat: number, lon: number, extra: { i?: number; st?: { name: string; lines: string[] } }) => {
+      if (Math.abs(lat - c.lat) > reach || Math.abs(lon - c.lng) > reach * 1.4) return;
+      const q = m.project([lon, lat]), d = Math.hypot(q.x - cx, q.y - cy) - (extra.st ? 6 : 0);   // a station a touch first
+      if (!best || d < best.d) best = { at: [lat, lon], d, x: q.x - cx, y: q.y - cy, ...extra };
+    };
+    if (ix && m.getZoom() >= STOPS_ZOOM - 1) ix.s.forEach((x, i) => test(x[1], x[2], { i }));
+    for (const st of app.metro?.stations ?? []) test(st.lat, st.lon, { st });
+    const b = best as { at: [number, number]; d: number; x: number; y: number; i?: number; st?: { name: string; lines: string[] } } | null;
+    const keep = was && b && Math.abs(b.at[0] - was.at[0]) < 1e-7 && Math.abs(b.at[1] - was.at[1]) < 1e-7;
+    if (!b || b.d > (keep ? UNSNAP_PX : SNAP_PX)) { if (was) app.pickSnap = null; return; }
+    if (b.st) {
+      const col = Object.fromEntries((app.metro?.lines ?? []).map(l => [l.id, l.color]));
+      const tram = b.st.lines.every(l => l.startsWith("T"));
+      app.pickSnap = { at: b.at, x: b.x, y: b.y, name: titleCase(b.st.name), kind: tram ? "στάση τραμ" : "σταθμός μετρό", station: true, lines: b.st.lines,
+        chips: b.st.lines.slice(0, 3).map(l => ({ t: l, bg: col[l] ?? "#3b5bdb", fg: l.startsWith("T") ? "#15181d" : "#ffffff" })) };
+    } else {
+      const x = ix!.s[b.i!], ls = linesAt(ix!, b.i!).map(l => l.line);
+      app.pickSnap = { at: b.at, x: b.x, y: b.y, name: app.stopLabel(x[3] ?? null, titleCase(x[0])), station: false, lines: ls,
+        kind: ls.length && ls.every(l => app.lineInfo.get(l)?.kind === "trolley") ? "στάση τρόλεϊ" : "στάση λεωφορείου",
+        chips: ls.slice(0, 3).map(l => { const k = app.lineColor(l); return { t: l, bg: k.bg, fg: k.fg }; }) };
+    }
+  }
+  $effect(() => {
+    const m = map, on = !!app.pickFor;
+    if (!m || !loaded) return;
+    if (!on) { untrack(() => { if (app.pickSnap) app.pickSnap = null; }); return; }
+    let raf = 0;
+    const onMove = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; snapNow(); }); };
+    m.on("move", onMove);
+    untrack(snapNow);
+    return () => { m.off("move", onMove); cancelAnimationFrame(raf); };
+  });
+
+  // The open stop (bus, metro, tram or suburban), compact mockup 8β: its mark on a white disc in rings, and over it a
+  // dark label with its name, what it is and its first lines. The map moves to it once, when it opens.
   const pinEl = document.createElement("div");
   pinEl.className = "stop-pin";
-  pinEl.innerHTML = `<svg viewBox="0 0 24 32" width="28" height="37" aria-hidden="true"><path d="M12 31s10-11.2 10-19A10 10 0 0 0 2 12c0 7.8 10 19 10 19z" fill="#e5383b" stroke="#fff" stroke-width="2"/><circle cx="12" cy="12" r="3.6" fill="#fff"/></svg>`;
-  const pin = new Marker({ element: pinEl, anchor: "bottom" });
+  const pin = new Marker({ element: pinEl, anchor: "center" });
+  const esc = (t: string) => t.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+  function pinHtml(): string {
+    const base = import.meta.env.BASE_URL;
+    let name = "", kind = "", logo = `${base}icons/oasa.png`, chips: { t: string; bg: string; fg: string }[] = [];
+    if (app.busStop != null && app.stopIx) {
+      const st = app.stopIx.s[app.busStop];
+      name = app.stopLabel(st?.[3] ?? null, titleCase(st?.[0] ?? ""));
+      const ls = linesAt(app.stopIx, app.busStop).map(l => l.line);
+      kind = ls.length && ls.every(l => app.lineInfo.get(l)?.kind === "trolley") ? "στάση τρόλεϊ" : "στάση λεωφορείου";
+      chips = ls.slice(0, 3).map(l => { const c = app.lineColor(l); return { t: l, bg: c.bg, fg: c.fg }; });
+    } else if (app.metroStation) {
+      const st = app.metro?.stations.find(x => x.name === app.metroStation);
+      name = titleCase(app.metroStation);
+      const tramOnly = !!st && st.lines.every(l => l.startsWith("T"));
+      kind = tramOnly ? "στάση τραμ" : "σταθμός μετρό";
+      logo = `${base}icons/${tramOnly ? "tram" : "metro"}-logo.svg`;
+      const col = Object.fromEntries((app.metro?.lines ?? []).map(l => [l.id, l.color]));
+      chips = (st?.lines ?? []).slice(0, 3).map(l => ({ t: l, bg: col[l] ?? "#3b5bdb", fg: l.startsWith("T") ? "#15181d" : "#ffffff" }));
+    } else if (app.railStation) {
+      name = titleCase(app.suburban?.stations.find(x => x.id === app.railStation)?.name ?? "");
+      kind = "σταθμός προαστιακού"; logo = "";
+    } else if (app.muniStop) { kind = "δημοτική στάση"; logo = ""; }
+    const label = name || kind ? `<span class="sp-label"><i class="sp-tip"></i><span class="sp-t"><b>${esc(name || kind)}</b>${name ? `<small>${esc(kind)}</small>` : ""}</span>${chips.length ? `<span class="sp-chips">${chips.map(c => `<span style="background:${c.bg};color:${c.fg}">${esc(c.t)}</span>`).join("")}</span>` : ""}</span>` : "";
+    return `${label}<span class="sp-halo"></span><span class="sp-disc">${logo ? `<img src="${logo}" alt="">` : ""}</span>`;
+  }
   let pinKey = "";
   $effect(() => {
     if (!loaded) return;
     const at = stopPin(app);
-    const key = at ? at.join(",") : "";
+    const key = at ? `${at.join(",")}|${app.busStop}|${app.metroStation}|${app.stopIx ? 1 : 0}` : "";
     if (key === pinKey) return;
     pinKey = key;
     if (!at) { pin.remove(); return; }
+    pinEl.innerHTML = untrack(pinHtml);
     pin.setLngLat(at).addTo(map!);
     pinEl.classList.remove("drop");
     void pinEl.offsetWidth;   // restart the drop animation
@@ -2740,10 +2809,25 @@
   :global(.applemap) { position: absolute; inset: 0; pointer-events: none; }
   :global(.applemap[hidden]) { display: none; }
   :global(.fix-pin) { cursor: grab; touch-action: none; filter: drop-shadow(0 3px 4px rgb(0 0 0 / 0.4)); }
-  :global(.stop-pin) { pointer-events: none; filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.35)); }
-  :global(.stop-pin.drop svg) { animation: pin-drop 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) both; transform-origin: 50% 100%; }
+  :global(.stop-pin) { pointer-events: none; width: 44px; height: 44px; position: relative; }
+  :global(.stop-pin .sp-halo) { position: absolute; left: 50%; top: 50%; width: 80px; height: 80px; margin: -40px 0 0 -40px; border-radius: 50%;
+    background: radial-gradient(circle, rgb(77 138 240 / 0.18) 0 60%, rgb(77 138 240 / 0.10) 61% 100%); }
+  :global(.stop-pin .sp-disc) { position: absolute; inset: 0; border-radius: 50%; background: #ffffff; box-shadow: inset 0 0 0 4px #4d8af0, 0 2px 6px rgb(0 0 0 / 0.35);
+    display: flex; align-items: center; justify-content: center; }
+  :global(.stop-pin .sp-disc img) { width: 22px; height: 22px; display: block; }
+  :global(.stop-pin .sp-label) { position: absolute; left: 50%; bottom: calc(100% + 22px); translate: -50% 0; z-index: 1; padding: 8px 10px 8px 12px;
+    display: flex; align-items: center; gap: 10px; white-space: nowrap; border-radius: 14px; background: #262a32; color: #e8eaed;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.55), inset 0 0 0 1px #3a5a96; font-family: inherit; }
+  :global(.stop-pin .sp-tip) { position: absolute; left: 50%; bottom: -7px; width: 14px; height: 14px; margin-left: -7px; background: #262a32;
+    box-shadow: 1px 1px 0 0 #3a5a96; transform: rotate(45deg); border-radius: 0 0 3px 0; display: block; }
+  :global(.stop-pin .sp-t) { display: flex; flex-direction: column; gap: 5px; }
+  :global(.stop-pin .sp-t b) { font-size: 14px; font-weight: 800; line-height: 1; }
+  :global(.stop-pin .sp-t small) { font-size: 11.5px; font-weight: 600; line-height: 1; color: #9aa2ae; }
+  :global(.stop-pin .sp-chips) { display: flex; gap: 4px; }
+  :global(.stop-pin .sp-chips span) { height: 22px; padding: 0 6px; border-radius: 6px; display: flex; align-items: center; font-size: 12px; font-weight: 800; line-height: 1; }
+  :global(.stop-pin.drop .sp-disc), :global(.stop-pin.drop .sp-label) { animation: pin-drop 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
   @keyframes pin-drop { from { transform: translateY(-18px) scale(0.6); opacity: 0; } to { transform: none; opacity: 1; } }
-  @media (prefers-reduced-motion: reduce) { :global(.stop-pin.drop svg) { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { :global(.stop-pin.drop .sp-disc), :global(.stop-pin.drop .sp-label) { animation: none; } }
   :global(.segpop b) { font-size: 15px; }
   :global(.segpop div) { font-size: 12px; }
   .nogl { position: absolute; inset: auto 16px 16px; padding: 12px 14px; border-radius: 12px;
