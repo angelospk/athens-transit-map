@@ -113,6 +113,8 @@
   // The hills in relief (relief.ts): on a computer always; on a phone in 3D (with its mountains), its 2D map flat
   // (lighter to draw, less to read).
   const wideMap = new MediaQuery("(min-width: 720px)");
+  // The mountains (terrain) only with a mouse: on iOS Safari (a phone, an iPad) its ground drew white.
+  const mouseMap = new MediaQuery("(min-width: 720px) and (pointer: fine)");
   $effect(() => {
     const on = wideMap.current || app.threeD;
     void baseGen;
@@ -124,11 +126,11 @@
     void baseGen;
     untrack(() => { if (map?.getLayer(RELIEF_LAYER)) map.setPaintProperty(RELIEF_LAYER, "hillshade-exaggeration", reliefStrength(styleDark, on3d) as ExpressionSpecification); });
   });
-  // 3D, on a computer and a phone: the mountains round the city rise, under the sky's haze (relief.ts setMountains). Not in the
+  // 3D on a computer: the mountains round the city rise, under the sky's haze (relief.ts setMountains). Not in the
   // metro mode: there the camera goes under the street (its elevation below 0), which a terrain would not let it do,
   // and coming up again it stayed under the ground (the map blank).
   $effect(() => {
-    const on = app.threeD && !app.under;
+    const on = app.threeD && !app.under && mouseMap.current;
     void baseGen;
     untrack(() => { if (map?.isStyleLoaded() || map?.getLayer(RELIEF_LAYER)) try { setMountains(map, on); } catch { /* an old WebGL: the flat map */ } });
   });
@@ -182,7 +184,11 @@
     return r;
   }
 
-  function setHeading(d: Dom, h: number | null) {
+  // A vehicle's heading from north; drawn on the screen less the map's bearing (2D turns too: turn2D).
+  const rawHeading = new WeakMap<Dom, number | null>();
+  function setHeading(d: Dom, north: number | null) {
+    rawHeading.set(d, north);
+    const h = north == null ? null : north - (map?.getBearing() ?? 0);
     if (h != null && d.heading != null && Math.abs(((h - d.heading + 540) % 360) - 180) < 2) return;
     d.heading = h;
     d.dir.hidden = h == null;
@@ -1425,7 +1431,7 @@
     m.addControl(new NavigationControl({ showCompass: false }), "bottom-right");
     m.addControl({ onAdd: () => locateCtl, onRemove: () => locateCtl.remove() }, "bottom-right");
     m.addControl({ onAdd: () => northCtl, onRemove: () => northCtl.remove() }, "bottom-right");
-    m.on("rotate", () => needleTo(m));
+    m.on("rotate", () => { needleTo(m); me?.el.style.setProperty("--b", `${m.getBearing()}deg`); for (const d of doms.values()) { const h = rawHeading.get(d); if (h != null) setHeading(d, h); } });
     m.on("pitch", () => needleTo(m));
     needleTo(m);
     m.addControl({ onAdd: () => infoCtl, onRemove: () => infoCtl.remove() }, "bottom-right");
@@ -1968,13 +1974,26 @@
     const k = followKey;
     untrack(() => { if (k !== focus?.key) { focus = k ? { key: k, follow: true, started: false } : null; focusAt = null; nextDue = 0; following = !!k; } });   // to it at the next frame
   });
-  // In 2D the map stays north-up: no turning by drag, two fingers or keyboard, followed or not (a turn only
-  // happens in 3D). Back from 3D it eases back to north.
+  // In 2D the map turns (right-drag or Ctrl+drag, two fingers) but never tilts: the compass shows once it is turned and
+  // brings north back up. Not over Apple's map (appleBase: it stays north-up): there it eases back to north.
+  function turn2D(m: MlMap) {
+    m.touchPitch.disable();
+    m.keyboard.disableRotation();   // its keys tilt too
+    (m.dragRotate as unknown as { _pitchWithRotate: boolean })._pitchWithRotate = false;
+    m.dragRotate.disable();   // the flag above is read when the handler is enabled
+    if (apple && !appleFailed && !app.threeD) {
+      m.touchZoomRotate.disableRotation();
+      if (Math.abs(m.getBearing()) > 0.5) m.easeTo({ bearing: 0, duration: 500 });
+      return;
+    }
+    m.dragRotate.enable();
+    m.touchZoomRotate.enableRotation();
+  }
   $effect(() => {
     const three = app.threeD, m = map;
+    void appleFailed;
     if (!m || !loaded || three) return;
-    m.dragRotate.disable(); m.touchZoomRotate.disableRotation(); m.keyboard.disableRotation();
-    if (Math.abs(m.getBearing()) > 0.5) m.easeTo({ bearing: 0, duration: 500 });
+    untrack(() => turn2D(m));
   });
   function focusFrame(m: MlMap) {
     // Where it is drawn; a vehicle the frame did not step (far off the view: culled) from the fleet itself.
@@ -2162,7 +2181,7 @@
   $effect(() => {
     const on = app.threeD, d = dark, m = map, look = app.look3d;
     if (m && on) untrack(() => void warm3d(m, d, look));
-    else if (m) { warmGen++; app.load3d = null; void scene3d.set(m, false, d, look); }
+    else if (m) { warmGen++; app.load3d = null; void scene3d.set(m, false, d, look); if (loaded) untrack(() => turn2D(m)); }
     // At most 2× (a 3× screen would draw 2.25 times the pixels for little to see), in 2D too: smoother, cooler. In 3D
     // at most 1.5× (multisampled, the edges stay smooth): the shadows, extrusions and models fill every pixel.
     if (m) {
@@ -3148,7 +3167,8 @@
   const locateBtn = document.createElement("button");
   locateBtn.type = "button";
   locateBtn.className = "locate";
-  locateBtn.innerHTML = '<svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="10" cy="10" r="5.2"/><circle class="core" cx="10" cy="10" r="2"/><path d="M10 1.5v2.8M10 15.7v2.8M1.5 10h2.8M15.7 10h2.8"/></svg>';
+  // The navigation arrow (as the compact mockups): filled in the accent; while it follows you, on a tinted disc.
+  locateBtn.innerHTML = '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><path class="core" d="M20.5 3.5 3.8 10.6a.6.6 0 0 0 .05 1.12l6.6 2.03 2.03 6.6a.6.6 0 0 0 1.12.05z" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/></svg>';
   locateBtn.onclick = locateClick;
   locateCtl.append(locateBtn);
   $effect(() => {
@@ -3249,7 +3269,7 @@
     /* In the map's right column (app.css), under locate (and the compass, when it shows): it stays there, a card
        dragged under it does not take it along. */
     .recenter { right: 16px; top: calc(var(--col-top) + var(--col-tools) + var(--tool-h, 44px) + 8px); }
-    :global(:root:has(.north-ctl .turned, .north-ctl .tilted)) .recenter { top: calc(var(--col-top) + var(--col-tools) + 2 * (var(--tool-h, 44px) + 8px)); }
+    :global(:root:has(.north-ctl .turned)) .recenter { top: calc(var(--col-top) + var(--col-tools) + 2 * (var(--tool-h, 44px) + 8px)); }
   }
   :global(.applemap) { position: absolute; inset: 0; pointer-events: none; }
   :global(.applemap[hidden]) { display: none; }

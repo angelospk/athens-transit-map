@@ -144,7 +144,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   animation: me-pulse 2.4s ease-out infinite; }
 .me .cone { display: none; position: absolute; left: calc(50% - 10px); bottom: 50%; width: 0; height: 0;
   border-left: 10px solid transparent; border-right: 10px solid transparent; border-bottom: 26px solid rgba(26, 115, 232, .35);
-  transform-origin: 50% 100%; transform: rotate(var(--h, 0deg)); }
+  transform-origin: 50% 100%; transform: rotate(calc(var(--h, 0deg) - var(--b, 0deg))); }   /* --b: the map's bearing */
 .me.moving .cone { display: block; }
 @keyframes me-pulse { 0% { scale: .6; opacity: .9; } 100% { scale: 1.6; opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .me::before { animation: none; } }
@@ -180,6 +180,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .maplibregl-ctrl-group button.north { display: grid; place-items: center; color: var(--fg); }
 .north .needle { transition: transform .12s linear; }
 .north:not(.turned) .needle { opacity: .75; }
+/* The compass shows only while the map is turned (2D or 3D): it fades in, and out once north is up again. */
+.maplibregl-ctrl-bottom-right .north-ctl { transition: opacity .22s ease, scale .22s ease, visibility 0s linear .22s; }
+.maplibregl-ctrl-bottom-right .north-ctl:not(:has(.turned)) { opacity: 0; scale: .85; visibility: hidden; pointer-events: none; }
+.maplibregl-ctrl-bottom-right .north-ctl:has(.turned) { transition: opacity .22s ease, scale .22s ease, visibility 0s; }
+@media (prefers-reduced-motion: reduce) { .maplibregl-ctrl-bottom-right .north-ctl { transition: none; } }
 .maplibregl-ctrl-bottom-right > .maplibregl-ctrl-group:has(.maplibregl-ctrl-zoom-in) { grid-area: zoom; }
 .maplibregl-ctrl-bottom-right > .details-ctl { grid-area: details; border-radius: 14px; }
 .maplibregl-ctrl-bottom-right > .maplibregl-ctrl-attrib { grid-area: attrib; }
@@ -193,11 +198,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
   :root:has(nav.tabs) .maplibregl-ctrl-bottom-right { bottom: calc(16px + env(safe-area-inset-bottom) + 68px); }
 }
 .maplibregl-ctrl-bottom-right > .details-ctl button.details { border-radius: 14px; }
-.maplibregl-ctrl-group button.locate { display: grid; place-items: center; color: var(--fg); }
-.locate .core { fill: none; }
+/* «My place»: a navigation arrow in the accent; following you, on a tinted disc; refused, grey. */
+.maplibregl-ctrl-group button.locate { display: grid; place-items: center; color: var(--accent) !important; }
 .locate[data-state="searching"] { animation: locating 1s ease-in-out infinite alternate; }
-.locate[data-state="on"], .locate[data-state="unavailable"], .locate[data-state="follow"] { color: var(--accent) !important; }
-.locate[data-state="follow"] .core { fill: currentColor; }
+.locate[data-state="follow"] { background: var(--accent-bg) !important; }
 .locate[data-state="denied"] { color: var(--muted) !important; }
 @keyframes locating { to { opacity: .35; } }
 
@@ -433,7 +437,7 @@ html.sheet-open .start, html.sheet-open .now, html.sheet-open .card, html.sheet-
 @media (max-width: 719px) { html[data-guidemini] .card { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 92px) !important; max-height: calc(100dvh - 200px) !important; } }
 
 /* A phone: the map's buttons in one column at the top right, always in the same place (as a native map): the tools
-   (Panel's rail), then locate, then the compass (only once the map is turned or tilted), then «back to the vehicle»
+   (Panel's rail), then locate, then the compass (only while the map is turned), then «back to the vehicle»
    (MapView). --col-top: where the column starts: under the home's search and chips when the home sheet is up. A sheet
    or card dragged never moves them; pulled up past them, it covers them. */
 @media (max-width: 719px) {
@@ -449,7 +453,7 @@ html.sheet-open .start, html.sheet-open .now, html.sheet-open .card, html.sheet-
   .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group:has(> button.locate) { position: fixed; right: 16px; margin: 0 !important; }
   .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group:has(> button.locate) { top: calc(var(--col-top) + var(--col-tools)); }
   .maplibregl-ctrl-bottom-right .north-ctl { top: calc(var(--col-top) + var(--col-tools) + var(--tool-h) + 8px); }
-  .maplibregl-ctrl-bottom-right .north-ctl:not(:has(.turned, .tilted)) { display: none; }
+
 }
 @media (max-width: 719px) and (pointer: coarse) { :root { --tool-h: 44px; } }
 

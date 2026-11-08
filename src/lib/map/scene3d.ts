@@ -439,10 +439,10 @@ export class Scene3D {
       if (!was) return;
       map.dragRotate.disable();
       (map.dragRotate as unknown as { _pitchWithRotate: boolean })._pitchWithRotate = false;
-      map.touchZoomRotate.disableRotation();
       map.keyboard.disableRotation();
       map.touchPitch.disable();
-      map.easeTo({ pitch: 0, bearing: 0, padding: { top: 0, bottom: 0, left: 0, right: 0 }, duration: 600 });
+      // Flat again; the bearing kept (2D turns too: MapView turn2D enables its turning again).
+      map.easeTo({ pitch: 0, padding: { top: 0, bottom: 0, left: 0, right: 0 }, duration: 600 });
       return;
     }
     if (!was) {
