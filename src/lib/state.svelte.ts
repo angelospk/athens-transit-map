@@ -726,9 +726,9 @@ export class AppState {
     const linkedCard = cardFromUrl(location.pathname, location.search);
     this.linked = ids.length > 0 || !!linkedCard;
     if (this.linked) this.tab = "map";
-    // A plain visit: on a phone the home sheet over the map (the departures near the user), on a computer «Πού πας;».
-    else if (typeof matchMedia === "function" && matchMedia("(max-width: 719px)").matches) this.tab = "now";
-    else this.start = true;
+    // A plain visit: the home sheet or column over the map (the departures near the user), on a phone and a computer
+    // alike; «Πού πας;» opens from its search.
+    else this.tab = "now";
     this.cityLocked = cityInUrl(location.pathname, location.search);
     // A hand pick set this just before the reload; one-shot.
     try {

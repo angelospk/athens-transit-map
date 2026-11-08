@@ -1391,7 +1391,8 @@
       {:else if find}
         <h1 id="start-h" in:item={{ i: 2 }}>Βρες</h1>
       {:else if wide}
-        <h1 id="start-h" class="hero" in:item={{ i: 2 }}>Κάθε λεωφορείο<br />{OF_CITY[app.cityId] ?? app.cityInfo.inName},<br /><span>εκεί που είναι.</span></h1>
+        <!-- A computer opens on the map with its home column; this is only «Πού πας;» now, not a welcome page. -->
+        <h1 id="start-h" in:item={{ i: 2 }}>Πού πας;</h1>
       {:else}
         <h1 id="start-h" class="sr">Πού πας;</h1>
       {/if}
@@ -1520,10 +1521,6 @@
         {/if}
 
         {#if intro}
-          <div class="ways" in:item={{ i: 4, y: 12 }}>
-            <button type="button" class="primary" onclick={nearMe}><Icon name="locate" size={18} /><span>Τι έρχεται κοντά μου</span></button>
-            <button type="button" class="ghost line" onclick={explore}><span>Άνοιξε τον χάρτη</span></button>
-          </div>
           <!-- Home and work: the trip there now -->
           <div class="mine" data-peek="Σπίτι" data-peek-icon="home" in:item={{ i: 5, y: 12 }}>
             {#each mine as m (m.k)}
@@ -1660,7 +1657,7 @@
       {/if}
 
       {#if intro}
-        {#if !favCards.length && !recent.length}
+        {#if false}
         <ul class="facts" in:item={{ i: 9 }}>
           <li><i class="g"></i>Θέσεις από τα ίδια τα οχήματα, κάθε λίγα δευτερόλεπτα</li>
           <li><i class="b"></i>{app.cityInfo.rail ? "Λεωφορεία, τρόλεϊ, μετρό, τραμ και προαστιακός" : "Όλα τα λεωφορεία της πόλης"}</li>
@@ -2175,8 +2172,6 @@
   .facts i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
   .facts i.g { background: var(--ontime); }
   .facts i.b { background: var(--accent); }
-  h1.hero { margin: 28px 0 8px; font-size: 52px; line-height: 1.02; letter-spacing: -.04em; }
-  h1.hero span { color: var(--accent); }
 
   /* A wide window: the panel on the left, full height; the map beside it stays live and uncovered. */
   @media (min-width: 1024px) {

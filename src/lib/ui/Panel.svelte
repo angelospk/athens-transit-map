@@ -649,7 +649,7 @@
      their own places in the sheet. */
   /* A computer: the settings are a window over the map, dimmed behind it (desktop mockup Υ8); a press beside it closes it. */
   @media (min-width: 720px) {
-    .popwrap.modal { position: fixed; inset: 0; z-index: 20; width: auto; max-width: none; max-height: none; display: grid; place-items: center;
+    .popwrap.modal { position: fixed; inset: 0; z-index: 1200; width: auto; max-width: none; max-height: none; display: grid; place-items: center;
       padding: 40px 16px; box-sizing: border-box; background: rgb(10 13 18 / .38); animation: scrimIn .18s ease-out; }
     .popwrap.modal .pop { width: min(1120px, 100%); height: 100%; max-height: 880px; padding: 0; border-radius: 28px; overflow: hidden;
       display: flex; flex-direction: column; animation: winIn .24s cubic-bezier(.2, .8, .2, 1); }
