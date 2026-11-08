@@ -439,8 +439,9 @@ html.sheet-open .start, html.sheet-open .now, html.sheet-open .card, html.sheet-
    above it (Panel.svelte); the compass only once the map is turned. */
 @media (max-width: 719px) {
   :root[data-homepeek] .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group:has(> button.locate) { top: auto !important; bottom: calc(64px + 16px + env(safe-area-inset-bottom)); }
-  :root[data-homepeek] .maplibregl-ctrl-bottom-right .north-ctl { top: auto !important; bottom: calc(64px + 16px + 52px + 96px + env(safe-area-inset-bottom)); }
-  :root[data-homepeek] .maplibregl-ctrl-bottom-right .north-ctl:not(:has(.turned)) { display: none; }
+  /* The compass right above locate, once the map is turned or tilted (3D); the tools above it (Panel.svelte). */
+  :root[data-homepeek] .maplibregl-ctrl-bottom-right .north-ctl { top: auto !important; bottom: calc(64px + 16px + 52px + env(safe-area-inset-bottom)); }
+  :root[data-homepeek] .maplibregl-ctrl-bottom-right .north-ctl:not(:has(.turned, .tilted)) { display: none; }
 }
 
 /* Every panel over the map (the home sheet, the cards, «Κοντά σου», the pick's and the planner's sheets, the dialogs):

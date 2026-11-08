@@ -408,6 +408,7 @@
   function cancelSaving() { app.savingPlace = null; app.start = false; open = null; }
 
   function choose(f: Field, p: Place) {
+    if (!quietPick) app.startDirect = false;   // a place the user picked (not the location found on its own)
     // Setting «Σπίτι» or «Δουλειά» (the home screen's shortcuts): the place picked is saved, and the screen closes.
     const saving = app.savingPlace;
     if (saving) {
@@ -423,6 +424,9 @@
     }
     if (find && f === "to") { open = null; showFound(p); return; }
     ends[f] = { text: titleCase(p.label), place: p };
+    // The location found on its own (the start filled quietly) while the other field is being typed in: that field
+    // stays open (it closed under the user's typing, and «Πού πας;» opened on the two fields).
+    if (quietPick && open && open !== f) return;
     open = null;
     // The destination chosen: the start is asked right under it (the field appears; the cursor goes there), unless
     // the user's location is on its way there.
@@ -588,6 +592,8 @@
     requestAnimationFrame(() => { swapped = true; swapTimer = setTimeout(() => (swapped = false), 400); });
   }
   const ready = $derived(!!ends.from.place && !!ends.to.place);
+  // The two ends at one place (within 300 m: «Σπίτι» while at home): no routes, «Είσαι ήδη εκεί».
+  const already = $derived(ready && Math.min(...ends.from.place!.pts.flatMap(a => ends.to.place!.pts.map(b => distM(a, b)))) < 300);
   // «Από», left empty for the user to choose: under it the likely starts, one tap each. Their location first when the
   // browser gives it without asking (it is where most trips start), then «Σπίτι» and «Δουλειά» unless the trip goes
   // there, then a point on the map. Location is not offered where the browser refuses it.
@@ -652,6 +658,7 @@
   });
   $effect(() => { if (!app.start) app.finding = false; });
   // The ends the planner handed over (a phone): into the fields, the empty one open for typing.
+  let openedNow = false;
   $effect(() => {
     const se = app.startEnds;
     if (!se || !app.start) return;
@@ -659,7 +666,10 @@
       app.startEnds = null;
       if (se.from) ends.from = { text: se.from.label, place: se.from };
       ends.to = se.to ? { text: se.to.label, place: se.to } : { text: "", place: null };
-      if (!se.to) setTimeout(() => inputs.to?.focus(), 120);
+      // «Προς» to ask: straight to the typing screen (it went through the two fields and their list for a moment).
+      // The tap that asked for it (a stop card's «Ταξίδι από εδώ») is still on its way to the document: not «a tap
+      // outside the field» (it closed the field again), so it is let pass.
+      if (!se.to) { asking = true; open = "to"; clearTimeout(typingT); typingOn = true; openedNow = true; setTimeout(() => { openedNow = false; inputs.to?.focus(); }, 0); }
       // Both ends known (a stop's «Πώς πάω», Σπίτι): straight to the routes.
       else if (ends.from.place) { asking = false; open = null; }
     });
@@ -848,6 +858,7 @@
   const goDest = (d: Dest) => choose("to", { label: d.label, hint: d.hint, pts: [d.at], lines: [], kind: "area" });
   let addSheet = $state(false);
   function close() { app.savingPlace = null; app.pickFor = null; app.start = false; }
+  $effect(() => { if (!app.start) app.startDirect = false; });
   // «Βρες γραμμή» (compact mockup 7): its own page in this screen; «‹» comes back here.
   let linesPage = $state(false);
   $effect(() => { if (!app.start) linesPage = false; });
@@ -1071,6 +1082,11 @@
     if (now) typingOn = true;
     else typingT = setTimeout(() => (typingOn = true), 350);   // a focus with no tap (from the code): a moment later
   }
+  // «Άκυρο»: opened from the map straight into typing, back to the map; else back to the two fields.
+  function cancelTyping() {
+    if (app.startDirect && !ends.to.place) { stopTyping(); close(); return; }
+    stopTyping();
+  }
   function stopTyping() {
     const f = open;
     open = null;
@@ -1201,7 +1217,7 @@
      button is released, and the click lands on something else (a chip such as «Σύνταγμα» did nothing). -->
 <svelte:document onclick={e => {
   const t = e.target as Element;
-  if (open && t.isConnected && !t.closest?.(".field, .opts, .cancel, input")) stopTyping();
+  if (open && !openedNow && t.isConnected && !t.closest?.(".field, .opts, .cancel, input")) stopTyping();
 }} onpointerdown={e => {
   const t = e.target as Element;
   if (menu && !t.closest?.(".pickf, .opts")) menu = null;
@@ -1419,7 +1435,7 @@
               <span class="fi"><span class="spin" aria-hidden="true"></span></span>
             {/if}
           </div>
-          {#if typing && open === f && !app.savingPlace}<button type="button" class="cancel" onclick={stopTyping}>Άκυρο</button>{/if}
+          {#if typing && open === f && !app.savingPlace}<button type="button" class="cancel" onclick={cancelTyping}>Άκυρο</button>{/if}
           {#if !wide && open === f}{@render list(f)}{/if}
           {#if f === "from" && !pair && !ends.from.place && !ends.from.text && open !== "from"}
             <div class="sugg" role="group" aria-label="Από πού ξεκινάς" transition:reveal>
@@ -1651,6 +1667,12 @@
           <li><i></i>Χωρίς λογαριασμό: ανοίγεις και βλέπεις</li>
         </ul>
         {/if}
+      {:else if !app.savingPlace && !find && (wide || answer) && already}
+        <div class="already" in:item={{ i: 0 }}>
+          <span class="alic"><Icon name={ends.to.place?.kind === "home" || ends.to.place?.kind === "work" ? ends.to.place.kind : "pin"} size={22} /></span>
+          <b>Είσαι ήδη {ends.to.place?.kind === "home" ? "στο Σπίτι" : ends.to.place?.kind === "work" ? "στη Δουλειά" : "εκεί"}</b>
+          <small>Η αφετηρία και ο προορισμός είναι στο ίδιο σημείο. Άλλαξε το «Από» ή το «Προς».</small>
+        </div>
       {:else if !app.savingPlace && !find && (wide || answer)}
         {#if routes?.length && top && planR}
           {#each answer ? sourceNotes.filter(n => n !== railOldNote) : sourceNotes as n (n)}<p class="est"><Icon name="warn" size={15} /><span>{n}</span></p>{/each}
@@ -1701,6 +1723,8 @@
           <button type="button" class="link" onclick={() => { app.savingPlace = null; app.start = false; }}><span>Άκυρο</span><kbd class="pc">Esc</kbd></button>
         {:else if find}
           <p class="findnote">Γράψε τον αριθμό μιας γραμμής (π.χ. 308), μια στάση ή μια περιοχή.</p>
+        {:else if answer && already}
+          <button type="button" class="primary big" onclick={() => editEnd("to")}><span>Άλλαξε προορισμό</span></button>
         {:else if answer}
           <div class="duo">
             <button type="button" class="bell" class:on={!!armed} disabled={!best} aria-label={armed ? `Υπενθύμιση στις ${clockHM(Math.max(armed.leaveAt, nowS))}` : "Θύμισέ μου"}
@@ -2523,4 +2547,9 @@
   .pw { flex: none; display: flex; align-items: center; gap: 3px; font-weight: 700; color: var(--muted); }
   .aim .core.svc { --s: 30px; color: #ffffff; display: flex; align-items: center; justify-content: center; }
   .aim.snap .core.mine { color: #ffffff; background: #4d8af0; box-shadow: 0 0 0 3px #ffffff, 0 2px 8px rgb(0 0 0 / .4); }
+  /* The two ends at one place: no routes, a short note in their place. */
+  .already { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 40px 24px; text-align: center; }
+  .alic { width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent); margin-bottom: 6px; }
+  .already b { font-size: 17px; font-weight: 800; line-height: 1.2; }
+  .already small { max-width: 280px; color: var(--muted); font-size: 13.5px; line-height: 1.4; }
 </style>

@@ -201,6 +201,9 @@ export class AppState {
   mineTap = $state.raw<{ k: "home" | "work"; n: number } | null>(null);
   // «Πού πας;» to open on «Βρες γραμμή» (the map's «Γραμμές» chip).
   startLines = $state(false);
+  // «Πού πας;» opened from the map straight into typing (NowPanel): «Άκυρο» there goes back to the map, not to the two
+  // fields. Cleared once a place is chosen (a later «Άκυρο» goes back to the fields).
+  startDirect = $state(false);
   startEnds = $state.raw<{ from: import("./trip").Place | null; to: import("./trip").Place | null } | null>(null);
   // The open metro station's entrances (MapView reads them off the base map's tiles, OpenStreetMap's
   // railway=subway_entrance, as the station opens): one per name, nearest the station first.

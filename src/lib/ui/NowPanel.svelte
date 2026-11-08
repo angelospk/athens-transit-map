@@ -238,7 +238,7 @@
   // drawn at once with flushSync): a focus a moment later does not bring the keyboard up on iOS.
   function openWhere(e: MouseEvent) {
     e.stopPropagation();   // this tap is not «a tap outside the field» for the screen that opens under it
-    flushSync(() => { app.start = true; });
+    flushSync(() => { app.start = true; app.startDirect = true; });
     const f = document.getElementById("start-to") as HTMLInputElement | null;
     f?.focus();
     f?.click();
@@ -255,6 +255,8 @@
   }
   function goPlace(k: "home" | "work") {
     if (!app.places[k]) { setPlace(k); return; }
+    // Already there («εδώ είσαι»): no way to plan; the map on the place, the sheet lowered.
+    if (hereAt(k)) { const at = app.places[k]!.at; app.flyTo([at[1], at[0]]); app.homePeek++; return; }
     if (!app.myPos) { waitingFor = k; app.locate(); return; }
     tripTo(k);
   }
@@ -715,8 +717,7 @@
   .mwhere :global(svg) { color: var(--accent); }
   /* A scrolling row clips what spills out of it: room around the chips (taken back by the margins) for their shadows,
      and to the screen's edges on both sides. */
-  .mchips { display: flex; gap: 8px; overflow-x: auto; margin: -6px -16px -14px; padding: 6px 16px 14px; scrollbar-width: none; pointer-events: none; }
-  .mchips > * { pointer-events: auto; }   /* the room around them lets taps through to the map */
+  .mchips { display: flex; gap: 8px; overflow-x: auto; margin: -6px -16px -14px; padding: 6px 16px 14px; scrollbar-width: none; pointer-events: auto; }   /* auto: iOS scrolls the row only so */
   .mchips::-webkit-scrollbar { display: none; }
   .mchips .chip { height: 34px; }
   .chip.glass { background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 2px 8px rgb(0 0 0 / .35), inset 0 0 0 1px var(--card-border, var(--border)); color: var(--fg); }

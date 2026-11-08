@@ -1,7 +1,7 @@
 <script lang="ts">
   import { fade } from "svelte/transition";
   import MapSettings from "./MapSettings.svelte";
-  import { tick, untrack } from "svelte";
+  import { flushSync, tick, untrack } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
   import { directionGroups, focusGroup, otherDirection } from "../directions";
   import { muniPlaces } from "../finder";
@@ -68,6 +68,14 @@
   };
 
   // «Οδηγίες εδώ» in the search modal: the trip planner opens and takes the place as its end.
+  // The phone's «Πού πας;» over the lines: as on the home screen (NowPanel), straight into typing, keyboard up.
+  function openWhere(e: MouseEvent) {
+    e.stopPropagation();
+    flushSync(() => { app.start = true; app.startDirect = true; });
+    const f = document.getElementById("start-to") as HTMLInputElement | null;
+    f?.focus();
+    f?.click();
+  }
   // The planner's code, fetched once the page is idle: asked for later, it opens at once (no «Φόρτωση» first).
   $effect(() => {
     const go = () => { void import("./TripPlanner.svelte"); };
@@ -189,7 +197,7 @@
   {:else}
   <div class="bar">
     <!-- A phone (compact mockup 15Γ): «Πού πας;» on top of the map as on the home screen, the lines as pills under it. -->
-    {#if narrow.current}<button type="button" class="where mwhere" aria-haspopup="dialog" onclick={() => (app.start = true)}><Icon name="search" size={19} /><span>Πού πας;</span></button>{/if}
+    {#if narrow.current}<button type="button" class="where mwhere" aria-haspopup="dialog" onclick={openWhere}><Icon name="search" size={19} /><span>Πού πας;</span></button>{/if}
     <LinePicker {app} expanded={!collapsed} onsearch={() => (app.start = true)} {tail} />
   </div>
   {/if}
@@ -627,6 +635,8 @@
   @media (max-width: 719px) {
     :global(:root[data-homepeek]) .homebar { display: none; }
     :global(:root[data-homepeek]) .rail { top: auto; bottom: calc(64px + 16px + 52px + env(safe-area-inset-bottom)); }
+    /* The compass shown (the map turned or in 3D): it sits over locate, the tools go up by it. */
+    :global(:root[data-homepeek]:has(.north-ctl .turned, .north-ctl .tilted)) .rail { bottom: calc(64px + 16px + 104px + env(safe-area-inset-bottom)); }
     :global(:root[data-homepeek]) .rail .tripb, :global(:root[data-homepeek]) .rail .helpb { display: none; }
   }
   /* A phone with the home sheet (compact mockup 15Γ): its own search is on the map; the map's tools show only while

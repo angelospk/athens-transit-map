@@ -1383,6 +1383,7 @@
     m.addControl({ onAdd: () => locateCtl, onRemove: () => locateCtl.remove() }, "bottom-right");
     m.addControl({ onAdd: () => northCtl, onRemove: () => northCtl.remove() }, "bottom-right");
     m.on("rotate", () => needleTo(m));
+    m.on("pitch", () => needleTo(m));
     needleTo(m);
     m.addControl({ onAdd: () => infoCtl, onRemove: () => infoCtl.remove() }, "bottom-right");
     // MapLibre puts a new bottom control above the others; after the credits it floats left of the ⓘ, on its row.
@@ -2869,12 +2870,14 @@
   northBtn.title = "Στρέψε τον χάρτη στον βορρά";
   northBtn.setAttribute("aria-label", "Στρέψε τον χάρτη στον βορρά");
   northBtn.innerHTML = '<svg class="needle" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M10 2.2 13.2 10H6.8z" fill="#e5484d"/><path d="M10 17.8 6.8 10h6.4z" fill="currentColor" opacity=".55"/></svg>';
-  northBtn.onclick = () => map?.easeTo({ bearing: 0, duration: reducedMotion.matches ? 0 : 500 });
+  northBtn.onclick = () => map?.easeTo({ bearing: 0, duration: reducedMotion.matches ? 0 : 500 });   // the tilt of 3D stays
   northCtl.append(northBtn);
   const needleTo = (m: MlMap) => {
     const b = m.getBearing();
     (northBtn.firstElementChild as SVGElement).style.transform = `rotate(${-b}deg)`;
     northBtn.classList.toggle("turned", Math.abs(b) > 0.5);
+    // Tilted (3D): the compass shows too, a tap stands the map up again.
+    northBtn.classList.toggle("tilted", m.getPitch() > 1);
   };
 
   // «Λεπτομέρειες» (a control left of the ⓘ, bottom right) opens the info sheet. The ⓘ stays MapLibre's: it shows the
