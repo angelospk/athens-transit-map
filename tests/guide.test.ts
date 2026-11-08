@@ -16,11 +16,11 @@ describe("guideFromTrip", () => {
     const g = guideFromTrip(ix, "040", { id: "v1", i: 1, j: 3, from: 1, to: 3, walk: 0, stops: 2, ride: 0, min: 5 }, [37.9718, 23.728], [37.9754, 23.7325], "Σπίτι");
     expect(g.legs.map(l => l.kind)).toEqual(["walk", "ride", "walk"]);
     const r = g.legs[1] as GuideRide;
-    expect(r.board.name).toBe("Βητα");
+    expect(r.board.name).toBe("Βήτα");
     expect(r.alight.id).toBe("4");
     expect(r.seq.map(s => s.id)).toEqual(["2", "3", "4"]);
     expect(r.before.map(s => s.id)).toEqual(["1"]);
-    expect(r.headsign).toBe("Δελτα");   // the note in brackets left out
+    expect(r.headsign).toBe("Δέλτα");   // the note in brackets left out
   });
   it("leaves out a walk of under 20 m", () => {
     const g = guideFromTrip(ix, "040", { id: "v1", i: 0, j: 2, from: 0, to: 2, walk: 0, stops: 2, ride: 0, min: 5 }, [37.97, 23.73], [37.9736, 23.73], "Εκεί");
@@ -111,7 +111,7 @@ describe("a timed plan with a metro change", () => {
     ] } as unknown as V2Run;
     const stops = { "stasy:AD": { name: "ΑΓ. ΔΗΜΗΤΡΙΟΣ", lat: 1, lon: 2 }, "stasy:MID": { name: "ΔΑΦΝΗ", lat: 3, lon: 4 }, "stasy:SY2": { name: "ΣΥΝΤΑΓΜΑ", lat: 5, lon: 6 } } as unknown as Record<string, V2Stop>;
     const seq = railSeq(run, stops, "AD", "SY2");
-    expect(seq?.map(s => [s.id, s.name, s.t])).toEqual([["AD", "Αγ. Δημητριος", T], ["MID", "Δαφνη", T + 300], ["SY2", "Συνταγμα", T + 600]]);
+    expect(seq?.map(s => [s.id, s.name, s.t])).toEqual([["AD", "Αγ. Δημήτριος", T], ["MID", "Δάφνη", T + 300], ["SY2", "Σύνταγμα", T + 600]]);
     expect(railSeq(run, stops, "SY2", "AD")).toBeNull();
   });
 });

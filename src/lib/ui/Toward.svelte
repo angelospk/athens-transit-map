@@ -2,9 +2,10 @@
   // Which way the buses leave a bus stop (towards.ts): a small compass arrow (north up) and «προς X · Y»,
   // so the stop of the same name across the road is told apart. Nothing when the index has no direction.
   import { towardsText } from "../towards";
+  import { titleCase } from "../nearby";
 
   let { dir, sep = false }: { dir: { bearing: number | null; towards: string[] } | null; sep?: boolean } = $props();
-  const text = $derived(dir ? towardsText(dir.towards) : "");
+  const text = $derived(dir ? titleCase(towardsText(dir.towards)) : "");   // the feed's capitals as names, accents back
 </script>
 
 {#if dir && (text || dir.bearing != null)}

@@ -32,12 +32,12 @@ describe("bus3d", () => {
     const now = 1_000_000;
     const v = { line: "999", id: "1", lat, lon: lon0 + 1.5 * dLon, bearing: 90, position_at: now, variant: "v1", delay_s: 420, speed: 5, path: null };
     const r = busRoute("999", "1", v, st)!;
-    expect(r.passed).toBe("Σταση B");
+    expect(r.passed).toBe("Στάση B");
     expect(r.ahead.map(a => a.id)).toEqual(["c", "d", "e"]);
     expect(r.ahead[0].at).toBeGreaterThan(now);
     expect(r.ahead[2].at).toBeGreaterThan(r.ahead[1].at);
     expect(r.head).toMatch(/^Ακαδημ/);
-    expect(r.from).toBe("Σταση A");
+    expect(r.from).toBe("Στάση A");
     expect(r.cls).toBe("late2");
     expect(busRoute("999", "1", v, undefined)).toBeNull();
   });

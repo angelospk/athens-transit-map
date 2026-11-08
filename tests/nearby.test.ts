@@ -133,12 +133,18 @@ describe("distText", () => {
 
 describe("titleCase", () => {
   it("OASA's capitals as a name: first letter of each word up, the rest down, final sigma kept", () => {
-    expect(titleCase("ΠΛ. ΚΥΨΕΛΗΣ")).toBe("Πλ. Κυψελης");
-    expect(titleCase("ΠΛ ΚΥΨΕΛΗΣ (ΤΕΡΜΑ 036)")).toBe("Πλ Κυψελης (Τερμα 036)");
-    expect(titleCase("ΣΤ.ΚΑΤΕΧΑΚΗ-ΓΑΛΑΤΣΙ")).toBe("Στ.Κατεχακη-Γαλατσι");
+    expect(titleCase("ΠΛ. ΚΥΨΕΛΗΣ")).toBe("Πλ. Κυψέλης");
+  });
+  it("puts the accents OASA leaves out back (accents.json), the first letter's too; an unknown word stays as written", () => {
+    expect(titleCase("ΑΓΙΑΣ ΤΡΙΑΔΟΣ")).toBe("Αγίας Τριάδος");
+    expect(titleCase("ΑΓΙΟΣ ΔΗΜΗΤΡΙΟΣ")).toBe("Άγιος Δημήτριος");
+    expect(titleCase("ΠΕΙΡΑΙΑΣ - ΣΥΝΤΑΓΜΑ")).toBe("Πειραιάς - Σύνταγμα");
+    expect(titleCase("ΧΩΡΙΣΤΟΝΟΜΑΞΥΖ")).toBe("Χωριστονομαξυζ");
+    expect(titleCase("ΠΛ ΚΥΨΕΛΗΣ (ΤΕΡΜΑ 036)")).toBe("Πλ Κυψέλης (Τέρμα 036)");
+    expect(titleCase("ΣΤ.ΚΑΤΕΧΑΚΗ-ΓΑΛΑΤΣΙ")).toBe("Στ.Κατεχάκη-Γαλάτσι");
     expect(titleCase("Ήδη γραμμένο")).toBe("Ήδη γραμμένο");   // words not in capitals are left as they are
-    expect(titleCase("ΚΑΙΣΑΡΙΑΝΗ (Προσωρινή λόγω έργων)")).toBe("Καισαριανη (Προσωρινή λόγω έργων)");
-    expect(titleCase("Α ΚΥΨΕΛΗ")).toBe("Α Κυψελη");
+    expect(titleCase("ΚΑΙΣΑΡΙΑΝΗ (Προσωρινή λόγω έργων)")).toBe("Καισαριανή (Προσωρινή λόγω έργων)");
+    expect(titleCase("Α ΚΥΨΕΛΗ")).toBe("Α Κυψέλη");
     expect(titleCase("ΑΣ ΠΑΜΕ")).toBe("Ας Παμε");   // a final sigma in a two-letter word
   });
 });
