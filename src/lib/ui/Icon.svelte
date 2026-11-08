@@ -1,7 +1,7 @@
 <script lang="ts" module>
   export type IconName = "star" | "star-filled" | "bus" | "metro" | "tram" | "suburban" | "pin" | "stop" | "area" | "street" | "dot" | "walk" | "chevron"
     | "clock" | "map" | "route" | "bell" | "layers" | "back" | "close" | "swap" | "search" | "share" | "vibrate" | "shield" | "check"
-    | "down" | "cube" | "warn" | "plus" | "chevron-up" | "locate" | "home" | "work" | "ticket" | "pushpin" | "sliders" | "trolley";
+    | "down" | "cube" | "warn" | "plus" | "chevron-up" | "locate" | "home" | "work" | "ticket" | "pushpin" | "sliders" | "trolley" | "fill";
 </script>
 
 <script lang="ts">
@@ -56,6 +56,8 @@
     <path d="M10 2.5l7.5 4.2L10 10.8 2.5 6.7z" /><path d="M2.5 10.8 10 15l7.5-4.2" />
   {:else if name === "back"}
     <path d="M12.5 5 7.5 10l5 5" />
+  {:else if name === "fill"}
+    <path d="M15 15 5 5M5 12.5V5h7.5" />
   {:else if name === "close"}
     <path d="M5 5l10 10M15 5 5 15" />
   {:else if name === "swap"}

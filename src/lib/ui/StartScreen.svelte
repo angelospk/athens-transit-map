@@ -29,6 +29,9 @@
   import { stopRows, type V2Arrival, type V2Line } from "../v2";
   import { placeNote, toward } from "../stops";
   import { busStopCard } from "../legacy";
+  import { destsOf, type Dest } from "../destinations";
+  import DestIcon from "./DestIcon.svelte";
+  import LineChip from "./LineChip.svelte";
   import { clockHM } from "../trains";
   import { API_BASE } from "../config";
   import { durText } from "../format";
@@ -672,6 +675,37 @@
     recent = [{ from, to, at: Date.now() }, ...recent.filter(x => !(same(x.from, from) && same(x.to, to)))].slice(0, 3);
     try { localStorage.setItem("recentTrips", JSON.stringify(recent)); } catch { /* private mode */ }
   }
+  // What was typed, in bold in each result (compact mockup 3): the first place where it matches, accents aside.
+  function hl(text: string, q: string): [string, boolean][] {
+    const qf = fold(q.trim());
+    if (!qf) return [[text, false]];
+    const chars = [...text], parts = chars.map(c => fold(c));
+    const at: number[] = [];
+    let joined = "";
+    parts.forEach((x, i) => { at.push(joined.length); joined += x; void i; });
+    const i = joined.indexOf(qf);
+    if (i < 0) return [[text, false]];
+    const a = at.findIndex(v => v >= i), end = i + qf.length;
+    let b = at.findIndex(v => v >= end);
+    if (b < 0) b = chars.length;
+    return [[chars.slice(0, a).join(""), false], [chars.slice(a, b).join(""), true], [chars.slice(b).join(""), false]].filter(x => x[0]) as [string, boolean][];
+  }
+  function clearRecent() {
+    recent = [];
+    try { localStorage.removeItem("recentTrips"); } catch { /* private mode */ }
+  }
+  // ↖: the place's name into «Προς», to go on typing from it.
+  function fillTo(label: string) {
+    edit("to", label);
+    setTimeout(() => inputs.to?.focus(), 30);
+  }
+  // Compact mockup 2: the shortcuts (the way now first: Δουλειά when the user is at home), «Βρες γραμμή», «Δημοφιλή».
+  const shortcuts = $derived([...mine].sort((a, b) => (a.trip === null ? 1 : b.trip === null ? -1 : a.trip && !b.trip ? -1 : !a.trip && b.trip ? 1 : 0)));
+  const popular = $derived(destsOf(app.cityId));
+  const goDest = (d: Dest) => choose("to", { label: d.label, hint: d.hint, pts: [d.at], lines: [], kind: "area" });
+  let addSheet = $state(false);
+  function close() { app.savingPlace = null; app.pickFor = null; app.start = false; }
+  function findLine() { app.finding = true; }
   function again(x: Recent) {
     // From «Η θέση μου»: from where the user is now (the start already set to it), not where they were then.
     if (x.from.label !== ME || !ends.from.place) ends.from = { text: x.from.label, place: x.from };
@@ -853,6 +887,8 @@
   let typingOn = $state(false);
   let typingT: ReturnType<typeof setTimeout> | undefined;
   const typing = $derived(!wide && open !== null && !answer && typingOn);
+  // A phone's «Πού πας;» (compact mockup 2): «Από» and «Προς» as one block, «‹» before it, the swap after it.
+  const pair = $derived(!wide && !app.savingPlace && !find && !typing && !answer);
   $effect(() => { if (open === null) { clearTimeout(typingT); typingOn = false; } });
   function startTyping(now = false) {
     clearTimeout(typingT);
@@ -1064,7 +1100,7 @@
             </div>
           {/if}
         </div>
-      {:else if !typing}
+      {:else if !typing && (wide || app.savingPlace || find)}
         {@render brandRow()}
       {/if}
       {#if answer || typing}
@@ -1076,30 +1112,30 @@
       {:else if wide}
         <h1 id="start-h" class="hero" in:item={{ i: 2 }}>Κάθε λεωφορείο<br />{OF_CITY[app.cityId]},<br /><span>εκεί που είναι.</span></h1>
       {:else}
-        <h1 id="start-h" in:item={{ i: 2 }}>Θέλω να πάω</h1>
+        <h1 id="start-h" class="sr">Πού πας;</h1>
       {/if}
 
       {#if answer}
         <!-- the band above holds the trip asked -->
       {:else}
       <div class="fields" class:raised={menu !== null}>
-        <div class="ends" class:group={!intro && wide} class:asks={!wide && !app.savingPlace} in:item={{ i: 3, y: 12 }}>
+        <div class="ends" class:group={!intro && wide} class:asks={!wide && !app.savingPlace} class:pair={pair} in:item={{ i: 3, y: 12 }}>
+        {#if pair}
+          <button type="button" class="pback" aria-label="Πίσω" onclick={close}><Icon name="back" size={20} /></button>
+          <button type="button" class="pswap" class:turned aria-label="Αντιστροφή αφετηρίας και προορισμού" onclick={swap}><Icon name="swap" size={19} /></button>
+        {/if}
         {#if typing && open}
           <button type="button" class="typeback" onclick={stopTyping}><span class="tbi"><Icon name="back" size={16} /></span><span>{app.savingPlace ? (app.savingPlace === "home" ? "Πού είναι το Σπίτι;" : "Πού είναι η Δουλειά;") : find ? "Βρες" : open === "from" ? "Από πού ξεκινάς;" : "Πού θέλεις να πας;"}</span></button>
         {/if}
         {#each (app.savingPlace || intro || find ? ["to"] : !wide ? ["from", "to"] : askFrom ? ["to", "from"] : ["to"]) as Field[] as f (f)}
           {#if !typing || f === open}
-          {#if !wide && !app.savingPlace && !find && !typing}
-            {@const n = f === "from" ? 1 : 2}
-            <p class="qq" class:on={f === "from" ? !ends.from.place : !!ends.from.place && !ends.to.place}><span class="qn" aria-hidden="true">{n}</span>{f === "from" ? "Από πού ξεκινάς;" : "Πού θέλεις να πας;"}</p>
-          {/if}
           <div class="field end {f}" class:open={open === f} class:set={!!ends[f].place} class:swapped class:search={intro}>
             {#if intro}<label class="fs" for="start-{f}"><Icon name="search" size={20} /><span class="sr">Πού πας;</span></label>
             {:else if find}<label class="sr" for="start-{f}">Βρες γραμμή, στάση ή μέρος</label><span class="fs2" aria-hidden="true"><Icon name="search" size={19} /></span>
-            {:else if wide || app.savingPlace}<span class="mk {f}" aria-hidden="true"></span><label class="fl" for="start-{f}">{f === "from" ? "Από" : "Πού"}</label>
+            {:else if wide || app.savingPlace || pair}<span class="mk {f}" aria-hidden="true"></span><label class="fl" for="start-{f}">{f === "from" ? "Από" : pair ? "Προς" : "Πού"}</label>
             {:else}<label class="sr" for="start-{f}">{f === "from" ? "Από πού ξεκινάς" : "Πού θέλεις να πας"}</label>{#if ends[f].place?.kind === "me"}<span class="mearr" aria-hidden="true"><svg class="arr" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5 3.8 10.6a.6.6 0 0 0 .05 1.12l6.6 2.03 2.03 6.6a.6.6 0 0 0 1.12.05z" fill="currentColor" /></svg></span>{:else if !ends[f].place}<span class="fs2" aria-hidden="true"><Icon name="search" size={19} /></span>{/if}{/if}
             <input id="start-{f}" bind:this={inputs[f]} value={ends[f].text} autocomplete="off" spellcheck="false"
-              placeholder={find ? "Γραμμή, στάση ή μέρος" : f === "from" ? (wide ? "Από πού ξεκινάς;" : "Γράψε από πού ξεκινάς") : intro ? "Πού πας; Διεύθυνση, στάση ή γραμμή" : wide ? "Στάση, περιοχή, οδός" : "Γράψε μέρος, στάση ή γραμμή"} role="combobox" aria-expanded={open === f} aria-controls="start-{f}-list"
+              placeholder={find ? "Γραμμή, στάση ή μέρος" : f === "from" ? (wide ? "Από πού ξεκινάς;" : "Από πού;") : intro ? "Πού πας; Διεύθυνση, στάση ή γραμμή" : wide ? "Στάση, περιοχή, οδός" : "Πού πας;"} role="combobox" aria-expanded={open === f} aria-controls="start-{f}-list"
               onfocus={e => { open = f; menu = null; if (ends[f].place) e.currentTarget.select(); startTyping(); }} onclick={() => startTyping(true)} oninput={e => edit(f, e.currentTarget.value)}
               aria-activedescendant={open === f && active >= 0 ? `start-opt-${active}` : undefined} onkeydown={e => key(f, e)} />
             {#if ends[f].text && locating !== f && !ends[f].place}
@@ -1132,43 +1168,49 @@
         {#if err}<p class="err" role="status" transition:reveal>{err}</p>{/if}
 
         {#if !wide && !app.savingPlace && !find && !ends.to.place && open === null}
-          <!-- Where most trips go: home and work as big tiles (with how long it takes now), and the last trips. -->
-          <div class="mine two" data-peek="Σπίτι" data-peek-icon="home" in:item={{ i: 4, y: 12 }}>
-            {#each mine as m (m.k)}
-              <button type="button" class="ptile" onclick={() => goMine(m.k, m.place)}>
-                <span class="pic"><Icon name={m.k} size={18} /></span>
-                <span class="ptx"><b>{m.label}</b><small>{!m.place ? "Όρισέ το" : m.trip ? `${m.trip.mins} λεπτά` : m.trip === null ? "Είσαι εκεί" : m.place.label}</small></span>
+          <!-- Compact mockup 2: the shortcuts in one row (home, work, the favourite lines, «Πρόσθεσε»), the map and the
+               lines side by side, the last trips, the places most asked for. -->
+          <div class="scuts" in:item={{ i: 4, y: 12 }}>
+            {#each shortcuts as m (m.k)}
+              <button type="button" class="scut" class:best={!!m.trip} class:here={m.trip === null} onclick={() => goMine(m.k, m.place)}>
+                <Icon name={m.k} size={16} />
+                {#if m.trip === null}<span class="sl">{m.label}</span>
+                {:else}<b>{m.label}</b>{#if !m.place}<span class="sl">όρισέ {m.k === "home" ? "το" : "τη"}</span>{:else if m.trip}<span class="sm">{durText(m.trip.mins)}</span>{/if}{/if}
               </button>
             {/each}
+            {#each favLines as l (l.id)}
+              {@const c = app.lineColor(native(l.id))}
+              <button type="button" class="scut ln" aria-label="Γραμμή {l.label}" onclick={() => openLine({ id: l.id, label: l.label } as V2Line)}>
+                <LineChip label={l.label} bg={c.bg} fg={c.fg} mode={app.lineInfo.get(native(l.id))?.kind === "trolley" ? "trolley" : "bus"} city={app.cityId} />
+              </button>
+            {/each}
+            <button type="button" class="scut add" onclick={() => (addSheet = true)}><Icon name="plus" size={15} /><b>Πρόσθεσε</b></button>
           </div>
-          {#if favCards.length}
-            <!-- The favourite stops (mockup-free polish): what leaves each now; a tap opens its board, the arrow plans the trip there. -->
-            <div class="qhrow"><p class="qh">Αγαπημένες στάσεις</p>{#if app.favs.stops.length > favCards.length}<button type="button" class="slink" onclick={() => { app.start = false; app.setTab("now"); app.toggleFavs(); }}>Όλες</button>{/if}</div>
-            <div class="pfavs" data-peek="Αγαπημένα" data-peek-icon="star" in:item={{ i: 5, y: 12 }}>
-              {#each favCards as f (f.s.id)}
-                <div class="pfav">
-                  <button type="button" class="pfm" onclick={() => openFav(f.s)}>
-                    <span class="pft"><b>{app.stopLabel(f.s.id, titleCase(f.s.name))}</b>
-                      {#if f.first}{@const m = minOf(f.first.t.at)}<span class="pfn" class:late={f.late > 0}><i></i>{m === 0 ? "τώρα" : `${m}′`}</span>{/if}</span>
-                    <span class="pfd">
-                      {#each f.deps as d, k (k)}{@const c = app.lineColor(d.line)}
-                        <span class="pfr"><i style:background={c.bg} style:color={c.fg}>{d.line}</i><span class="pto">{d.to}</span>{#if d.min != null}<small>{d.min === 0 ? "τώρα" : `${d.min}′`}</small>{/if}</span>
-                      {/each}
-                      {#if f.loading}<span class="pfr dim"><span class="sk1"></span></span>{:else if !f.deps.length}<span class="pfr dim">Κανένα λεωφορείο τώρα</span>{/if}
-                    </span>
+          <div class="ways2" in:item={{ i: 5, y: 12 }}>
+            <button type="button" onclick={() => pick("to")}><span class="w2i"><Icon name="pin" size={16} /></span><b>Στον χάρτη</b></button>
+            <button type="button" onclick={findLine}><span class="w2i"><Icon name="route" size={16} /></span><b>Βρες γραμμή</b></button>
+          </div>
+          {#if recent.length}
+            <div class="sect" in:item={{ i: 6, y: 12 }}>
+              <div class="sech"><span>Πρόσφατα</span><button type="button" onclick={clearRecent}>Καθαρισμός</button></div>
+              {#each recent as x (x.at)}
+                <div class="prow">
+                  <button type="button" class="pmain" onclick={() => again(x)}>
+                    <span class="pric"><Icon name="clock" size={16} /></span>
+                    <span class="ptxt"><b>{titleCase(x.to.label)}</b><small>{x.from.label === ME ? "από εδώ" : `από ${titleCase(x.from.label)}`}</small></span>
                   </button>
-                  <button type="button" class="pfgo" aria-label="Διαδρομή ως {app.stopLabel(f.s.id, titleCase(f.s.name))}" title="Πήγαινε εκεί" onclick={() => goFav(f.s)}><Icon name="route" size={18} /></button>
+                  <button type="button" class="pfill" aria-label="Βάλε «{titleCase(x.to.label)}» στο πεδίο" onclick={() => fillTo(titleCase(x.to.label))}><Icon name="fill" size={16} /></button>
                 </div>
               {/each}
             </div>
           {/if}
-          {#if recent.length}
-            <p class="qh" data-peek="Πρόσφατα" data-peek-icon="clock">Πήγες πρόσφατα</p>
-            <div class="rlist" in:item={{ i: 5, y: 12 }}>
-              {#each recent as x (x.at)}
-                <button type="button" class="rr" onclick={() => again(x)}>
-                  <span class="ric"><Icon name="clock" size={17} /></span><span class="rtx">{titleCase(x.to.label)}{#if x.from.label !== ME}<small>από {titleCase(x.from.label)}</small>{/if}</span>
-                  <span class="rch" aria-hidden="true"><Icon name="chevron" size={15} /></span>
+          {#if popular.length}
+            <div class="sect" in:item={{ i: 7, y: 12 }}>
+              <div class="sech"><span>Δημοφιλή</span></div>
+              {#each popular as d (d.label)}
+                <button type="button" class="poprow" onclick={() => goDest(d)}>
+                  <DestIcon kind={d.kind} size={30} />
+                  <b>{d.label}</b><small>{d.hint}</small>
                 </button>
               {/each}
             </div>
@@ -1373,10 +1415,6 @@
           </div>
         {:else if !wide}
           {#if ready}<button type="button" class="primary big" onclick={() => (asking = false)}><span>Δες τις διαδρομές</span></button>{/if}
-          <div class="actrow">
-            <button type="button" class="link" onclick={explore}><Icon name="map" size={17} /><span>Θέλω μόνο να δω τον χάρτη</span></button>
-            <MoreHint box={boxEl} inline />
-          </div>
         {:else}
           <button type="button" class="primary big" class:ready disabled={!ready} onclick={go} in:item={{ i: 8 }}><span>Πάμε</span></button>
           <div class="actrow">
@@ -1387,7 +1425,16 @@
       </div>
       {/if}
     </div>
-    {#if sheet === "opts"}
+    {#if addSheet}
+      <Sheet title="Νέα συντόμευση" onclose={() => (addSheet = false)}>
+        <div class="slist">
+          {#each mine as m (m.k)}
+            <button type="button" class="srow" onclick={() => { addSheet = false; app.savingPlace = m.k; }}><span class="ic"><Icon name={m.k} size={20} /></span><span class="tx">{m.place ? `Άλλαξε ${m.label === "Σπίτι" ? "το Σπίτι" : "τη Δουλειά"}` : `${m.label}: όρισέ ${m.k === "home" ? "το" : "τη"}`}</span></button>
+          {/each}
+          <button type="button" class="srow" onclick={() => { addSheet = false; findLine(); }}><span class="ic"><Icon name="route" size={20} /></span><span class="tx">Γραμμή: βρες τη και πάτα το ☆</span></button>
+        </div>
+      </Sheet>
+    {:else if sheet === "opts"}
       <Sheet title="Επιλογές" onclose={() => (sheet = null)}>
         <p class="sq">Με τι θέλεις να πας;</p>
         <div class="slist">
@@ -1444,8 +1491,9 @@
           {:else if r.line}
             {@const bd = badge(r.line)}
             {@const mn = MODE_NAME[r.line.mode] ?? ["Γραμμή", "route"]}
-            <span class="lb" class:round={r.line.mode === "metro"} style:--c={bd.bg} style:--t={bd.fg}>{bd.text}</span>
-            <span class="ot"><b>{titleCase(r.line.name)}</b><small class="lm"><Icon name={mn[1]} size={13} />{mn[0]}</small></span>
+            {#if app.cityId === "athens"}<LineChip label={bd.text} bg={bd.bg} fg={bd.fg} mode={r.line.mode} city={app.cityId} size="lg" />
+            {:else}<span class="lb" class:round={r.line.mode === "metro"} style:--c={bd.bg} style:--t={bd.fg}>{bd.text}</span>{/if}
+            <span class="ot"><b>{#each hl(titleCase(r.line.name), ends[f].text) as [t, m], j (j)}{#if m}<mark>{t}</mark>{:else}{t}{/if}{/each}</b><small class="lm"><Icon name={mn[1]} size={13} />{mn[0]}</small></span>
             {@const n = liveOf(r.line.id)}
             {@const sched = r.line.mode === "metro" || r.line.mode === "tram"}
             {#if n}<span class="live" class:sched in:item={{ y: 0 }}><i></i>{sched ? "Πρόγραμμα" : "Ζωντανά"} · {n}</span>
@@ -1464,7 +1512,7 @@
             {@const p = r.place}
             {#if iconOf(p) === "stop"}<span class="oi oasa"><img src="{import.meta.env.BASE_URL}icons/oasa.png" alt="" /></span>
             {:else}<span class="oi"><Icon name={iconOf(p)} size={17} /></span>{/if}
-            <span class="ot"><b>{titleCase(p.label)}</b>
+            <span class="ot"><b>{#each hl(titleCase(p.label), ends[f].text) as [t, m], j (j)}{#if m}<mark>{t}</mark>{:else}{t}{/if}{/each}</b>
               {#if p.kind === "metro" && p.lines.length}
                 <!-- A station: its lines in their colours, then what runs there (and how far, near the user). -->
                 <small class="lm st">{#each p.lines as l (l)}<i class="lc" style:--c={LINE_TINT[l] ?? "#6b7280"}>{l}</i>{/each}<span>{p.hint}</span></small>
@@ -1840,12 +1888,6 @@
   /* ---- Not wide (mockup 39): the two numbered questions, home and work as tiles, the last trips; the answer's card
      with its two «Αλλαγή», the route cards, «Θύμισέ μου» beside «Ξεκίνα». */
   .ends.asks { gap: 0; }
-  .qq { margin: 18px 0 8px; display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; line-height: 1; color: var(--muted); }
-  .qq:first-child { margin-top: 4px; }
-  .qq.on { color: var(--fg); }
-  .qn { flex: none; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; line-height: 1;
-    background: color-mix(in srgb, var(--fg) 12%, transparent); color: var(--fg); }
-  .qq.on .qn { background: var(--pc-acc, var(--accent)); color: #fff; }
   .ends.asks .field.end { min-height: 60px; border-radius: 16px; }
   .ends.asks .field.end input { height: 56px; font-size: 18px; font-weight: 700; letter-spacing: 0; }
   .ends.asks .field.end input::placeholder { font-size: 17px; font-weight: 500; }
@@ -1861,46 +1903,9 @@
     background: color-mix(in srgb, var(--fg) 10%, transparent); color: var(--fg); cursor: pointer; }
   .chg:hover { background: color-mix(in srgb, var(--fg) 16%, transparent); }
 
-  .mine.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
-  .ptile { min-width: 0; height: 72px; display: flex; align-items: center; gap: 12px; padding: 0 14px; border: 1px solid var(--pc-edge, var(--glass-line)); border-radius: 16px;
-    background: var(--pc-surf, var(--glass-fill)); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
-  .ptile .pic { flex: none; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--fg) 10%, transparent); }
-  .ptx { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
-  .ptx b { font-size: 17px; font-weight: 700; line-height: 1; }
-  .ptx small { font-size: 13px; color: var(--muted); line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .qhrow { display: flex; align-items: center; justify-content: space-between; margin-top: 22px; }
-  .qhrow .qh { margin: 0; }
-  .qhrow + .pfavs { margin-top: 8px; }
-  .pfavs { display: flex; flex-direction: column; gap: 8px; }
-  .pfav { display: flex; align-items: stretch; border-radius: 18px; border: 1px solid var(--pc-edge, var(--glass-line)); background: var(--pc-surf, var(--glass-fill)); overflow: hidden; }
-  .pfm { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9px; padding: 12px 6px 12px 14px; border: 0; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
-  .pfm:active { background: color-mix(in srgb, var(--fg) 5%, transparent); }
-  .pft { min-height: 20px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .pft b { min-width: 0; font-size: 15.5px; font-weight: 700; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .pfn { flex: none; height: 22px; display: flex; align-items: center; gap: 5px; padding: 0 8px; border-radius: 11px; font-size: 13px; font-weight: 800; line-height: 1;
-    background: color-mix(in srgb, var(--ontime) 15%, transparent); color: var(--ontime); }
-  .pfn.late { background: color-mix(in srgb, var(--late1) 16%, transparent); color: var(--late1); }
-  .pfn i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-  .pfd { display: flex; flex-direction: column; gap: 6px; }
-  .pfr { min-height: 22px; display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 1.2; color: var(--fg); }
-  .pfr.dim { color: var(--muted); }
-  .pfr i { flex: none; height: 22px; min-width: 36px; padding: 0 6px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border-radius: 7px;
-    font-style: normal; font-size: 12px; font-weight: 800; line-height: 1; }
-  .pto { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .pfr small { flex: none; font-size: 12.5px; font-weight: 700; color: var(--muted); }
-  .sk1 { width: 60%; height: 12px; border-radius: 6px; background: color-mix(in srgb, var(--fg) 10%, transparent); }
-  .pfgo { flex: none; width: 52px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-left: 1px solid var(--pc-edge, var(--glass-line));
-    background: none; color: var(--accent); cursor: pointer; }
-  .pfgo:active { background: color-mix(in srgb, var(--accent) 12%, transparent); }
   .qh { margin: 22px 0 8px; font-size: 15px; font-weight: 600; color: var(--muted); line-height: 1; }
-  .rlist { border-radius: 16px; border: 1px solid var(--pc-edge, var(--glass-line)); background: var(--pc-surf, var(--glass-fill)); overflow: hidden; }
-  .rr { width: 100%; min-height: 56px; display: flex; align-items: center; gap: 12px; padding: 8px 14px 8px 16px; box-sizing: border-box; border: 0; background: none; color: var(--fg);
-    font: inherit; text-align: left; cursor: pointer; }
-  .rr + .rr { border-top: 1px solid var(--pc-edge, var(--glass-line)); }
   .ric, .rch { flex: none; display: flex; color: var(--muted); }
-  .rch { rotate: -90deg; }
   .rtx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; font-size: 17px; font-weight: 500; line-height: 1.2; }
-  .rtx small { font-size: 13px; color: var(--muted); }
 
   .srow { min-height: 56px; display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 16px; box-sizing: border-box; }
   .cards { display: flex; flex-direction: column; gap: 10px; }
@@ -1992,4 +1997,60 @@
   .rcount { margin: 0 0 -6px; height: 20px; display: flex; align-items: center; font-size: 16px; font-weight: 700; line-height: 1; color: var(--fg); }
   .box.ans .acts { border-top: 1px solid var(--pc-edge, var(--glass-line)); margin: auto -16px -4px; padding: 12px 16px 4px; background: var(--acts-bg, var(--surface)); }
   @media (prefers-reduced-motion: reduce) { .tswap, .tcv { transition: none; } }
+
+  /* ---- Compact mockup 2, a phone: «‹», «Από» and «Προς» as one block, the swap; shortcuts in one row; the map and
+     the lines side by side; «Πρόσφατα» with «Καθαρισμός» and ↖; «Δημοφιλή» one under the other. */
+  .ends.pair { display: grid; grid-template-columns: 36px minmax(0, 1fr) 36px; column-gap: 6px; }
+  .ends.pair > :global(*) { grid-column: 2; }
+  .pback, .pswap { grid-row: 1 / span 2; align-self: center; width: 36px; height: 44px; display: flex; align-items: center; justify-content: center;
+    padding: 0; border: 0; background: none; color: var(--fg); cursor: pointer; }
+  .pback { grid-column: 1 !important; }
+  .pswap { grid-column: 3 !important; color: color-mix(in srgb, var(--fg) 80%, var(--muted)); transition: transform .3s; }
+  .pswap.turned { transform: rotate(180deg); }
+  .ends.pair .field.end { min-height: 44px; height: 44px; padding: 0 12px; gap: 10px; border: 0; border-radius: 0; background: var(--control); }
+  .ends.pair .field.end.from { border-radius: 14px 14px 0 0; border-bottom: 1px solid color-mix(in srgb, var(--fg) 9%, var(--control)); }
+  .ends.pair .field.end.to { border-radius: 0 0 14px 14px; }
+  .ends.pair .field.end.to.open, .ends.pair .field.end.to:focus-within { box-shadow: inset 0 0 0 2px var(--accent); }
+  .ends.pair .field.end input { height: 42px; font-size: 15.5px; font-weight: 600; }
+  .ends.pair .field.end.from input { color: color-mix(in srgb, var(--accent) 75%, var(--fg)); }
+  .ends.pair .fl { width: 32px; font-size: 12.5px; font-weight: 600; letter-spacing: 0; text-transform: none; }
+  .ends.pair .mk.from { width: 11px; height: 11px; margin: 0 2px; border-radius: 50%; background: none; box-shadow: inset 0 0 0 2.5px var(--accent); }
+  .ends.pair .mk.to { width: 11px; height: 11px; margin: 0 2px; border-radius: 50% 50% 50% 0; rotate: -45deg; background: #ff8a3d; }
+  .ends.pair .chg, .ends.pair .melive, .ends.pair .mearr { display: none; }
+  .ends.pair .sugg { padding: 8px 0 0; }
+  .scuts { display: flex; gap: 8px; overflow-x: auto; margin: 2px -16px 0; padding: 0 16px; scrollbar-width: none; }
+  .scuts::-webkit-scrollbar { display: none; }
+  .scut { flex: none; height: 36px; display: flex; align-items: center; gap: 7px; padding: 0 12px 0 10px; border: 0; border-radius: 18px;
+    background: var(--pc-surf, var(--card)); box-shadow: inset 0 0 0 1px var(--pc-edge, var(--card-border)); color: var(--fg); font: inherit; cursor: pointer; white-space: nowrap; }
+  .scut b { font-size: 14px; font-weight: 700; line-height: 1; }
+  .scut .sl { font-size: 14px; font-weight: 600; line-height: 1; color: var(--muted); }
+  .scut .sm { font-size: 14px; font-weight: 600; line-height: 1; color: var(--ontime); }
+  .scut.best { background: color-mix(in srgb, var(--accent) 16%, var(--bg)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
+  .scut.here { color: var(--muted); }
+  .scut.ln { padding: 0 5px; }
+  .scut.add { background: none; box-shadow: none; border: 1.5px dashed color-mix(in srgb, var(--fg) 28%, transparent); color: color-mix(in srgb, var(--fg) 82%, var(--muted)); }
+  .ways2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .ways2 button { height: 40px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 12px; background: var(--pc-surf, var(--card));
+    color: var(--fg); font: inherit; cursor: pointer; }
+  .ways2 b { font-size: 13.5px; font-weight: 700; line-height: 1; }
+  .w2i { display: flex; color: var(--accent); }
+  .sect { display: flex; flex-direction: column; }
+  .sech { height: 22px; display: flex; align-items: center; justify-content: space-between; padding: 0 2px; margin-bottom: 2px; }
+  .sech span { font-size: 13px; font-weight: 700; line-height: 1; color: var(--muted); }
+  .sech button { height: 22px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; line-height: 1; cursor: pointer; }
+  .prow { height: 52px; display: flex; align-items: center; gap: 4px; }
+  .pmain { flex: 1; min-width: 0; height: 52px; display: flex; align-items: center; gap: 12px; padding: 0; border: 0; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+  .pric { flex: none; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--fg) 10%, var(--bg)); color: color-mix(in srgb, var(--fg) 80%, var(--muted)); }
+  .ptxt { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+  .ptxt b { font-size: 15px; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ptxt small { font-size: 12.5px; line-height: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pfill { flex: none; width: 40px; height: 44px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; }
+  .poprow { height: 44px; display: flex; align-items: center; gap: 12px; padding: 0; border: 0; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+  .poprow b { flex: none; font-size: 14.5px; line-height: 1; }
+  .poprow small { margin-left: auto; min-width: 0; font-size: 12.5px; line-height: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @media (max-width: 719px) {
+    .box:has(.ends.pair) { gap: 12px; padding-top: calc(12px + env(safe-area-inset-top)); }
+  }
+  .opt mark { background: none; color: var(--fg); font-weight: 800; }
+  .opt .ot b:has(mark) { font-weight: 600; color: color-mix(in srgb, var(--fg) 82%, var(--muted)); }
 </style>
