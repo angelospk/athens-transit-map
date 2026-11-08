@@ -85,23 +85,32 @@
   });
 
   // ---- On foot: the route from where the user is to the leg's end, again when they leave it by over 35 m.
-  let route = $state.raw<{ step: number; r: WalkRoute } | null>(null);
+  let route = $state.raw<{ step: number; r: WalkRoute; to: Pt } | null>(null);
+  // Where a walk goes: the next bus's stop at its kerb once known (stopSnap), not the stop's own point, which for some
+  // stops is among the buildings (the way led inside them).
+  const walkDest = $derived.by<Pt | null>(() => {
+    const gg = g, i = app.guideStep, l = gg?.legs[i];
+    if (!gg || l?.kind !== "walk") return null;
+    const n = gg.legs[i + 1];
+    return n?.kind === "ride" ? kerb[kid(n.board)] ?? l.to : l.to;
+  });
   let routeAt = 0;
   let routeReq: { step: number; key: string | undefined } | null = null;
   $effect(() => {
-    const l = leg, step = app.guideStep, p = pos;
-    if (!l || l.kind !== "walk") { route = null; return; }
+    const l = leg, step = app.guideStep, p = pos, to = walkDest;
+    if (!l || l.kind !== "walk" || !to) { route = null; return; }
     const cur = untrack(() => route);
     const off = cur && cur.step === step && p ? along(cur.r.line, p).off : 0;
-    if (cur && cur.step === step && off < 35) return;
+    const same = !!cur && cur.to[0] === to[0] && cur.to[1] === to[1];
+    if (cur && cur.step === step && off < 35 && same) return;
     if (routeReq?.step === step && routeReq.key === g?.key) return;   // asked already: a new location fix does not ask again
-    if (Date.now() - routeAt < 15_000 && cur?.step === step) return;
+    if (Date.now() - routeAt < 15_000 && cur?.step === step && same) return;
     routeAt = Date.now();
     // Never cancelled (starting a guide sets it again in the same moment, which cancelled it every time): an answer for
     // a step or a guide that is no longer the one shown is left unused.
     const from = p ?? l.from, req = { step, key: g?.key };
     routeReq = req;
-    void fetchFoot(from, l.to).then(r => { if (r && app.guideStep === req.step && app.guide?.key === req.key) route = { step, r }; }, () => {})
+    void fetchFoot(from, to).then(r => { if (r && app.guideStep === req.step && app.guide?.key === req.key) route = { step, r, to }; }, () => {})
       .finally(() => { if (routeReq === req) routeReq = null; });
   });
   const walk = $derived(leg?.kind === "walk" && route && route.step === app.guideStep && pos ? walkNow(route.r, pos) : null);
@@ -576,12 +585,22 @@
         // from and to each stop's kerb (stopSnap: some stops stand off their street, among the buildings).
         void (async () => {
           const [a, b, road] = await Promise.all([snapStop(r.board.at), snapStop(r.alight.at), routeAlong(slice)]);
-          kerb = { ...kerb, [kid(r.board)]: a, [kid(r.alight)]: b };
-          app.guideKerb = kerb;
           if (!road) return;
           shapes = { ...shapes, [k]: sliceShape(road, a, b, 60)?.pts ?? [a, ...road, b] };
         })().catch(() => {});
       }, () => {});
+    }
+  });
+  // The stops' kerbs, as soon as the guide starts (the walk to the first bus goes there).
+  $effect(() => {
+    const gg = g;
+    if (!gg) return;
+    for (const l of gg.legs) {
+      if (l.kind !== "ride" || /^[MΜTΤ]\d/.test(l.line)) continue;   // a bus's stops only: a station is not on a kerb
+      for (const s of [l.board, l.alight]) {
+        if (untrack(() => kerb[kid(s)])) continue;
+        void snapStop(s.at).then(p => { kerb = { ...kerb, [kid(s)]: p }; app.guideKerb = kerb; }, () => {});
+      }
     }
   });
   // Every walk along the streets (the foot router), not only the one being walked: a straight line crossed blocks.
