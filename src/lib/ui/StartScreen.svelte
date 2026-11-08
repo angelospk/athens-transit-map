@@ -826,6 +826,7 @@
   // «Βρες γραμμή» (compact mockup 7): its own page in this screen; «‹» comes back here.
   let linesPage = $state(false);
   $effect(() => { if (!app.start) linesPage = false; });
+  $effect(() => { if (app.start && app.startLines) untrack(() => { app.startLines = false; linesPage = true; }); });
   function findLine() { linesPage = true; }
   function again(x: Recent) {
     // From «Η θέση μου»: from where the user is now (the start already set to it), not where they were then.
@@ -2455,4 +2456,6 @@
   .scm i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: block; }
   .oldnote { margin: 4px 0 -6px; display: flex; align-items: center; gap: 7px; padding: 0 2px; font-size: 12px; font-weight: 600; line-height: 1.3; color: var(--muted); }
   .oldnote i { width: 7px; height: 7px; border-radius: 50%; background: #ffb26b; display: block; flex: none; }
+  /* Over the map (the pick's back, field and hint): a soft gaussian blur of the map behind, the surface see-through. */
+  .ptop .pcirc, .pfield, .phint { background: color-mix(in srgb, var(--surface) 62%, transparent); -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%); }
 </style>

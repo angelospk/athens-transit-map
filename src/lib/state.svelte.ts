@@ -197,6 +197,10 @@ export class AppState {
   // The trip's ends handed to «Πού πας;» (a phone): the planner's old fields are not shown there, the search is.
   // The trip closed (✕ in the planner): «Πού πας;» opens empty again next time, not on the trip just left.
   tripReset = $state(0);
+  // A tap on «Σπίτι» or «Δουλειά» on the map (MapView): the home sheet plans the way there, as its chip does.
+  mineTap = $state.raw<{ k: "home" | "work"; n: number } | null>(null);
+  // «Πού πας;» to open on «Βρες γραμμή» (the map's «Γραμμές» chip).
+  startLines = $state(false);
   startEnds = $state.raw<{ from: import("./trip").Place | null; to: import("./trip").Place | null } | null>(null);
   // The open metro station's entrances (MapView reads them off the base map's tiles, OpenStreetMap's
   // railway=subway_entrance, as the station opens): one per name, nearest the station first.

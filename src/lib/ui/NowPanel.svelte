@@ -322,7 +322,8 @@
     const { top: st, bottom: sb } = safeInsets();
     const foot = vh - Math.max(12, sb) - (narrow.current ? 0 : 88);   // a phone: no tab bar under it
     const peekH = nowEl && savedEl ? savedEl.getBoundingClientRect().bottom - nowEl.getBoundingClientRect().top + 16 : 190;
-    return { full: st + 8, half: Math.max(220, vh * 0.32 + st), peek: Math.max(st + 72, foot - peekH) };
+    // A phone, lowered (compact mockup 15Γ): only its handle and «Κοντά σου» show; the search and the places are on the map.
+    return { full: st + 8, half: Math.max(220, vh * 0.32 + st), peek: narrow.current ? foot - 64 : Math.max(st + 72, foot - peekH) };
   }
   // Let go after a slow drag, it stays where it is (freeAt), only named after the nearest place.
   let freeAt: number | null = null;
@@ -338,6 +339,11 @@
   $effect(() => { const n = app.homePeek; if (n !== seenPeek) { seenPeek = n; untrack(() => { nsnap = "peek"; }); } });
   // Lowered to its handle on a phone, the map's own buttons come back over the map (app.css).
   $effect(() => { const on = shown && narrow.current && nsnap === "peek"; document.documentElement.toggleAttribute("data-homepeek", on); return () => document.documentElement.removeAttribute("data-homepeek"); });
+  const peeked = $derived(shown && narrow.current && nsnap === "peek");
+  // The map's «Σπίτι» / «Δουλειά» tapped: the way there.
+  let seenTap = 0;
+  $effect(() => { const t = app.mineTap; if (t && t.n !== seenTap) { seenTap = t.n; untrack(() => goPlace(t.k)); } });
+  function openLines() { flushSync(() => { app.startLines = true; app.start = true; }); }
   const stepN = () => { nsnap = nsnap === "peek" ? "half" : nsnap === "half" ? "full" : "peek"; };
   const nowDrag = $derived<SheetDrag>({
     ignore: narrow.current ? undefined : "*",
@@ -357,6 +363,28 @@
 
 <svelte:window bind:innerHeight={vh} />
 
+{#snippet placeChips()}
+      {#each chips as p (p.k)}
+        {@const at = app.places[p.k]}
+        {@const here = hereAt(p.k)}
+        {@const best = p.k === way && !here && wayIt}
+        <button type="button" class="chip" class:best class:here class:glass={peeked}
+          onpointerdown={() => pressStart(p.k)} onpointerup={pressEnd} onpointerleave={pressEnd}
+          oncontextmenu={e => { e.preventDefault(); setPlace(p.k); }}
+          onclick={() => { if (pressed) { pressed = false; return; } goPlace(p.k); }}
+          aria-label={at ? `${p.label}: διαδρομή ως ${at.label}. Κράτα πατημένο για αλλαγή` : `Όρισε ${p.label.toLowerCase()}`}>
+          <Icon name={p.k} size={16} />
+          {#if here}<span class="cl">εδώ είσαι</span>
+          {:else}
+            <b>{p.label}</b>
+            {#if !at}<span class="cl">όρισέ {p.k === "home" ? "το" : "τη"}</span>
+            {:else if waitingFor === p.k}<span class="cl">σε ψάχνω…</span>
+            {:else if best && wayIt}<span class="cm">{Math.max(1, Math.round((wayIt.arrive_at - nowS) / 60))}′</span><span class="cf">φύγε {clock(wayIt.depart_at).slice(0, 5)}</span>{/if}
+          {/if}
+        </button>
+      {/each}
+{/snippet}
+
 {#if wayRemind && wayIt && wayR && target}
   <RemindSheet {app} it={wayIt} r={wayR} ix={app.stopIx} to={{ label: way === "home" ? "Σπίτι" : "Δουλειά", pts: [target.at], lines: [], kind: way ?? "home" }} onclose={() => (wayRemind = false)} />
 {/if}
@@ -372,10 +400,22 @@
     {@const n = notices[0]}
     <a class="mapnote" in:rise={{ y: -12, delay: 200 }} href={n.d.url} target="_blank" rel="noopener"><Icon name="warn" size={15} /><span>{badge(n.line.id).label}: {n.d.title}</span></a>
   {/if}
-  <section class="now" class:dragging aria-label="Αρχική" in:rise bind:this={nowEl} style:top={nowTop != null ? `${nowTop}px` : undefined}
+  {#if peeked}
+    <!-- Lowered (compact mockup 15Γ): the search on top of the map, your places and the lists as chips under it. -->
+    <div class="mtop" in:rise={{ y: -12 }}>
+      <button type="button" class="mwhere" aria-haspopup="dialog" onclick={openWhere}><Icon name="search" size={19} /><span>Πού πας;</span></button>
+      <div class="mchips">
+        {@render placeChips()}
+        <button type="button" class="chip glass" onclick={() => app.toggleFavs()}><Icon name="star" size={16} /><b>Αγαπημένα</b></button>
+        <button type="button" class="chip glass" onclick={openLines}><Icon name="route" size={16} /><b>Γραμμές</b></button>
+      </div>
+    </div>
+  {/if}
+  <section class="now" class:dragging class:peeked aria-label="Αρχική" in:rise bind:this={nowEl} style:top={nowTop != null ? `${nowTop}px` : undefined}
     onscroll={e => { if (narrow.current && nsnap !== "full" && (e.currentTarget as HTMLElement).scrollTop > 6) nsnap = "full"; }}>
     <div class="grip" role="button" tabindex="0" aria-label={nsnap === "full" ? "Μικρότερο" : "Μεγαλύτερο"} use:sheetDrag={nowDrag}
       onkeydown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); stepN(); } }}></div>
+    {#if peeked}<button type="button" class="peekl" onclick={() => (nsnap = "half")}><Icon name="chevron" size={13} /><span>Κοντά σου · αναχωρήσεις</span></button>{/if}
 
     <!-- The one search: «Πού πας;» (StartScreen), for places, stops and lines, with our engine. -->
     <button type="button" class="where" aria-haspopup="dialog" onclick={openWhere}>
@@ -385,25 +425,7 @@
     <!-- Home and work as chips (compact mockup 1): the way now first, with its time and when to leave; «εδώ είσαι»
          where the user is. A long press changes the place. The bell (alerts) at the end. -->
     <div class="chips" bind:this={savedEl}>
-      {#each chips as p (p.k)}
-        {@const at = app.places[p.k]}
-        {@const here = hereAt(p.k)}
-        {@const best = p.k === way && !here && wayIt}
-        <button type="button" class="chip" class:best class:here
-          onpointerdown={() => pressStart(p.k)} onpointerup={pressEnd} onpointerleave={pressEnd}
-          oncontextmenu={e => { e.preventDefault(); setPlace(p.k); }}
-          onclick={() => { if (pressed) { pressed = false; return; } goPlace(p.k); }}
-          aria-label={at ? `${p.label}: διαδρομή ως ${at.label}. Κράτα πατημένο για αλλαγή` : `Όρισε ${p.label.toLowerCase()}`}>
-          <Icon name={p.k} size={16} />
-          {#if here}<span class="cl">εδώ είσαι</span>
-          {:else}
-            <b>{p.label}</b>
-            {#if !at}<span class="cl">όρισέ {p.k === "home" ? "το" : "τη"}</span>
-            {:else if waitingFor === p.k}<span class="cl">σε ψάχνω…</span>
-            {:else if best && wayIt}<span class="cm">{Math.max(1, Math.round((wayIt.arrive_at - nowS) / 60))}′</span><span class="cf">φύγε {clock(wayIt.depart_at).slice(0, 5)}</span>{/if}
-          {/if}
-        </button>
-      {/each}
+      {@render placeChips()}
       <!-- A phone has no tab bar: the alerts are this bell (a dot while one is set). -->
       <button type="button" class="bell" aria-label={armed ? "Ειδοποιήσεις, μία ενεργή" : "Ειδοποιήσεις"} title="Ειδοποιήσεις" onclick={() => app.setTab("alerts")}>
         <Icon name="bell" size={16} />{#if armed}<i class="bdot" aria-hidden="true"></i>{/if}
@@ -655,4 +677,20 @@
   .where:active, .chip:active, .srow:active, .dest:active, .go:active { transform: scale(.98); }
   @media (prefers-reduced-motion: reduce) { .where, .chip, .dep, .srow, .dest, .go { transition: none; } }
   .hlink { height: 28px; display: flex; align-items: center; padding: 0 4px; border: 0; background: none; color: var(--accent); font: inherit; font-size: 14px; font-weight: 700; line-height: 1; cursor: pointer; }
+  /* Lowered on a phone (compact mockup 15Γ): the sheet is its handle and one line; the search and chips on the map. */
+  .now.peeked > :not(.grip):not(.peekl) { visibility: hidden; }
+  .peekl { width: 100%; height: 28px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0; border: 0; background: none;
+    color: color-mix(in srgb, var(--fg) 82%, var(--muted)); font: inherit; font-size: 13.5px; font-weight: 700; line-height: 1; cursor: pointer; }
+  .peekl :global(svg) { transform: rotate(180deg); color: var(--muted); }
+  .mtop { position: fixed; z-index: 6; left: 16px; right: 16px; top: calc(16px + env(safe-area-inset-top)); display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+  .mtop > * { pointer-events: auto; }
+  .mwhere { height: 52px; display: flex; align-items: center; gap: 10px; padding: 0 18px; border: 0; border-radius: 26px; text-align: left; cursor: pointer;
+    background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 4px 14px rgb(0 0 0 / .4), inset 0 0 0 1px var(--card-border, var(--border));
+    color: color-mix(in srgb, var(--fg) 82%, var(--muted)); font: inherit; font-size: 16px; font-weight: 600; line-height: 1; }
+  .mwhere :global(svg) { color: var(--accent); }
+  .mchips { display: flex; gap: 8px; overflow-x: auto; margin-right: -16px; padding-right: 16px; scrollbar-width: none; pointer-events: auto; }
+  .mchips::-webkit-scrollbar { display: none; }
+  .mchips .chip { height: 34px; }
+  .chip.glass { background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 2px 8px rgb(0 0 0 / .35), inset 0 0 0 1px var(--card-border, var(--border)); color: var(--fg); }
+  .mwhere, .chip.glass { background: color-mix(in srgb, var(--surface) 62%, transparent); -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%); }
 </style>

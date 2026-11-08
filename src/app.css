@@ -246,6 +246,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   /* No tab bar (mockup 41, B): the map's tools stay at the top right; its zoom and locate buttons only while the
      sheet is lowered to its handle (they would sit under it). */
   :root[data-home]:not([data-homepeek]) .maplibregl-ctrl-group, :root[data-home]:not([data-homepeek]) .details-ctl { display: none; }
+  /* Lowered (compact mockup 15Γ): «Λεπτομέρειες» goes (the settings have it). */
+  :root[data-homepeek] .details-ctl { display: none; }
 }
 
 /* Following a bus in 3D on a phone: the street gets the screen. The top bar, the map's buttons and hints go; the card
@@ -430,4 +432,11 @@ html.sheet-open .start, html.sheet-open .now, html.sheet-open .card, html.sheet-
   /* In 3D the tools have one more button (the metro mode): the compass and locate move down by it. */
   :root:has(.rail .utool) .maplibregl-ctrl-bottom-right .north-ctl { top: calc(env(safe-area-inset-top) + 248px); }
   :root:has(.rail .utool) .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group:has(> button.locate) { top: calc(env(safe-area-inset-top) + 300px); }
+}
+/* The home sheet lowered (compact mockup 15Γ): locate at the bottom right, just above the sheet's 64 px, the tools
+   above it (Panel.svelte); the compass only once the map is turned. */
+@media (max-width: 719px) {
+  :root[data-homepeek] .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group:has(> button.locate) { top: auto !important; bottom: calc(64px + 16px + env(safe-area-inset-bottom)); }
+  :root[data-homepeek] .maplibregl-ctrl-bottom-right .north-ctl { top: auto !important; bottom: calc(64px + 16px + 52px + 96px + env(safe-area-inset-bottom)); }
+  :root[data-homepeek] .maplibregl-ctrl-bottom-right .north-ctl:not(:has(.turned)) { display: none; }
 }

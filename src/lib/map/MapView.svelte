@@ -2637,7 +2637,13 @@
       if (!p) return [];
       const el = document.createElement("div");
       el.className = `mine-mark ${k}`;
-      el.setAttribute("aria-hidden", "true");
+      el.setAttribute("role", "button");
+      el.setAttribute("aria-label", k === "home" ? "Διαδρομή ως το Σπίτι" : "Διαδρομή ως τη Δουλειά");
+      el.tabIndex = 0;
+      // A tap: the way there (the home sheet plans it, as its chip does).
+      const go = (e: Event) => { e.stopPropagation(); app.mineTap = { k, n: (app.mineTap?.n ?? 0) + 1 }; };
+      el.addEventListener("click", go);
+      el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") go(e); });
       el.innerHTML = `<span class="mm-i">${MINE_SVG[k]}</span><b>${k === "home" ? "Σπίτι" : "Δουλειά"}</b>`;
       return [new Marker({ element: el, anchor: "left", offset: [-14, 0] }).setLngLat([p.at[1], p.at[0]]).addTo(m)];
     });
@@ -2935,7 +2941,7 @@
   :global(.ent-mark) { pointer-events: none; width: 24px; height: 24px; border-radius: 7px; display: flex; align-items: center; justify-content: center;
     background: #262a32; color: #e8eaed; box-shadow: 0 0 0 2px #ffffff, 0 2px 6px rgb(0 0 0 / 0.4); font-size: 12px; font-weight: 800; line-height: 1; }
   :global(.ent-mark.best) { background: #2f9e5b; color: #ffffff; }
-  :global(.mine-mark) { pointer-events: none; height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 10px 0 0; border-radius: 14px;
+  :global(.mine-mark) { cursor: pointer; height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 10px 0 0; border-radius: 14px;
     background: rgb(26 29 35 / 0.94); box-shadow: 0 2px 8px rgb(0 0 0 / 0.35), inset 0 0 0 1px #2c313b; color: #e8eaed; white-space: nowrap; }
   :global(.mine-mark .mm-i) { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #4d8af0; color: #ffffff;
     box-shadow: 0 0 0 2px #ffffff; }

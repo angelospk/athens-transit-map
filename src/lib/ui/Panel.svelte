@@ -363,13 +363,13 @@
       <path d="M2 10S5 4.8 10 4.8 18 10 18 10 15 15.2 10 15.2 2 10 2 10z" /><circle cx="10" cy="10" r="2.5" />
     </svg>
   </button>
-  <button type="button" class="tool" class:on={pop === "trip"} class:pinned={!!app.tripEnds && pop !== "trip"} aria-expanded={pop === "trip"} bind:this={tripButton}
+  <button type="button" class="tool tripb" class:on={pop === "trip"} class:pinned={!!app.tripEnds && pop !== "trip"} aria-expanded={pop === "trip"} bind:this={tripButton}
     aria-label="Διαδρομή: ποιες γραμμές με πάνε" data-tip="Διαδρομή: διάλεξε Α και Β και δες ποιες γραμμές σε πάνε" onclick={() => toggle("trip")}>
     <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
       <circle cx="10" cy="10" r="8" /><path d="M12.8 7.2l-1.6 4-4 1.6 1.6-4z" />
     </svg>
   </button>
-  <button type="button" class="tool" class:on={pop === "help"} aria-expanded={pop === "help"} aria-controls="pop-help"
+  <button type="button" class="tool helpb" class:on={pop === "help"} aria-expanded={pop === "help"} aria-controls="pop-help"
     aria-label="Τι σημαίνει κάθε σύμβολο" data-tip="Τι σημαίνει κάθε σύμβολο και χρώμα στον χάρτη" onclick={() => toggle("help")} bind:this={helpButton}>
     <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="10" cy="10" r="8" /><path d="M7.8 7.9a2.3 2.3 0 1 1 3.3 2.1c-.7.4-1.1.8-1.1 1.6" /><circle cx="10" cy="14.2" r=".5" fill="currentColor" />
@@ -575,4 +575,11 @@
     @keyframes pageIn { from { transform: translateX(24px); opacity: 0; } }
   }
   @media (max-width: 719px) and (prefers-reduced-motion: reduce) { :global(:root) .popwrap.page[class] { animation: none; } }
+  /* A phone, the home sheet lowered (compact mockup 15Γ): the search and chips are the sheet's, on top; the map's
+     buttons go to the bottom right in one column (layers, 3D), above locate; the planner and the legend are elsewhere. */
+  @media (max-width: 719px) {
+    :global(:root[data-homepeek]) .homebar { display: none; }
+    :global(:root[data-homepeek]) .rail { top: auto; bottom: calc(64px + 16px + 52px + env(safe-area-inset-bottom)); }
+    :global(:root[data-homepeek]) .rail .tripb, :global(:root[data-homepeek]) .rail .helpb { display: none; }
+  }
 </style>

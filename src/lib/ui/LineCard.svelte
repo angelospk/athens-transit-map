@@ -859,4 +859,5 @@
     background: var(--control); color: var(--fg); cursor: pointer; }
   .pbell.on { background: var(--accent-bg); color: var(--accent); }
   @media (prefers-reduced-motion: reduce) { .psheet { animation: none; } .ft :global(svg) { transition: none; } }
+  .pround { background: color-mix(in srgb, var(--surface) 62%, transparent) !important; -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%); }
 </style>
