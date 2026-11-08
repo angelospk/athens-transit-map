@@ -207,7 +207,7 @@ export class AppState {
   startEnds = $state.raw<{ from: import("./trip").Place | null; to: import("./trip").Place | null } | null>(null);
   // The open metro station's entrances (MapView reads them off the base map's tiles, OpenStreetMap's
   // railway=subway_entrance, as the station opens): one per name, nearest the station first.
-  stationEntrances = $state.raw<{ name: string | null; at: [number, number] }[]>([]);
+  stationEntrances = $state.raw<{ name: string | null; at: [number, number]; key?: string }[]>([]);
   lineShortcuts = $state.raw<LineShortcut[]>(stored("lineShortcuts", [], isShortcuts));
   addShortcut(sc: LineShortcut) {
     const next = [...this.lineShortcuts.filter(x => !(x.line === sc.line && x.variant === sc.variant && x.stop === sc.stop)), sc].slice(-6);
@@ -389,6 +389,12 @@ export class AppState {
     this.adminFixes = { ...this.adminFixes, [`stop:${row[3]}`]: [+at[0].toFixed(6), +at[1].toFixed(6)] };
     store("adminFixes", this.adminFixes);
     this.stopIx = { ...ix, s: ix.s.map((x, k) => (k === i ? [x[0], at[0], at[1], ...x.slice(3)] as typeof x : x)) };
+  }
+  // A metro entrance moved (its key: "ent:" station | its name, or its first place for an unnamed one).
+  moveEntrance(key: string, at: [number, number]) {
+    this.adminFixes = { ...this.adminFixes, [key]: [+at[0].toFixed(6), +at[1].toFixed(6)] };
+    store("adminFixes", this.adminFixes);
+    this.stationEntrances = this.stationEntrances.map(e => (e.key === key ? { ...e, at } : e));
   }
   clearStationMoves() {
     this.adminFixes = {};
