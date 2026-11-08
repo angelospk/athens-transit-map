@@ -182,3 +182,22 @@ export function metroStops<S extends { name: string; lon: number; lat: number; l
   }
   return out;
 }
+
+/** The metro's surface stretches as two tracks, one each side of the line's centre path (TRACK_GAP apart, as its
+ *  trains ride), for the 3D rails: where the line is at the street (M1 outside the centre, M3 past Doukissis
+ *  Plakentias). A stretch must be at least `minLen` points long. [lon, lat] lines. */
+export function surfaceTracks(line: string, centre: [number, number][], minLen = 2): [number, number][][] {
+  const out: [number, number][][] = [];
+  let run: [number, number][] = [];
+  const flush = () => {
+    if (run.length >= minLen) for (const side of [TRACK_GAP / 2, -TRACK_GAP / 2]) {
+      out.push(run.map((p, i) => rightOf(p, bearingOf(run[Math.max(0, i - 1)], run[Math.min(run.length - 1, i + (i ? 0 : 1))]), side)));
+    }
+    run = [];
+  };
+  for (const p of centre) {
+    if (depthAt(line, p[0], p[1]) < 1) run.push(p); else flush();
+  }
+  flush();
+  return out;
+}

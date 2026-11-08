@@ -271,18 +271,18 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* Picking a trip's end on the map («Πού πας;»): only the map, the crosshair and its two buttons. */
 :root[data-pick] .panel, :root[data-pick] .rail, :root[data-pick] .maplibregl-ctrl-group, :root[data-pick] .tabs,
-:root[data-pick] .now, :root[data-pick] .ridebar, :root[data-pick] .mapnote, :root[data-pick] .under { display: none; }
+:root[data-pick] section.now, :root[data-pick] .ridebar, :root[data-pick] .mapnote, :root[data-pick] .under { display: none; }
 
 /* «Πού πας;» on a computer is a panel over the live map: the left column under it gives way; the map keeps its buttons.
    Picking on the map, the pointer is a crosshair. */
 @media (min-width: 720px) {
-  :root[data-start] .panel, :root[data-start] .now, :root[data-start] .tabs, :root[data-start] .alerts,
+  :root[data-start] .panel, :root[data-start] section.now, :root[data-start] .tabs, :root[data-start] .alerts,
   :root[data-start] .mapnote, :root[data-start] .ridebar { display: none; }
 }
 :root[data-pick] .maplibregl-canvas { cursor: crosshair; }
 
 /* Following a trip (NavGuide): its banner and sheet take the screen; the panel, tabs and home sheet step aside. */
-:root[data-guide] .panel, :root[data-guide] .tabs, :root[data-guide] .now, :root[data-guide] .alerts, :root[data-guide] .ridebar,
+:root[data-guide] .panel, :root[data-guide] .tabs, :root[data-guide] section.now, :root[data-guide] .alerts, :root[data-guide] .ridebar,
 :root[data-guide] .mapnote, :root[data-guide] .popwrap { display: none; }
 @media (max-width: 719px) { :root[data-guide] .rail, :root[data-guide] .maplibregl-ctrl-group { display: none; } }
 

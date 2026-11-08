@@ -2181,6 +2181,11 @@
     .box > :global(*) { flex: none; }
     .acts { margin-top: auto; }
   }
+  /* The answer's band (Από, Προς, the chips) bleeds to the box's edges: on a computer from its own 14 px top padding,
+     not the phone's 28 px and the notch (it went past the box's top and left a gap). */
+  @media (min-width: 1024px) {
+    .box .band { top: -14px; margin: -14px -16px 0; padding-top: 14px; border-radius: var(--radius) var(--radius) 0 0; }
+  }
 
   /* A computer: the box in the middle of the window, the map alive behind it (pan it, zoom it, click a point on it). */
   @media (min-width: 720px) {
@@ -2498,6 +2503,7 @@
     .psheet { left: 16px; right: auto; bottom: 16px; width: var(--col-w, 440px); padding: 8px 16px 16px; border-radius: var(--radius);
       box-shadow: var(--shadow); }
     .pgrip { display: none; }
+    .pnear { flex-wrap: wrap; overflow: visible; margin-right: 0; padding-right: 0; }   /* no sideways scroll by mouse */
     .phint { left: calc(50% + (var(--col-w, 440px) + 16px) / 2); }
   }
   .pgrip { width: 40px; height: 5px; border-radius: 3px; background: var(--grip); align-self: center; display: block; }

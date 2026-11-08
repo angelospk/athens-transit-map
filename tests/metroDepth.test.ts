@@ -78,3 +78,17 @@ describe("a station, straight", () => {
     expect(north(far)).toBeCloseTo(0, 3);                             // untouched far off
   });
 });
+
+describe("surfaceTracks", () => {
+  it("lays two tracks along M3 only where it is at the street (past Doukissis Plakentias)", async () => {
+    const { surfaceTracks, TRACK_GAP } = await import("../src/lib/map/metroDepth");
+    const line: [number, number][] = [];
+    for (let lon = 23.80; lon <= 23.90; lon += 0.005) line.push([lon, 38.02]);
+    const t = surfaceTracks("M3", line);
+    expect(t).toHaveLength(2);
+    for (const tr of t) expect(Math.min(...tr.map(p => p[0]))).toBeGreaterThan(23.84);
+    const apart = Math.abs(t[0][0][1] - t[1][0][1]) * 110540;
+    expect(apart).toBeCloseTo(TRACK_GAP, 1);
+    expect(surfaceTracks("M2", line)).toHaveLength(0);   // M2: underground all the way
+  });
+});

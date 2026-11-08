@@ -27,7 +27,7 @@
   import { busRoute, lateness, minsTo } from "../bus3d";
   import { smoothPath, snapTram } from "./tramRails";
   import { metroGlyph, metroLogo, oasaLogo, stopSign, tramGlyph, tramLogo } from "./mapIcons";
-  import { bearingOf, depthAt, liveryOf, metroStops, nearestIndex, rightOf, straighten, trackBehind } from "./metroDepth";
+  import { bearingOf, depthAt, liveryOf, metroStops, nearestIndex, rightOf, straighten, surfaceTracks, trackBehind } from "./metroDepth";
   import { snapLine } from "../roadSnap";
   import { Mover, planOnto } from "../motion";
   import { predictS, shapeLength, stopOffsets } from "../predict";
@@ -123,9 +123,11 @@
     void baseGen;
     untrack(() => { if (map?.getLayer(RELIEF_LAYER)) map.setPaintProperty(RELIEF_LAYER, "hillshade-exaggeration", reliefStrength(styleDark, on3d) as ExpressionSpecification); });
   });
-  // 3D on a computer: the mountains round the city rise, under the sky's haze (relief.ts setMountains).
+  // 3D on a computer: the mountains round the city rise, under the sky's haze (relief.ts setMountains). Not in the
+  // metro mode: there the camera goes under the street (its elevation below 0), which a terrain would not let it do,
+  // and coming up again it stayed under the ground (the map blank).
   $effect(() => {
-    const on = app.threeD && wideMap.current;
+    const on = app.threeD && wideMap.current && !app.under;
     void baseGen;
     untrack(() => { if (map?.isStyleLoaded() || map?.getLayer(RELIEF_LAYER)) try { setMountains(map, on); } catch { /* an old WebGL: the flat map */ } });
   });
@@ -1821,8 +1823,13 @@
     scene3d.setMetro(Object.entries(metroPaths).map(([id, paths]) => ({ id, paths })), app.metro?.stations ?? []);
   });
   $effect(() => {
-    scene3d.setTramTracks({ type: "FeatureCollection", features: Object.entries(tramPaths)
-      .flatMap(([id, paths]) => paths.map(p => ({ type: "Feature" as const, properties: { line: id }, geometry: { type: "LineString" as const, coordinates: p } }))) });
+    // The trams' tracks, and the metro's where it runs at the street (M1 outside the centre, M3 to the airport): two
+    // tracks each side of its centre, where its trains ride (metroDepth.surfaceTracks).
+    const line = (id: string, p: LngLat[]) => ({ type: "Feature" as const, properties: { line: id }, geometry: { type: "LineString" as const, coordinates: p } });
+    scene3d.setTramTracks({ type: "FeatureCollection", features: [
+      ...Object.entries(tramPaths).flatMap(([id, paths]) => paths.map(p => line(id, p))),
+      ...Object.entries(metroPaths).flatMap(([id, paths]) => (paths[0] ? surfaceTracks(id, paths[0]) : []).map(p => line(id, p))),
+    ] });
   });
   // Each corridor's stations along it: a train runs on no farther than the next one.
   const corridorStops = $derived.by(() => {
@@ -2056,6 +2063,10 @@
       if (dive) return;
       if (under) { m.setCenterClampedToGround(false); lowCamera(m); m.easeTo({ elevation: -18, pitch: Math.max(m.getPitch(), 74), duration: 1000 }); }
       else if (Math.abs(m.getCenterElevation()) > 0.5) surface(m, 0, m.getPitch());
+      else if (!m.getCenterClampedToGround()) {   // already up (an ease cut short): on the ground again all the same
+        m.setCenterClampedToGround(true);
+        if (maxPitchUp != null) { m.setMaxPitch(maxPitchUp); maxPitchUp = null; }
+      }
     });
   });
   // The bearing (degrees from north) of the stretch of a line nearest a point, the way the line is drawn; null far off.

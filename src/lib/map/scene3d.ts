@@ -471,7 +471,8 @@ export class Scene3D {
   // map.isStyleLoaded() will not do: it stays false while any tile is still loading, which is always while the map
   // moves (the chase camera).
   private styleReady = false;
-  styleGone() { this.styleReady = false; }
+  // A style gone: the layers it hid for the metro mode are gone with it (the new ones come visible).
+  styleGone() { this.styleReady = false; this.groundHidden.clear(); }
 
   /** After every style load (MapView's addAll): the style's layers are new, so ours go in again. */
   restyled() {
@@ -1068,7 +1069,10 @@ export class Scene3D {
         "fill-extrusion-height": ["coalesce", ["get", "render_height"], 10],
         "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0], "fill-extrusion-opacity": 1 } } as never, before);
     this.lanes(true);
-    if (this.under) { this.groundHidden.clear(); this.under = false; this.setUnder(true); }   // underground was on: again on the new style
+    // Underground was on: again on the street style just added. Not forgetting what was hidden before: on the same style
+    // (the 3D added again after its code loaded) those layers are still hidden by us, and forgotten they stayed hidden
+    // when the metro mode went off (the map blank). A new style forgets them in styleGone.
+    if (this.under) { this.under = false; this.setUnder(true); }
     // Walls lit from one side and shaded on the other (the light of the extrusions), parks soft green, water blue.
     this.restyledPaint = [];
     const repaint = (id: string, prop: string, v: unknown) => {
