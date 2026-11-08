@@ -459,7 +459,7 @@ html.sheet-open .start, html.sheet-open .now, html.sheet-open .card, html.sheet-
 /* Every panel over the map (the home sheet, the cards, «Κοντά σου», the pick's and the planner's sheets, the dialogs):
    a little see-through, with a soft gaussian blur of the map behind it. Its own colour stays under the blur. */
 :root body :is(section.now, section.card, section.near, .psheet, section.panel:not(.home):not(.mbar), .popwrap:not(.page) .pop, div.sheet, section.fixbar, section.alerts,
-  div.rail[role="toolbar"], .homebar .round, .homebar .where, .maplibregl-ctrl-group:not(:empty), .recenter, .details-ctl button.details) {
+  .homebar .round, .homebar .where, .maplibregl-ctrl-group:not(:empty), .recenter, .details-ctl button.details) {
   background: color-mix(in srgb, var(--surface) 78%, transparent) !important;
   -webkit-backdrop-filter: blur(16px) saturate(160%) !important; backdrop-filter: blur(16px) saturate(160%) !important;
   /* Its own layer from the start: iOS Safari drew the blur only once a slide-in had ended. */
@@ -473,4 +473,26 @@ html.sheet-open .start, html.sheet-open .now, html.sheet-open .card, html.sheet-
     left: 8px !important; right: 8px !important; bottom: calc(8px + env(safe-area-inset-bottom)) !important; border-radius: 28px !important; }
   :root[data-tripsheet] .popwrap.tabbed { left: 8px !important; right: 8px !important; bottom: calc(8px + env(safe-area-inset-bottom)) !important; }
   :root[data-tripsheet] .popwrap.tabbed .trip { border-radius: 28px !important; }
+}
+
+/* The map's tools on the right: one group on a computer; on a phone (compact mockup 18) each a round button of its
+   own, 8 px apart, as the locate and compass buttons under them. */
+@media (min-width: 720px) {
+  :root body div.rail[role="toolbar"] { background: color-mix(in srgb, var(--surface) 78%, transparent) !important;
+    -webkit-backdrop-filter: blur(16px) saturate(160%) !important; backdrop-filter: blur(16px) saturate(160%) !important; transform: translateZ(0); }
+}
+@media (max-width: 719px) {
+  :root body div.rail[role="toolbar"] { background: none !important; box-shadow: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+    border: 0 !important; overflow: visible !important; gap: 8px; }
+  :root body div.rail[role="toolbar"] > .tool { border-radius: 50% !important; border-top: 0 !important;
+    background: color-mix(in srgb, var(--surface) 78%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(160%); backdrop-filter: blur(16px) saturate(160%);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .4), inset 0 0 0 1px var(--card-border, var(--border)); transform: translateZ(0); }
+  :root body div.rail[role="toolbar"] > .tool.on { background: var(--accent-bg); }
+  .maplibregl-ctrl-group:not(:empty) { box-shadow: 0 4px 14px rgba(0, 0, 0, .4), inset 0 0 0 1px var(--card-border, var(--border)) !important; }
+}
+@media (max-width: 719px) {
+  /* The map's credits (ⓘ) above the lowered home sheet, at the left, not over the sheet. */
+  :root[data-homepeek] .maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib { position: fixed; left: 16px; right: auto;
+    bottom: calc(var(--peek, 120px) + 16px + env(safe-area-inset-bottom)); margin: 0 !important; }
 }
