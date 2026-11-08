@@ -2368,7 +2368,8 @@
       return crisp(el, "bottom", 14).setLngLat(l.at).addTo(m);
     });
     // The change's card is wide: kept inside the screen (slid sideways from over its point) as the map moves.
-    const wide = marks.filter(k => k.getElement().classList.contains("plan-chg"));
+    // The labels of getting on and arriving too: at the screen's edge they were cut off («Περίπτερο» half outside).
+    const wide = marks.filter(k => k.getElement().classList.contains("plan-chg") || k.getElement().classList.contains("plan-pin"));
     const keepIn = () => {
       const W = m.getContainer().clientWidth;
       for (const k of wide) {

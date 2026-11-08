@@ -17,7 +17,7 @@
   import type { CityId } from "../cities";
   import { changeLine, levelM, transferLook } from "../transfer";
 
-  let { it, r, ix, legs, nowS, tag = "", open = false, sel = false, live = false, clock = false, target = null, others = [], logos = false, row = false, soon = false, stale = "", city = "athens", onleave, onpick, onmap }: {
+  let { it, r, ix, legs, nowS, tag = "", open = false, sel = false, live = false, clock = false, target = null, others = [], logos = false, row = false, soon = false, stale = "", city = "athens", steps: stepsFirst = false, onleave, onpick, onmap }: {
     it: Itinerary; r: PlanResponse; ix: TripIndex | null; legs: ScaledLeg[]; nowS: number; tag?: string; open?: boolean; sel?: boolean;
     live?: boolean; others?: Itinerary[]; logos?: boolean; onpick: () => void; onmap?: () => void;
     // Not now (mockup 46): the time to leave on the clock; arriving by a time, how much before it (or after).
@@ -25,12 +25,14 @@
     // A row of the phone's one list (mockup 14) instead of a card of its own: green «Φύγε» when it is the soonest
     // (soon), and a third line only for its live bus or a timetable known to be old (stale: what to say).
     row?: boolean; soon?: boolean; stale?: string; city?: CityId;
+    // Opened with its steps (the picked route's sheet on the map, compact mockup 17β).
+    steps?: boolean;
     // When to leave, in minutes from now (its live bus counted): handed back for «Ξεκίνα».
     onleave?: (min: number) => void;
   } = $props();
 
   // Mockup 44: closed, two lines; a tap opens where its bus is and three figures; «Βήματα» opens the steps.
-  let stepsOpen = $state(false);
+  let stepsOpen = $state(untrack(() => stepsFirst));
   $effect(() => { if (!open) stepsOpen = false; });
   // A change in the steps opens to the station seen from the side (mockup 47 Γ → A).
   let xOpen = $state<number | null>(null);

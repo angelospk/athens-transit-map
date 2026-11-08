@@ -28,6 +28,7 @@
   import Bell from "./Bell.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
   import LineChip from "./LineChip.svelte";
+  import RouteCard from "./RouteCard.svelte";
   import TransferBox from "./TransferBox.svelte";
   import { item } from "../anim";
   import { distText, titleCase } from "../nearby";
@@ -788,14 +789,22 @@
         <h3 id="trip-h" class="rvends"><i class="rdot from" aria-hidden="true"></i>{titleCase(from?.label ?? "")}<span aria-hidden="true">→</span><i class="rdot to" aria-hidden="true"></i>{titleCase(to?.label ?? "")}</h3>
         <button type="button" class="icon" aria-label="Κλείσιμο διαδρομής" title="Κλείσιμο" onclick={close}><Icon name="close" size={16} /></button>
       </div>
+      {#if !narrow.current}
       <div class="rvtabs" role="tablist" aria-label="Οι επιλογές">
         {#each planRows.slice(0, 4) as q (q.at)}
           <button type="button" role="tab" aria-selected={q.at === p.at} onclick={() => pickPlan(q.at)}>
             <b>{q.arrive}</b><small>{durText(q.mins)}{q.transfers ? ` · ${q.transfers} ${q.transfers === 1 ? "αλλαγή" : "αλλαγές"}` : ""}</small></button>
         {/each}
       </div>
+      {/if}
       </div>
       <div class="tbody" bind:this={bodyEl}>
+      {#if narrow.current}
+        <!-- A phone (compact mockups 17, 17β): the picked route as «Πού πας;» shows it, its steps open; not the old
+             overview with its figures and tabs. -->
+        <div class="rvcard"><RouteCard it={p.it} r={plan.r} ix={data?.ix ?? null} legs={p.legs} {nowS} open sel row live steps soon city={app.cityId}
+          others={plan.r.itineraries} onpick={() => {}} onmap={() => (review = false)} /></div>
+      {:else}
       <!-- The overview: when, then the numbers that decide (how long, how far on foot, the changes and the tightest,
            how many stops), then where the times come from. -->
       <div class="rvsum" in:item={{ i: 0 }}>
@@ -918,6 +927,7 @@
                   </li>
                 {/each}
               </ol>
+      {/if}
       </div>
       <div class="rvfoot" bind:this={rvFootEl} bind:offsetHeight={footH}><button type="button" class="startbtn" onclick={() => startPlan(p.at)}><Icon name="route" size={18} /><span>Ξεκίνα</span></button></div>
     </div>
@@ -1469,4 +1479,5 @@
   .opt { transition: border-color .2s, background-color .2s, transform .12s; }
   .opt:active { transform: scale(.98); }
   @media (prefers-reduced-motion: reduce) { .swap, .opt { transition: none; } .swap.turned { transform: none; } }
+  .rvcard { padding: 4px 0 8px; }
 </style>
