@@ -10,7 +10,7 @@
   // is here: it keeps the tools out of sight, it is not a lock (nothing changes for others without a commit).
   import { untrack } from "svelte";
   import type { AppState } from "../state.svelte";
-  import { withFixes, type StationFixes } from "../metro";
+  import { stopsWithFixes, withFixes, type StationFixes } from "../metro";
   import Icon from "./Icon.svelte";
 
   let { app }: { app: AppState } = $props();
@@ -41,7 +41,10 @@
   // On: the stations with this device's moves; off: as everyone sees them.
   $effect(() => {
     const on = app.admin;
-    untrack(() => { if (on && app.metro) app.metro = withFixes(app.metro, app.adminFixes); });
+    untrack(() => {
+      if (on && app.metro) app.metro = withFixes(app.metro, app.adminFixes);
+      if (on && app.stopIx) app.stopIx = { ...app.stopIx, s: stopsWithFixes(app.stopIx.s, app.adminFixes) };
+    });
   });
   const moved = $derived(Object.keys(app.adminFixes).length);
 
@@ -62,6 +65,8 @@
     app.admin = false;
     app.metro = null;
     app.loadMetro();
+    app.stopIx = null;
+    void app.loadStops();
   }
 </script>
 
@@ -82,7 +87,7 @@
 {#if app.admin}
   <div class="bar" role="toolbar" aria-label="Διαχείριση σταθμών">
     <span class="tag">Διαχείριση</span>
-    <span class="n">{moved ? `${moved} ${moved === 1 ? "σταθμός μετακινήθηκε" : "σταθμοί μετακινήθηκαν"}` : "Σύρε έναν σταθμό"}</span>
+    <span class="n">{moved ? `${moved} ${moved === 1 ? "μετακίνηση" : "μετακινήσεις"}` : "Σύρε έναν σταθμό, ή πάτα μια στάση και σύρ’ την"}</span>
     <button type="button" onclick={exportFixes} disabled={!moved} title="Κατέβασε το station-fixes.json"><Icon name="share" size={15} /><span>Εξαγωγή</span></button>
     <button type="button" onclick={() => app.clearStationMoves()} disabled={!moved}><span>Αναίρεση</span></button>
     <button type="button" class="x" aria-label="Έξοδος από τη διαχείριση" onclick={leave}><Icon name="close" size={14} /></button>

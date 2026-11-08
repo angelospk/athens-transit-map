@@ -31,11 +31,19 @@ export function termini(data: MetroData, id: string): [string, string] | null {
 }
 
 export async function loadMetro(): Promise<MetroData> {
-  const [r, f] = await Promise.all([fetch(`${import.meta.env.BASE_URL}metro.json`), fetch(`${import.meta.env.BASE_URL}station-fixes.json`).catch(() => null)]);
+  const [r, fixes] = await Promise.all([fetch(`${import.meta.env.BASE_URL}metro.json`), loadFixes()]);
   if (!r.ok) throw new Error(`metro.json: HTTP ${r.status}`);
-  const data = await r.json() as MetroData;
-  const fixes = f?.ok ? await f.json().catch(() => ({})) as StationFixes : {};
-  return withFixes(data, fixes);
+  return withFixes(await r.json() as MetroData, fixes);
+}
+// public/station-fixes.json, once a session (none, or a bad one: no fixes).
+let fixesP: Promise<StationFixes> | null = null;
+export const loadFixes = () => (fixesP ??= fetch(`${import.meta.env.BASE_URL}station-fixes.json`)
+  .then(r => (r.ok ? r.json() as Promise<StationFixes> : {}), () => ({})).catch(() => ({})));
+// A bus stop's key there: "stop:" and its OASA code; its row in the stop index ([name, lat, lon, code, …]) moved.
+export const busStopKey = (code: string) => `stop:${code}`;
+export function stopsWithFixes<T extends unknown[]>(rows: T[], fixes: StationFixes): T[] {
+  if (!Object.keys(fixes).some(k => k.startsWith("stop:"))) return rows;
+  return rows.map(x => { const f = fixes[busStopKey(String(x[3]))]; if (!f) return x; const y = [...x] as T; y[1] = f[0]; y[2] = f[1]; return y; });
 }
 
 // Station places moved by hand (the admin mode, AdminBar.svelte): STASY's point is a few metres off the map's own

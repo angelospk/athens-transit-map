@@ -1,6 +1,7 @@
 // Trip planner: which lines go from one place to another, with no change or one. Loaded with the planner
 // only (dynamic import), as is public/trips.json, its stop index (scripts/trips.ts).
 
+import { loadFixes, stopsWithFixes } from "./metro";
 import type { MetroData } from "./metro";
 import type { SuburbanData } from "./suburban";
 import type { StopDirs } from "./towards";
@@ -464,7 +465,7 @@ export function loadTripIndex(): Promise<TripIndex> {
     // A 200 of another shape would be cached for the session and crash the stop layer: a failure.
     if (!ix || !Array.isArray(ix.s) || !ix.l || typeof ix.l !== "object") throw new Error(`${file}: unexpected shape`);
     return ix;
-  });
+  }).then(async ix => ({ ...ix, s: stopsWithFixes(ix.s, await loadFixes()) }));   // stops moved by hand (admin mode)
   p.catch(() => { if (index === p) index = null; });   // the next call tries again
   return (index = p);
 }

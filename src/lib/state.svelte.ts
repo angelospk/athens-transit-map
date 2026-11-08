@@ -382,11 +382,21 @@ export class AppState {
     store("adminFixes", this.adminFixes);
     if (this.metro) this.metro = { ...this.metro, stations: this.metro.stations.map(s => (`${s.name}|${s.lines[0] ?? ""}` === key ? { ...s, lat: at[0], lon: at[1] } : s)) };
   }
+  // A bus stop (its row in the stop index) moved; the stop layer and everything reading the index follow.
+  moveBusStop(i: number, at: [number, number]) {
+    const ix = this.stopIx, row = ix?.s[i];
+    if (!ix || !row || !row[3]) return;
+    this.adminFixes = { ...this.adminFixes, [`stop:${row[3]}`]: [+at[0].toFixed(6), +at[1].toFixed(6)] };
+    store("adminFixes", this.adminFixes);
+    this.stopIx = { ...ix, s: ix.s.map((x, k) => (k === i ? [x[0], at[0], at[1], ...x.slice(3)] as typeof x : x)) };
+  }
   clearStationMoves() {
     this.adminFixes = {};
     store("adminFixes", {});
     this.metro = null;
     this.loadMetro();
+    this.stopIx = null;
+    void this.loadStops();
   }
   metroStation = $state<string | null>(null);
   // Suburban rail (Προαστιακός): its corridors and stations. railStation: the id of the tapped station,

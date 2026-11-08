@@ -2436,6 +2436,19 @@
     });
     return () => marks.forEach(k => k.remove());
   });
+  // A bus stop: the one tapped (its card open) becomes a handle to drag (there are thousands: one at a time).
+  $effect(() => {
+    const m = map, ix = app.stopIx, i = app.busStop, on = app.admin;
+    if (!m || !loaded || !on || !ix || i == null || !ix.s[i]) return;
+    const st = ix.s[i];
+    const el = document.createElement("div");
+    el.className = "adm-st bus";
+    el.innerHTML = `<i></i><b></b>`;
+    el.querySelector("b")!.textContent = `${titleCase(st[0])} · σύρε με`;
+    const mk = new Marker({ element: el, draggable: true, anchor: "center" }).setLngLat([st[2], st[1]]).addTo(m);
+    mk.on("dragend", () => { const p = mk.getLngLat(); app.moveBusStop(i, [p.lat, p.lng]); });
+    return () => mk.remove();
+  });
 
   // The guide's bus, where it is now: its line on a pulsing marker, over the city layer.
   let guideBusMarker: Marker | null = null;
@@ -3038,6 +3051,7 @@
     background: #262a32; color: #e8eaed; box-shadow: 0 0 0 2px #ffffff, 0 2px 6px rgb(0 0 0 / 0.4); font-size: 12px; font-weight: 800; line-height: 1; }
   :global(.ent-mark.best) { background: #2f9e5b; color: #ffffff; }
   :global(.adm-st) { cursor: grab; display: flex; align-items: center; gap: 6px; }
+  :global(.adm-st.bus i) { background: #4d8af0; box-shadow: 0 0 0 3px #ffffff, 0 2px 8px rgb(0 0 0 / .5); }
   :global(.adm-st i) { width: 18px; height: 18px; border-radius: 50%; background: #f0ae45; box-shadow: 0 0 0 3px #1a1200, 0 2px 8px rgb(0 0 0 / .5); display: block; flex: none; }
   :global(.adm-st b) { position: absolute; left: 24px; height: 20px; padding: 0 7px; border-radius: 10px; background: rgb(20 22 27 / .9); color: #f0ae45;
     font-size: 11.5px; font-weight: 800; line-height: 1; white-space: nowrap; display: flex; align-items: center; pointer-events: none; }
