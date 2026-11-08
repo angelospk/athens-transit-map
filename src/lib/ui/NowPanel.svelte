@@ -330,6 +330,12 @@
   let nowEl = $state<HTMLElement>(), savedEl = $state<HTMLElement>();
   let nowTop = $state<number | null>(null), dragging = $state(false), vh = $state(typeof innerHeight === "number" ? innerHeight : 800);
   let top0 = 0;
+  // A phone: the sheet is as tall as at the top and slides down by sheetY (a transform, run by the compositor): moving
+  // its top edge instead laid out and blurred the whole sheet again on every frame, and it lagged on an iPhone.
+  const sheetY = $derived.by(() => { void vh; const t = tops(); return Math.max(0, (nowTop ?? t.half) - t.full); });
+  // As much room again at its foot as is slid off the screen (by the place it rests at, not each frame of a drag), so
+  // what is under the screen's edge can still be scrolled to (and a scroll raises the sheet).
+  const sheetPadB = $derived.by(() => { void vh; if (nsnap === "full") return 0; const t = tops(); return Math.max(0, t[nsnap] - t.full); });
   const PEEK_PX = 120;
   function tops(): Record<NSnap, number> {
     const { top: st, bottom: sb } = safeInsets();
@@ -438,7 +444,7 @@
       <StatusBanner {app} />
     </div>
   {/if}
-  <section class="now" class:dragging class:peeked aria-label="Αρχική" in:rise bind:this={nowEl} style:top={nowTop != null ? `${nowTop}px` : undefined}
+  <section class="now" class:dragging class:peeked aria-label="Αρχική" in:rise bind:this={nowEl} style:translate={narrow.current ? `0 ${sheetY}px` : undefined} style:--padb={narrow.current ? `${sheetPadB}px` : undefined}
     onscroll={e => { if (narrow.current && nsnap !== "full" && (e.currentTarget as HTMLElement).scrollTop > 6) nsnap = "full"; }}>
     <div class="grip" role="button" tabindex="0" aria-label={nsnap === "full" ? "Μικρότερο" : "Μεγαλύτερο"} use:sheetDrag={nowDrag}
       onkeydown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); stepN(); } }}></div>
@@ -723,15 +729,15 @@
       -webkit-backdrop-filter: blur(16px) saturate(160%); backdrop-filter: blur(16px) saturate(160%); }
     .mtop .mapnote button { width: 32px; height: 32px; }
     /* A sheet from edge to edge, rounded at the top (mockup 1). */
-    .now { left: 0; right: 0; width: auto; top: max(220px, calc(36dvh + env(safe-area-inset-top))); bottom: 0; max-height: none;
-      padding: 8px 16px calc(16px + env(safe-area-inset-bottom)); border-radius: 24px 24px 0 0; background: var(--surface); box-shadow: 0 -10px 30px rgba(0, 0, 0, .45);
+    .now { left: 0; right: 0; width: auto; top: calc(8px + env(safe-area-inset-top)); bottom: 0; max-height: none;
+      padding: 8px 16px calc(16px + env(safe-area-inset-bottom) + var(--padb, 0px)); border-radius: 24px 24px 0 0; background: var(--surface); box-shadow: 0 -10px 30px rgba(0, 0, 0, .45);
       -webkit-backdrop-filter: none; backdrop-filter: none; }
     /* The handle: a band across the top (an easy target), its bar in the middle. */
     /* It stays at the top while the sheet scrolls under it. */
     .grip { display: block; position: sticky; top: -8px; z-index: 2; flex: none; height: 22px; margin: -8px -16px -6px; cursor: grab; background: none; border-radius: 24px 24px 0 0; }
     .grip::after { content: ""; position: absolute; left: 50%; top: 8px; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: var(--grip); }
     .grip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 12px; }
-    .now { overscroll-behavior: none; transition: top .26s cubic-bezier(.2, .8, .2, 1); }
+    .now { overscroll-behavior: none; transition: translate .26s cubic-bezier(.2, .8, .2, 1); }
     .now.dragging { transition: none; }
   }
   /* Under a press, the big buttons and rows give a little. */
