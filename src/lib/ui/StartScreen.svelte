@@ -636,13 +636,9 @@
   // A computer (a wide window): the screen is a panel on the left and the live map stays open beside it. Before a
   // destination is chosen the panel offers the ways in: the search, what comes near me, the map, a few places to go
   // straight to (with how long it takes from here, once the start is known).
-  let wide = $state(typeof matchMedia === "function" && matchMedia("(min-width: 1024px)").matches);
-  $effect(() => {
-    const q = matchMedia("(min-width: 1024px)");
-    const on = () => (wide = q.matches);
-    q.addEventListener("change", on);
-    return () => q.removeEventListener("change", on);
-  });
+  // A computer behaves as a phone here (the same fields, lists and answers); only its place differs (CSS: the left
+  // column, ≥1024 px). The old wide «intro» (a welcome page with its own layout) is gone.
+  const wide = false;
   const intro = $derived(wide && !app.savingPlace && !ends.to.place && !app.finding);
   // The quick search (the map's top-left button): one field; a line opens live, a stop its card, a place the map on it.
   const find = $derived(app.finding && !app.savingPlace);
