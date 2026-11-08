@@ -95,8 +95,7 @@
 
 <style>
   .card { position: absolute; z-index: 6; left: 12px; bottom: 28px; width: 360px; padding: 12px 16px;
-    background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
-    backdrop-filter: blur(8px); max-height: calc(100dvh - 140px); overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; }
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); max-height: calc(100dvh - 140px); overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; }
   header { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin-bottom: 10px; }
   .t { flex: 1; min-width: 0; }
   header:has(> :global(.back)) > :global(.back) { margin-right: auto; }

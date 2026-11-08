@@ -764,7 +764,7 @@
   .rall:hover { background: var(--control); color: var(--fg); }
   .upill { position: fixed; z-index: 6; left: 12px; right: 12px; top: calc(env(safe-area-inset-top) + 84px); max-width: 420px; margin: 0 auto; height: 56px;
     display: flex; align-items: center; gap: 12px; padding: 0 8px 0 10px; box-sizing: border-box; border-radius: 28px;
-    background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 8px 24px rgba(0, 0, 0, .4); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+    background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 8px 24px rgba(0, 0, 0, .4); }
   .upill .ui { flex: none; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
     background: color-mix(in srgb, #d7171f 22%, transparent); color: #ff8a84; }
   .upill .ut { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }

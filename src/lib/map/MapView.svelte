@@ -859,17 +859,33 @@
   // the tab is hidden. Off-screen city vehicles are not stepped: they snap when they come back.
   // With motion off, every vehicle is drawn at its last fix; a move to a new fix leaves a trail.
   let raf = 0, nextDue = 0, cityWasEmpty = true, trailsWereEmpty = true;
+  // The GeoJSON sources (the city's vehicles, the trains, the trails) are sent to the map at most every DATA_MS: each
+  // send is parsed and tiled again in the worker, its icons packed into a new atlas and uploaded; at street zoom in
+  // 3D the loop runs every frame (the models, the camera), which sent them 60 times a second for steps under a pixel.
+  const DATA_MS = 50;
+  let lastData = 0;
+  // Each vehicle's feature, kept and moved, not made anew every tick (less garbage between frames).
+  const cityFeatures = new Map<string, GeoJSON.Feature<GeoJSON.Point>>();
   // A phone with «Πού πας;» open: the screen covers the map whole, so nothing on it is stepped (the screen scrolls and
   // types smoothly); the vehicles snap to where they are when it closes.
   const phoneMQ = typeof matchMedia === "function" ? matchMedia("(max-width: 719px)") : null;
   let covered = false;
-  function frame() {
+  // The next turn of the loop: on the next frame, or, with nothing due for a while (zoomed out, motion off, the map
+  // covered or the tab hidden), a timer first, so an idle page is not woken 60 times a second.
+  let timer = 0, lastFollow: LngLat | null = null;
+  function next(wait = 0) {
+    if (wait > 40) { timer = window.setTimeout(() => { timer = 0; raf = requestAnimationFrame(frame); }, wait - 16); return; }
     raf = requestAnimationFrame(frame);
+  }
+  function frame() {
+    raf = 0;
     const m = map;
     const t = performance.now();
-    const hide = !!phoneMQ?.matches && app.start && !app.pickFor && !app.guide;
+    // Covered too: a phone's home sheet pulled to the top (nothing of the map shows).
+    const hide = !!phoneMQ?.matches && ((app.start && !app.pickFor && !app.guide) || app.homeFull);
     if (hide !== covered) { covered = hide; if (!hide) { for (const e of fleet.entries.values()) e.mover.snap(); me?.mover.snap(); } }
-    if (!m || !loaded || document.hidden || covered || t < nextDue) return;
+    if (!m || !loaded || document.hidden || covered) { next(250); return; }
+    if (t < nextDue) { next(nextDue - t); return; }
     const now = app.serverMs() / 1000, z = m.getZoom(), mpp = M_PER_PX_Z0 / 2 ** z;
     const reduced = reducedMotion.matches;
     let cull: ((p: LngLat) => boolean) | null = null;
@@ -957,9 +973,15 @@
           if (e.key === focus?.key) focusAt = at;
           if (e.key === selKey && shown) dimBehind(m, at);
         }
-        features.push({ type: "Feature", geometry: { type: "Point", coordinates: pos },
-          properties: { line: e.line, id: e.id, cls: e.cls, mode: app.lineInfo.get(e.line)?.kind ?? "bus", stale: isStalePos(now - e.at), ...(h != null && { h }), ...(rewind && { rewind }),
-            ...(city3d?.has(e.key) && { m3d: true }) } });
+        let f = cityFeatures.get(e.key);
+      if (!f) { f = { type: "Feature", geometry: { type: "Point", coordinates: pos }, properties: {} }; cityFeatures.set(e.key, f); }
+      f.geometry.coordinates = pos;
+      const pr = f.properties as Record<string, unknown>;
+      pr.line = e.line; pr.id = e.id; pr.cls = e.cls; pr.mode = app.lineInfo.get(e.line)?.kind ?? "bus"; pr.stale = isStalePos(now - e.at);
+      if (h != null) pr.h = h; else delete pr.h;
+      if (rewind) pr.rewind = true; else delete pr.rewind;
+      if (city3d?.has(e.key)) pr.m3d = true; else delete pr.m3d;
+      features.push(f);
       }
     }
     // The guide's bus: on the city layer's own vehicle as it moves (its polled place only until the fleet has it).
@@ -976,17 +998,20 @@
       const e = fleet.entries.get(k);
       if (!e || !owned.has(e.line)) { d.marker.remove(); doms.delete(k); scene3d.drop(k); }
     }
-    if (app.cityOn && (features.length || !cityWasEmpty)) {
+    const sendData = t - lastData >= DATA_MS;
+    if (sendData) lastData = t;
+    if (features.length < cityFeatures.size) { const keep = new Set(features.map(f => (f.properties as { id: string }).id)); for (const [k, f] of cityFeatures) if (!keep.has((f.properties as { id: string }).id)) cityFeatures.delete(k); }
+    if (sendData && app.cityOn && (features.length || !cityWasEmpty)) {
       (m.getSource("city") as GeoJSONSource).setData({ type: "FeatureCollection", features });
       cityWasEmpty = !features.length;
     }
     if (app.stasyTrains.length || app.suburbanTrains.length || !trainsWereEmpty) {
-      drawTrains();
+      drawTrains(sendData);
       trainsWereEmpty = !app.stasyTrains.length && !app.suburbanTrains.length;
       if (trams3d.size && z >= BUS_ZOOM) fixing = true;   // a tram model moves every frame, not once a second
     }
     if (focus?.follow) { focusFrame(m); fixing = true; }   // followed: every frame, so the camera glides
-    if (trails.length || !trailsWereEmpty) {
+    if (sendData && (trails.length || !trailsWereEmpty)) {
       (m.getSource("trails") as GeoJSONSource).setData({ type: "FeatureCollection", features: trails });
       trailsWereEmpty = !trails.length;
     }
@@ -1001,15 +1026,17 @@
       if (follow && (!app.tripPlan || app.guide) && !m.isMoving() && !handsOn()) {
         // The guide stays close on the user (a street's width); the stop and the bus are a tap away (NavGuide's buttons).
         if (framedGuide) { framedGuide = false; m.easeTo({ center: r.pos, zoom: Math.max(m.getZoom(), 17.5), padding: padNow(), duration: reducedMotion.matches ? 0 : 700 }); }
-        else m.setCenter(r.pos, { follow: true });
+        else if (!lastFollow || Math.abs(lastFollow[0] - r.pos[0]) > 1e-7 || Math.abs(lastFollow[1] - r.pos[1]) > 1e-7) { lastFollow = r.pos; m.setCenter(r.pos, { follow: true }); }   // standing still: no camera move (each is a render and a round of move events)
       }
     }
     // Corrections and trails: 30 fps close up; zoomed out, where they are a few pixels and every frame
     // steps the whole city, 4 fps.
     // In 3D close in (the models, their labels riding on them, the near street seen large at a slant): every frame.
     // With motion off nothing steps: between fixes (a new one leaves a trail, fast again) once a second is enough.
-    const idle = scene3d.on && z >= BUS_ZOOM ? 0 : still ? 1000 : Math.min(1000, Math.max(16, (0.5 * mpp / 20) * 1000));
+    // Never under DATA_MS: a step of under a pixel is not seen, and the sources are not sent faster anyway.
+    const idle = scene3d.on && z >= BUS_ZOOM ? 0 : still ? 1000 : Math.min(1000, Math.max(DATA_MS, (0.5 * mpp / 20) * 1000));
     nextDue = t + (fixing ? Math.min(idle, z >= 13 ? 33 : 250) : idle);
+    next(nextDue - t);
   }
 
   // Heading: along the route while moving on it, else from the bearing or the last fixes; none
@@ -1750,7 +1777,7 @@
       pin.remove();
       fixPin.remove();
       disposed = true;
-      cancelAnimationFrame(raf);
+      cancelAnimationFrame(raf); clearTimeout(timer);
       reportSoon.cancel();
       reportFollow.cancel();
       document.removeEventListener("visibilitychange", onVisible);
@@ -1855,7 +1882,7 @@
 
   // The trains, stepped in the frame loop as the buses are, and at once on new data or a tap: the
   // metro's by their run's knots (else along their track by their two stops' times).
-  function drawTrains() {
+  function drawTrains(send = true) {
     const now = app.serverMs();
     const fc = trainsFC({ stasy: app.stasyTrains, suburban: app.suburbanTrains, corridors: app.suburban?.corridors ?? {},
       nowS: now / 1000, sel: app.train, tracks, motions: app.stasyMotion, glide: t => glide.at(t.train, now) });
@@ -1927,8 +1954,7 @@
       if (dive?.key === key && way != null) dive.heading = way;
     }
     if (dive) diveFrame(dive);
-    (map!.getSource("trains") as GeoJSONSource).setData(fc);
-    lastTrains = fc;
+    if (send) { (map!.getSource("trains") as GeoJSONSource).setData(fc); lastTrains = fc; }
     for (const k of trams3d) if (!now3d.has(k)) scene3d.drop(k);
     trams3d = now3d;
   }

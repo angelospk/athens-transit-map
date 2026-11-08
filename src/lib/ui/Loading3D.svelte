@@ -23,7 +23,7 @@
 
 <style>
   .load3d { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; padding: 16px;
-    background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    background: color-mix(in srgb, var(--bg) 55%, transparent);
     animation: fade .2s ease-out .25s both; }   /* not a flash when it is quick (all kept already) */
   .card { display: flex; flex-direction: column; align-items: center; gap: 8px; width: min(300px, 100%); padding: 22px 22px 16px;
     border-radius: var(--radius); background: var(--glass-strong); --card: var(--glass-fill); --card-border: var(--glass-line); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); text-shadow: var(--glass-text); text-align: center; }

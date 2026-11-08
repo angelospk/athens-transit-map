@@ -335,6 +335,7 @@
   const sheetY = $derived.by(() => { void vh; const t = tops(); return Math.max(0, (nowTop ?? t.half) - t.full); });
   // As much room again at its foot as is slid off the screen (by the place it rests at, not each frame of a drag), so
   // what is under the screen's edge can still be scrolled to (and a scroll raises the sheet).
+  $effect(() => { const full = narrow.current && shown && nsnap === "full" && !dragging; untrack(() => { if (app.homeFull !== full) app.homeFull = full; }); });
   const sheetPadB = $derived.by(() => { void vh; if (nsnap === "full") return 0; const t = tops(); return Math.max(0, t[nsnap] - t.full); });
   const PEEK_PX = 120;
   function tops(): Record<NSnap, number> {
@@ -767,8 +768,7 @@
 
   @media (max-width: 719px) {
     /* Under the search and the chips, in their column; ✕ at the right. */
-    .mtop .mapnote { position: static; max-width: none; height: 40px; padding: 0 4px 0 6px; border-radius: 14px; font-size: 13px;
-      -webkit-backdrop-filter: blur(16px) saturate(160%); backdrop-filter: blur(16px) saturate(160%); }
+    .mtop .mapnote { position: static; max-width: none; height: 40px; padding: 0 4px 0 6px; border-radius: 14px; font-size: 13px; }
     .mtop .mapnote button { width: 32px; height: 32px; }
     /* A sheet from edge to edge, rounded at the top (mockup 1). */
     .now { left: 0; right: 0; width: auto; top: calc(8px + env(safe-area-inset-top)); bottom: 0; max-height: none;
@@ -822,7 +822,7 @@
   .mchips::-webkit-scrollbar { display: none; }
   .mchips .chip { height: 34px; }
   .chip.glass { background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: var(--float), inset 0 0 0 1px var(--card-border, var(--border)); color: var(--fg); }
-  .mwhere, .chip.glass { background: color-mix(in srgb, var(--surface) 62%, transparent); -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%); }
+  .mwhere, .chip.glass { background: color-mix(in srgb, var(--surface) 62%, transparent);  }
   /* A phone: the search and the chips are on the map (compact mockup 15Γ), not in the sheet. */
   @media (max-width: 719px) { .now > .where, .now > .chips { display: none; } }
   .chip.glass.round { width: 34px; padding: 0; justify-content: center; position: relative; }

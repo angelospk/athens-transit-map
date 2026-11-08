@@ -1690,6 +1690,10 @@ export class Scene3D {
         self.renderer.debug.checkShaderErrors = !!import.meta.env?.DEV && FORCED_SHADER_CHECK;
         self.renderer.shadowMap.enabled = true;
         self.renderer.shadowMap.type = phone ? T.PCFShadowMap : T.PCFSoftShadowMap;
+        // A phone draws the shadow map (every tree, building and bus once more, from the sun) every other frame: a
+        // shadow one frame behind is not seen, half the shadow passes are.
+        self.renderer.shadowMap.autoUpdate = !phone;
+        self.shadowEvery = phone ? 2 : 1;
         // Once the trees around are built, every shader is compiled at the next frame (prewarm), under the loading
         // screen, not one by one as each thing first comes into view.
         void (self.refresh() ?? Promise.resolve()).finally(() => { self.warmUp = true; map.triggerRepaint(); });
@@ -2016,6 +2020,7 @@ export class Scene3D {
     // dimmed street, and the models still hide one another.
     if (this.under) this.renderer.clearDepth();
     else this.renderer.clearStencil();   // clean for the vehicles' marks (X-ray)
+    if (this.shadowEvery > 1) this.renderer.shadowMap.needsUpdate = this.frameNo++ % this.shadowEvery === 0;
     this.renderer.render(this.scene, this.camera);
     // X-ray: the buses, trolleys and trams once more, only where something stands in front of them (a building, a
     // tree): there they show as a see-through blue shape, so a bus behind a block is not lost.
@@ -2043,6 +2048,8 @@ export class Scene3D {
    *  moved at every frame the 3D draws (onFrame), so it rides on the model, never under the street. Null when not
    *  drawn or behind the camera. */
   onFrame: (() => void) | null = null;
+  private shadowEvery = 1;
+  private frameNo = 0;
   screenAt(key: string): [number, number] | null {
     const g = this.groups.get(key), T = this.T, m = this.map;
     if (!g?.visible || !T || !m || !this.camera) return null;

@@ -1006,6 +1006,8 @@ export class AppState {
   }
   // Asks the phone's home sheet to lower itself to its handle, so the map shows (NowPanel watches it).
   homePeek = $state(0);
+  // A phone's home sheet at the top: the map is covered whole (MapView steps no vehicle meanwhile).
+  homeFull = $state(false);
   // A vehicle pointed at in a list (a computer: the line's spread strip): the map makes its marker bigger.
   hotVehicle = $state<string | null>(null);
 
