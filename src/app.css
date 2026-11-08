@@ -437,19 +437,21 @@ html.sheet-open .start, html.sheet-open .now, html.sheet-open .card, html.sheet-
    (MapView). --col-top: where the column starts: under the home's search and chips when the home sheet is up. A sheet
    or card dragged never moves them; pulled up past them, it covers them. */
 @media (max-width: 719px) {
-  /* --col-tools: the tools' height and the 8 px under them: 40 px buttons 8 px apart. */
-  :root { --col-top: calc(16px + env(safe-area-inset-top)); --col-tools: 96px; }
+  /* --col-tools: the tools' height and the 8 px under each: --col-n buttons of --tool-h (40 px; 44 px to a finger, as
+     the rail's own: Panel.svelte), so the locate button keeps the same 8 px gap under the last of them. */
+  :root { --col-top: calc(16px + env(safe-area-inset-top)); --tool-h: 40px; --col-n: 2; --col-tools: calc(var(--col-n) * (var(--tool-h) + 8px)); }
   :root[data-home] { --col-top: calc(124px + env(safe-area-inset-top)); }
   /* In 3D the tools have one more button (the metro mode); off the home sheet, the planner and the legend too. */
-  :root:has(.rail .utool) { --col-tools: 144px; }
-  :root:not([data-home]) { --col-tools: 192px; }
-  :root:not([data-home]):has(.rail .utool) { --col-tools: 240px; }
+  :root:has(.rail .utool) { --col-n: 3; }
+  :root:not([data-home]) { --col-n: 4; }
+  :root:not([data-home]):has(.rail .utool) { --col-n: 5; }
   .maplibregl-ctrl-bottom-right .north-ctl,
   .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group:has(> button.locate) { position: fixed; right: 16px; margin: 0 !important; }
   .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group:has(> button.locate) { top: calc(var(--col-top) + var(--col-tools)); }
-  .maplibregl-ctrl-bottom-right .north-ctl { top: calc(var(--col-top) + var(--col-tools) + 52px); }
+  .maplibregl-ctrl-bottom-right .north-ctl { top: calc(var(--col-top) + var(--col-tools) + var(--tool-h) + 8px); }
   .maplibregl-ctrl-bottom-right .north-ctl:not(:has(.turned, .tilted)) { display: none; }
 }
+@media (max-width: 719px) and (pointer: coarse) { :root { --tool-h: 44px; } }
 
 /* Inside those see-through panels the tiles (--card: the stats row, the round ‹, the lists) are a darker glass than the
    panel with a fine light edge (as the home sheet's cards): a solid tile of nearly the panel's colour hardly showed. */

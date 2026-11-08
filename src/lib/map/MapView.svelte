@@ -3247,8 +3247,8 @@
   @media (max-width: 719px) {
     /* In the map's right column (app.css), under locate (and the compass, when it shows): it stays there, a card
        dragged under it does not take it along. */
-    .recenter { right: 16px; top: calc(var(--col-top) + var(--col-tools) + 52px); }
-    :global(:root:has(.north-ctl .turned, .north-ctl .tilted)) .recenter { top: calc(var(--col-top) + var(--col-tools) + 104px); }
+    .recenter { right: 16px; top: calc(var(--col-top) + var(--col-tools) + var(--tool-h, 44px) + 8px); }
+    :global(:root:has(.north-ctl .turned, .north-ctl .tilted)) .recenter { top: calc(var(--col-top) + var(--col-tools) + 2 * (var(--tool-h, 44px) + 8px)); }
   }
   :global(.applemap) { position: absolute; inset: 0; pointer-events: none; }
   :global(.applemap[hidden]) { display: none; }
