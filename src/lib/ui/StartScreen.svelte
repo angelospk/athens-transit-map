@@ -368,6 +368,9 @@
     if (locating === f) locating = null;   // typing wins over a location still on its way
     ends[f] = { text, place: null };
     open = f;
+    // A letter typed: the typing screen (mockup 3), whatever the tap did. It waited for the tap's click, which iOS
+    // does not always send (a field focused as the keyboard rose): the letters went into the two-field screen.
+    if (!wide) { clearTimeout(typingT); typingOn = true; }
     err = null;
     clearTimeout(timer);
     ctl?.abort();
