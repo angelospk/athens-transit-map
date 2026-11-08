@@ -459,3 +459,12 @@ html.sheet-open .start, html.sheet-open .now, html.sheet-open .card, html.sheet-
   /* Its own layer from the start: iOS Safari drew the blur only once a slide-in had ended. */
   transform: translateZ(0); will-change: transform;
 }
+
+/* A phone: every sheet floats, 8 px in from the screen's sides and foot, rounded on all four corners (the home sheet,
+   the cards, «Κοντά σου», the map pick's, the trip's and the guide's sheets). */
+@media (max-width: 719px) {
+  :root body :is(section.now, section.card, section.near, .psheet, section.sheet) {
+    left: 8px !important; right: 8px !important; bottom: calc(8px + env(safe-area-inset-bottom)) !important; border-radius: 28px !important; }
+  :root[data-tripsheet] .popwrap.tabbed { left: 8px !important; right: 8px !important; bottom: calc(8px + env(safe-area-inset-bottom)) !important; }
+  :root[data-tripsheet] .popwrap.tabbed .trip { border-radius: 28px !important; }
+}

@@ -1299,7 +1299,7 @@
        (on iOS it kept its content's height at the top of a taller place, the map showing under it) and its
        «Ξεκίνα» clears the browser's bar. */
     :global(:root[data-tripsheet]) .trip { flex: 1 1 auto; height: 100%; min-height: 0; border-radius: var(--sheet-r, 28px) var(--sheet-r, 28px) 0 0; }
-    :global(:root[data-tripsheet]) .rvfoot { padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
+    :global(:root[data-tripsheet]) .rvfoot { padding-bottom: 14px; }
   }
   .trip.compact { padding: 0; border-radius: 0; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; text-shadow: none; overflow: visible; }
   .mapback { position: fixed; z-index: 2; top: calc(16px + env(safe-area-inset-top)); left: 16px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;

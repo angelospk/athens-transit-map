@@ -444,7 +444,7 @@
       <StatusBanner {app} />
     </div>
   {/if}
-  <section class="now" class:dragging class:peeked aria-label="Αρχική" in:rise bind:this={nowEl} style:translate={narrow.current ? `0 ${sheetY}px` : undefined} style:--padb={narrow.current ? `${sheetPadB}px` : undefined}
+  <section class="now" class:dragging class:peeked aria-label="Αρχική" in:rise bind:this={nowEl} style:translate={narrow.current ? `0 ${sheetY}px` : undefined} style:clip-path={narrow.current ? `inset(0 0 ${sheetY}px 0 round 28px)` : undefined} style:--padb={narrow.current ? `${sheetPadB}px` : undefined}
     onscroll={e => { if (narrow.current && nsnap !== "full" && (e.currentTarget as HTMLElement).scrollTop > 6) nsnap = "full"; }}>
     <div class="grip" role="button" tabindex="0" aria-label={nsnap === "full" ? "Μικρότερο" : "Μεγαλύτερο"} use:sheetDrag={nowDrag}
       onkeydown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); stepN(); } }}></div>
@@ -737,7 +737,10 @@
     .grip { display: block; position: sticky; top: -8px; z-index: 2; flex: none; height: 22px; margin: -8px -16px -6px; cursor: grab; background: none; border-radius: 24px 24px 0 0; }
     .grip::after { content: ""; position: absolute; left: 50%; top: 8px; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: var(--grip); }
     .grip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 12px; }
-    .now { overscroll-behavior: none; transition: translate .26s cubic-bezier(.2, .8, .2, 1); }
+    /* Its part slid under the screen's foot is cut off (clip-path, with the sheet), so it floats 8 px above the foot,
+       rounded, at every height. */
+    .now { overscroll-behavior: none; transition: translate .26s cubic-bezier(.2, .8, .2, 1), clip-path .26s cubic-bezier(.2, .8, .2, 1); }
+    .now.dragging { transition: none; }
     .now.dragging { transition: none; }
   }
   /* Under a press, the big buttons and rows give a little. */

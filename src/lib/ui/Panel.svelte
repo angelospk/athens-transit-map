@@ -592,7 +592,7 @@
   @media (max-width: 719px) { .popwrap.tabbed { max-height: calc(100dvh - 60px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important; } }   /* no tab bar */
   /* A phone, a trip's details open: a sheet at the foot, over the tab bar, so the route shows on the map above it. */
   @media (max-width: 719px) {
-    .popwrap.tabbed:has(:global(.rv)) { top: auto !important; bottom: 0; left: 0 !important; right: 0 !important; width: auto !important; max-width: none !important; height: 46dvh;
+    .popwrap.tabbed:has(:global(.rv)) { top: auto !important; bottom: calc(8px + env(safe-area-inset-bottom)); left: 8px !important; right: 8px !important; width: auto !important; max-width: none !important; height: 46dvh;
       max-height: 46dvh !important; animation: sheetUp .32s cubic-bezier(.2, .8, .2, 1); }
     @keyframes sheetUp { from { transform: translateY(40px); opacity: 0; } }
   }
@@ -604,7 +604,7 @@
     /* Edge to edge at the foot, as the picked route's sheet under it (no margins to snap out to). Keyed on the root's
        data-tripsheet, not on :has(.rv): iOS Safari did not always re-match :has() as the sheet changed, and the
        sheet, lowered, went to the top of the screen. */
-    :global(:root[data-tripsheet]) .popwrap.tabbed { top: auto !important; bottom: 0 !important; height: var(--trip-h, 52dvh);
+    :global(:root[data-tripsheet]) .popwrap.tabbed { top: auto !important; bottom: calc(8px + env(safe-area-inset-bottom)) !important; height: var(--trip-h, 52dvh);
       max-height: none !important; transition: height .26s cubic-bezier(.2, .8, .2, 1); }
     :global(:root[data-tripsheet="peek"]) { --trip-h: var(--trip-peek, 200px); }
     :global(:root[data-tripsheet="half"]) { --trip-h: 52dvh; }
@@ -614,7 +614,7 @@
   }
   @media (max-width: 719px) {
     :global(:root[data-sheet]) .popwrap { left: 8px !important; right: 8px !important; width: auto; max-width: none; }
-    :global(:root[data-tripsheet]) .popwrap.tabbed { left: 0 !important; right: 0 !important; }   /* the route's sheet: edge to edge */
+    :global(:root[data-tripsheet]) .popwrap.tabbed { left: 8px !important; right: 8px !important; }   /* the route's sheet: floating, as every sheet */
     :global(:root[data-sheet]) .rail { opacity: 0; pointer-events: none; transform: translateX(12px); }
     :global(:root[data-sheet]) .panel:not(.home) { right: 16px; width: auto; max-width: none; }
     .under { right: 68px; width: auto; max-width: none; }
