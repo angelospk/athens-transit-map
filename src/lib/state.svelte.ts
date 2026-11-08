@@ -115,7 +115,7 @@ const median = (xs: number[]) => {
 export interface LineShortcut { line: string; variant: string; to: string; stop: string; stopName: string }
 const isShortcuts = (v: unknown) => Array.isArray(v) && v.every(x => x && typeof x === "object" && typeof (x as LineShortcut).line === "string" && typeof (x as LineShortcut).stop === "string");
 
-export interface PickSnap { at: [number, number]; x: number; y: number; name: string; kind: string; station: boolean; lines: string[]; code?: string;
+export interface PickSnap { at: [number, number]; x: number; y: number; name: string; kind: string; station: boolean; lines: string[]; code?: string; mine?: "home" | "work"; here?: boolean;
   chips: { t: string; bg: string; fg: string }[] }
 
 export class AppState {

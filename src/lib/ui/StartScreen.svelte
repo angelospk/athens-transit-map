@@ -490,7 +490,8 @@
     const f = app.pickFor, was = checking, sn = app.pickSnap;
     if (f && sn && c === app.mapCenter) {   // «Εδώ» on a stop or a station the circle snapped onto: that place itself
       app.pickFor = null;
-      choose(f, { label: sn.name, hint: sn.kind, pts: [sn.at], lines: sn.station ? sn.lines : [], kind: sn.station ? "metro" : "stop" });
+      if (sn.mine) { const pl = app.places[sn.mine]; choose(f, { label: sn.name, hint: pl?.label, pts: [sn.at], lines: [], kind: sn.mine }); return; }
+      choose(f, { label: sn.name, hint: sn.kind, pts: [sn.at], lines: [], kind: sn.station ? "metro" : "stop", ...(sn.station ? { lines: sn.lines } : {}) });
       return;
     }
     app.pickFor = null;
@@ -1217,7 +1218,7 @@
   <!-- A blue circle at the centre; over a stop or a station it snaps onto it, grows round its mark, its name above. -->
   {@const sn = app.pickSnap}
   <div class="aim" class:snap={!!sn} style:--x="{sn?.x ?? 0}px" style:--y="{sn?.y ?? 0}px" aria-hidden="true">
-    <i class="ring"></i><i class="core" class:svc={!!app.savingPlace && !sn}>{#if app.savingPlace && !sn}<Icon name={app.savingPlace} size={15} />{:else if sn}<img src="{import.meta.env.BASE_URL}icons/{sn.station ? (sn.kind === "στάση τραμ" ? "tram-logo.svg" : "metro-logo.svg") : "oasa.png"}" alt="" />{/if}</i>
+    <i class="ring"></i><i class="core" class:svc={!!app.savingPlace && !sn} class:mine={!!sn?.mine}>{#if app.savingPlace && !sn}<Icon name={app.savingPlace} size={15} />{:else if sn?.mine}<Icon name={sn.mine} size={18} />{:else if sn}<img src="{import.meta.env.BASE_URL}icons/{sn.station ? (sn.kind === "στάση τραμ" ? "tram-logo.svg" : "metro-logo.svg") : "oasa.png"}" alt="" />{/if}</i>
     {#if sn}
       {#key sn.at.join()}
         <span class="slabel" in:rise={{ y: 6, duration: 220 }}><i class="stip"></i>
@@ -1256,7 +1257,7 @@
         {/each}
       </div>
     {/if}
-    {#if !app.savingPlace}
+    {#if !app.savingPlace && !app.pickSnap?.mine}
     <div class="pkeep">
       <span>Κράτα το ως</span>
       <button type="button" class="pk" class:on={keptAs("home")} aria-pressed={keptAs("home")} onclick={() => keepAs("home")}><Icon name="home" size={15} /><b>Σπίτι</b></button>
@@ -1270,7 +1271,7 @@
     {/if}
     <div class="pgo">
       <button type="button" class="pcancel" onclick={() => (app.pickFor = null)}>{checking ? "Πίσω" : "Άκυρο"}</button>
-      <button type="button" class="pgomain" disabled={!app.mapCenter} onclick={takeCentre}><Icon name={app.savingPlace ?? "route"} size={18} /><span>{checking ? "Άλλαξε εδώ" : app.savingPlace ? `Αυτό είναι ${app.savingPlace === "home" ? "το Σπίτι" : "η Δουλειά"}` : app.pickFor === "from" ? "Ξεκίνα από εδώ" : "Πήγαινέ με εδώ"}</span></button>
+      <button type="button" class="pgomain" disabled={!app.mapCenter || (!!app.pickSnap?.here && app.pickFor === "to")} onclick={takeCentre}><Icon name={app.savingPlace ?? "route"} size={18} /><span>{app.pickSnap?.here && app.pickFor === "to" && !checking ? "Είσαι ήδη εδώ" : checking ? "Άλλαξε εδώ" : app.savingPlace ? `Αυτό είναι ${app.savingPlace === "home" ? "το Σπίτι" : "η Δουλειά"}` : app.pickFor === "from" ? "Ξεκίνα από εδώ" : "Πήγαινέ με εδώ"}</span></button>
     </div>
   </div>
   {:else}
@@ -2512,4 +2513,5 @@
   .pnearest .oasa img { width: 17px; height: 17px; display: block; }
   .pw { flex: none; display: flex; align-items: center; gap: 3px; font-weight: 700; color: var(--muted); }
   .aim .core.svc { width: 30px; height: 30px; color: #ffffff; display: flex; align-items: center; justify-content: center; }
+  .aim.snap .core.mine { color: #ffffff; background: #4d8af0; box-shadow: 0 0 0 3px #ffffff, 0 2px 8px rgb(0 0 0 / .4); }
 </style>

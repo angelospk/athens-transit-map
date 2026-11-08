@@ -2659,18 +2659,24 @@
     const box = m.getContainer(), cx = box.clientWidth / 2, cy = box.clientHeight / 2;
     const c = m.unproject([cx, cy]), was = app.pickSnap;
     const mpp = 156543.03 * Math.cos((c.lat * Math.PI) / 180) / 2 ** m.getZoom(), reach = (UNSNAP_PX * mpp) / 111_320;
-    let best: { at: [number, number]; d: number; x: number; y: number; i?: number; st?: { name: string; lines: string[] } } | null = null;
-    const test = (lat: number, lon: number, extra: { i?: number; st?: { name: string; lines: string[] } }) => {
+    let best: { at: [number, number]; d: number; x: number; y: number; i?: number; st?: { name: string; lines: string[] }; mine?: "home" | "work" } | null = null;
+    const test = (lat: number, lon: number, extra: { i?: number; st?: { name: string; lines: string[] }; mine?: "home" | "work" }) => {
       if (Math.abs(lat - c.lat) > reach || Math.abs(lon - c.lng) > reach * 1.4) return;
-      const q = m.project([lon, lat]), d = Math.hypot(q.x - cx, q.y - cy) - (extra.st ? 6 : 0);   // a station a touch first
+      const q = m.project([lon, lat]), d = Math.hypot(q.x - cx, q.y - cy) - (extra.mine ? 10 : extra.st ? 6 : 0);   // «Σπίτι», «Δουλειά», then a station a touch first
       if (!best || d < best.d) best = { at: [lat, lon], d, x: q.x - cx, y: q.y - cy, ...extra };
     };
     if (ix && m.getZoom() >= STOPS_ZOOM - 1) ix.s.forEach((x, i) => test(x[1], x[2], { i }));
     for (const st of app.metro?.stations ?? []) test(st.lat, st.lon, { st });
-    const b = best as { at: [number, number]; d: number; x: number; y: number; i?: number; st?: { name: string; lines: string[] } } | null;
+    // «Σπίτι» and «Δουλειά» too (not while setting one of them: the circle is then for the new place).
+    if (!app.savingPlace) for (const k of ["home", "work"] as const) { const pl = app.places[k]; if (pl) test(pl.at[0], pl.at[1], { mine: k }); }
+    const b = best as { at: [number, number]; d: number; x: number; y: number; i?: number; st?: { name: string; lines: string[] }; mine?: "home" | "work" } | null;
     const keep = was && b && Math.abs(b.at[0] - was.at[0]) < 1e-7 && Math.abs(b.at[1] - was.at[1]) < 1e-7;
     if (!b || b.d > (keep ? UNSNAP_PX : SNAP_PX)) { if (was) app.pickSnap = null; return; }
-    if (b.st) {
+    if (b.mine) {
+      const me = app.myPos, here = !!me && distM(me, b.at) < 150;
+      app.pickSnap = { at: b.at, x: b.x, y: b.y, name: b.mine === "home" ? "Σπίτι" : "Δουλειά", station: false, lines: [], chips: [], mine: b.mine, here,
+        kind: here ? "είσαι ήδη εδώ" : app.places[b.mine]?.label ?? "" };
+    } else if (b.st) {
       const col = Object.fromEntries((app.metro?.lines ?? []).map(l => [l.id, l.color]));
       const tram = b.st.lines.every(l => l.startsWith("T"));
       app.pickSnap = { at: b.at, x: b.x, y: b.y, name: titleCase(b.st.name), kind: tram ? "στάση τραμ" : "σταθμός μετρό", station: true, lines: b.st.lines,

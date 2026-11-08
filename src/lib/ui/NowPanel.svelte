@@ -153,6 +153,10 @@
   const strike = $derived(app.notifyPrefs.strikes ? strikes(app.disruptions, app.serverNow, app.closedStrikes)[0] : undefined);
   // Notices about the favourite lines (route changes, works): one row each, newest first.
   const notices = $derived(!app.notifyPrefs.changes ? [] : app.favs.lines.flatMap(l => forLine(app.disruptions, l.id, app.serverNow).map(d => ({ line: l, d }))).slice(0, 2));
+  // A notice closed with ✕ stays closed for this visit; the next one (if any) shows.
+  let closedNotes = $state<string[]>([]);
+  const noteKey = (n: (typeof notices)[number]) => `${n.line.id}|${n.d.title}`;
+  const note = $derived(notices.find(n => !closedNotes.includes(noteKey(n))) ?? null);
 
   // ---- The user's way now (mockup 40, B1): to work in the morning at home, home in the evening (ways.ts), or the one
   // they flip to; the best route there from where they are, as a compact card (where its bus is now), «Ξεκίνα» and
@@ -363,6 +367,20 @@
 
 <svelte:window bind:innerHeight={vh} />
 
+{#snippet mapNote()}
+  {#if strike}
+    <div class="mapnote strike" transition:rise={{ y: -10, duration: 260 }}>
+      <a href={strike.url} target="_blank" rel="noopener" aria-label="{strike.title}. Ανοίγει σε νέα καρτέλα"><Icon name="warn" size={15} /><span>{strike.title}</span></a>
+      <button type="button" aria-label="Κλείσιμο ειδοποίησης απεργίας" onclick={() => app.closeStrike(strike.id)}><Icon name="close" size={13} /></button>
+    </div>
+  {:else if note}
+    <div class="mapnote" transition:rise={{ y: -10, duration: 260 }}>
+      <a href={note.d.url} target="_blank" rel="noopener"><Icon name="warn" size={15} /><span>{badge(note.line.id).label}: {note.d.title}</span></a>
+      <button type="button" aria-label="Κλείσιμο ειδοποίησης" onclick={() => (closedNotes = [...closedNotes, noteKey(note)])}><Icon name="close" size={13} /></button>
+    </div>
+  {/if}
+{/snippet}
+
 {#snippet placeChips()}
       {#each chips as p (p.k)}
         {@const at = app.places[p.k]}
@@ -390,16 +408,9 @@
 {/if}
 
 {#if shown}
-  <!-- One notice on the map, under the search: a strike first, else the newest about a favourite line. -->
-  {#if strike}
-    <div class="mapnote strike" in:rise={{ y: -12, delay: 200 }}>
-      <a href={strike.url} target="_blank" rel="noopener" aria-label="{strike.title}. Ανοίγει σε νέα καρτέλα"><Icon name="warn" size={15} /><span>{strike.title}</span></a>
-      <button type="button" aria-label="Κλείσιμο ειδοποίησης απεργίας" onclick={() => app.closeStrike(strike.id)}><Icon name="close" size={13} /></button>
-    </div>
-  {:else if notices.length}
-    {@const n = notices[0]}
-    <a class="mapnote" in:rise={{ y: -12, delay: 200 }} href={n.d.url} target="_blank" rel="noopener"><Icon name="warn" size={15} /><span>{badge(n.line.id).label}: {n.d.title}</span></a>
-  {/if}
+  <!-- One notice on the map, under the search: a strike first, else the newest about a favourite line. A phone:
+       under the search and the chips. -->
+  {#if !narrow.current}{@render mapNote()}{/if}
   {#if shown && narrow.current && nsnap !== "full" && !app.start}
     <!-- A phone (compact mockup 15Γ): the search on top of the map, your places and the lists as chips under it. -->
     <div class="mtop" in:rise={{ y: -12 }}>
@@ -410,6 +421,7 @@
         <button type="button" class="chip glass" onclick={openLines}><Icon name="route" size={16} /><b>Γραμμές</b></button>
         <button type="button" class="chip glass round" aria-label={armed ? "Ειδοποιήσεις, μία ενεργή" : "Ειδοποιήσεις"} onclick={() => app.setTab("alerts")}><Icon name="bell" size={16} />{#if armed}<i class="bdot" aria-hidden="true"></i>{/if}</button>
       </div>
+      {@render mapNote()}
     </div>
   {/if}
   <section class="now" class:dragging class:peeked aria-label="Αρχική" in:rise bind:this={nowEl} style:top={nowTop != null ? `${nowTop}px` : undefined}
@@ -647,6 +659,9 @@
     background: color-mix(in srgb, var(--late1) 16%, var(--surface)); border: 1px solid color-mix(in srgb, var(--late1) 35%, transparent);
     color: var(--warn-fg); font-size: 12px; font-weight: 600; line-height: 1; text-decoration: none; box-shadow: var(--shadow-sm); }
   .mapnote span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mapnote { padding: 0 2px 0 0; }
+  .mapnote a { flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; gap: 8px; padding-left: 8px; color: inherit; text-decoration: none; }
+  .mapnote button { flex: none; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 50%; background: none; color: inherit; cursor: pointer; }
   .mapnote.strike { padding: 0 2px 0 0; background: color-mix(in srgb, var(--late3) 16%, var(--surface)); border-color: color-mix(in srgb, var(--late3) 35%, transparent); color: var(--late3); }
   .mapnote.strike a { flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; gap: 8px; padding-left: 8px; color: inherit; text-decoration: none; }
   .mapnote.strike button { flex: none; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0;
@@ -663,7 +678,10 @@
   button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   @media (max-width: 719px) {
-    .mapnote { left: 16px; top: calc(76px + env(safe-area-inset-top)); }
+    /* Under the search and the chips, in their column; ✕ at the right. */
+    .mtop .mapnote { position: static; max-width: none; height: 40px; padding: 0 4px 0 6px; border-radius: 14px; font-size: 13px;
+      -webkit-backdrop-filter: blur(16px) saturate(160%); backdrop-filter: blur(16px) saturate(160%); }
+    .mtop .mapnote button { width: 32px; height: 32px; }
     /* A sheet from edge to edge, rounded at the top (mockup 1). */
     .now { left: 0; right: 0; width: auto; top: max(220px, calc(36dvh + env(safe-area-inset-top))); bottom: 0; max-height: none;
       padding: 8px 16px calc(16px + env(safe-area-inset-bottom)); border-radius: 24px 24px 0 0; background: var(--surface); box-shadow: 0 -10px 30px rgba(0, 0, 0, .45);
@@ -701,4 +719,7 @@
   @media (max-width: 719px) { .now > .where, .now > .chips { display: none; } }
   .chip.glass.round { width: 34px; padding: 0; justify-content: center; position: relative; }
   .chip.glass.round .bdot { position: absolute; right: 6px; top: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  /* On the see-through sheet the cards stand out: a lighter fill, a fine edge and a soft shadow under them. */
+  .board, .srow, .dest { background: color-mix(in srgb, var(--fg) 8%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 10%, transparent), 0 2px 10px rgb(0 0 0 / .28); }
+  .srow:hover, .dest:hover { background: color-mix(in srgb, var(--fg) 12%, var(--surface)); }
 </style>

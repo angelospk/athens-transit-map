@@ -509,7 +509,6 @@
           <button type="button" class="ghost" onclick={startFix}><Icon name="pin" size={15} /><span>Λάθος θέση;</span></button>
         {/if}
       {/if}
-      {#if code}<p class="code">Κωδ. στάσης <b>{code}</b></p>{/if}
     </div>
     </div>
   </section>
@@ -821,5 +820,4 @@
   .opencard { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, var(--card-border, var(--border))); }
   .opencard .dwrap.open { background: none; }
   .dir { margin: 2px 0 0; font-size: 13px; line-height: 1.2; }
-  .code { margin: 0 0 0 auto; font-size: 12px; line-height: 1; color: var(--muted); user-select: all; }
 </style>

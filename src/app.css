@@ -446,5 +446,7 @@ html.sheet-open .start, html.sheet-open .now, html.sheet-open .card, html.sheet-
 :root body :is(section.now, section.card, section.near, .psheet, section.panel:not(.home), .popwrap:not(.page) .pop, div.sheet, section.fixbar, section.alerts,
   .rail, .homebar .round, .homebar .where, .maplibregl-ctrl-group:not(:empty), .recenter, .details-ctl button.details) {
   background: color-mix(in srgb, var(--surface) 78%, transparent) !important;
-  -webkit-backdrop-filter: blur(24px) saturate(160%) !important; backdrop-filter: blur(24px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(160%) !important; backdrop-filter: blur(16px) saturate(160%) !important;
+  /* Its own layer from the start: iOS Safari drew the blur only once a slide-in had ended. */
+  transform: translateZ(0); will-change: transform;
 }
