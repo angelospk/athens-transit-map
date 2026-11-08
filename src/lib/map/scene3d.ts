@@ -16,6 +16,8 @@ import { headlightBeam, lampCone, rain, swayMaterial, type Clock } from "./shade
 import type { Look3D } from "./look3d";
 import type { DelayClass } from "../format";
 import { depthAt, ISLANDS, TRACK_GAP, trackGapAt, type Livery, DEPTH, metroStops } from "./metroDepth";
+import { EntranceModels } from "./entrance/models";
+import type { Entrance3D } from "../entrances";
 
 export type VehicleKind = "bus" | "trolley" | "tram" | "metro";
 // trail (trams): where its front has been, oldest first, in metres east and north of TRAIL_ORIGIN, about 1 m apart.
@@ -1384,6 +1386,10 @@ export class Scene3D {
   }
 
   /** Every bus stop, [lon, lat]: those near the view are built (pools()). */
+  // The metro's street entrances (public/entrances.json, or the admin's edits): sign, stairwell and lift models.
+  private entrances = (() => { const e = new EntranceModels(); e.onChange = () => this.map?.triggerRepaint(); return e; })();
+  setEntrances(list: Entrance3D[]) { this.entrances.set(list); }
+
   setStops(stops: LngLat[]) {
     this.stopsAll = stops;
     this.built = null;   // build again with them
@@ -1699,6 +1705,7 @@ export class Scene3D {
     this.buildLamps();
     this.buildStops();
     this.buildBoards();
+    if (this.scene) this.entrances.mount(this.scene, p => this.local(p));
   }
 
   // Metres east and north of the origin.
@@ -1963,6 +1970,7 @@ export class Scene3D {
     for (const l of this.lampMeshes) l.visible = street;
     for (const l of this.stopMeshes) l.visible = street;
     for (const l of this.boardMeshes) l.visible = street;
+    this.entrances.show(street);
     this.ground!.visible = !this.under;
     // The sun and the shadow catcher follow the view.
     const [cx, cy] = this.local(m.getCenter().toArray() as LngLat);

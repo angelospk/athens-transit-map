@@ -6,11 +6,14 @@
 <script lang="ts">
   // The admin mode: /?admin asks for the password; then every metro, tram and suburban station on the map can be
   // dragged to where the map shows it (MapView). The moves are kept on this device (app.adminFixes) and exported as
-  // public/station-fixes.json, which the site reads for everyone once it is committed. Only the password's SHA-256
+  // public/station-fixes.json, which the site reads for everyone once it is committed. In 3D the metro's street
+  // entrances (stairwells and lifts, entrances.ts) are added, moved and turned the same way: kept in
+  // app.entranceEdits, exported as public/entrances.json. Only the password's SHA-256
   // is here: it keeps the tools out of sight, it is not a lock (nothing changes for others without a commit).
   import { untrack } from "svelte";
   import type { AppState } from "../state.svelte";
   import { stopsWithFixes, withFixes, type StationFixes } from "../metro";
+  import { loadEntrances, normElevation, normHeading, withEdits, type Entrance3D } from "../entrances";
   import Icon from "./Icon.svelte";
 
   let { app }: { app: AppState } = $props();
@@ -47,18 +50,51 @@
     });
   });
   const moved = $derived(Object.keys(app.adminFixes).length);
-
-  async function exportFixes() {
-    let base: StationFixes = {};
-    try { const r = await fetch(`${import.meta.env.BASE_URL}station-fixes.json`, { cache: "no-store" }); if (r.ok) base = await r.json(); } catch { /* none yet */ }
-    const all = { ...base, ...app.adminFixes };
-    const sorted = Object.fromEntries(Object.keys(all).sort().map(k => [k, all[k]]));
-    const blob = new Blob([JSON.stringify(sorted, null, 1) + "\n"], { type: "application/json" });
+  const edited = $derived(Object.keys(app.entranceEdits).length);
+  const changes = $derived(moved + edited);
+  // The entrance picked on the map (MapView's move handle), as shown now.
+  const sel = $derived(app.entranceSel ? app.entrancesShown.find(e => e.id === app.entranceSel) ?? null : null);
+  const edit = (patch: Partial<Entrance3D>) => { if (sel) app.editEntrance({ ...sel, ...patch }); };
+  const turnBy = (d: number) => { if (sel) edit({ heading: normHeading(Math.round(sel.heading + d)) }); };
+  const raiseBy = (d: number) => { if (sel) edit({ elevation: normElevation((sel.elevation ?? 0) + d) }); };
+  const metresText = (m: number | undefined) => (m ?? 0).toFixed(2).replace(".", ",");
+  let elevText = $state("");
+  $effect(() => { elevText = sel ? metresText(sel.elevation) : ""; });
+  function setElevation() {
+    const v = Number(elevText.replace(",", "."));
+    if (sel && Number.isFinite(v)) edit({ elevation: normElevation(v) }); else elevText = sel ? metresText(sel.elevation) : "";
+  }
+  let headingText = $state("");
+  $effect(() => { headingText = sel ? String(Math.round(sel.heading)) : ""; });
+  function setHeading() {
+    const v = Number(headingText.replace(",", "."));
+    if (sel && Number.isFinite(v)) edit({ heading: normHeading(Math.round(v)) }); else headingText = sel ? String(Math.round(sel.heading)) : "";
+  }
+  function add(kind: "stairs" | "elevator") {
+    if (!app.threeD) app.setThreeD(true);
+    app.entranceAdd = { n: app.entranceAdd.n + 1, kind };
+  }
+  function download(name: string, data: unknown) {
+    const blob = new Blob([JSON.stringify(data, null, 1) + "\n"], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "station-fixes.json";
+    a.download = name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+
+  async function exportFixes() {
+    if (moved) {
+      let base: StationFixes = {};
+      try { const r = await fetch(`${import.meta.env.BASE_URL}station-fixes.json`, { cache: "no-store" }); if (r.ok) base = await r.json(); } catch { /* none yet */ }
+      const all = { ...base, ...app.adminFixes };
+      download("station-fixes.json", Object.fromEntries(Object.keys(all).sort().map(k => [k, all[k]])));
+    }
+    if (edited) download("entrances.json", withEdits(await loadEntrances(), app.entranceEdits));
+  }
+  function undo() {
+    if (moved) app.clearStationMoves();
+    if (edited) app.clearEntranceEdits();
   }
   function leave() {
     try { sessionStorage.removeItem("admin"); } catch { /* no storage */ }
@@ -84,12 +120,80 @@
   </form>
 {/if}
 
+{#if app.admin && sel}
+  <div class="ent" role="group" aria-label="Επιλεγμένη είσοδος">
+    <div class="head">
+      <span class="kind">{sel.kind === "elevator" ? "Ασανσέρ" : "Σκάλα"}</span>
+      <b>{sel.name}</b>
+      <button type="button" class="x" aria-label="Κλείσιμο" onclick={() => (app.entranceSel = null)}><Icon name="close" size={14} /></button>
+    </div>
+    <div class="fields">
+      <label><span>Όνομα</span><input id="ent-name" type="text" value={sel.name} onchange={e => edit({ name: e.currentTarget.value.trim() || sel.name })} /></label>
+      <label><span>Λατινικά</span><input id="ent-latin" type="text" value={sel.latin ?? ""} onchange={e => edit({ latin: e.currentTarget.value.trim() || undefined })} /></label>
+    </div>
+    <div class="line">
+      <span class="lbl">Κατεύθυνση</span>
+      <div class="turn">
+        <button type="button" onclick={() => turnBy(-15)} aria-label="15° αριστερά">−15</button>
+        <button type="button" onclick={() => turnBy(-1)} aria-label="1° αριστερά">−1</button>
+        <input id="ent-heading" type="text" inputmode="numeric" aria-label="Μοίρες από τον βορρά" bind:value={headingText}
+          onchange={setHeading} onkeydown={e => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+        <button type="button" onclick={() => turnBy(1)} aria-label="1° δεξιά">+1</button>
+        <button type="button" onclick={() => turnBy(15)} aria-label="15° δεξιά">+15</button>
+      </div>
+    </div>
+    <div class="line">
+      <span class="lbl">Ύψος (μ.)</span>
+      <div class="turn">
+        <button type="button" onclick={() => raiseBy(-0.5)} aria-label="50 εκ. χαμηλότερα">−0,5</button>
+        <button type="button" onclick={() => raiseBy(-0.1)} aria-label="10 εκ. χαμηλότερα">−0,1</button>
+        <input id="ent-elevation" type="text" inputmode="decimal" aria-label="Ύψος σε μέτρα από το έδαφος του χάρτη" bind:value={elevText}
+          onchange={setElevation} onkeydown={e => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+        <button type="button" onclick={() => raiseBy(0.1)} aria-label="10 εκ. ψηλότερα">+0,1</button>
+        <button type="button" onclick={() => raiseBy(0.5)} aria-label="50 εκ. ψηλότερα">+0,5</button>
+      </div>
+    </div>
+    {#if sel.kind !== "elevator"}
+      <div class="line">
+        <span class="lbl">Πινακίδα</span>
+        <div class="seg" role="group" aria-label="Πλευρά της πινακίδας">
+          <button type="button" aria-pressed={sel.signSide === "left"} onclick={() => edit({ signSide: "left" })}>Αριστερά</button>
+          <button type="button" aria-pressed={sel.signSide !== "left"} onclick={() => edit({ signSide: "right" })}>Δεξιά</button>
+        </div>
+      </div>
+    {/if}
+    <div class="pics">
+      <span class="lbl">Εικόνες (αρχείο στο public/)</span>
+      {#if sel.kind !== "elevator"}
+        <label class="pic"><span>Μπροστά</span><input id="ent-ad-front" type="text" placeholder="ads/…" value={sel.adFront ?? ""}
+          onchange={e => edit({ adFront: e.currentTarget.value.trim() || undefined })} /></label>
+        <label class="pic"><span>Πίσω</span><input id="ent-ad-back" type="text" placeholder="ads/…" value={sel.adBack ?? ""}
+          onchange={e => edit({ adBack: e.currentTarget.value.trim() || undefined })} /></label>
+      {/if}
+      <label class="pic"><span>Κύκλος</span><input id="ent-roundel" type="text" placeholder="icons/…" value={sel.roundel ?? ""}
+        onchange={e => edit({ roundel: e.currentTarget.value.trim() || undefined })} /></label>
+      {#if sel.kind !== "elevator"}
+        <div class="line">
+          <span class="lbl">Διαφήμιση</span>
+          <div class="seg" role="group" aria-label="Πώς μπαίνει η διαφήμιση">
+            <button type="button" aria-pressed={sel.adFit !== "contain"} onclick={() => edit({ adFit: "cover" })}>Γέμισμα</button>
+            <button type="button" aria-pressed={sel.adFit === "contain"} onclick={() => edit({ adFit: "contain" })}>Ολόκληρη</button>
+          </div>
+        </div>
+      {/if}
+    </div>
+    <button type="button" class="del" onclick={() => app.removeEntrance(sel.id)}>Διαγραφή</button>
+  </div>
+{/if}
+
 {#if app.admin}
   <div class="bar" role="toolbar" aria-label="Διαχείριση σταθμών">
     <span class="tag">Διαχείριση</span>
-    <span class="n">{moved ? `${moved} ${moved === 1 ? "μετακίνηση" : "μετακινήσεις"}` : "Σύρε έναν σταθμό, ή πάτα μια στάση και σύρ’ την"}</span>
-    <button type="button" onclick={exportFixes} disabled={!moved} title="Κατέβασε το station-fixes.json"><Icon name="share" size={15} /><span>Εξαγωγή</span></button>
-    <button type="button" onclick={() => app.clearStationMoves()} disabled={!moved}><span>Αναίρεση</span></button>
+    <span class="n">{changes ? `${changes} ${changes === 1 ? "αλλαγή" : "αλλαγές"}` : "Σύρε έναν σταθμό, ή πάτα μια στάση και σύρ’ την"}</span>
+    <button type="button" onclick={() => add("stairs")} title="Νέα σκάλα μετρό στο κέντρο του χάρτη (3D)"><span>+ Σκάλα</span></button>
+    <button type="button" onclick={() => add("elevator")} title="Νέο ασανσέρ μετρό στο κέντρο του χάρτη (3D)"><span>+ Ασανσέρ</span></button>
+    <button type="button" onclick={exportFixes} disabled={!changes} title="Κατέβασε το station-fixes.json και το entrances.json"><Icon name="share" size={15} /><span>Εξαγωγή</span></button>
+    <button type="button" onclick={undo} disabled={!changes}><span>Αναίρεση</span></button>
     <button type="button" class="x" aria-label="Έξοδος από τη διαχείριση" onclick={leave}><Icon name="close" size={14} /></button>
   </div>
 {/if}
@@ -120,4 +224,31 @@
     background: var(--control); color: var(--fg); font: inherit; font-size: 13px; font-weight: 700; line-height: 1; cursor: pointer; }
   .bar button:disabled { opacity: .45; cursor: default; }
   .bar .x { width: 32px; padding: 0; }
+  /* The picked 3D entrance: a card above the bar */
+  .ent { position: fixed; z-index: 40; left: 50%; bottom: calc(66px + env(safe-area-inset-bottom)); translate: -50% 0; width: 340px; max-width: calc(100% - 16px); box-sizing: border-box;
+    display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 22px; background: color-mix(in srgb, var(--surface) 92%, transparent);
+    -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: 0 10px 30px rgb(0 0 0 / .45), inset 0 0 0 1px #f0ae45; color: var(--fg); }
+  .ent .head { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+  .ent .kind { flex: none; height: 24px; padding: 0 9px; border-radius: 12px; display: flex; align-items: center; background: #f0ae45; color: #1a1200; font-size: 12px; font-weight: 800; line-height: 1; }
+  .ent .head b { flex: 1; min-width: 0; font-size: 15px; font-weight: 800; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ent button { height: 32px; display: flex; align-items: center; justify-content: center; padding: 0 10px; border: 0; border-radius: 16px;
+    background: var(--control); color: var(--fg); font: inherit; font-size: 13px; font-weight: 700; line-height: 1; cursor: pointer; }
+  .ent .x { flex: none; width: 32px; padding: 0; border-radius: 50%; }
+  .ent .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .ent label { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .ent label span, .ent .lbl { font-size: 11.5px; font-weight: 700; line-height: 1; color: var(--muted); }
+  .ent input { height: 36px; width: 100%; box-sizing: border-box; padding: 0 10px; border: 0; border-radius: 12px; background: var(--control); color: var(--fg);
+    font: inherit; font-size: 14px; font-weight: 600; line-height: 1; box-shadow: inset 0 0 0 1px var(--border); outline: none; }
+  .ent input:focus { box-shadow: inset 0 0 0 2px #f0ae45; }
+  .ent .line { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; }
+  .ent .turn { display: flex; align-items: center; gap: 4px; }
+  .ent .turn button { width: 38px; padding: 0; font-variant-numeric: tabular-nums; }
+  .ent .turn input { width: 56px; height: 32px; padding: 0; text-align: center; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .ent .seg { display: flex; height: 32px; padding: 2px; box-sizing: border-box; border-radius: 16px; background: var(--control); }
+  .ent .seg button { height: 100%; border-radius: 14px; background: transparent; color: var(--muted); }
+  .ent .seg button[aria-pressed="true"] { background: #f0ae45; color: #1a1200; }
+  .ent .pics { display: flex; flex-direction: column; gap: 6px; }
+  .ent .pic { flex-direction: row; align-items: center; gap: 8px; }
+  .ent .pic span { flex: none; width: 58px; }
+  .ent .del { align-self: flex-start; background: transparent; color: var(--late3, #ff8a8a); box-shadow: inset 0 0 0 1px currentColor; }
 </style>

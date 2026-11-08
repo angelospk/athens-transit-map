@@ -1,0 +1,27 @@
+[
+ {
+  "id": "syntagma-1",
+  "kind": "stairs",
+  "name": "Σύνταγμα",
+  "latin": "Syntagma",
+  "at": [37.9752285, 23.7353324],
+  "heading": 101,
+  "signSide": "right",
+  "directions": [
+   { "el": "Προς Ανθούπολη / Ελληνικό", "en": "To Anthoupoli / Elliniko", "color": "#e2231a" },
+   { "el": "Προς Δημοτικό Θέατρο / Αεροδρόμιο", "en": "To Dimotiko Theatro / Airport", "airport": true, "color": "#0a64b4" }
+  ],
+  "adFront": "ads/xoris-empodia-hd.jpg",
+  "adBack": "ads/xoris-empodia-hd.jpg",
+  "roundel": "icons/metro-roundel.png"
+ },
+ {
+  "id": "syntagma-lift-1",
+  "kind": "elevator",
+  "name": "Σύνταγμα",
+  "latin": "Syntagma",
+  "at": [37.9751647, 23.7353272],
+  "heading": 101,
+  "roundel": "icons/metro-roundel.png"
+ }
+]

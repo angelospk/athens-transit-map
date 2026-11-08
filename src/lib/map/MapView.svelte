@@ -11,6 +11,7 @@
   import type { LngLat } from "../glide";
   import { vehicleHeading } from "../heading";
   import { loadFixes, metroFC, stationKey } from "../metro";
+  import { ahead, bearing, loadEntrances, newId, normHeading, type Entrance3D } from "../entrances";
   import { suburbanFC } from "../suburban";
   import { trainsFC } from "../trains";
   import { RailGlide, trackStops, type Track } from "../rails";
@@ -2730,6 +2731,88 @@
     return () => { entMarks.forEach(x => x.remove()); entMarks = []; };
   });
 
+  // The metro's street entrances as 3D models (entrances.ts, scene3d.setEntrances): public/entrances.json, read the
+  // first time the 3D mode is on; in the admin mode with this device's edits.
+  let entrancesRead = false;
+  $effect(() => {
+    if (!app.threeD || entrancesRead) return;
+    entrancesRead = true;
+    void loadEntrances().then(v => { app.entrances3d = v; });
+  });
+  $effect(() => { scene3d.setEntrances(app.threeD ? app.entrancesShown : []); });
+  // Admin mode, in 3D: two handles on each entrance. The round one at the top step moves it; the small one down the
+  // stairs' way turns it (Shift held: in steps of 15°). A click on the move handle picks it for the admin bar.
+  // While a handle is dragged the model follows (scene3d only); the edit is kept when it is let go.
+  const E3D_MOVE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>`;
+  const E3D_TURN = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>`;
+  const turnM = (e: Entrance3D) => (e.kind === "elevator" ? 4 : 11);   // the turn handle: past the lift's back, or the foot of the stairs
+  let shiftDown = false;
+  const onShift = (e: KeyboardEvent) => { shiftDown = e.shiftKey; };
+  $effect(() => {
+    window.addEventListener("keydown", onShift);
+    window.addEventListener("keyup", onShift);
+    return () => { window.removeEventListener("keydown", onShift); window.removeEventListener("keyup", onShift); };
+  });
+  $effect(() => {
+    const m = map, on = app.admin && app.threeD && loaded, list = app.entrancesShown, sel = app.entranceSel;
+    if (!m || !on) return;
+    const live = (e: Entrance3D) => scene3d.setEntrances(list.map(x => (x.id === e.id ? e : x)));
+    const marks = list.flatMap(e0 => {
+      let e = e0;
+      const mv = document.createElement("div");
+      mv.className = `e3d-move${e.id === sel ? " sel" : ""}`;
+      mv.title = `${e.kind === "elevator" ? "Ασανσέρ" : "Σκάλα"} ${e.name}: σύρε για μετακίνηση, πάτα για επιλογή`;
+      mv.innerHTML = E3D_MOVE;
+      const tn = document.createElement("div");
+      tn.className = "e3d-turn";
+      tn.title = "Σύρε για περιστροφή (Shift: ανά 15°)";
+      tn.innerHTML = `<i>${E3D_TURN}</i><b>${Math.round(e.heading)}°</b>`;
+      const deg = tn.querySelector("b")!;
+      const turnAt = (x: Entrance3D) => { const p = ahead(x.at, x.heading, turnM(x)); return [p[1], p[0]] as [number, number]; };
+      const move = new Marker({ element: mv, anchor: "center", draggable: true }).setLngLat([e.at[1], e.at[0]]).addTo(m);
+      const turn = new Marker({ element: tn, anchor: "center", draggable: true }).setLngLat(turnAt(e)).addTo(m);
+      mv.addEventListener("click", ev => { ev.stopPropagation(); app.entranceSel = e.id; });
+      move.on("drag", () => {
+        const p = move.getLngLat();
+        e = { ...e, at: [+p.lat.toFixed(7), +p.lng.toFixed(7)] };
+        turn.setLngLat(turnAt(e));
+        live(e);
+      });
+      move.on("dragend", () => { app.editEntrance(e); app.entranceSel = e.id; });
+      turn.on("drag", () => {
+        const p = turn.getLngLat();
+        let h = bearing(e.at, [p.lat, p.lng]);
+        h = shiftDown ? normHeading(Math.round(h / 15) * 15) : Math.round(h);
+        e = { ...e, heading: h };
+        deg.textContent = `${h}°`;
+        live(e);
+      });
+      turn.on("dragend", () => { turn.setLngLat(turnAt(e)); app.editEntrance(e); app.entranceSel = e.id; });
+      return [move, turn];
+    });
+    return () => marks.forEach(x => x.remove());
+  });
+  // The admin bar's «Σκάλα» or «Ασανσέρ»: a new one at the map's centre, named after the nearest metro station,
+  // facing the way the map looks (stairs going down, or the lift's doors, away from the viewer).
+  $effect(() => {
+    const n = app.entranceAdd.n, kind = app.entranceAdd.kind, m = map;
+    if (!n || !m) return;
+    untrack(() => {
+      const c = m.getCenter(), at: [number, number] = [+c.lat.toFixed(7), +c.lng.toFixed(7)];
+      const st = (app.metro?.stations ?? []).reduce<{ name: string; d: number } | null>((best, s) => {
+        const d = distM([s.lat, s.lon], at);
+        return !best || d < best.d ? { name: s.name, d } : best;
+      }, null);
+      const name = st && st.d < 600 ? titleCase(st.name) : "Σταθμός";   // «ΣΥΝΤΑΓΜΑ» → «Σύνταγμα»
+      const ids = app.entrancesShown.map(x => x.id), heading = normHeading(Math.round(m.getBearing()));
+      const e: Entrance3D = kind === "elevator"
+        ? { id: newId(`${name} lift`, ids), kind, name, at, heading }
+        : { id: newId(name, ids), kind, name, at, heading, signSide: "right", directions: [] };
+      app.editEntrance(e);
+      app.entranceSel = e.id;
+    });
+  });
+
   // «Σπίτι» and «Δουλειά» on the map: a round mark with its icon and the name beside it, where each was set.
   const MINE_SVG = {
     home: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11l8-7 8 7"/><path d="M6 10v10h12V10"/></svg>`,
@@ -3063,6 +3146,16 @@
     background: #262a32; color: #e8eaed; box-shadow: 0 0 0 2px #ffffff, 0 2px 6px rgb(0 0 0 / 0.4); font-size: 12px; font-weight: 800; line-height: 1; }
   :global(.ent-mark.adm) { pointer-events: auto; cursor: grab; box-shadow: 0 0 0 3px #f0ae45, 0 2px 8px rgb(0 0 0 / .5); }
   :global(.ent-mark.best) { background: #2f9e5b; color: #ffffff; }
+  /* Admin mode: the 3D entrances' handles (move: round, at the top step; turn: down the stairs' way, with its heading) */
+  :global(.e3d-move) { cursor: grab; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    background: #f0ae45; color: #1a1200; box-shadow: 0 0 0 3px #1a1200, 0 4px 12px rgb(0 0 0 / .5); }
+  :global(.e3d-move.sel) { box-shadow: 0 0 0 3px #ffffff, 0 0 0 6px #f0ae45, 0 4px 12px rgb(0 0 0 / .5); }
+  :global(.e3d-move svg), :global(.e3d-turn svg) { display: block; }
+  :global(.e3d-turn) { cursor: grab; display: flex; align-items: center; gap: 6px; }
+  :global(.e3d-turn i) { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex: none;
+    background: #1a1200; color: #f0ae45; box-shadow: 0 0 0 2px #f0ae45, 0 2px 8px rgb(0 0 0 / .5); }
+  :global(.e3d-turn b) { height: 20px; padding: 0 7px; border-radius: 10px; background: rgb(20 22 27 / .9); color: #f0ae45;
+    font-size: 11.5px; font-weight: 800; line-height: 1; white-space: nowrap; display: flex; align-items: center; pointer-events: none; font-variant-numeric: tabular-nums; }
   :global(.adm-st) { cursor: grab; display: flex; align-items: center; gap: 6px; }
   :global(.adm-st.bus i) { background: #4d8af0; box-shadow: 0 0 0 3px #ffffff, 0 2px 8px rgb(0 0 0 / .5); }
   :global(.adm-st i) { width: 18px; height: 18px; border-radius: 50%; background: #f0ae45; box-shadow: 0 0 0 3px #1a1200, 0 2px 8px rgb(0 0 0 / .5); display: block; flex: none; }

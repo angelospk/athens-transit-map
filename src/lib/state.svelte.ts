@@ -5,6 +5,7 @@ import { ageModeOf, type AgeMode, type Only } from "./format";
 import { fetchV2Alerts, fetchCity, fetchLine, fetchLines, fetchLineStatic, fetchRailMotion, fetchStatus, fetchTile, fetchTrains } from "./api";
 import { cityKey, isCityLive } from "./city";
 import { loadMetro, withFixes, type MetroData } from "./metro";
+import { withEdits, type Entrance3D, type EntranceEdits } from "./entrances";
 import { loadSuburban, type SuburbanData } from "./suburban";
 import { loadMunicipal, type MunicipalData } from "./municipal";
 import { loadTimetables } from "./muniTables";
@@ -403,6 +404,28 @@ export class AppState {
     this.loadMetro();
     this.stopIx = null;
     void this.loadStops();
+  }
+  // The metro's street entrances in 3D (entrances.ts): as published (public/entrances.json), and in the admin mode
+  // this device's edits laid over them (kept until exported as a new entrances.json). entranceSel: the one picked
+  // in the admin mode; entranceAdd: the admin bar asks MapView for a new stairwell or lift at the map's centre.
+  entrances3d = $state.raw<Entrance3D[]>([]);
+  entranceEdits = $state.raw<EntranceEdits>(stored("entranceEdits", {}, (v): v is EntranceEdits => !!v && typeof v === "object" && !Array.isArray(v)));
+  entranceSel = $state<string | null>(null);
+  entranceAdd = $state<{ n: number; kind: "stairs" | "elevator" }>({ n: 0, kind: "stairs" });
+  get entrancesShown(): Entrance3D[] { return this.admin ? withEdits(this.entrances3d, this.entranceEdits) : this.entrances3d; }
+  editEntrance(e: Entrance3D) {
+    this.entranceEdits = { ...this.entranceEdits, [e.id]: e };
+    store("entranceEdits", this.entranceEdits);
+  }
+  removeEntrance(id: string) {
+    this.entranceEdits = { ...this.entranceEdits, [id]: null };
+    store("entranceEdits", this.entranceEdits);
+    if (this.entranceSel === id) this.entranceSel = null;
+  }
+  clearEntranceEdits() {
+    this.entranceEdits = {};
+    store("entranceEdits", {});
+    this.entranceSel = null;
   }
   metroStation = $state<string | null>(null);
   // Suburban rail (Προαστιακός): its corridors and stations. railStation: the id of the tapped station,
