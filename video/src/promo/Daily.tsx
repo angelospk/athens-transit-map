@@ -91,7 +91,7 @@ export const Daily: React.FC<DailyProps> = ({ from, title, sub, chips = [], cta 
         <div style={{ marginTop: 40, fontSize: size, fontWeight: 800, letterSpacing: -4, display: "flex" }}>
           {[...head].map((ch, i) => {
             const p = ease(f, t0 + 14 + i * 2, t0 + 32 + i * 2);
-            return <span key={i} style={{ opacity: p, transform: `translateY(${(1 - p) * 60}px)`, display: "inline-block" }}>{ch}</span>;
+            return <span key={i} style={{ opacity: p, transform: `translateY(${(1 - p) * 60}px)`, display: "inline-block", whiteSpace: "pre" }}>{ch}</span>;
           })}
           <span style={{ color: APP.accent, opacity: titleIn, transform: `scale(${0.6 + 0.4 * titleIn})`, display: "inline-block" }}>{tail}</span>
         </div>
