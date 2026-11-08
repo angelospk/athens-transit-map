@@ -379,17 +379,23 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .pl-disc img { width: 11px; height: 11px; display: block; }
 .pl-mark { width: 18px; height: 18px; display: block; flex: none; }
 .pl-tram { width: 12px; height: 16px; object-fit: contain; display: block; flex: none; }
-.plan-chg { width: 230px; display: flex; flex-direction: column; gap: 7px; padding: 8px 10px; box-sizing: border-box; border-radius: 16px; background: rgba(28, 32, 39, .95); color: #e8eaed;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, .45), inset 0 0 0 1px #2c313b; }
-.plan-chg .pc-top { height: 24px; display: flex; align-items: center; gap: 5px; }
-.plan-chg .pc-top .pl-chip { height: 24px; border-radius: 12px; }
-.plan-chg .pc-arr { display: flex; color: #9aa2ae; }
-.plan-chg .pc-time { margin-left: auto; font: 800 14px/1 var(--font); color: #ffffff; font-variant-numeric: tabular-nums; }
-.plan-chg .pc-bot { height: 20px; min-width: 0; display: flex; align-items: center; gap: 6px; }
-.plan-chg .pc-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 12.5px/1 var(--font); color: #cfd4dc; }
-.plan-chg .pc-walk { flex: none; display: flex; align-items: center; gap: 3px; font: 700 12.5px/1 var(--font); color: #9aa2ae; }
-.plan-chg .pc-tight { margin-left: auto; flex: none; height: 20px; padding: 0 7px; border-radius: 10px; display: flex; align-items: center; background: rgba(255, 159, 67, .16);
-  color: #ffb26b; font: 700 11.5px/1 var(--font); }
+/* A change (compact mockup 19 B): a pill in the two lines' colours with the change mark between, ringed in white; its
+   stop, the walk and «σφιχτό» in a small dark label under it. */
+.plan-chg { display: flex; flex-direction: column; align-items: center; gap: 6px; color: #e8eaed; }
+.plan-chg .pc-top { height: 32px; display: flex; align-items: stretch; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 20px rgba(0, 0, 0, .5), 0 0 0 2px #ffffff; }
+.plan-chg .pc-top .pl-chip { height: 32px; border-radius: 0; padding: 0 10px 0 4px; gap: 5px; font-size: 13px; }
+.plan-chg .pc-top .pl-chip:not(:has(.pl-disc, .pl-mark, .pl-tram)) { padding-left: 10px; }
+.plan-chg .pc-top .pl-disc, .plan-chg .pc-top .pl-mark { width: 24px; height: 24px; }
+.plan-chg .pc-top .pl-disc img { width: 14px; height: 14px; }
+.plan-chg .pc-arr { width: 30px; flex: none; display: flex; align-items: center; justify-content: center; background: #ffffff; color: #1b1e25; }
+.plan-chg .pc-time { padding-left: 4px; font: 800 12.5px/1 var(--font); opacity: .9; font-variant-numeric: tabular-nums; }
+.plan-chg .pc-bot { max-width: 240px; height: 22px; min-width: 0; display: flex; align-items: center; gap: 5px; padding: 0 8px; border-radius: 11px; box-sizing: border-box;
+  background: rgba(20, 22, 27, .88); }
+.plan-chg .pc-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 11.5px/1 var(--font); color: #cfd4dc; }
+.plan-chg .pc-walk { flex: none; display: flex; align-items: center; gap: 3px; font: 700 11.5px/1 var(--font); color: #9aa2ae; }
+.plan-chg .pc-walk::before { content: "·"; margin-right: 2px; color: #5c6370; }
+.plan-chg .pc-tight { flex: none; height: 16px; padding: 0 6px; border-radius: 8px; display: flex; align-items: center; background: rgba(255, 159, 67, .18);
+  color: #ffb26b; font: 800 10.5px/1 var(--font); }
 .plan-pin { display: flex; flex-direction: column; gap: 4px; padding: 7px 10px; border-radius: 10px; background: var(--surface); color: var(--fg);
   box-shadow: 0 4px 14px rgba(0, 0, 0, .35); pointer-events: none; white-space: nowrap; }
 .plan-pin b { font: 800 12px/1 var(--font); }

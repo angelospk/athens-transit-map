@@ -2331,15 +2331,17 @@
         t.textContent = durText(l.min);
         el.append(chip({ label: l.label, color: l.color, text: l.text, mode: l.mode }), t);
       } else if (l.kind === "change" && l.lines?.length) {
-        // A change: [line left] › [line taken], the time it leaves; under it where, the walk, «σφιχτό» when tight.
+        // A change (compact mockup 19 B): one pill in the two lines' colours, the change mark between them and the time
+        // the next leaves at its end; under it, small, where, the walk, «σφιχτό» when tight.
         el.className = "plan-chg";
         const top = document.createElement("span"), bot = document.createElement("span");
         top.className = "pc-top"; bot.className = "pc-bot";
         l.lines.forEach((b, k) => {
-          if (k) { const a = document.createElement("i"); a.className = "pc-arr"; a.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>`; top.append(a); }
-          top.append(chip(b));
+          if (k) { const a = document.createElement("i"); a.className = "pc-arr"; a.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/></svg>`; top.append(a); }
+          const c = chip(b);
+          if (k === l.lines!.length - 1 && l.time) { const tm = document.createElement("b"); tm.className = "pc-time"; tm.textContent = l.time; c.append(tm); }
+          top.append(c);
         });
-        if (l.time) { const tm = document.createElement("b"); tm.className = "pc-time"; tm.textContent = l.time; top.append(tm); }
         const nm = document.createElement("span");
         nm.className = "pc-name";
         nm.textContent = titleCase(l.stop ?? l.name.replace(/^Αλλαγή · /, ""));
@@ -2361,7 +2363,7 @@
     });
     // The change's card is wide: kept inside the screen (slid sideways from over its point) as the map moves.
     // The labels of getting on and arriving too: at the screen's edge they were cut off («Περίπτερο» half outside).
-    const wide = marks.filter(k => k.getElement().classList.contains("plan-chg") || k.getElement().classList.contains("plan-pin"));
+    const wide = marks.filter(k => k.getElement().classList.contains("plan-chg"));
     const keepIn = () => {
       const W = m.getContainer().clientWidth;
       for (const k of wide) {
@@ -2373,13 +2375,15 @@
     if (wide.length) { keepIn(); m.on("move", keepIn); }
     // A ride's pill: of the four sides of its point, the one where the fewest of the route's points (on the screen as
     // it is now) fall under it; checked again when the map stops moving.
-    const legs = marks.filter(k => k.getElement().classList.contains("plan-leg"));
+    // The labels of getting on and arriving too (they lay over the route's line), and they stay inside the screen.
+    const legs = marks.filter(k => k.getElement().classList.contains("plan-leg") || k.getElement().classList.contains("plan-pin"));
     const pts = (app.tripPlan?.features ?? []).flatMap(f => f.geometry.coordinates) as [number, number][];
     const besideLine = () => {
       const scr = pts.map(c => m.project(c)), W = m.getContainer().clientWidth, H = m.getContainer().clientHeight;
       for (const k of legs) {
         const el = k.getElement(), w = el.offsetWidth, h = el.offsetHeight, p = m.project(k.getLngLat()), G = 12;
-        const sides: [number, number][] = [[G, -h / 2], [-w / 2, -h - G], [-w - G, -h / 2], [-w / 2, G]];   // right, above, left, below
+        // right, above, left, below, then the four corners
+        const sides: [number, number][] = [[G, -h / 2], [-w / 2, -h - G], [-w - G, -h / 2], [-w / 2, G], [G, -h - G], [-w - G, -h - G], [G, G], [-w - G, G]];
         let best = sides[0], fewest = Infinity;
         for (const [ox, oy] of sides) {
           const x0 = p.x + ox - 4, y0 = p.y + oy - 4, x1 = x0 + w + 8, y1 = y0 + h + 8;
