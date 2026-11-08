@@ -7,7 +7,7 @@
   import { flushSync, untrack } from "svelte";
   import StatusBanner from "./StatusBanner.svelte";
   import { MediaQuery } from "svelte/reactivity";
-  import { safeInsets, sheetDrag, type SheetDrag } from "../sheetDrag";
+  import { pickDetent, rubber, safeInsets, sheetDrag, springTo, type SheetDrag } from "../sheetDrag";
   import { fetchV2Stop } from "../api";
   import { forLine, strikes } from "../disruptions";
   import { busStopCard } from "../legacy";
@@ -323,8 +323,8 @@
   });
 
   // A phone: the panel is a sheet with a handle. «peek» shows the search and home and work over a big map, «half»
-  // where it opens, «full» all of it; dragged by the handle (sheetDrag.ts), it follows the finger and settles at
-  // the nearest (a flick goes one step); a tap on the handle steps it.
+  // where it opens, «full» all of it; dragged by the handle (sheetDrag.ts), it follows the finger and, let go, springs
+  // to the place it was heading for (a flick can go past one); a tap on the handle steps it.
   type NSnap = "peek" | "half" | "full";
   let nsnap = $state<NSnap>("half");
   let nowEl = $state<HTMLElement>(), savedEl = $state<HTMLElement>();
@@ -343,10 +343,12 @@
     const peekH = nowEl && savedEl ? savedEl.getBoundingClientRect().bottom - nowEl.getBoundingClientRect().top + 16 : 190;
     // A phone, lowered (compact mockup 18): its handle, the nearest stop and its next buses; the search and the places
     // are on the map. PEEK_PX: as --peek in app.css (the map's buttons stand on it).
-    return { full: st + 8, half: Math.max(220, vh * 0.32 + st), peek: narrow.current ? foot - PEEK_PX : Math.max(st + 72, foot - peekH) };
+    // The middle at about half the screen (as a native sheet): the map above it has the room for its own buttons.
+    return { full: st + 8, half: Math.max(220, vh * 0.47), peek: narrow.current ? foot - PEEK_PX : Math.max(st + 72, foot - peekH) };
   }
-  // Let go after a slow drag, it stays where it is (freeAt), only named after the nearest place.
+  // Let go, it springs from where it was (freeAt) to its place.
   let freeAt: number | null = null;
+  let stopSpring = () => {};
   $effect(() => {
     void vh;
     const k = nsnap;
@@ -364,18 +366,25 @@
   let seenTap = 0;
   $effect(() => { const t = app.mineTap; if (t && t.n !== seenTap) { seenTap = t.n; untrack(() => goPlace(t.k)); } });
   function openLines() { flushSync(() => { app.startLines = true; app.start = true; }); }
-  const stepN = () => { nsnap = nsnap === "peek" ? "half" : nsnap === "half" ? "full" : "peek"; };
+  // To a place with the spring, from where the sheet is now (`v`: the finger's speed, px per ms, down +).
+  function glide(to: NSnap, from: number, v = 0) {
+    stopSpring();
+    const t = tops();
+    dragging = true;   // the spring moves it, not the CSS transition
+    if (to !== nsnap) freeAt = from;   // the place changes: its effect starts from here, not from the place itself
+    nowTop = from;
+    nsnap = to;
+    stopSpring = springTo(from, t[to], v, x => (nowTop = x), () => { dragging = false; nowTop = to === "half" ? null : tops()[to]; });
+  }
+  const here = () => nowEl?.getBoundingClientRect().top ?? tops()[nsnap];
+  const stepN = () => glide(nsnap === "peek" ? "half" : nsnap === "half" ? "full" : "peek", here());
   const nowDrag = $derived<SheetDrag>({
     ignore: narrow.current ? undefined : "*",
-    start: () => { top0 = nowEl?.getBoundingClientRect().top ?? 0; dragging = true; },
-    move: dy => { const t = tops(); nowTop = Math.max(t.full, Math.min(t.peek + 40, top0 + dy)); },
-    end: dy => {
-      dragging = false;
-      const t = tops(), at = Math.max(t.full, Math.min(t.peek, top0 + dy));
-      // It rests where it was let go, however fast (no snapping).
-      const near = (["peek", "half", "full"] as NSnap[]).reduce((a, b) => (Math.abs(t[b] - at) < Math.abs(t[a] - at) ? b : a));
-      nowTop = at;
-      if (near !== nsnap) { freeAt = at; nsnap = near; }
+    start: () => { stopSpring(); top0 = here(); dragging = true; },
+    move: dy => { const t = tops(); nowTop = rubber(top0 + dy, t.full, t.peek); },
+    end: (dy, v) => {
+      const t = tops(), at = rubber(top0 + dy, t.full, t.peek);
+      glide(pickDetent(t, at, v), at, v);
     },
     tap: stepN,
   });

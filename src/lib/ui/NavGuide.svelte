@@ -24,7 +24,7 @@
   import Icon from "./Icon.svelte";
   import { durText } from "../format";
   import { rise } from "../anim";
-  import { sheetDrag, type SheetDrag } from "../sheetDrag";
+  import { pickDetent, rubber, safeInsets, sheetDrag, springTo, type SheetDrag } from "../sheetDrag";
   import { euro, fareOf, priceOf } from "../fares";
 
   let { app }: { app: AppState } = $props();
@@ -774,32 +774,46 @@
     return () => { removeEventListener(ev, on); clearTimeout(t); app.compass = null; };
   });
 
-  // ---- The sheet by its handle (a phone): half, all of it, or down to the bar.
+  // ---- The sheet by its handle (a phone): three places (as a native sheet), low (where to, when, the legs), the
+  // middle (half the screen) and all of it (up to the banner); dragged right down, it folds to its bar. It follows the
+  // finger and, let go, springs to the place it was heading for (a flick can go past one).
+  type NavSnap = "low" | "half" | "full";
   let nsnap = $state<"half" | "full">("half");
-  let sheetEl = $state<HTMLElement>();
+  let sheetEl = $state<HTMLElement>(), headEl = $state<HTMLElement>();
   let dragH = $state<number | null>(null);
-  let freeH = $state<number | null>(null);   // let go after a drag: it stays that tall
+  let freeH = $state<number | null>(null);   // the place it rests at (px tall), once moved
   let sheetH = $state(0);
   let h0 = 0;
-  const clampH = (h: number) => Math.max(80, Math.min(innerHeight * 0.9, h));
+  let stopSpring = () => {};
+  function navPlaces(): Record<NavSnap, number> {
+    const { top: st, bottom: sb } = safeInsets(), vh = innerHeight;
+    const sheetTop = sheetEl?.getBoundingClientRect().top ?? 0;
+    const low = headEl ? headEl.getBoundingClientRect().bottom - sheetTop + 34 : 190;
+    // All of it: up to just under the banner and «Μετά» (they stay readable); its foot 8 px over the screen's.
+    const full = vh - (140 + st) - (8 + sb);
+    return { low: Math.min(low, full), half: Math.max(low, Math.min(full, vh * 0.53)), full };
+  }
+  const placeOf = (h: number): NavSnap => pickDetent(navPlaces(), h, 0);
+  function glide(to: NavSnap, from: number, v = 0) {
+    stopSpring();
+    const p = navPlaces();
+    dragH = from;
+    nsnap = to === "full" ? "full" : "half";
+    stopSpring = springTo(from, p[to], v, x => (dragH = x), () => { freeH = p[to]; dragH = null; });
+  }
+  const here = () => sheetEl?.getBoundingClientRect().height ?? navPlaces().half;
+  const stepNav = () => { const k = placeOf(here()); glide(k === "low" ? "half" : k === "half" ? "full" : "low", here()); };
   const navDrag = $derived<SheetDrag>({
     ignore: "button",
-    start: () => { h0 = sheetEl?.getBoundingClientRect().height ?? 0; },
-    move: dy => { dragH = clampH(h0 - dy); },
-    end: dy => {
-      const h = clampH(h0 - dy);
-      dragH = null;
-      if (h > 140) {
-        // It stays as tall as it was let go, however fast (the map above it, as much as the rider wants); only
-        // dragged right down it folds to its bar.
-        freeH = h;
-        nsnap = h > innerHeight * 0.6 ? "full" : "half";
-        return;
-      }
-      freeH = null;
-      setMini(true);
+    start: () => { stopSpring(); h0 = here(); dragH = h0; },
+    move: dy => { const p = navPlaces(); dragH = rubber(h0 - dy, Math.min(80, p.low), p.full); },
+    end: (dy, v) => {
+      const p = navPlaces(), h = rubber(h0 - dy, Math.min(80, p.low), p.full);
+      // Dragged well under its lowest place: it folds to its bar.
+      if (h < p.low - 56 && v >= 0) { stopSpring(); dragH = null; freeH = null; setMini(true); return; }
+      glide(pickDetent(p, h, -v), h, -v);   // the finger down (v +) makes it shorter
     },
-    tap: () => { freeH = null; nsnap = nsnap === "half" ? "full" : "half"; },
+    tap: stepNav,
   });
   const miniDrag: SheetDrag = { ignore: "button", start: () => {}, move: () => {}, end: (dy, v) => { if (dy < -30 || v < -0.4) setMini(false); }, tap: () => setMini(false) };
 
@@ -931,8 +945,9 @@
     {/key}
     {#if ban.then}<div class="then"><span>{ban.thenL === "ΜΕΤΑ" ? "Μετά" : ban.thenL === "ΕΠΟΜΕΝΗ" ? "Επόμενη" : "Κατεβαίνεις"}</span>{ban.then}</div>{/if}
 
-    <!-- On the map: the bus (and the stop) in view; the map turned with the phone. Just above the sheet. -->
-    <div class="mapbtns" hidden={app.stack.length > 0} style:bottom="{(sheetH || 0) + 12}px">
+    <!-- On the map: the bus (and the stop) in view; the map turned with the phone. At the right under the banner,
+         always there (a phone): the sheet dragged does not take them along; pulled up all the way it covers them. -->
+    <div class="mapbtns" hidden={app.stack.length > 0}>
       {#if bus && ride && !(rideIsNow && app.guideOn)}
         <button type="button" class="mb" class:on={peeking} onclick={peek} aria-pressed={peeking} aria-label={peeking ? "Πίσω σε εμένα" : `Πού είναι το ${ride.line}`} title={peeking ? "Πίσω σε εμένα" : `Πού είναι το ${ride.line}`}><Icon name={peeking ? "locate" : "bus"} size={20} /></button>
       {/if}
@@ -949,11 +964,11 @@
     <section class="sheet" class:full={nsnap === "full"} class:dragging={dragH != null} aria-label="Η διαδρομή" hidden={app.stack.length > 0} bind:this={sheetEl} bind:offsetHeight={sheetH}
       class:free={freeH != null} style:height={dragH != null ? `${dragH}px` : freeH != null ? `${freeH}px` : undefined}>
       <div class="grip" role="button" tabindex="0" aria-label={nsnap === "full" ? "Μικρότερο" : "Μεγαλύτερο"} use:sheetDrag={navDrag}
-        onkeydown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); nsnap = nsnap === "half" ? "full" : "half"; } }}>
+        onkeydown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); stepNav(); } }}>
         <button type="button" class="round sm minbtn" aria-label="Σμίκρυνση πλοήγησης" title="Σμίκρυνση" onclick={() => setMini(true)}><Icon name="chevron" size={18} /></button>
       </div>
       <!-- Where to, when, and the trip to scale with the user on it -->
-      <header class="head">
+      <header class="head" bind:this={headEl}>
         <span class="dest"><small>ΠΡΟΣ</small><b>{g.dest}</b></span>
         <span class="eta"><b>{arrived ? clockHM(nowS) : arriveAt ? clockHM(arriveAt) : "–"}</b><small>{arrived ? "έφτασες" : arriveAt ? `σε ${durText(Math.max(1, Math.round((arriveAt - nowS) / 60)))}` : "άφιξη"}</small></span>
       </header>
@@ -1112,7 +1127,9 @@
   .sheet.full { max-height: 88dvh; }
   .sheet.free { max-height: none; }
   .sheet.dragging { max-height: none; overflow: hidden; }
-  .mapbtns { position: absolute; right: 12px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; z-index: 2; pointer-events: none; }
+  .mapbtns { position: absolute; right: 12px; top: calc(140px + env(safe-area-inset-top)); display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+    z-index: 1; pointer-events: none; }
+  .sheet { z-index: 3; }
   .mapbtns[hidden] { display: none; }
   .mb { pointer-events: auto; width: 48px; height: 48px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 50%;
     background: var(--surface); color: var(--fg); cursor: pointer; box-shadow: 0 6px 18px rgba(0, 0, 0, .3); }
@@ -1255,7 +1272,7 @@
   /* A computer: a column at the left with everything (the steps after this one too), the banner over the map's
      middle with what comes after it in it. */
   @media (min-width: 720px) {
-    .mapbtns { bottom: 24px !important; right: 64px; }
+    .mapbtns { top: auto; bottom: 24px !important; right: 64px; }
     .guide.carded .sheet { display: none; }
     .sheet { left: 16px; right: auto; top: 16px; bottom: auto; width: 372px; max-height: calc(100dvh - 32px); padding: 14px 14px 12px; border-radius: 24px; border: 1px solid var(--border);
       box-shadow: 0 20px 50px rgba(0, 0, 0, .35); gap: 12px; }

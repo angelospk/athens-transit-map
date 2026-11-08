@@ -15,7 +15,7 @@
   import { untrack, type Snippet } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
   import type { SheetState } from "../sheet";
-  import { restAt } from "../sheetDrag";
+  import { pickDetent, rubber, springTo } from "../sheetDrag";
   import type { AppState } from "../state.svelte";
   import Back from "./Back.svelte";
   import Icon from "./Icon.svelte";
@@ -37,12 +37,17 @@
   const close = () => (onclose ?? (() => app.closeCards()))();
 
   const narrow = new MediaQuery("(max-width: 719px)");
-  let sheet = $state<SheetState>("open");
+  // A phone: three places, as a native sheet: «open» (all of it), «mid» (its top at about half the screen, so the
+  // map and its buttons above it show; where a tall card opens) and «peek» (its header). `sheet` is open or peek.
+  type Place = "open" | "mid" | "peek";
+  let place = $state<Place>("mid");
+  const sheet = $derived<SheetState>(place === "peek" ? "peek" : "open");
   let drag = $state(0);   // px the finger has moved it from its place
   let dragging = $state(false);
-  let grab: { id: number; y: number; from: SheetState; range: number; moved: boolean; base: number; t: number; ly: number; v: number } | null = null;
-  // Where it rests when let go between open and its header (px down from open): anywhere, not only the two places.
+  let grab: { id: number; y: number; from: Place; range: number; moved: boolean; base: number; t: number; ly: number; v: number } | null = null;
+  // While the spring moves it: where it is (px down from open).
   let rest = $state<number | null>(null);
+  let stopSpring = () => {};
   let card: HTMLElement | undefined = $state();
   let cardH = $state(0), topH = $state(0);
   // How far it travels to peek: all but its padding (the bottom one holds the safe area) and its top.
@@ -52,24 +57,33 @@
     return Math.max(0, card.offsetHeight - topH - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom));
   }
   const range = $derived.by(() => { void cardH; void topH; return measure(); });
-  const shift = $derived(narrow.current ? (rest ?? (sheet === "peek" ? range : 0)) + drag : 0);
+  let vh = $state(typeof innerHeight === "number" ? innerHeight : 800);
+  // The places, px down from open. «mid» puts its top at 47% of the screen; a card shorter than that has no middle.
+  function places(r = range): Record<Place, number> {
+    const bottom = card ? parseFloat(getComputedStyle(card).bottom) || 12 : 12;
+    const openTop = vh - bottom - cardH, mid = Math.max(0, Math.min(r, vh * 0.47 - openTop));
+    return { open: 0, mid: mid < 40 ? 0 : mid, peek: r };
+  }
+  const shift = $derived.by(() => { void vh; return narrow.current ? (rest ?? places()[place]) + drag : 0; });
 
   $effect(() => {
     void key;
     // A finger still down on the old sheet must not move, or settle, the new one.
-    untrack(() => { sheet = "open"; drag = 0; dragging = false; grab = null; rest = null; });
+    untrack(() => { stopSpring(); place = "mid"; drag = 0; dragging = false; grab = null; rest = null; });
   });
 
-  const flip = (s: SheetState): SheetState => (s === "open" ? "peek" : "open");
+  // A tap on its header: from its header to the middle, from the middle to all of it, and from all of it down again.
+  const next = (p: Place): Place => (p === "peek" ? "mid" : p === "mid" && places().mid > 0 ? "open" : "peek");
 
   // Riding behind a vehicle (3D chase): on a phone the sheet steps down to its header, so the street shows.
   // Riding it («Είμαι μέσα») keeps the sheet open under the 3D view: the stops left are what the rider needs.
-  $effect(() => { if (app.chase && narrow.current && !app.ride) untrack(() => { sheet = "peek"; drag = 0; rest = null; }); });
+  $effect(() => { if (app.chase && narrow.current && !app.ride) untrack(() => { stopSpring(); place = "peek"; drag = 0; rest = null; }); });
 
   function down(e: PointerEvent) {
     if (!narrow.current || e.button !== 0 || grab || (e.target as Element).closest("button:not(.grab)")) return;
+    stopSpring();
     const r = measure();
-    grab = { id: e.pointerId, y: e.clientY, from: sheet, range: r, moved: false, base: rest ?? (sheet === "peek" ? r : 0), t: performance.now(), ly: e.clientY, v: 0 };
+    grab = { id: e.pointerId, y: e.clientY, from: place, range: r, moved: false, base: rest ?? places(r)[place], t: performance.now(), ly: e.clientY, v: 0 };
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
   }
   function move(e: PointerEvent) {
@@ -81,7 +95,14 @@
     const now = performance.now();
     if (now > grab.t) grab.v = 0.7 * ((e.clientY - grab.ly) / (now - grab.t)) + 0.3 * grab.v;
     grab.t = now; grab.ly = e.clientY;
-    drag = Math.max(-grab.base, Math.min(grab.range - grab.base, dy));
+    drag = rubber(grab.base + dy, 0, grab.range) - grab.base;
+  }
+  // Let go: to the place it was heading for (open, or down to its header), with the spring (sheetDrag.ts).
+  function glide(to: Place, from: number, v = 0, r = measure()) {
+    stopSpring();
+    place = to;
+    rest = from; drag = 0; dragging = true;
+    stopSpring = springTo(from, places(r)[to], v, x => (rest = x), () => { rest = null; dragging = false; });
   }
   // Also on pointercancel and a lost capture, so the sheet never stays between its places.
   function end(e: PointerEvent) {
@@ -90,17 +111,14 @@
     grab = null;
     dragging = false;
     if (g.moved) {
-      // A flick goes all the way; otherwise it stays where it was let go.
-      const v = performance.now() - g.t > 120 ? 0 : g.v;
-      const at = restAt(g.base + drag, 0, g.range, v);
-      sheet = at > g.range / 2 ? "peek" : "open";
-      rest = at <= 0 || at >= g.range ? null : at;
-    } else if (e.type === "pointerup") { sheet = flip(g.from); rest = null; }
-    drag = 0;
+      const v = performance.now() - g.t > 120 ? 0 : g.v, at = g.base + drag;
+      glide(pickDetent(places(g.range), at, v), at, v, g.range);
+    } else if (e.type === "pointerup") { glide(next(g.from), g.base, 0, g.range); }
+    else drag = 0;
   }
 </script>
 
-<svelte:window onkeydown={e => { if (e.key === "Escape" && closeOnEscape) close(); }} />
+<svelte:window bind:innerHeight={vh} onkeydown={e => { if (e.key === "Escape" && closeOnEscape) close(); }} />
 
 <section class="card" class:compact class:dragging class:peek={narrow.current && sheet === "peek"} aria-label="Λεπτομέρειες" bind:this={card} bind:offsetHeight={cardH}
   style:transform={shift ? `translateY(${shift}px)` : undefined}>
@@ -109,7 +127,7 @@
     onlostpointercapture={end}>
     <!-- Pointer taps and drags are handled above; a click with no pointer (Enter, Space) comes here. -->
     <button type="button" class="grab" aria-expanded={sheet === "open"} aria-controls="card-body"
-      aria-label={sheet === "open" ? "Σύμπτυξη λεπτομερειών" : "Ανάπτυξη λεπτομερειών"} onclick={e => { if (e.detail === 0) { sheet = flip(sheet); rest = null; } }}><span></span></button>
+      aria-label={sheet === "open" ? "Σύμπτυξη λεπτομερειών" : "Ανάπτυξη λεπτομερειών"} onclick={e => { if (e.detail === 0) { glide(next(place), shift); } }}><span></span></button>
     <header>
       {#if !(compact && narrow.current) || app.stack.length > 1}<Back {app} onclose={close} />{/if}
       <div class="hd">{@render header()}</div>

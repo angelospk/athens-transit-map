@@ -34,7 +34,9 @@
   $effect(() => {
     const on = narrow.current && (pop === "trip" || app.stack.length > 0);
     document.documentElement.toggleAttribute("data-sheet", on);
-    return () => document.documentElement.removeAttribute("data-sheet");
+    // The planner at the top takes the map's right column too (a card at the foot does not: they stay).
+    document.documentElement.toggleAttribute("data-trippop", narrow.current && pop === "trip");
+    return () => { document.documentElement.removeAttribute("data-sheet"); document.documentElement.removeAttribute("data-trippop"); };
   });
   // A computer with the planner open: a card opens beside it, not over it (CardSheet reads this).
   $effect(() => {
@@ -607,7 +609,7 @@
     :global(:root[data-tripsheet]) .popwrap.tabbed { top: auto !important; bottom: calc(8px + env(safe-area-inset-bottom)) !important; height: var(--trip-h, 52dvh);
       max-height: none !important; transition: height .26s cubic-bezier(.2, .8, .2, 1); }
     :global(:root[data-tripsheet="peek"]) { --trip-h: var(--trip-peek, 200px); }
-    :global(:root[data-tripsheet="half"]) { --trip-h: 52dvh; }
+    :global(:root[data-tripsheet="half"]) { --trip-h: 53dvh; }
     :global(:root[data-tripsheet="full"]) { --trip-h: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
     :global(:root[data-tripfree]) .popwrap.tabbed { height: var(--trip-free) !important; }
     :global(:root[data-tripdrag]) .popwrap.tabbed { height: var(--trip-drag) !important; transition: none; }
@@ -615,13 +617,13 @@
   @media (max-width: 719px) {
     :global(:root[data-sheet]) .popwrap { left: 8px !important; right: 8px !important; width: auto; max-width: none; }
     :global(:root[data-tripsheet]) .popwrap.tabbed { left: 8px !important; right: 8px !important; }   /* the route's sheet: floating, as every sheet */
-    :global(:root[data-sheet]) .rail { opacity: 0; pointer-events: none; transform: translateX(12px); }
+    :global(:root[data-trippop]) .rail { opacity: 0; pointer-events: none; transform: translateX(12px); }
     :global(:root[data-sheet]) .panel:not(.home) { right: 16px; width: auto; max-width: none; }
     .under { right: 68px; width: auto; max-width: none; }
     .rail { transition: opacity .2s, transform .25s cubic-bezier(.2, .8, .2, 1); }
   }
   @media (pointer: coarse) and (max-width: 719px) {
-    .rail { top: calc(16px + env(safe-area-inset-top)); right: 16px; }
+    .rail { top: var(--col-top); right: 16px; }
     .panel, .popwrap { right: 72px; }
     .popwrap { top: calc(16px + env(safe-area-inset-top)); max-width: none; max-height: calc(100dvh - 32px - env(safe-area-inset-top)); }
     .panel.compact { max-width: calc(100% - 88px); }
@@ -635,19 +637,12 @@
     @keyframes pageIn { from { transform: translateX(24px); opacity: 0; } }
   }
   @media (max-width: 719px) and (prefers-reduced-motion: reduce) { :global(:root) .popwrap.page[class] { animation: none; } }
-  /* A phone, the home sheet lowered (compact mockup 15Γ): the search and chips are the sheet's, on top; the map's
-     buttons go to the bottom right in one column (layers, 3D), above locate; the planner and the legend are elsewhere. */
-  @media (max-width: 719px) {
-    :global(:root[data-homepeek]) .homebar { display: none; }
-    :global(:root[data-homepeek]) .rail { top: auto; bottom: calc(var(--peek, 120px) + 16px + 52px + env(safe-area-inset-bottom)); }
-    /* The compass shown (the map turned or in 3D): it sits over locate, the tools go up by it. */
-    :global(:root[data-homepeek]:has(.north-ctl .turned, .north-ctl .tilted)) .rail { bottom: calc(var(--peek, 120px) + 16px + 104px + env(safe-area-inset-bottom)); }
-    :global(:root[data-homepeek]) .rail .tripb, :global(:root[data-homepeek]) .rail .helpb { display: none; }
-  }
-  /* A phone with the home sheet (compact mockup 15Γ): its own search is on the map; the map's tools show only while
-     the sheet is lowered (at the bottom right then). */
+  /* A phone with the home sheet (compact mockup 15Γ): its own search and chips are on the map, at the top. The map's
+     tools stay at the top right in one column under them (app.css: --col-top), wherever the sheet is: it does not take
+     them along, and only covers them when pulled up past them (as a native sheet). The planner and the legend have
+     their own places in the sheet. */
   @media (max-width: 719px) {
     :global(:root[data-home]) .homebar { display: none; }
-    :global(:root[data-home]:not([data-homepeek])) .rail { display: none; }
+    :global(:root[data-home]) .rail .tripb, :global(:root[data-home]) .rail .helpb { display: none; }
   }
 </style>

@@ -2404,23 +2404,6 @@
     return () => { m.off("move", keepIn); m.off("moveend", besideLine); marks.forEach(k => k.remove()); };
   });
 
-  // A phone with a card at the foot: the recenter button sits right over the card's top right corner (the card's height
-  // changes as it is dragged, so it is followed each frame while shown).
-  function overSheet(el: HTMLElement) {
-    let raf = 0;
-    const step = () => {
-      const card = document.querySelector<HTMLElement>("section.card");
-      const on = window.matchMedia("(max-width: 719px)").matches && !!card;
-      if (on) {
-        const top = card!.getBoundingClientRect().top;
-        el.style.top = `${Math.max(12, Math.round(top - 44 - 12))}px`;
-      } else el.style.top = "";
-      raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-    return { destroy: () => cancelAnimationFrame(raf) };
-  }
-
   // The admin mode (AdminBar.svelte): every rail station a handle to drag to where the map shows it; let go, it is
   // moved (app.moveStation, kept on this device until exported).
   $effect(() => {
@@ -3176,7 +3159,7 @@
 {#if app.bus3d && app.threeD && !app.load3d}<Route3D {app} key={app.bus3d} />{/if}
 {#if followKey && !app.start && !app.chase}
   <!-- The picked bus, train or tram back in the middle, followed again (a drag on the map lets it go). -->
-  <button type="button" class="recenter" class:on={following} aria-pressed={following} onclick={recenter} use:overSheet
+  <button type="button" class="recenter" class:on={following} aria-pressed={following} onclick={recenter}
     aria-label={following ? "Ακολουθείς το όχημα" : "Ξανά στο όχημα"} title={following ? "Ακολουθείς το όχημα" : "Ξανά στο όχημα"}>
     <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <path d="M3 7V4.5A1.5 1.5 0 0 1 4.5 3H7M13 3h2.5A1.5 1.5 0 0 1 17 4.5V7M17 13v2.5a1.5 1.5 0 0 1-1.5 1.5H13M7 17H4.5A1.5 1.5 0 0 1 3 15.5V13" />
@@ -3203,9 +3186,10 @@
   .recenter.on { color: var(--accent); }
   .recenter:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   @media (max-width: 719px) {
-    .recenter { right: 16px; top: calc(env(safe-area-inset-top) + 308px); }
-    :global(:root:has(.rail .utool)) .recenter { top: calc(env(safe-area-inset-top) + 352px); }
-    :global(:root[data-sheet]) .recenter { top: calc(16px + env(safe-area-inset-top)); }
+    /* In the map's right column (app.css), under locate (and the compass, when it shows): it stays there, a card
+       dragged under it does not take it along. */
+    .recenter { right: 16px; top: calc(var(--col-top) + var(--col-tools) + 52px); }
+    :global(:root:has(.north-ctl .turned, .north-ctl .tilted)) .recenter { top: calc(var(--col-top) + var(--col-tools) + 104px); }
   }
   :global(.applemap) { position: absolute; inset: 0; pointer-events: none; }
   :global(.applemap[hidden]) { display: none; }

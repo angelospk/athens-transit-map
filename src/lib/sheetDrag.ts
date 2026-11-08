@@ -62,24 +62,59 @@ export function sheetDrag(node: HTMLElement, h: SheetDrag) {
   };
 }
 
-/** The snap a sheet settles at: a flick goes one step its way, a slow drag to the nearest. */
-export function settleSnap<T extends string>(order: T[], current: T, at: number, places: Record<T, number>, v: number, grows: "up" | "down", dy = 0): T {
-  if (Math.abs(v) > 0.5) {
-    const toBigger = grows === "up" ? v < 0 : v > 0;   // order runs from smallest to biggest
-    const i = order.indexOf(current) + (toBigger ? 1 : -1);
-    return order[Math.max(0, Math.min(order.length - 1, i))];
-  }
-  const near = order.reduce((a, b) => (Math.abs(places[b] - at) < Math.abs(places[a] - at) ? b : a));
-  // A drag of a thumb's length (STEP_PX, `dy`: the finger's way, down +) is meant: it goes at least one step its way,
-  // even if the sheet's own place is still the nearest (a tall sheet's places are far apart; a short drag sprang back).
-  if (near === current && Math.abs(dy) > STEP_PX) {
-    const toBigger = grows === "up" ? dy < 0 : dy > 0;
-    const i = order.indexOf(current) + (toBigger ? 1 : -1);
-    return order[Math.max(0, Math.min(order.length - 1, i))];
-  }
-  return near;
+// ---- Places a sheet rests at (detents), and the spring that takes it there ----------------------------------------
+// As a native sheet: it follows the finger, and let go it goes to the place nearest to where it was heading (its
+// position carried on by its speed for MOMENTUM_MS, so a flick can go past a place), with a short spring that
+// overshoots a little (about 1%) and settles in about a third of a second.
+
+/** How far ahead a let-go sheet is carried by its speed, in ms (a firm flick goes past the next place). */
+export const MOMENTUM_MS = 220;
+
+/** The place (of `places`, in px along the axis it moves on) nearest to where the sheet is heading: at `at`, moving
+ *  at `v` px per ms on that same axis. */
+export function pickDetent<T extends string>(places: Record<T, number>, at: number, v: number): T {
+  const aim = at + v * MOMENTUM_MS;
+  const keys = Object.keys(places) as T[];
+  return keys.reduce((a, b) => (Math.abs(places[b] - aim) < Math.abs(places[a] - aim) ? b : a));
 }
-const STEP_PX = 56;
+
+/** Past its first or last place the sheet still moves, but less and less (as an iOS list pulled past its end). */
+export function rubber(x: number, lo: number, hi: number, k = 0.55): number {
+  if (x < lo) return lo - (1 - 1 / ((lo - x) * k / 120 + 1)) * 120 / k;
+  if (x > hi) return hi + (1 - 1 / ((x - hi) * k / 120 + 1)) * 120 / k;
+  return x;
+}
+
+const SPRING = { w: 15, z: 0.84 };   // rad/s and damping: ~0.35 s to rest, ~1% past the place
+
+/** One step of the spring (pure, for the tests): position and speed (px, px/s) after `dt` seconds. */
+export function springStep(x: number, v: number, to: number, dt: number): [number, number] {
+  const a = -SPRING.w * SPRING.w * (x - to) - 2 * SPRING.z * SPRING.w * v;
+  const nv = v + a * dt;
+  return [x + nv * dt, nv];
+}
+
+/** Moves a value from `from` to `to` with the spring, starting at `v` px per ms (the finger's speed), calling `frame`
+ *  on every animation frame and `done` at rest. Returns a function that stops it (a new grab). Without motion
+ *  (prefers-reduced-motion) it goes straight there. */
+export function springTo(from: number, to: number, v: number, frame: (x: number) => void, done?: () => void): () => void {
+  if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    frame(to); done?.(); return () => {};
+  }
+  let x = from, vs = v * 1000, last = performance.now(), id = 0, stopped = false;
+  const tick = (now: number) => {
+    if (stopped) return;
+    let dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    while (dt > 0) { const h = Math.min(dt, 1 / 240); [x, vs] = springStep(x, vs, to, h); dt -= h; }
+    if (Math.abs(x - to) < 0.4 && Math.abs(vs) < 12) { frame(to); done?.(); return; }
+    frame(x);
+    id = requestAnimationFrame(tick);
+  };
+  id = requestAnimationFrame(tick);
+  return () => { stopped = true; cancelAnimationFrame(id); };
+}
+
 
 /** The screen's safe-area insets in px (the notch, the home bar), read once from CSS. */
 let insets: { top: number; bottom: number } | null = null;
@@ -94,33 +129,30 @@ export function safeInsets(): { top: number; bottom: number } {
   return insets;
 }
 
-/** Where a sheet rests when let go: where the finger left it, within [lo, hi]. No snapping, however fast the finger
- *  moved (a quick drag landed at a place the user had not chosen). `_v` (px per ms) is kept for the callers. */
-export function restAt(at: number, lo: number, hi: number, _v = 0): number {
-  return Math.max(lo, Math.min(hi, at));
-}
-
-/** A bottom sheet moved by its handles with a translateY (its height its own): it rests where it is let go, from
- *  open (0) down to `keep` px still showing; a tap opens it, or lowers it when open. Only on
+/** A bottom sheet moved by its handles with a translateY (its height its own): open (0), or lowered to `keep` px
+ *  still showing; let go it springs to the one it was heading for; a tap opens it, or lowers it when open. Only on
  *  a phone (`on`). The handles alone take the touch, so the sheet's content still scrolls. */
 export function freeSheet(node: HTMLElement, o: { handles: string; keep?: number; on?: () => boolean }) {
-  let rest = 0, start = 0;
+  // rest: the place it is going to (open 0, or lowered); y: where it is drawn now (the spring between them).
+  let rest = 0, y = 0, start = 0, stop = () => {};
   const max = () => Math.max(0, node.offsetHeight - (o.keep ?? 96));
-  const put = (y: number, animate: boolean) => {
-    node.style.transition = animate ? "transform .28s cubic-bezier(.2, .8, .2, 1)" : "none";
-    node.style.transform = y ? `translateY(${y}px)` : "";
+  const put = (to: number) => {
+    y = to;
+    node.style.transition = "none";
+    node.style.transform = to ? `translateY(${to}px)` : "";
   };
+  const go = (to: number, v = 0) => { rest = to; stop(); stop = springTo(y, to, v, put); };
   const drag: SheetDrag = {
     ignore: "button:not(.grip), a, input",
-    start: () => { start = rest; },
-    move: dy => put(Math.max(0, Math.min(max(), start + dy)), false),
-    end: (dy, v) => { rest = restAt(start + dy, 0, max(), v); put(rest, true); },
-    tap: () => { rest = rest > 0 ? 0 : max(); put(rest, true); },
+    start: () => { stop(); start = y; },
+    move: dy => put(rubber(start + dy, 0, max())),
+    end: (dy, v) => { const at = rubber(start + dy, 0, max()); put(at); go(pickDetent({ open: 0, low: max() }, at, v) === "open" ? 0 : max(), v); },
+    tap: () => go(rest > 0 ? 0 : max()),
   };
   const bound: ReturnType<typeof sheetDrag>[] = [];
   const bind = () => {
     while (bound.length) bound.pop()!.destroy();
-    if (o.on && !o.on()) { rest = 0; put(0, false); return; }
+    if (o.on && !o.on()) { stop(); rest = 0; put(0); return; }
     for (const h of node.querySelectorAll<HTMLElement>(o.handles)) bound.push(sheetDrag(h, drag));
   };
   bind();

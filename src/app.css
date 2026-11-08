@@ -245,11 +245,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* «Τώρα» and «Ειδοποιήσεις» on a phone: the sheet holds everything, so the map's buttons give way (App.svelte sets data-home). */
 @media (max-width: 719px) {
-  /* No tab bar (mockup 41, B): the map's tools stay at the top right; its zoom and locate buttons only while the
-     sheet is lowered to its handle (they would sit under it). */
-  :root[data-home]:not([data-homepeek]) .maplibregl-ctrl-group, :root[data-home]:not([data-homepeek]) .details-ctl { display: none; }
-  /* Lowered (compact mockup 15Γ): «Λεπτομέρειες» goes (the settings have it). */
-  :root[data-homepeek] .details-ctl { display: none; }
+  /* No tab bar (mockup 41, B): the map's tools and locate stay at the top right, under the home's search and chips;
+     its zoom and «Λεπτομέρειες» go (pinch, and the settings have it). */
+  :root[data-home] .maplibregl-ctrl-group:not(:has(> button.locate)), :root[data-home] .details-ctl { display: none; }
 }
 
 /* Following a bus in 3D on a phone: the street gets the screen. The top bar, the map's buttons and hints go; the card
@@ -412,11 +410,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* Underground (metro mode): nothing on the ground; the map's markers and pop-ups go, the trains' labels stay. */
 :root[data-under] .maplibregl-marker, :root[data-under] .maplibregl-popup { display: none; }
 
-/* A phone with the planner or a card open (Panel's data-sheet): the map's own buttons (zoom, locate, north, info)
-   step aside, so the open panel and the map have the room. */
+/* A phone with the planner open at the top (Panel's data-trippop): the map's own buttons (zoom, locate, north, info)
+   step aside, so the open panel and the map have the room. A card at the foot leaves them where they are. */
 @media (max-width: 719px) {
   .maplibregl-ctrl-bottom-right { transition: opacity .2s, transform .25s cubic-bezier(.2, .8, .2, 1); }
-  :root[data-sheet] .maplibregl-ctrl-bottom-right { opacity: 0; pointer-events: none; transform: translateX(12px); }
+  :root[data-trippop] .maplibregl-ctrl-bottom-right { opacity: 0; pointer-events: none; transform: translateX(12px); }
 }
 
 /* A phone: the panels and sheets round like the screen's own corners (an iPhone's are about 47 pt; a panel inset
@@ -430,24 +428,23 @@ html.sheet-open .start, html.sheet-open .now, html.sheet-open .card, html.sheet-
 /* The navigator minimised to its bar at the foot (NavGuide): a card opened on the map sits above the bar. */
 @media (max-width: 719px) { html[data-guidemini] .card { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 92px) !important; max-height: calc(100dvh - 200px) !important; } }
 
-/* A phone: the map's compass and locate buttons under its tools at the top right (no tab bar, the home sheet at the
-   foot: down there they sat on the sheet). */
+/* A phone: the map's buttons in one column at the top right, always in the same place (as a native map): the tools
+   (Panel's rail), then locate, then the compass (only once the map is turned or tilted), then «back to the vehicle»
+   (MapView). --col-top: where the column starts: under the home's search and chips when the home sheet is up. A sheet
+   or card dragged never moves them; pulled up past them, it covers them. */
 @media (max-width: 719px) {
+  /* --col-tools: the tools' height and the 8 px under them: 40 px buttons 8 px apart. */
+  :root { --col-top: calc(16px + env(safe-area-inset-top)); --col-tools: 96px; }
+  :root[data-home] { --col-top: calc(124px + env(safe-area-inset-top)); }
+  /* In 3D the tools have one more button (the metro mode); off the home sheet, the planner and the legend too. */
+  :root:has(.rail .utool) { --col-tools: 144px; }
+  :root:not([data-home]) { --col-tools: 192px; }
+  :root:not([data-home]):has(.rail .utool) { --col-tools: 240px; }
   .maplibregl-ctrl-bottom-right .north-ctl,
   .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group:has(> button.locate) { position: fixed; right: 16px; margin: 0 !important; }
-  .maplibregl-ctrl-bottom-right .north-ctl { top: calc(env(safe-area-inset-top) + 204px); }
-  .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group:has(> button.locate) { top: calc(env(safe-area-inset-top) + 256px); }
-  /* In 3D the tools have one more button (the metro mode): the compass and locate move down by it. */
-  :root:has(.rail .utool) .maplibregl-ctrl-bottom-right .north-ctl { top: calc(env(safe-area-inset-top) + 248px); }
-  :root:has(.rail .utool) .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group:has(> button.locate) { top: calc(env(safe-area-inset-top) + 300px); }
-}
-/* The home sheet lowered (compact mockup 15Γ): locate at the bottom right, just above the sheet's 64 px, the tools
-   above it (Panel.svelte); the compass only once the map is turned. */
-@media (max-width: 719px) {
-  :root[data-homepeek] .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group:has(> button.locate) { top: auto !important; bottom: calc(var(--peek, 120px) + 16px + env(safe-area-inset-bottom)); }
-  /* The compass right above locate, once the map is turned or tilted (3D); the tools above it (Panel.svelte). */
-  :root[data-homepeek] .maplibregl-ctrl-bottom-right .north-ctl { top: auto !important; bottom: calc(var(--peek, 120px) + 16px + 52px + env(safe-area-inset-bottom)); }
-  :root[data-homepeek] .maplibregl-ctrl-bottom-right .north-ctl:not(:has(.turned, .tilted)) { display: none; }
+  .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group:has(> button.locate) { top: calc(var(--col-top) + var(--col-tools)); }
+  .maplibregl-ctrl-bottom-right .north-ctl { top: calc(var(--col-top) + var(--col-tools) + 52px); }
+  .maplibregl-ctrl-bottom-right .north-ctl:not(:has(.turned, .tilted)) { display: none; }
 }
 
 /* Inside those see-through panels the tiles (--card: the stats row, the round ‹, the lists) are a darker glass than the

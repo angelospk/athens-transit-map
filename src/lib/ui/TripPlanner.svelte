@@ -10,7 +10,7 @@
   import { isBusId } from "../busNs";
   import { tick, untrack } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
-  import { sheetDrag, type SheetDrag } from "../sheetDrag";
+  import { pickDetent, rubber, sheetDrag, springTo, type SheetDrag } from "../sheetDrag";
   import { slide } from "svelte/transition";
   import { fetchLines, fetchLineStatic, getJSON } from "../api";
   import { bestSlice, matchRoads, routeAlong, sensibleWalk, sliceShape, stationsAlong, stopsBetween, type Mid } from "../planShape";
@@ -296,7 +296,8 @@
   let showList = $state(false);
   // A phone, a trip's details open: a sheet at the foot with a handle (Panel.svelte draws it from the page's root):
   // «peek» shows the options and «Ξεκίνα» over a big map, «half» the details too, «full» all of it. Dragged by the
-  // handle (or the header), it follows the finger and settles at the nearest; a tap on the handle steps it.
+  // handle (or the header), it follows the finger and, let go, springs to the place it was heading for (a flick can
+  // go past one); a tap on the handle steps it.
   const narrow = new MediaQuery("(max-width: 719px)");
   type Snap = "peek" | "half" | "full";
   let snap = $state<Snap>("half");
@@ -328,29 +329,38 @@
   function snapsPx(): Record<Snap, number> {
     const cs = getComputedStyle(document.documentElement);
     const peek = parseFloat(cs.getPropertyValue("--trip-peek")) || 200;
-    return { peek, half: innerHeight * 0.52, full: innerHeight - 24 };
+    return { peek, half: innerHeight * 0.53, full: innerHeight - 24 };
   }
   // The handle and the header drag the sheet (sheetDrag.ts: touch events, so iOS does not scroll instead); their
   // buttons keep their taps. Off a phone nothing is dragged.
   let dragH0 = 0;
-  const clampH = (h: number) => { const s = snapsPx(); return Math.max(s.peek * 0.8, Math.min(s.full, h)); };
-  const stepSnap = () => { freeH = null; snap = snap === "peek" ? "half" : snap === "half" ? "full" : "peek"; };
-  const tripDrag = $derived<SheetDrag>({
-    ignore: sheetOn ? "button:not(.grip)" : "*",
-    start: () => { dragH0 = sheetEl()?.offsetHeight ?? 0; },
-    move: dy => {
+  const rubberH = (h: number) => { const s = snapsPx(); return rubber(h, s.peek, s.full); };
+  // The sheet's height while the finger or the spring moves it (data-tripdrag: no CSS transition then).
+  const putH = (h: number) => {
+    const root = document.documentElement;
+    root.style.setProperty("--trip-drag", `${h}px`);
+    root.dataset.tripdrag = "";
+  };
+  let stopSpring = () => {};
+  function glide(to: Snap, from: number, v = 0) {
+    stopSpring();
+    const s = snapsPx();
+    snap = to;
+    stopSpring = springTo(from, s[to], v, putH, () => {
       const root = document.documentElement;
-      root.style.setProperty("--trip-drag", `${clampH(dragH0 - dy)}px`);
-      root.dataset.tripdrag = "";
-    },
-    end: dy => {
-      const root = document.documentElement;
+      freeH = s[to];   // exactly where the spring left it (the CSS places are close, not the same px)
       delete root.dataset.tripdrag;
       root.style.removeProperty("--trip-drag");
-      // It stays as tall as it was let go, however fast, named after the nearest place.
-      const h = clampH(dragH0 - dy), s = snapsPx();
-      freeH = h;
-      snap = (["peek", "half", "full"] as Snap[]).reduce((a, b) => (Math.abs(s[b] - h) < Math.abs(s[a] - h) ? b : a));
+    });
+  }
+  const stepSnap = () => glide(snap === "peek" ? "half" : snap === "half" ? "full" : "peek", sheetEl()?.offsetHeight ?? snapsPx()[snap]);
+  const tripDrag = $derived<SheetDrag>({
+    ignore: sheetOn ? "button:not(.grip)" : "*",
+    start: () => { stopSpring(); dragH0 = sheetEl()?.offsetHeight ?? 0; },
+    move: dy => putH(rubberH(dragH0 - dy)),
+    end: (dy, v) => {
+      const h = rubberH(dragH0 - dy);
+      glide(pickDetent(snapsPx(), h, -v), h, -v);   // the finger down (v +) makes it shorter
     },
     tap: stepSnap,
   });
