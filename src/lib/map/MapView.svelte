@@ -10,7 +10,7 @@
   import { MediaQuery } from "svelte/reactivity";
   import type { LngLat } from "../glide";
   import { vehicleHeading } from "../heading";
-  import { metroFC } from "../metro";
+  import { metroFC, stationKey } from "../metro";
   import { suburbanFC } from "../suburban";
   import { trainsFC } from "../trains";
   import { RailGlide, trackStops, type Track } from "../rails";
@@ -2420,6 +2420,23 @@
     return { destroy: () => cancelAnimationFrame(raf) };
   }
 
+  // The admin mode (AdminBar.svelte): every rail station a handle to drag to where the map shows it; let go, it is
+  // moved (app.moveStation, kept on this device until exported).
+  $effect(() => {
+    const m = map, data = app.metro, on = app.admin;
+    if (!m || !loaded || !on || !data) return;
+    const marks = data.stations.map(st => {
+      const el = document.createElement("div");
+      el.className = "adm-st";
+      el.innerHTML = `<i></i><b></b>`;
+      el.querySelector("b")!.textContent = titleCase(st.name);
+      const mk = new Marker({ element: el, draggable: true, anchor: "center" }).setLngLat([st.lon, st.lat]).addTo(m);
+      mk.on("dragend", () => { const p = mk.getLngLat(); app.moveStation(stationKey(st), [p.lat, p.lng]); });
+      return mk;
+    });
+    return () => marks.forEach(k => k.remove());
+  });
+
   // The guide's bus, where it is now: its line on a pulsing marker, over the city layer.
   let guideBusMarker: Marker | null = null;
   $effect(() => {
@@ -3020,6 +3037,10 @@
   :global(.ent-mark) { pointer-events: none; width: 24px; height: 24px; border-radius: 7px; display: flex; align-items: center; justify-content: center;
     background: #262a32; color: #e8eaed; box-shadow: 0 0 0 2px #ffffff, 0 2px 6px rgb(0 0 0 / 0.4); font-size: 12px; font-weight: 800; line-height: 1; }
   :global(.ent-mark.best) { background: #2f9e5b; color: #ffffff; }
+  :global(.adm-st) { cursor: grab; display: flex; align-items: center; gap: 6px; }
+  :global(.adm-st i) { width: 18px; height: 18px; border-radius: 50%; background: #f0ae45; box-shadow: 0 0 0 3px #1a1200, 0 2px 8px rgb(0 0 0 / .5); display: block; flex: none; }
+  :global(.adm-st b) { position: absolute; left: 24px; height: 20px; padding: 0 7px; border-radius: 10px; background: rgb(20 22 27 / .9); color: #f0ae45;
+    font-size: 11.5px; font-weight: 800; line-height: 1; white-space: nowrap; display: flex; align-items: center; pointer-events: none; }
   :global(.mine-mark) { cursor: pointer; height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 10px 0 0; border-radius: 14px;
     background: rgb(26 29 35 / 0.94); box-shadow: 0 2px 8px rgb(0 0 0 / 0.35), inset 0 0 0 1px #2c313b; color: #e8eaed; white-space: nowrap; }
   :global(.mine-mark .mm-i) { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #4d8af0; color: #ffffff;

@@ -31,9 +31,20 @@ export function termini(data: MetroData, id: string): [string, string] | null {
 }
 
 export async function loadMetro(): Promise<MetroData> {
-  const r = await fetch(`${import.meta.env.BASE_URL}metro.json`);
+  const [r, f] = await Promise.all([fetch(`${import.meta.env.BASE_URL}metro.json`), fetch(`${import.meta.env.BASE_URL}station-fixes.json`).catch(() => null)]);
   if (!r.ok) throw new Error(`metro.json: HTTP ${r.status}`);
-  return r.json();
+  const data = await r.json() as MetroData;
+  const fixes = f?.ok ? await f.json().catch(() => ({})) as StationFixes : {};
+  return withFixes(data, fixes);
+}
+
+// Station places moved by hand (the admin mode, AdminBar.svelte): STASY's point is a few metres off the map's own
+// station in places. public/station-fixes.json, by stationKey: [lat, lon].
+export type StationFixes = Record<string, [number, number]>;
+export const stationKey = (s: MetroStation) => `${s.name}|${s.lines[0] ?? ""}`;
+export function withFixes(data: MetroData, fixes: StationFixes): MetroData {
+  if (!Object.keys(fixes).length) return data;
+  return { ...data, stations: data.stations.map(s => { const f = fixes[stationKey(s)]; return f ? { ...s, lat: f[0], lon: f[1] } : s; }) };
 }
 
 // The pinned lines' tracks and every station; `sel` marks the tapped one.

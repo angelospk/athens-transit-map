@@ -21,6 +21,7 @@
   import PinSheet from "./lib/ui/PinSheet.svelte";
   import FaresSheet from "./lib/ui/FaresSheet.svelte";
   import MuniReport from "./lib/ui/MuniReport.svelte";
+  import AdminBar from "./lib/ui/AdminBar.svelte";
   import { applyTheme } from "./lib/theme";
 
   const app = new AppState();
@@ -75,3 +76,4 @@
 <PinSheet {app} />
 <FaresSheet {app} />
 {#if app.muniTimes.length}<MuniReport {app} />{/if}
+<AdminBar {app} />

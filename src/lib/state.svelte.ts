@@ -4,7 +4,7 @@ import { directionGroups, isHidden } from "./directions";
 import { ageModeOf, type AgeMode, type Only } from "./format";
 import { fetchV2Alerts, fetchCity, fetchLine, fetchLines, fetchLineStatic, fetchRailMotion, fetchStatus, fetchTile, fetchTrains } from "./api";
 import { cityKey, isCityLive } from "./city";
-import { loadMetro, type MetroData } from "./metro";
+import { loadMetro, withFixes, type MetroData } from "./metro";
 import { loadSuburban, type SuburbanData } from "./suburban";
 import { loadMunicipal, type MunicipalData } from "./municipal";
 import { loadTimetables } from "./muniTables";
@@ -373,6 +373,21 @@ export class AppState {
   theme = $state<Theme>(stored("theme", "system", isTheme));
   // Metro, ISAP and tram (static): every station, and each line's tracks. metroStation: the tapped station.
   metro = $state.raw<MetroData | null>(null);
+  // The admin mode (AdminBar.svelte, ?admin and a password): stations dragged on the map; the moves kept on this
+  // device until exported as public/station-fixes.json.
+  admin = $state(false);
+  adminFixes = $state.raw<import("./metro").StationFixes>(stored("adminFixes", {}, (v): v is import("./metro").StationFixes => !!v && typeof v === "object"));
+  moveStation(key: string, at: [number, number]) {
+    this.adminFixes = { ...this.adminFixes, [key]: [+at[0].toFixed(6), +at[1].toFixed(6)] };
+    store("adminFixes", this.adminFixes);
+    if (this.metro) this.metro = { ...this.metro, stations: this.metro.stations.map(s => (`${s.name}|${s.lines[0] ?? ""}` === key ? { ...s, lat: at[0], lon: at[1] } : s)) };
+  }
+  clearStationMoves() {
+    this.adminFixes = {};
+    store("adminFixes", {});
+    this.metro = null;
+    this.loadMetro();
+  }
   metroStation = $state<string | null>(null);
   // Suburban rail (Προαστιακός): its corridors and stations. railStation: the id of the tapped station,
   // whose card shows its live board.
@@ -1155,7 +1170,7 @@ export class AppState {
   loadMetro() {
     if (!this.rail || this.metro || this.metroLoading) return;
     this.metroLoading = true;
-    loadMetro().then(d => { this.metro = d; this.findStation(); }, () => this.say("Δεν φόρτωσαν οι γραμμές του μετρό."))
+    loadMetro().then(d => { this.metro = this.admin ? withFixes(d, this.adminFixes) : d; this.findStation(); }, () => this.say("Δεν φόρτωσαν οι γραμμές του μετρό."))
       .finally(() => (this.metroLoading = false));
   }
 
