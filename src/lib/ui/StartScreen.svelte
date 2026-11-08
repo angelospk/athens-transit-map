@@ -258,7 +258,7 @@
   });
   const nearStops = $derived.by((): Place[] => {
     const at = nearAt;
-    if (!at || app.savingPlace) return [];
+    if (!at) return [];   // setting «Σπίτι»: the stops near are a choice too (compact mockup 16)
     return own.flatMap(p => { const d = Math.min(...p.pts.map(q => distM(at, q))); return d < 500 ? [{ p, d }] : []; })
       .sort((a, b) => a.d - b.d).slice(0, 3).map(({ p, d }) => ({ ...p, hint: `${dist(d)} · ${stopHint(p)}` }));
   });
@@ -270,7 +270,7 @@
     if (!open) return [];
     // Nothing typed, or a field already set (tapped to change it): the ways to choose without typing.
     if (!ends[open].text.trim() || ends[open].place) {
-      const near = [...nearStations, ...nearStops].map((p, k): Row => ({ key: `near|${p.kind}|${p.label}|${p.pts[0].join()}`, place: p, head: k === 0 ? (app.myPos ? "Κοντά σου" : "Κοντά") : undefined }));
+      const near = [...nearStations, ...nearStops].map((p, k): Row => ({ key: `near|${p.kind}|${p.label}|${p.pts[0].join()}`, place: p, head: k === 0 ? (app.savingPlace ? "Στάσεις κοντά σου" : app.myPos ? "Κοντά σου" : "Κοντά") : undefined }));
       return [{ key: "me", me: true }, ...(app.savingPlace ? [] : savedPlaces(app.places).map(p => ({ key: p.kind!, place: p }))), ...near, { key: "map", map: true }];
     }
     const { first, last } = lineHits;
@@ -385,11 +385,29 @@
     }, 350);
   }
 
+  // ---- Setting «Σπίτι» or «Δουλειά» on a phone (compact mockups 16, 16β): the search opens at once, «Εδώ που είσαι
+  // τώρα» first with the address there, then the map and the stops near. Where the user is, by its address.
+  const savingWord = $derived(app.savingPlace === "home" ? "Σπίτι" : app.savingPlace === "work" ? "Δουλειά" : "");
+  $effect(() => {
+    if (!app.start || !app.savingPlace || wide || app.pickFor || open !== null) return;
+    untrack(() => { open = "to"; typingOn = true; });
+  });
+  let hereAddr = $state.raw<Place | null>(null);
+  $effect(() => {
+    const me = app.myPos, on = !!app.savingPlace && app.start;
+    if (!on || !me) return;
+    const ac = new AbortController();
+    void reverseGeocode(me, ac.signal).then(p => { if (!ac.signal.aborted) hereAddr = p; }).catch(() => {});
+    return () => ac.abort();
+  });
+  const hereText = $derived(hereAddr ? [hereAddr.label, hereAddr.hint?.split(",")[0]].filter(Boolean).join(", ") : "");
+  function cancelSaving() { app.savingPlace = null; app.start = false; open = null; }
+
   function choose(f: Field, p: Place) {
     // Setting «Σπίτι» or «Δουλειά» (the home screen's shortcuts): the place picked is saved, and the screen closes.
     const saving = app.savingPlace;
     if (saving) {
-      const label = p.kind === "me" ? ME : titleCase(p.label);
+      const label = p.kind === "me" ? (hereText || ME) : titleCase(p.label);
       app.setPlace(saving, { label, at: centre(p.pts) });
       app.notify(`${saving === "home" ? "Σπίτι" : "Δουλειά"}: ${label}`);
       app.savingPlace = null;
@@ -807,7 +825,7 @@
   // ↖: the place's name into «Προς», to go on typing from it.
   // Typing (compact mockup 3): the row Enter would take is lit; the lines go in one row of chips, each with its other end.
   const firstLine = $derived(rows.findIndex(r => r.line));
-  const topRow = $derived(rows[0] && !rows[0].line && !rows[0].map && !rows[0].me ? 0 : -1);   // what Enter takes
+  const topRow = $derived(rows[0] && !rows[0].line && !rows[0].map && (!rows[0].me || !!app.savingPlace) ? 0 : -1);   // what Enter takes
   const lineHead = (q: string) => (/\d/.test(q) ? "Γραμμές" : "Γραμμές που περνούν");
   function otherEnd(name: string, q: string): string {
     const parts = titleCase(name).split(/\s+[-–]\s+/), fq = fold(q.trim());
@@ -1199,7 +1217,7 @@
   <!-- A blue circle at the centre; over a stop or a station it snaps onto it, grows round its mark, its name above. -->
   {@const sn = app.pickSnap}
   <div class="aim" class:snap={!!sn} style:--x="{sn?.x ?? 0}px" style:--y="{sn?.y ?? 0}px" aria-hidden="true">
-    <i class="ring"></i><i class="core">{#if sn}<img src="{import.meta.env.BASE_URL}icons/{sn.station ? (sn.kind === "στάση τραμ" ? "tram-logo.svg" : "metro-logo.svg") : "oasa.png"}" alt="" />{/if}</i>
+    <i class="ring"></i><i class="core" class:svc={!!app.savingPlace && !sn}>{#if app.savingPlace && !sn}<Icon name={app.savingPlace} size={15} />{:else if sn}<img src="{import.meta.env.BASE_URL}icons/{sn.station ? (sn.kind === "στάση τραμ" ? "tram-logo.svg" : "metro-logo.svg") : "oasa.png"}" alt="" />{/if}</i>
     {#if sn}
       {#key sn.at.join()}
         <span class="slabel" in:rise={{ y: 6, duration: 220 }}><i class="stip"></i>
@@ -1218,12 +1236,16 @@
   <div class="psheet" transition:rise={{ y: 40 }}>
     {#if app.myPos}<button type="button" class="pcirc pme" aria-label="Η θέση μου" onclick={pickMe}><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5 3.8 10.6a.6.6 0 0 0 .05 1.12l6.6 2.03 2.03 6.6a.6.6 0 0 0 1.12.05z" fill="currentColor" /></svg></button>{/if}
     <i class="pgrip" aria-hidden="true"></i>
-    <div class="phead">
+    {#if app.savingPlace}<span class="psave">{app.savingPlace === "home" ? "Το Σπίτι σου εδώ;" : "Η Δουλειά σου εδώ;"}</span>{/if}
+    <div class="phead" class:saving={!!app.savingPlace}>
       <span class="pmk {app.pickFor}"><svg width="16" height="18" viewBox="0 0 24 28" aria-hidden="true"><path d="M12 27s-9-8.5-9-15a9 9 0 0 1 18 0c0 6.5-9 15-9 15zm0-11.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" fill="currentColor" /></svg></span>
       <span class="ptx"><b>{pickTitle}</b><small>{pickSub}</small></span>
       <button type="button" class="pcirc sm" aria-label="Μοιράσου το σημείο" onclick={pickShare}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5" /><path d="M5 13v7h14v-7" /></svg></button>
     </div>
-    {#if pickNear.length}
+    {#if app.savingPlace && pickNear.find(n => !n.station)}
+      {@const n = pickNear.find(n => !n.station)!}
+      <div class="pnearest"><span class="oasa"><img src="{import.meta.env.BASE_URL}icons/oasa.png" alt="" /></span><span>Πιο κοντινή στάση: <b>{n.name}</b></span><span class="pw"><Icon name="walk" size={13} />{n.walk}′</span></div>
+    {:else if pickNear.length && !app.savingPlace}
       <div class="pnear">
         {#each pickNear as n (n.key)}
           <button type="button" class="pn" onclick={() => app.centerOn([n.at[1], n.at[0]])}>
@@ -1248,7 +1270,7 @@
     {/if}
     <div class="pgo">
       <button type="button" class="pcancel" onclick={() => (app.pickFor = null)}>{checking ? "Πίσω" : "Άκυρο"}</button>
-      <button type="button" class="pgomain" disabled={!app.mapCenter} onclick={takeCentre}><Icon name="route" size={18} /><span>{checking ? "Άλλαξε εδώ" : app.savingPlace ? `Κράτα το ως ${app.savingPlace === "home" ? "Σπίτι" : "Δουλειά"}` : app.pickFor === "from" ? "Ξεκίνα από εδώ" : "Πήγαινέ με εδώ"}</span></button>
+      <button type="button" class="pgomain" disabled={!app.mapCenter} onclick={takeCentre}><Icon name={app.savingPlace ?? "route"} size={18} /><span>{checking ? "Άλλαξε εδώ" : app.savingPlace ? `Αυτό είναι ${app.savingPlace === "home" ? "το Σπίτι" : "η Δουλειά"}` : app.pickFor === "from" ? "Ξεκίνα από εδώ" : "Πήγαινέ με εδώ"}</span></button>
     </div>
   </div>
   {:else}
@@ -1360,15 +1382,22 @@
           <button type="button" class="pback" aria-label="Πίσω" onclick={close}><Icon name="back" size={20} /></button>
           <button type="button" class="pswap" class:turned aria-label="Αντιστροφή αφετηρίας και προορισμού" aria-disabled={!canSwap} onclick={() => { if (canSwap) swap(); }}><Icon name="swap" size={19} /></button>
         {/if}
+        {#if typing && app.savingPlace}
+          <div class="svhead">
+            <button type="button" class="svback" aria-label="Πίσω" onclick={cancelSaving}><Icon name="back" size={20} /></button>
+            <span class="svic"><Icon name={app.savingPlace} size={18} /></span>
+            <span class="svt"><b>Όρισε {app.savingPlace === "home" ? "το" : "τη"} {savingWord}</b><small>για να βλέπεις πόσο θες ως εκεί, με ένα πάτημα</small></span>
+          </div>
+        {/if}
         {#each (app.savingPlace || intro || find ? ["to"] : !wide ? ["from", "to"] : askFrom ? ["to", "from"] : ["to"]) as Field[] as f (f)}
           {#if !typing || f === open}
           <div class="field end {f}" class:open={open === f} class:set={!!ends[f].place} class:swapped class:search={intro}>
             {#if intro}<label class="fs" for="start-{f}"><Icon name="search" size={20} /><span class="sr">Πού πας;</span></label>
             {:else if find}<label class="sr" for="start-{f}">Βρες γραμμή, στάση ή μέρος</label><span class="fs2" aria-hidden="true"><Icon name="search" size={19} /></span>
-            {:else if wide || app.savingPlace || pair}<span class="mk {f}" aria-hidden="true"></span><label class="fl" for="start-{f}">{f === "from" ? "Από" : pair ? "Προς" : "Πού"}</label>
+            {:else if wide || (app.savingPlace && !typing) || pair}<span class="mk {f}" aria-hidden="true"></span><label class="fl" for="start-{f}">{f === "from" ? "Από" : pair ? "Προς" : "Πού"}</label>
             {:else}<label class="sr" for="start-{f}">{f === "from" ? "Από πού ξεκινάς" : "Πού θέλεις να πας"}</label>{#if typing}<span class="fs2 on" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 20 20" /></svg></span>{:else if ends[f].place?.kind === "me"}<span class="mearr" aria-hidden="true"><svg class="arr" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5 3.8 10.6a.6.6 0 0 0 .05 1.12l6.6 2.03 2.03 6.6a.6.6 0 0 0 1.12.05z" fill="currentColor" /></svg></span>{:else if !ends[f].place}<span class="fs2" aria-hidden="true"><Icon name="search" size={19} /></span>{/if}{/if}
             <input id="start-{f}" bind:this={inputs[f]} value={ends[f].text} autocomplete="off" spellcheck="false"
-              placeholder={find ? "Γραμμή, στάση ή μέρος" : typing && app.savingPlace ? (app.savingPlace === "home" ? "Πού είναι το Σπίτι;" : "Πού είναι η Δουλειά;") : f === "from" ? (wide ? "Από πού ξεκινάς;" : "Από πού;") : intro ? "Πού πας; Διεύθυνση, στάση ή γραμμή" : wide ? "Στάση, περιοχή, οδός" : "Πού πας;"} role="combobox" aria-expanded={open === f} aria-controls="start-{f}-list"
+              placeholder={find ? "Γραμμή, στάση ή μέρος" : typing && app.savingPlace ? "Διεύθυνση, περιοχή ή στάση" : f === "from" ? (wide ? "Από πού ξεκινάς;" : "Από πού;") : intro ? "Πού πας; Διεύθυνση, στάση ή γραμμή" : wide ? "Στάση, περιοχή, οδός" : "Πού πας;"} role="combobox" aria-expanded={open === f} aria-controls="start-{f}-list"
               onfocus={e => { open = f; menu = null; if (ends[f].place) e.currentTarget.select(); startTyping(); }} onclick={() => startTyping(true)} oninput={e => edit(f, e.currentTarget.value)}
               aria-activedescendant={open === f && active >= 0 ? `start-opt-${active}` : undefined} onkeydown={e => key(f, e)} />
             {#if ends[f].text && locating !== f && (!ends[f].place || typing)}
@@ -1383,7 +1412,7 @@
               <span class="fi"><span class="spin" aria-hidden="true"></span></span>
             {/if}
           </div>
-          {#if typing && open === f}<button type="button" class="cancel" onclick={stopTyping}>Άκυρο</button>{/if}
+          {#if typing && open === f && !app.savingPlace}<button type="button" class="cancel" onclick={stopTyping}>Άκυρο</button>{/if}
           {#if !wide && open === f}{@render list(f)}{/if}
           {#if f === "from" && !pair && !ends.from.place && !ends.from.text && open !== "from"}
             <div class="sugg" role="group" aria-label="Από πού ξεκινάς" transition:reveal>
@@ -1741,7 +1770,7 @@
       {#if r.head && !(typing && r.head === "Μέρη")}<li class="oh" role="presentation">{r.head}</li>{/if}
       <li in:item={{ i: k }}>
         <button type="button" id="start-opt-{k}" class="opt" class:quiet={r.map && !!ends[f].text.trim() && !ends[f].place} class:active={k === active} role="option"
-          class:top={typing && active < 0 && k === topRow && !!ends[f].text.trim()} aria-selected={k === active} tabindex="-1" onpointerenter={() => (active = k)} onclick={() => run(f, r)}>
+          class:top={typing && active < 0 && k === topRow && (!!ends[f].text.trim() || !!app.savingPlace)} aria-selected={k === active} tabindex="-1" onpointerenter={() => (active = k)} onclick={() => run(f, r)}>
           {#if r.ask}
             {#if r.ask.kind === "lineAt"}
               {@const bd = badge(r.ask.line)}
@@ -1773,9 +1802,9 @@
             <span class="oi"><Icon name="stop" size={17} /></span>
             <span class="ot"><b>{r.muniStop.name}</b><small>Δημοτική στάση · {town(r.muniStop.municipality)}</small></span>
           {:else if r.me}
-            <span class="oi meoi"><svg class="arr" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5 3.8 10.6a.6.6 0 0 0 .05 1.12l6.6 2.03 2.03 6.6a.6.6 0 0 0 1.12.05z" fill="currentColor" /></svg></span><span class="ot"><b>{ME}</b><small>{app.myFix ? "Ζωντανά, εδώ που είσαι τώρα" : "Εκεί που είσαι, από το κινητό σου"}</small></span>
+            <span class="oi meoi"><svg class="arr" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5 3.8 10.6a.6.6 0 0 0 .05 1.12l6.6 2.03 2.03 6.6a.6.6 0 0 0 1.12.05z" fill="currentColor" /></svg></span><span class="ot"><b>{app.savingPlace ? "Εδώ που είσαι τώρα" : ME}</b><small>{app.savingPlace && hereText ? hereText : app.myFix ? "Ζωντανά, εδώ που είσαι τώρα" : "Εκεί που είσαι, από το κινητό σου"}</small></span>
           {:else if r.map}
-            <span class="oi"><Icon name="map" size={17} /></span><span class="ot"><b>{typing && ends[f].text.trim() ? "Δεν είναι εδώ; Διάλεξε στον χάρτη" : "Διάλεξε στον χάρτη"}</b>{#if !ends[f].text.trim()}<small class="phone">Μετακίνησε τον χάρτη και πάτα «Εδώ»</small><small class="pc">Κάνε κλικ στο σημείο</small>{/if}</span>
+            <span class="oi"><Icon name="map" size={17} /></span><span class="ot"><b>{typing && ends[f].text.trim() ? "Δεν είναι εδώ; Διάλεξε στον χάρτη" : "Διάλεξε στον χάρτη"}</b>{#if !ends[f].text.trim()}<small class="phone">{app.savingPlace ? "σύρε τον χάρτη ως την πόρτα σου" : "Μετακίνησε τον χάρτη και πάτα «Εδώ»"}</small><small class="pc">Κάνε κλικ στο σημείο</small>{/if}</span>
           {:else if r.place}
             {@const p = r.place}
             {#if typing && p.kind === "metro" && app.cityId === "athens"}<img class="oimg" src="{import.meta.env.BASE_URL}icons/metro-logo.svg" alt="" />
@@ -1795,6 +1824,7 @@
       </li>
       {/if}
     {/each}
+    {#if typing && app.savingPlace && !ends[f].text.trim()}<li class="svnote" role="presentation">Μένει μόνο σε αυτή τη συσκευή. Το αλλάζεις όποτε θες: κράτα πατημένο το «{savingWord}» στην αρχική.</li>{/if}
   </ul>
 {/snippet}
 
@@ -2465,4 +2495,21 @@
   .oldnote i { width: 7px; height: 7px; border-radius: 50%; background: #ffb26b; display: block; flex: none; }
   /* Over the map (the pick's back, field and hint): a soft gaussian blur of the map behind, the surface see-through. */
   .ptop .pcirc, .pfield, .phint { background: color-mix(in srgb, var(--surface) 62%, transparent); -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%); }
+  /* Setting «Σπίτι» / «Δουλειά» (compact mockups 16, 16β). */
+  .svhead { flex: 0 0 100%; height: 44px; display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .svback { flex: none; width: 32px; height: 44px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; background: none; color: var(--fg); cursor: pointer; }
+  .svic { flex: none; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent); }
+  .svt { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .svt b { font-size: 18px; font-weight: 800; line-height: 1; }
+  .svt small { font-size: 12.5px; line-height: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .svnote { margin: 12px 2px 0; font-size: 12.5px; line-height: 1.4; color: var(--muted); }
+  .psave { font-size: 12.5px; font-weight: 700; line-height: 1; color: var(--accent); margin-bottom: -6px; }
+  .pnearest { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 6px; border-radius: 12px; background: var(--card, var(--control));
+    box-shadow: inset 0 0 0 1px var(--card-border, var(--border)); font-size: 13px; font-weight: 600; line-height: 1; color: color-mix(in srgb, var(--fg) 82%, var(--muted)); }
+  .pnearest > span:nth-child(2) { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pnearest b { color: var(--fg); }
+  .pnearest .oasa { flex: none; width: 28px; height: 28px; border-radius: 50%; background: #fff; display: flex; align-items: center; justify-content: center; }
+  .pnearest .oasa img { width: 17px; height: 17px; display: block; }
+  .pw { flex: none; display: flex; align-items: center; gap: 3px; font-weight: 700; color: var(--muted); }
+  .aim .core.svc { width: 30px; height: 30px; color: #ffffff; display: flex; align-items: center; justify-content: center; }
 </style>

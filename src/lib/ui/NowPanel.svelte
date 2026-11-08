@@ -400,7 +400,7 @@
     {@const n = notices[0]}
     <a class="mapnote" in:rise={{ y: -12, delay: 200 }} href={n.d.url} target="_blank" rel="noopener"><Icon name="warn" size={15} /><span>{badge(n.line.id).label}: {n.d.title}</span></a>
   {/if}
-  {#if peeked}
+  {#if peeked && !app.start}
     <!-- Lowered (compact mockup 15Γ): the search on top of the map, your places and the lists as chips under it. -->
     <div class="mtop" in:rise={{ y: -12 }}>
       <button type="button" class="mwhere" aria-haspopup="dialog" onclick={openWhere}><Icon name="search" size={19} /><span>Πού πας;</span></button>
