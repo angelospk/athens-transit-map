@@ -662,6 +662,7 @@
     app.tripStops = [];
     app.tripPlan = null;
     app.planLabels = [];
+    app.tripReset++;
     onclose();
   }
 

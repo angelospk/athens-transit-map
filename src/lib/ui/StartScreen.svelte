@@ -998,6 +998,18 @@
   let wasReady = false;
   $effect(() => { const r = ready; untrack(() => { if (r && !wasReady) asking = false; wasReady = r; }); });
   $effect(() => { if (!app.start) untrack(() => { asking = !ready; }); });
+  // Leaving the answer (‹, ✕, Ξεκίνα, the map): «Πού πας;» opens on a new question next time, not on the trip just left.
+  let leftAnswer = false;
+  $effect(() => { const a = answer; untrack(() => { if (a) leftAnswer = true; }); });
+  $effect(() => {
+    if (app.start) return;
+    untrack(() => { if (leftAnswer) { leftAnswer = false; ends = { ...ends, to: { text: "", place: null } }; asking = true; open = null; } });
+  });
+  // The trip was closed: the destination goes (the start stays: usually where the user is), the questions come back.
+  $effect(() => {
+    if (!app.tripReset) return;
+    untrack(() => { ends = { ...ends, to: { text: "", place: null } }; asking = true; open = null; });
+  });
   // «Βρες» (the search button) is never the trip asked, even with both ends of an earlier trip still set.
   const answer = $derived(!wide && ready && !asking && !app.savingPlace && !app.finding);
   // Typing on a phone: the field goes to the top of the screen (the heading and the other field step aside), its
@@ -1010,6 +1022,23 @@
   // A phone's «Πού πας;» (compact mockup 2): «Από» and «Προς» as one block, «‹» before it, the swap after it.
   const pair = $derived(!wide && !app.savingPlace && !find && !typing && !answer);
   $effect(() => { if (open === null) { clearTimeout(typingT); typingOn = false; } });
+  // The pair swaps only two places (one end empty, it would leave «Από» blank).
+  const canSwap = $derived(!!ends.from.place && !!ends.to.place);
+  // The pair with «Προς» set and «Από» empty (and no location on its way): «Από» opens for typing, as a tap on it
+  // would, instead of a page with nothing under the pair. Once per such change: «Άκυρο» leaves it closed.
+  let fromAsked: Place | null = null;
+  $effect(() => {
+    if (!ends.to.place || ends.from.place || ends.from.text) { fromAsked = null; return; }
+    if (!pair) return;
+    untrack(() => {
+      if (fromAsked === ends.to.place) return;
+      fromAsked = ends.to.place;
+      if (open !== null || locating === "from") return;
+      open = "from";
+      startTyping(true);
+      void tick().then(() => inputs.from?.focus());
+    });
+  });
   function startTyping(now = false) {
     clearTimeout(typingT);
     if (now) typingOn = true;
@@ -1059,6 +1088,24 @@
     : when.kind === "arrive" ? (top.fit?.tone === "ok" ? "Η καλύτερη" : "") : when.kind === "leave" ? "Η καλύτερη" : later ? `Η καλύτερη σε ${later}′` : "Η καλύτερη τώρα");
   const whenWord = $derived(when.kind !== "now" ? whenLabel(when, nowS) : later ? (later === 60 ? "σε 1 ώρα" : `σε ${later} λεπτά`) : "τώρα");
   const meansWord = $derived(meansOn.length === MEANS.length ? "όλα τα μέσα" : meansOn.map(x => x.label.toLowerCase()).join(" και "));
+  // The phone's list (mockup 14): the order in words for its button, the fastest option, the fare when every option costs
+  // the same, and a row's word on an old metro or tram timetable (said there instead of a box above the list).
+  let leaveOf = $state<Record<string, number>>({});   // each row's «Φύγε» in minutes (RouteCard counts its live bus)
+  const SORT_LIST: Record<Sort, string> = { time: "Γρηγορότερες", price: "Φθηνότερες", dist: "Πιο σύντομες" };
+  const fastKey = $derived(routes && routes.length > 1 ? routes.reduce((a, b) => (b.it.duration_s < a.it.duration_s ? b : a)).key : "");
+  const sameFare = $derived.by(() => {
+    if (!routes?.length || !planR) return "";
+    const t = routes.map(o => { const f = tripFare(o.it, planR!); return f?.lines.length ? f.total[app.fareReduced ? 1 : 0] : null; });
+    return t.every(x => x != null && x === t[0]) ? euro(t[0]!) : "";
+  });
+  const railOldNote = SOURCE_NOTE.stasy.indicative;
+  const railIsOld = $derived(planSources.some(x => x.id === "stasy" && x.state === "indicative"));
+  function railOld(it: Itinerary) {
+    if (!railIsOld || !planR) return "";
+    const ms = new Set(it.legs.flatMap(l => (l.kind === "ride" ? [l.mode ?? planR!.lines[l.line ?? ""]?.mode ?? ""] : [])));
+    const m = ms.has("metro") && ms.has("tram") ? "Μετρό και τραμ" : ms.has("metro") ? "Μετρό" : ms.has("tram") ? "Τραμ" : "";
+    return m ? `${m} από παλιό πρόγραμμα · ώρα κατά προσέγγιση` : "";
+  }
   const SORT_WORD: Record<Sort, string> = { time: "Να φτάσω γρήγορα", price: "Να πληρώσω λιγότερο", dist: "Να περπατήσω λιγότερο" };
   const capital = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
   // A tap on «Από» or «Προς» of the band: back to the two fields, that one focused (its text selected).
@@ -1228,25 +1275,27 @@
              «Προς» are fields (a tap edits that end), the swap between them; when and with what, two chips. -->
         <div class="band" in:item={{ i: 2, y: 12 }}>
           <h1 id="start-h" class="sr">Οι διαδρομές</h1>
+          <!-- Mockup 14: «‹», «Από» and «Προς» as two rows of one box (a tap edits that end; the small map button shows
+               it), the swap; under them the choices as small chips in a row that scrolls sideways. -->
           <div class="tends">
-            <span class="trail" aria-hidden="true"><i class="tf"></i><i class="tl"></i><i class="tt"></i></span>
+            <button type="button" class="tback" aria-label="Κλείσιμο" title="Κλείσιμο" onclick={() => { app.savingPlace = null; app.pickFor = null; app.start = false; }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+            </button>
             <div class="tfields">
-              <div class="tfw">
-                <button type="button" class="tfield" onclick={() => editEnd("from")}><span class="tk">Από</span><span class="tv">{capital(fromWord(ends.from.place))}</span></button>
-                <button type="button" class="tview" aria-label="Δες το «Από» στον χάρτη" title="Δες το στον χάρτη" onclick={() => checkOnMap("from")}><Icon name="map" size={16} /></button>
-              </div>
-              <div class="tfw">
-                <button type="button" class="tfield" onclick={() => editEnd("to")}><span class="tk">Προς</span><span class="tv">{ends.to.place ? titleCase(ends.to.place.label) : ""}</span></button>
-                <button type="button" class="tview" aria-label="Δες το «Προς» στον χάρτη" title="Δες το στον χάρτη" onclick={() => checkOnMap("to")}><Icon name="map" size={16} /></button>
-              </div>
-              <button type="button" class="tswap" class:turned aria-label="Αντιστροφή αφετηρίας και προορισμού" title="Αντιστροφή" onclick={swap}><Icon name="swap" size={18} /></button>
+              {#each ["from", "to"] as Field[] as f (f)}
+                {@const p = ends[f].place}
+                <div class="tfw">
+                  <button type="button" class="tfield" onclick={() => editEnd(f)}><i class="tmk {f}" aria-hidden="true"></i><span class="tk">{f === "from" ? "Από" : "Προς"}</span>
+                    <span class="tv" class:tvme={p?.kind === "me"}>{f === "from" ? capital(fromWord(p)) : p ? titleCase(p.label) : ""}</span></button>
+                  <button type="button" class="tview" aria-label="Δες το «{f === "from" ? "Από" : "Προς"}» στον χάρτη" title="Δες το στον χάρτη" onclick={() => checkOnMap(f)}><Icon name="map" size={14} /></button>
+                </div>
+              {/each}
             </div>
+            <button type="button" class="tswap" class:turned aria-label="Αντιστροφή αφετηρίας και προορισμού" title="Αντιστροφή" onclick={swap}><Icon name="swap" size={17} /></button>
           </div>
           <div class="tchips">
-            <button type="button" class="tchip when" class:set={when.kind !== "now"} aria-haspopup="listbox" aria-expanded={whenOpen} onclick={openWhen}><Icon name="clock" size={16} /><span>{capital(whenWord)}</span><span class="tcv" class:up={whenOpen} aria-hidden="true"><Icon name="chevron" size={14} /></span></button>
-            <button type="button" class="tchip" aria-haspopup="dialog" onclick={() => (sheet = "opts")}><Icon name={meansOn.length === 1 ? meansOn[0].icon : "bus"} size={16} /><span>{capital(meansWord)}</span><span class="tcv" aria-hidden="true"><Icon name="chevron" size={14} /></span></button>
-            {#if sortId !== "time"}<button type="button" class="tchip" aria-haspopup="dialog" onclick={() => (sheet = "opts")}><Icon name={sort.icon} size={16} /><span>{sort.label}</span><span class="tcv" aria-hidden="true"><Icon name="chevron" size={14} /></span></button>{/if}
-            <button type="button" class="xclose tclose" aria-label="Κλείσιμο" title="Κλείσιμο" onclick={() => { app.savingPlace = null; app.pickFor = null; app.start = false; }}><Icon name="close" size={16} /></button>
+            <button type="button" class="tchip when" class:set={when.kind !== "now"} aria-haspopup="listbox" aria-expanded={whenOpen} onclick={openWhen}><Icon name="clock" size={14} /><span>{capital(whenWord)}</span><span class="tcv" class:up={whenOpen} aria-hidden="true"><Icon name="chevron" size={11} /></span></button>
+            <button type="button" class="tchip" aria-haspopup="dialog" onclick={() => (sheet = "opts")}>{#if meansOn.length < MEANS.length}<Icon name={meansOn.length === 1 ? meansOn[0].icon : "bus"} size={14} />{/if}<span>{capital(meansWord)}</span><span class="tcv" aria-hidden="true"><Icon name="chevron" size={11} /></span></button>
           </div>
           {#if whenOpen}
             <!-- «Πότε» (mockup 46 Γ): now, leave at, arrive by; the day and the time as two lists; arriving, how early. -->
@@ -1300,7 +1349,7 @@
         <div class="ends" class:group={!intro && wide} class:asks={!wide && !app.savingPlace} class:pair={pair} class:typing in:item={{ i: 3, y: 12 }}>
         {#if pair}
           <button type="button" class="pback" aria-label="Πίσω" onclick={close}><Icon name="back" size={20} /></button>
-          <button type="button" class="pswap" class:turned aria-label="Αντιστροφή αφετηρίας και προορισμού" onclick={swap}><Icon name="swap" size={19} /></button>
+          <button type="button" class="pswap" class:turned aria-label="Αντιστροφή αφετηρίας και προορισμού" aria-disabled={!canSwap} onclick={() => { if (canSwap) swap(); }}><Icon name="swap" size={19} /></button>
         {/if}
         {#each (app.savingPlace || intro || find ? ["to"] : !wide ? ["from", "to"] : askFrom ? ["to", "from"] : ["to"]) as Field[] as f (f)}
           {#if !typing || f === open}
@@ -1327,7 +1376,7 @@
           </div>
           {#if typing && open === f}<button type="button" class="cancel" onclick={stopTyping}>Άκυρο</button>{/if}
           {#if !wide && open === f}{@render list(f)}{/if}
-          {#if f === "from" && !ends.from.place && !ends.from.text && open !== "from"}
+          {#if f === "from" && !pair && !ends.from.place && !ends.from.text && open !== "from"}
             <div class="sugg" role="group" aria-label="Από πού ξεκινάς" transition:reveal>
               {#each fromChips as c, k (c.key)}
                 <button type="button" class="sc" class:best={c.best} onclick={c.run} in:item={{ i: k, y: 6 }}><Icon name={c.icon} size={15} /><span>{c.label}</span></button>
@@ -1341,6 +1390,14 @@
         {/if}
         </div>
         {#if open && wide}{@render list(open)}{/if}
+        {#if pair && ends.to.place && !ends.from.place && !ends.from.text && open === null}
+          <!-- «Προς» set, «Από» empty (typing closed): the ways to give the start, under the pair, not in it. -->
+          <div class="sugg under" role="group" aria-label="Από πού ξεκινάς" transition:reveal>
+            {#each fromChips as c, k (c.key)}
+              <button type="button" class="sc" class:best={c.best} onclick={c.run} in:item={{ i: k, y: 6 }}><Icon name={c.icon} size={15} /><span>{c.label}</span></button>
+            {/each}
+          </div>
+        {/if}
         {#if err}<p class="err" role="status" transition:reveal>{err}</p>{/if}
 
         {#if !wide && !app.savingPlace && !find && !ends.to.place && open === null}
@@ -1551,23 +1608,29 @@
         {/if}
       {:else if !app.savingPlace && !find && (wide || answer)}
         {#if routes?.length && top && planR}
-          {#each sourceNotes as n (n)}<p class="est"><Icon name="warn" size={15} /><span>{n}</span></p>{/each}
+          {#each answer ? sourceNotes.filter(n => n !== railOldNote) : sourceNotes as n (n)}<p class="est"><Icon name="warn" size={15} /><span>{n}</span></p>{/each}
           {#if planR.estimate}<p class="est"><Icon name="warn" size={15} /><span>Ο server των διαδρομών δεν απαντά τώρα: αυτές τις βρήκε η εφαρμογή από τις στάσεις και τις ζωντανές αφίξεις. Οι ώρες είναι κατά προσέγγιση.</span></p>{/if}
           {#if top.ignored}<p class="pvn solo">Με {meansOn.length === 1 ? meansOn[0].label.toLowerCase() : "αυτά τα μέσα"} δεν βγαίνει τώρα: αυτές είναι οι καλύτερες με όλα.</p>{/if}
           <!-- Every route as a compact card: when to leave, how long, the means, where its bus is now; a tap opens it
                step by step and makes it the one «Ξεκίνα» follows. -->
-          {#if answer}<p class="rcount">{routes.length} {routes.length === 1 ? "διαδρομή" : "διαδρομές"}</p>{/if}
+          {#if answer}
+            <!-- How many, the one fare when every option costs the same, and the order as a small button. -->
+            <div class="rcount"><b>{routes.length} {routes.length === 1 ? "διαδρομή" : "διαδρομές"}</b>{#if sameFare}<span>· {routes.length === 1 ? "με" : "όλες με"} {sameFare}</span>{/if}
+              <button type="button" class="rsort" aria-haspopup="dialog" onclick={() => (sheet = "opts")}>{SORT_LIST[sortId]}<Icon name="chevron" size={11} /></button></div>
+          {/if}
           {#if when.kind === "arrive" && top.fit?.tone === "late"}<p class="pvn solo">Δεν προλαβαίνεις ως τις {clockHM(when.at)}. Αυτές φτάνουν όσο πιο νωρίς γίνεται.</p>{/if}
-          <div class="cards" aria-live="polite" data-peek="Διαδρομές" data-peek-icon="route">
+          <div class="cards" class:list={answer} aria-live="polite" data-peek="Διαδρομές" data-peek-icon="route">
             {#each shownRoutes as o, k (o.key)}
-              <RouteCard it={o.it} r={planR} {ix} legs={o.legs} {nowS} tag={k === 0 ? bestTag : ""} open={openKey === o.key}
+              <RouteCard it={o.it} r={planR} {ix} legs={o.legs} {nowS} open={openKey === o.key}
+                tag={answer && sortId === "time" ? (o.key === fastKey ? "Πιο γρήγορη" : "") : k === 0 ? bestTag : ""}
+                row={answer} soon={k === 0} onleave={m => { if (leaveOf[o.key] !== m) leaveOf[o.key] = m; }} stale={answer ? railOld(o.it) : ""} city={app.cityId}
                 sel={best?.key === o.key && (chosen != null || openKey != null)} live={k < 3 && when.kind === "now"} clock={when.kind !== "now"}
                 target={when.kind === "arrive" && o.fit ? { at: when.at, margin: o.fit.margin, tone: o.fit.tone } : null}
                 others={allIts} logos={app.cityId === "athens"} onpick={() => pickCard(o.key)} onmap={go} />
             {/each}
           </div>
           {#if routes.length > shownRoutes.length}
-            <button type="button" class="morer" onclick={() => (allShown = true)}>Δες κι άλλες {routes.length - shownRoutes.length} διαδρομές</button>
+            <button type="button" class="morer" onclick={() => (allShown = true)}>{#if answer}Άλλες {routes.length - shownRoutes.length} {routes.length - shownRoutes.length === 1 ? "διαδρομή" : "διαδρομές"}<Icon name="chevron" size={12} />{:else}Δες κι άλλες {routes.length - shownRoutes.length} διαδρομές{/if}</button>
           {/if}
         {:else}
           <section class="pv" aria-live="polite" in:item={{ i: 7, y: 14 }}>
@@ -1594,8 +1657,9 @@
           <p class="findnote">Γράψε τον αριθμό μιας γραμμής (π.χ. 308), μια στάση ή μια περιοχή.</p>
         {:else if answer}
           <div class="duo">
-            <button type="button" class="ghost2" class:on={!!armed} disabled={!best} onclick={() => (sheet = "remind")}><Icon name="bell" size={17} /><span>{armed ? `Στις ${clockHM(Math.max(armed.leaveAt, nowS))}` : "Θύμισέ μου"}</span></button>
-            <button type="button" class="primary big" disabled={!best} onclick={startNow}><span>{openKey ? "Ξεκίνα με αυτή" : "Ξεκίνα"}</span></button>
+            <button type="button" class="bell" class:on={!!armed} disabled={!best} aria-label={armed ? `Υπενθύμιση στις ${clockHM(Math.max(armed.leaveAt, nowS))}` : "Θύμισέ μου"}
+              title={armed ? `Στις ${clockHM(Math.max(armed.leaveAt, nowS))}` : "Θύμισέ μου"} onclick={() => (sheet = "remind")}><Icon name="bell" size={20} />{#if armed}<i aria-hidden="true"></i>{/if}</button>
+            <button type="button" class="primary big go" disabled={!best} onclick={startNow}><b>Ξεκίνα</b>{#if best}{@const m = leaveOf[best.key] ?? best.leaveIn}<span>{when.kind !== "now" ? `φύγε ${best.depart}` : m === 0 ? "φύγε τώρα" : m < 60 ? `φύγε σε ${m}′` : `φύγε ${clockHM(nowS + m * 60)}`} · φτάνεις {best.arrive}</span>{/if}</button>
           </div>
         {:else if !wide}
           {#if ready}<button type="button" class="primary big" onclick={() => (asking = false)}><span>Δες τις διαδρομές</span></button>{/if}
@@ -2127,40 +2191,41 @@
   /* ---- The answer on a phone (mockups 42 B, 44): the trip asked in a card of its own floating at the top, lighter
      than the page and pinned while the routes scroll under it; «Από» and «Προς» as fields on a dotted route line, the swap
      between them; when and with what as two chips that open the options. */
-  .band { position: sticky; top: calc(10px + env(safe-area-inset-top)); z-index: 25; display: flex; flex-direction: column; gap: 16px;
-    margin: -18px -6px 0; padding: 14px; border-radius: 30px;
-    background: color-mix(in srgb, var(--fg) 9%, var(--bg));
-    /* The page's colour above and beside it (the first shadow), so the routes scrolled up go under the screen's top,
-       not into the gap over the card; then its own shade. */
-    box-shadow: 0 calc(-60px - env(safe-area-inset-top)) 0 10px var(--bg), 0 0 0 10px var(--bg), 0 10px 30px rgba(0, 0, 0, .3);
-    --tf-bg: color-mix(in srgb, var(--fg) 14%, var(--bg)); }
-  .tclose { margin-left: auto; }
+  /* Mockup 14: the trip asked as a strip across the top, pinned while the list scrolls under it: «‹», one box with
+     «Από» and «Προς» (44px rows, a marker, a small grey word, the place in bold), the swap; the choices as 32px chips. */
+  .band { position: sticky; top: 0; z-index: 25; display: flex; flex-direction: column; gap: 10px;
+    margin: calc(-28px - env(safe-area-inset-top)) -16px 0; padding: calc(14px + env(safe-area-inset-top)) 16px 12px;
+    background: color-mix(in srgb, var(--fg) 4%, var(--bg)); box-shadow: 0 1px 0 var(--pc-edge, var(--glass-line));
+    --tf-bg: color-mix(in srgb, var(--fg) 10%, var(--bg)); }
   .chk { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
   .chk b { font-size: 15px; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chk small { font-size: 12px; color: var(--muted); line-height: 1.3; white-space: normal; }
-  .tends { display: flex; gap: 10px; }
-  .trail { flex: none; width: 14px; display: flex; flex-direction: column; align-items: center; padding: 19px 0; box-sizing: border-box; }
-  .trail i { display: block; }
-  .tf { width: 12px; height: 12px; border-radius: 50%; border: 3px solid var(--pc-acc, var(--accent)); box-sizing: border-box; }
-  .tl { flex: 1; width: 0; margin: 4px 0; border-left: 2px dotted color-mix(in srgb, var(--fg) 30%, transparent); }
-  .tt { width: 12px; height: 12px; border-radius: 50%; background: var(--late1, #f0ae45); }
-  .tfields { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; gap: 8px; }
+  .tends { display: flex; align-items: center; gap: 6px; }
+  .tback { flex: none; width: 32px; height: 88px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0;
+    background: none; color: var(--fg); cursor: pointer; }
+  .tfields { flex: 1; min-width: 0; display: flex; flex-direction: column; border-radius: 14px; background: var(--tf-bg); overflow: hidden; }
   .tfw { position: relative; }
-  .tview { position: absolute; right: 70px; top: 9px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0;
-    border-radius: 50%; background: color-mix(in srgb, var(--fg) 10%, transparent); color: var(--muted); cursor: pointer; }
-  .tview:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 16%, transparent); }
-  .tfield { width: 100%; height: 50px; display: flex; align-items: center; gap: 10px; padding: 0 112px 0 14px; border: 0; border-radius: 14px; box-sizing: border-box;
-    background: var(--tf-bg); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
-  .tfield:hover { background: color-mix(in srgb, var(--fg) 18%, var(--bg)); }
-  .tk { flex: none; width: 40px; font-size: 14px; color: var(--muted); line-height: 1; }
-  .tv { min-width: 0; font-size: 16px; font-weight: 600; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tswap { position: absolute; right: 18px; top: 32px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0;
-    border-radius: 50%; background: color-mix(in srgb, var(--bg) 70%, #000); color: #fff; box-shadow: 0 6px 16px rgba(0, 0, 0, .35); cursor: pointer; transition: transform .3s; }
+  .tfw + .tfw { box-shadow: 0 -1px 0 color-mix(in srgb, var(--fg) 9%, var(--bg)); }
+  .tview { position: absolute; right: 8px; top: 8px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0;
+    border-radius: 50%; background: none; color: var(--muted); cursor: pointer; }
+  .tview:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 10%, transparent); }
+  .tfield { width: 100%; height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 40px 0 12px; border: 0; box-sizing: border-box;
+    background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+  .tfield:hover { background: color-mix(in srgb, var(--fg) 4%, transparent); }
+  .tmk { flex: none; display: block; width: 9px; height: 9px; border-radius: 50%; background: var(--pc-acc, var(--accent)); }
+  .tmk.to { border-radius: 2px; background: var(--late1, #f0ae45); }
+  .tk { flex: none; width: 30px; font-size: 12.5px; font-weight: 600; color: var(--muted); line-height: 1; }
+  .tv { min-width: 0; font-size: 15px; font-weight: 700; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tv.tvme { color: color-mix(in srgb, var(--pc-acc, var(--accent)) 55%, var(--fg)); }
+  .tswap { flex: none; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0;
+    border-radius: 50%; background: var(--tf-bg); color: var(--fg); cursor: pointer; transition: transform .3s; }
   .tswap.turned { transform: rotate(180deg); }
-  .tchips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-left: 24px; }
-  .tchip { min-width: 0; height: 40px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border: 0; border-radius: 12px;
-    background: var(--tf-bg); color: var(--fg); font: inherit; font-size: 15px; font-weight: 600; line-height: 1; cursor: pointer; }
-  .tchip > :global(svg:first-child) { color: var(--muted); }
+  .tchips { height: 32px; display: flex; align-items: center; gap: 6px; margin-right: -16px; padding: 0 16px 0 38px; overflow-x: auto; overscroll-behavior-x: contain;
+    scrollbar-width: none; }
+  .tchips::-webkit-scrollbar { display: none; }
+  .tchip { flex: none; height: 32px; display: flex; align-items: center; gap: 6px; padding: 0 10px 0 9px; border: 0; border-radius: 16px;
+    background: var(--tf-bg); color: var(--fg); font: inherit; font-size: 13px; font-weight: 700; line-height: 1; white-space: nowrap; cursor: pointer; }
+  .tchip > :global(svg:first-child) { flex: none; display: block; color: var(--muted); }
   .tcv { display: flex; color: var(--muted); transition: transform .2s; }
   .tcv.up { transform: rotate(180deg); }
   .tchip.set { background: color-mix(in srgb, var(--accent) 18%, var(--tf-bg)); color: color-mix(in srgb, var(--accent) 55%, var(--fg));
@@ -2193,8 +2258,29 @@
   .wnote { margin: -4px 2px 0; font-size: 12px; line-height: 1.35; color: var(--muted); }
   .wok { height: 44px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 12px; background: var(--accent); color: #fff;
     font: inherit; font-size: 15px; font-weight: 700; line-height: 1; cursor: pointer; }
-  .rcount { margin: 0 0 -6px; height: 20px; display: flex; align-items: center; font-size: 16px; font-weight: 700; line-height: 1; color: var(--fg); }
-  .box.ans .acts { border-top: 1px solid var(--pc-edge, var(--glass-line)); margin: auto -16px -4px; padding: 12px 16px 4px; background: var(--acts-bg, var(--surface)); }
+  /* The list (mockup 14): its count, the one fare, the order; then one card, the options as rows in it. */
+  .rcount { margin: -6px 0 -8px; height: 20px; display: flex; align-items: center; gap: 8px; padding: 0 2px; line-height: 1; color: var(--fg); }
+  .rcount b { font-size: 14px; font-weight: 700; white-space: nowrap; }
+  .rcount span { min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rsort { flex: none; margin-left: auto; height: 20px; display: flex; align-items: center; gap: 5px; padding: 0; border: 0; background: none;
+    color: color-mix(in srgb, var(--pc-acc, var(--accent)) 55%, var(--fg)); font: inherit; font-size: 12.5px; font-weight: 700; line-height: 1; cursor: pointer; }
+  .rsort :global(svg) { display: block; }
+  .cards.list { gap: 0; padding: 2px; border-radius: 16px; background: var(--pc-surf, var(--card)); box-shadow: inset 0 0 0 1px var(--pc-edge, var(--card-border)); }
+  .box.ans .morer { height: 36px; display: flex; align-items: center; gap: 6px; margin-top: -8px; font-size: 13.5px; font-weight: 700; }
+  .box.ans .morer :global(svg) { display: block; }
+  /* At the foot: the reminder as a square bell, «Ξεκίνα» with when to leave and when you arrive. */
+  .box.ans .acts { margin: auto -16px -4px; padding: 12px 16px 4px; border-top: 0;
+    background: linear-gradient(to bottom, transparent, var(--acts-bg, var(--surface)) 30%); box-shadow: 0 36px 0 var(--acts-bg, var(--surface)); }
+  .box.ans .duo { gap: 8px; }
+  .bell { position: relative; flex: none; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 16px;
+    background: color-mix(in srgb, var(--fg) 10%, transparent); color: var(--fg); cursor: pointer; }
+  .bell :global(svg) { display: block; }
+  .bell.on { background: color-mix(in srgb, var(--pc-acc, var(--accent)) 22%, transparent); color: color-mix(in srgb, var(--pc-acc, var(--accent)) 55%, var(--fg)); }
+  .bell i { position: absolute; top: 12px; right: 13px; width: 7px; height: 7px; border-radius: 50%; background: var(--pc-acc, var(--accent)); }
+  .bell:disabled { opacity: .5; cursor: default; }
+  .duo .primary.go { flex: 1; min-width: 0; gap: 10px; padding: 0 14px; }
+  .go b { font-size: 16px; font-weight: 700; line-height: 1; }
+  .go span { min-width: 0; font-size: 13.5px; font-weight: 600; line-height: 1; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   @media (prefers-reduced-motion: reduce) { .tswap, .tcv { transition: none; } }
 
   /* ---- Compact mockup 2, a phone: «‹», «Από» and «Προς» as one block, the swap; shortcuts in one row; the map and
@@ -2206,6 +2292,7 @@
   .pback { grid-column: 1 !important; }
   .pswap { grid-column: 3 !important; color: color-mix(in srgb, var(--fg) 80%, var(--muted)); transition: transform .3s; }
   .pswap.turned { transform: rotate(180deg); }
+  .pswap[aria-disabled="true"] { opacity: .35; cursor: default; }
   .ends.pair .field.end { min-height: 44px; height: 44px; padding: 0 12px; gap: 10px; border: 0; border-radius: 0; background: var(--control); }
   .ends.pair .field.end.from { border-radius: 14px 14px 0 0; border-bottom: 1px solid color-mix(in srgb, var(--fg) 9%, var(--control)); }
   .ends.pair .field.end.to { border-radius: 0 0 14px 14px; }
@@ -2217,6 +2304,7 @@
   .ends.pair .mk.to { width: 11px; height: 11px; margin: 0 2px; border-radius: 50% 50% 50% 0; rotate: -45deg; background: #ff8a3d; }
   .ends.pair .chg, .ends.pair .melive, .ends.pair .mearr { display: none; }
   .ends.pair .sugg { padding: 8px 0 0; }
+  .sugg.under { padding: 12px 0 0 42px; }
   .scuts { display: flex; gap: 8px; overflow-x: auto; margin: 2px -16px 0; padding: 0 16px; scrollbar-width: none; }
   .scuts::-webkit-scrollbar { display: none; }
   .scut { flex: none; height: 36px; display: flex; align-items: center; gap: 7px; padding: 0 12px 0 10px; border: 0; border-radius: 18px;

@@ -13,13 +13,20 @@
   import { durText } from "../format";
   import Icon from "./Icon.svelte";
   import TransferBox from "./TransferBox.svelte";
+  import LineChip from "./LineChip.svelte";
+  import type { CityId } from "../cities";
   import { changeLine, levelM, transferLook } from "../transfer";
 
-  let { it, r, ix, legs, nowS, tag = "", open = false, sel = false, live = false, clock = false, target = null, others = [], logos = false, onpick, onmap }: {
+  let { it, r, ix, legs, nowS, tag = "", open = false, sel = false, live = false, clock = false, target = null, others = [], logos = false, row = false, soon = false, stale = "", city = "athens", onleave, onpick, onmap }: {
     it: Itinerary; r: PlanResponse; ix: TripIndex | null; legs: ScaledLeg[]; nowS: number; tag?: string; open?: boolean; sel?: boolean;
     live?: boolean; others?: Itinerary[]; logos?: boolean; onpick: () => void; onmap?: () => void;
     // Not now (mockup 46): the time to leave on the clock; arriving by a time, how much before it (or after).
     clock?: boolean; target?: { at: number; margin: number; tone: "ok" | "tight" | "late" } | null;
+    // A row of the phone's one list (mockup 14) instead of a card of its own: green «Φύγε» when it is the soonest
+    // (soon), and a third line only for its live bus or a timetable known to be old (stale: what to say).
+    row?: boolean; soon?: boolean; stale?: string; city?: CityId;
+    // When to leave, in minutes from now (its live bus counted): handed back for «Ξεκίνα».
+    onleave?: (min: number) => void;
   } = $props();
 
   // Mockup 44: closed, two lines; a tap opens where its bus is and three figures; «Βήματα» opens the steps.
@@ -77,6 +84,8 @@
   const leaveShort = $derived(clock ? `Φύγε ${clockHM(it.depart_at)}` : leaveIn === 0 ? "Φύγε τώρα" : leaveIn < 60 ? `Φύγε σε ${leaveIn}′` : `Φύγε στις ${clockHM(nowS + leaveIn * 60)}`);
   const targetText = $derived(!target ? "" : target.tone === "late" ? `Φτάνεις ${-target.margin}′ μετά τις ${clockHM(target.at)}`
     : `${target.tone === "tight" ? "Σφιχτό: " : ""}${target.margin}′ πριν τις ${clockHM(target.at)}`);
+  $effect(() => { onleave?.(leaveIn); });
+  const leaveRow = $derived(clock || leaveIn >= 60 ? `Φύγε ${clockHM(clock ? it.depart_at : nowS + leaveIn * 60)}` : leaveIn === 0 ? "Φύγε τώρα" : `Φύγε σε ${leaveIn}′`);
   const busMin = $derived(bus ? Math.max(0, Math.round((bus.at - nowS) / 60)) : null);
 
   // The line: dots for the stops before yours, the bus among them, yours at the right end.
@@ -93,8 +102,27 @@
   const legMode = (k: number) => it.legs[k]?.mode ?? r.lines[it.legs[k]?.line ?? ""]?.mode ?? "bus";
 </script>
 
-<div class="rc" class:open class:sel>
+<div class="rc" class:row class:open class:sel>
   <button type="button" class="rh" aria-expanded={open} onclick={onpick}>
+  {#if row}
+    <span class="q1">
+      <b class="lv" class:now={soon}>{leaveRow}</b>{#if tag}<span class="tag">{tagShort}</span>{/if}
+      <span class="qdu">{durText(Math.round(it.duration_s / 60))}</span>
+    </span>
+    <span class="q2">
+      <span class="qlegs">
+        {#each legs as l, j (j)}
+          {#if j}<svg class="qsep" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>{/if}
+          {#if l.walk}<span class="qw" aria-label="Πόδια {l.min}′"><Icon name="walk" size={12} />{l.min}</span>
+          {:else}<LineChip label={l.label} bg={l.color || "#1f5fc8"} fg={l.text || "#fff"} mode={l.mode} {city} />{/if}
+        {/each}
+      </span>
+      <span class="tms">{clockHM(it.depart_at)} → {clockHM(it.arrive_at)}</span>
+    </span>
+    {#if target}<span class="r3 {target.tone}"><i></i>{targetText}</span>
+    {:else if bus?.live}<span class="q3"><i></i>{rideLabel} ζωντανά · {busMin === 0 ? "στη στάση τώρα" : busMin! < 60 ? `στη στάση σε ${busMin}′` : `στη στάση ${clockHM(bus.at)}`}</span>
+    {:else if stale}<span class="q3 old">{stale}</span>{/if}
+  {:else}
     <span class="r1">
       <span class="lvw"><b class="lv" class:now={tag !== ""}>{leaveShort}</b>{#if tag}<span class="tag">{tagShort}</span>{/if}</span>
       <span class="du">{Math.round(it.duration_s / 60) < 60 ? mins(Math.round(it.duration_s / 60)) : durText(Math.round(it.duration_s / 60))}</span>
@@ -110,6 +138,7 @@
       <span class="tms">{clockHM(it.depart_at)} → {clockHM(it.arrive_at)}</span>
     </span>
     {#if target}<span class="r3 {target.tone}"><i></i>{targetText}</span>{/if}
+  {/if}
   </button>
 
   {#if open}
@@ -281,5 +310,31 @@
   .xsp { flex: none; font-size: 12.5px; font-weight: 700; line-height: 1; color: var(--muted); }
   .xsp.tight { color: var(--late3, #ff8a8a); }
   .xsp.ok { color: var(--ontime); }
+
+  /* A row of the phone's one list (mockup 14): no card of its own; the list draws the thin line between rows. The
+     picked one: a 2px ring in the accent over a tint. */
+  .rc.row { position: relative; border: 0; border-radius: 14px; background: none; overflow: visible; }
+  .rc.row:not(:last-child)::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: 0; height: 1px; background: var(--pc-edge, var(--card-border)); }
+  .rc.row.sel { background: color-mix(in srgb, var(--pc-acc, var(--accent)) 13%, transparent); box-shadow: inset 0 0 0 2px var(--pc-acc, var(--accent)); }
+  .rc.row.sel::after { display: none; }
+  .rc.row .rh { min-height: 72px; justify-content: center; gap: 9px; padding: 14px 11px 14px 12px; }
+  .q1 { height: 18px; display: flex; align-items: center; gap: 8px; }
+  .rc.row .lv { font-size: 16px; }
+  .rc.row .tag { height: 20px; font-size: 11.5px; font-weight: 800; }
+  .qdu { flex: none; margin-left: auto; font-size: 17px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .q2 { min-height: 24px; display: flex; align-items: center; gap: 6px; }
+  .qlegs { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 3px; }
+  .qlegs :global(.lc) { --h: 24px; gap: 4px; padding: 0 6px; font-size: 12.5px; }
+  .qlegs :global(.lc.logo) { padding-left: 2px; }
+  .qsep { flex: none; display: block; margin: 0 -2px; color: color-mix(in srgb, var(--fg) 32%, transparent); }
+  .qw { flex: none; height: 24px; display: inline-flex; align-items: center; gap: 2px; padding: 0 5px 0 4px; border-radius: 7px; box-sizing: border-box;
+    background: color-mix(in srgb, var(--fg) 9%, transparent); color: color-mix(in srgb, var(--fg) 70%, transparent); font-size: 12px; font-weight: 700; line-height: 1; }
+  .qw :global(svg) { flex: none; display: block; }
+  .rc.row .tms { margin-left: auto; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .q3 { min-height: 14px; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; line-height: 1.15; color: var(--ontime); }
+  .q3 i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .q3.old { color: var(--late1, #f0ae45); }
+  .rc.row .r3 { font-size: 12px; }
+  .rc.row .body { margin: 0 2px; border-top: 1px solid var(--pc-edge, var(--card-border, transparent)); }
   @media (prefers-reduced-motion: reduce) { .veh, .chev { transition: none; } }
 </style>

@@ -192,6 +192,8 @@ export class AppState {
   // screen from the centre, in px. The blue circle snaps onto it; «Εδώ» takes it.
   pickSnap = $state.raw<PickSnap | null>(null);
   // The trip's ends handed to «Πού πας;» (a phone): the planner's old fields are not shown there, the search is.
+  // The trip closed (✕ in the planner): «Πού πας;» opens empty again next time, not on the trip just left.
+  tripReset = $state(0);
   startEnds = $state.raw<{ from: import("./trip").Place | null; to: import("./trip").Place | null } | null>(null);
   // The open metro station's entrances (MapView reads them off the base map's tiles, OpenStreetMap's
   // railway=subway_entrance, as the station opens): one per name, nearest the station first.
