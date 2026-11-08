@@ -271,7 +271,8 @@
     // Nothing typed, or a field already set (tapped to change it): the ways to choose without typing.
     if (!ends[open].text.trim() || ends[open].place) {
       const near = [...nearStations, ...nearStops].map((p, k): Row => ({ key: `near|${p.kind}|${p.label}|${p.pts[0].join()}`, place: p, head: k === 0 ? (app.savingPlace ? "Στάσεις κοντά σου" : app.myPos ? "Κοντά σου" : "Κοντά") : undefined }));
-      return [{ key: "me", me: true }, ...(app.savingPlace ? [] : savedPlaces(app.places).map(p => ({ key: p.kind!, place: p }))), ...near, { key: "map", map: true }];
+      // «Διάλεξε στον χάρτη» with the quick ways on top, not at the foot under the stops near (it was off the screen).
+      return [{ key: "me", me: true }, ...(app.savingPlace ? [] : savedPlaces(app.places).map(p => ({ key: p.kind!, place: p }))), { key: "map", map: true }, ...near];
     }
     const { first, last } = lineHits;
     const places = opts.map((p, k): Row => ({ key: `${p.kind}|${p.label}|${p.pts[0].join()}`, place: p, head: k === 0 && (first.length || last.length) ? "Μέρη" : undefined }));
@@ -656,6 +657,8 @@
       if (se.from) ends.from = { text: se.from.label, place: se.from };
       ends.to = se.to ? { text: se.to.label, place: se.to } : { text: "", place: null };
       if (!se.to) setTimeout(() => inputs.to?.focus(), 120);
+      // Both ends known (a stop's «Πώς πάω», Σπίτι): straight to the routes.
+      else if (ends.from.place) { asking = false; open = null; }
     });
   });
   $effect(() => { if (find && app.start && !app.pickFor) untrack(() => setTimeout(() => inputs.to?.focus(), 80)); });
@@ -2426,12 +2429,15 @@
      into a ring round the stop's own mark, with the dark label above. */
   .aim { position: fixed; z-index: 29; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none;
     transform: translate(var(--x), var(--y)); transition: transform .28s cubic-bezier(.34, 1.4, .64, 1); }
-  .aim .ring, .aim .core { position: absolute; left: 0; top: 0; display: block; border-radius: 50%; translate: -50% -50%;
-    transition: width .28s cubic-bezier(.34, 1.4, .64, 1), height .28s cubic-bezier(.34, 1.4, .64, 1), background-color .2s, box-shadow .2s; }
-  .aim .ring { width: 44px; height: 44px; background: rgb(77 138 240 / .2); box-shadow: inset 0 0 0 2px rgb(77 138 240 / .55); animation: aimPulse 1.8s ease-out infinite; }
-  .aim .core { width: 16px; height: 16px; background: #4d8af0; box-shadow: 0 0 0 3px #ffffff, 0 2px 8px rgb(0 0 0 / .4); }
-  .aim.snap .ring { width: 60px; height: 60px; background: rgb(77 138 240 / .16); box-shadow: inset 0 0 0 4px #4d8af0; animation: none; }
-  .aim.snap .core { width: 40px; height: 40px; background: #ffffff; box-shadow: 0 2px 8px rgb(0 0 0 / .4); }
+  /* Centred by margins of half the size (--s), not translate(-50%): Safari kept the old translate while the size
+     grew on the snap, and the ring and the disc stood apart from the place. */
+  .aim .ring, .aim .core { position: absolute; left: 0; top: 0; display: block; border-radius: 50%; box-sizing: border-box;
+    width: var(--s); height: var(--s); margin: calc(var(--s) / -2) 0 0 calc(var(--s) / -2);
+    transition: width .28s cubic-bezier(.34, 1.4, .64, 1), height .28s cubic-bezier(.34, 1.4, .64, 1), margin .28s cubic-bezier(.34, 1.4, .64, 1), background-color .2s, box-shadow .2s; }
+  .aim .ring { --s: 44px; background: rgb(77 138 240 / .2); box-shadow: inset 0 0 0 2px rgb(77 138 240 / .55); animation: aimPulse 1.8s ease-out infinite; }
+  .aim .core { --s: 16px; background: #4d8af0; box-shadow: 0 0 0 3px #ffffff, 0 2px 8px rgb(0 0 0 / .4); }
+  .aim.snap .ring { --s: 60px; background: rgb(77 138 240 / .16); box-shadow: inset 0 0 0 4px #4d8af0; animation: none; }
+  .aim.snap .core { --s: 40px; background: #ffffff; box-shadow: 0 2px 8px rgb(0 0 0 / .4); }
   .aim .core { display: flex; align-items: center; justify-content: center; }
   .aim .core img { width: 22px; height: 22px; display: block; animation: aimIn .25s ease-out both; }
   @keyframes aimIn { from { opacity: 0; transform: scale(.4); } }
@@ -2461,7 +2467,7 @@
   .psheet { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; gap: 12px; padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
     border-radius: 24px 24px 0 0; background: var(--surface); box-shadow: 0 -10px 30px rgb(0 0 0 / .45); box-sizing: border-box; }
   .pme { position: absolute; right: 16px; top: -60px; color: var(--accent); }
-  .pgrip { width: 40px; height: 5px; border-radius: 3px; background: var(--border); align-self: center; display: block; }
+  .pgrip { width: 40px; height: 5px; border-radius: 3px; background: var(--grip); align-self: center; display: block; }
   .phead { height: 44px; display: flex; align-items: center; gap: 12px; }
   .pmk { flex: none; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #ff7a2f; background: rgb(255 122 47 / .16); }
   .pmk.from { color: var(--accent); background: var(--accent-bg); }
@@ -2512,6 +2518,6 @@
   .pnearest .oasa { flex: none; width: 28px; height: 28px; border-radius: 50%; background: #fff; display: flex; align-items: center; justify-content: center; }
   .pnearest .oasa img { width: 17px; height: 17px; display: block; }
   .pw { flex: none; display: flex; align-items: center; gap: 3px; font-weight: 700; color: var(--muted); }
-  .aim .core.svc { width: 30px; height: 30px; color: #ffffff; display: flex; align-items: center; justify-content: center; }
+  .aim .core.svc { --s: 30px; color: #ffffff; display: flex; align-items: center; justify-content: center; }
   .aim.snap .core.mine { color: #ffffff; background: #4d8af0; box-shadow: 0 0 0 3px #ffffff, 0 2px 8px rgb(0 0 0 / .4); }
 </style>

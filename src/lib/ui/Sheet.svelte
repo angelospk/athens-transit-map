@@ -79,7 +79,7 @@
   /* The handle and the title row are where the sheet is pulled down: no scrolling or zooming starts there. */
   .sgrab { margin: -10px -16px 0; padding: 10px 16px 0; touch-action: none; cursor: grab; }
   .sheet.dragging .sgrab { cursor: grabbing; }
-  .sgrip { display: block; width: 40px; height: 5px; margin: 0 auto; border-radius: 3px; background: color-mix(in srgb, var(--fg) 22%, transparent); }
+  .sgrip { display: block; width: 40px; height: 5px; margin: 0 auto; border-radius: 3px; background: var(--grip); }
   .shead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 0 4px; }
   h2 { margin: 0; font-size: 22px; font-weight: 700; line-height: 1.1; }
   .sclose { flex: none; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 50%;

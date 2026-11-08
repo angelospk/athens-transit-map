@@ -697,7 +697,7 @@
       padding: 10px 16px calc(16px + env(safe-area-inset-bottom)); max-height: 78dvh; }
     /* The handle: a wide strip to catch the thumb (the header drags too), the bar in its middle. */
     .grip { display: flex; align-items: center; justify-content: center; align-self: stretch; flex: none; height: 26px; margin: -10px -16px -6px; cursor: grab; }
-    .grip::after { content: ""; width: 40px; height: 5px; border-radius: 3px; background: var(--border); }
+    .grip::after { content: ""; width: 40px; height: 5px; border-radius: 3px; background: var(--grip); }
   }
   /* A card comes up from below. */
   .card { animation: cardIn .32s cubic-bezier(.2, .8, .2, 1); }

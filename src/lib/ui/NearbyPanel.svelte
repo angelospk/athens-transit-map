@@ -349,7 +349,7 @@
     .near { left: 0; right: 0; bottom: 0; width: auto; border-radius: 24px 24px 0 0; padding: 8px 16px calc(16px + env(safe-area-inset-bottom)); max-height: 78dvh; }
     /* The handle: a wide strip to catch the thumb (the header drags too), the bar in its middle. */
     .grip { display: flex; align-items: center; justify-content: center; align-self: stretch; height: 21px; margin: -8px -16px -8px; cursor: grab; }
-    .grip::after { content: ""; width: 40px; height: 5px; border-radius: 3px; background: var(--border); }
+    .grip::after { content: ""; width: 40px; height: 5px; border-radius: 3px; background: var(--grip); }
     .list { margin-right: 0; padding-right: 0; }
   }
   .near { animation: nearIn .32s cubic-bezier(.2, .8, .2, 1); }

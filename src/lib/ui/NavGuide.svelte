@@ -1044,7 +1044,7 @@
   /* The handle stays at the top while the sheet's content scrolls under it (it scrolled away with it). */
   .grip { position: sticky; top: -8px; z-index: 3; align-self: stretch; height: 30px; margin: -8px -14px -12px; display: flex; align-items: center; justify-content: center;
     cursor: grab; background: var(--surface); border-radius: var(--sheet-r) var(--sheet-r) 0 0; }
-  .grip::after { content: ""; width: 40px; height: 5px; border-radius: 3px; background: var(--border); }
+  .grip::after { content: ""; width: 40px; height: 5px; border-radius: 3px; background: var(--grip); }
   /* Half: the leg now and a little more, the map above it; the rest scrolls, or a drag shows it. */
   .sheet { max-height: 46dvh; }
   .sheet.full { max-height: 88dvh; }

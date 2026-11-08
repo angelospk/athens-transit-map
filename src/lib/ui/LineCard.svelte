@@ -787,7 +787,7 @@
   .psheet > * { flex-shrink: 0; }
   @keyframes cardIn { from { transform: translateY(28px); opacity: 0; } }
   .grip { display: flex; align-items: center; justify-content: center; align-self: stretch; height: 26px; margin: -10px -16px -6px; cursor: grab; }
-  .grip::after { content: ""; width: 40px; height: 5px; border-radius: 3px; background: var(--rail-off); }
+  .grip::after { content: ""; width: 40px; height: 5px; border-radius: 3px; background: var(--grip); }
   .psheet > header { display: flex; align-items: center; gap: 10px; height: 44px; }
   .pt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .pt b { font-size: 16px; font-weight: 700; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

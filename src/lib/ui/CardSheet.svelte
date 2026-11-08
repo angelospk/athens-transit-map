@@ -134,7 +134,7 @@
     border: 0; border-radius: var(--radius); background: var(--glass-strong); --card: var(--glass-fill); --card-border: var(--glass-line); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); text-shadow: var(--glass-text); }
   .top { touch-action: none; }
   .grab { display: none; width: 100%; height: 16px; margin: -8px 0 4px; padding: 0; border: 0; background: none; cursor: grab; }
-  .grab span { display: block; width: 40px; height: 5px; margin: 0 auto; border-radius: 3px; background: var(--border); }
+  .grab span { display: block; width: 40px; height: 5px; margin: 0 auto; border-radius: 3px; background: var(--grip); }
   .grab:focus-visible { outline: 2px solid var(--accent); border-radius: 6px; }
   .body { max-height: min(62dvh, 580px); overflow-y: auto; overscroll-behavior: contain; transition: opacity .15s; }
   .card.peek .body { opacity: 0; }

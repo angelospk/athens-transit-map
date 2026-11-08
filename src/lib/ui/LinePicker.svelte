@@ -122,4 +122,13 @@
   .all { display: inline-flex; align-items: center; min-height: 32px; padding: 0 12px; border: 0; border-radius: 9px; background: var(--control);
     font-size: 12px; font-weight: 600; line-height: 1; cursor: pointer; }
   .tip { margin-top: 8px; color: var(--muted); font-size: 12px; }
+  /* A phone (compact mockup 15Γ): the lines as pills, as round as the search over them, centred with the buttons beside. */
+  @media (max-width: 719px) {
+    .picker { align-items: center; }
+    .chips { margin: 0; gap: 8px; }
+    .tail { height: 36px; margin: 0; gap: 8px; }
+    .chip { min-height: 36px; height: 36px; border-radius: 18px; box-shadow: 0 2px 8px rgb(0 0 0 / .35); }
+    .chip .open { padding: 0 2px 0 14px; }
+    .chip .x { min-width: 32px; padding: 0 10px 0 4px; }
+  }
 </style>

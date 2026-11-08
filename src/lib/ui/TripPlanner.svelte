@@ -1255,7 +1255,7 @@
   .rvfoot { flex: none; padding: 12px 14px 14px; box-shadow: 0 -1px 0 var(--border); }
   /* The sheet's handle (a phone): the header drags it too; at «peek» only the options and «Ξεκίνα» show. */
   .grip { display: block; width: 100%; height: 18px; margin: -8px 0 -4px; padding: 0; border: 0; background: none; cursor: grab; touch-action: none; }
-  .grip span { display: block; width: 40px; height: 5px; margin: 0 auto; border-radius: 3px; background: var(--border); }
+  .grip span { display: block; width: 40px; height: 5px; margin: 0 auto; border-radius: 3px; background: var(--grip); }
   .grip:focus-visible { outline: 2px solid var(--accent); border-radius: 6px; }
   @media (max-width: 719px) { .rvtop { touch-action: none; } }
   .rv.peek > .tbody { display: none; }

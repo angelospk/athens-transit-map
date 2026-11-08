@@ -411,9 +411,11 @@
   <!-- One notice on the map, under the search: a strike first, else the newest about a favourite line. A phone:
        under the search and the chips. -->
   {#if !narrow.current}{@render mapNote()}{/if}
-  {#if shown && narrow.current && nsnap !== "full" && !app.start}
+  <!-- Kept under «Πού πας;» while it opens and closes (it covers the screen): hidden then, the map showed bare for a
+       moment between the two. Not while picking on the map (the pick has its own field), nor with the sheet at the top. -->
+  {#if shown && narrow.current && nsnap !== "full" && !app.pickFor}
     <!-- A phone (compact mockup 15Γ): the search on top of the map, your places and the lists as chips under it. -->
-    <div class="mtop" in:rise={{ y: -12 }}>
+    <div class="mtop" transition:rise={{ y: -10, duration: 220 }}>
       <button type="button" class="mwhere" aria-haspopup="dialog" onclick={openWhere}><Icon name="search" size={19} /><span>Πού πας;</span></button>
       <div class="mchips">
         {@render placeChips()}
@@ -689,7 +691,7 @@
     /* The handle: a band across the top (an easy target), its bar in the middle. */
     /* It stays at the top while the sheet scrolls under it. */
     .grip { display: block; position: sticky; top: -8px; z-index: 2; flex: none; height: 22px; margin: -8px -16px -6px; cursor: grab; background: none; border-radius: 24px 24px 0 0; }
-    .grip::after { content: ""; position: absolute; left: 50%; top: 8px; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: var(--border); }
+    .grip::after { content: ""; position: absolute; left: 50%; top: 8px; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: var(--grip); }
     .grip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 12px; }
     .now { overscroll-behavior: none; transition: top .26s cubic-bezier(.2, .8, .2, 1); }
     .now.dragging { transition: none; }
@@ -719,7 +721,8 @@
   @media (max-width: 719px) { .now > .where, .now > .chips { display: none; } }
   .chip.glass.round { width: 34px; padding: 0; justify-content: center; position: relative; }
   .chip.glass.round .bdot { position: absolute; right: 6px; top: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
-  /* On the see-through sheet the cards stand out: a lighter fill, a fine edge and a soft shadow under them. */
-  .board, .srow, .dest { background: color-mix(in srgb, var(--fg) 8%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 10%, transparent), 0 2px 10px rgb(0 0 0 / .28); }
-  .srow:hover, .dest:hover { background: color-mix(in srgb, var(--fg) 12%, var(--surface)); }
+  /* On the see-through sheet the cards stand out without turning grey: a darker glass than the sheet, a fine light
+     edge and a shadow under them. */
+  .board, .srow, .dest { background: color-mix(in srgb, var(--bg) 55%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 11%, transparent), 0 4px 14px rgb(0 0 0 / .32); }
+  .srow:hover, .dest:hover { background: color-mix(in srgb, var(--bg) 35%, transparent); }
 </style>

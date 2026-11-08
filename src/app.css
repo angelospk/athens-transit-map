@@ -2,6 +2,8 @@
    the quiet fill of chips, inputs and segmented controls. --on-accent is the text on an --accent fill: white in
    light, near-black in dark (the dark accent is too light for white text). */
 :root {
+  /* The sheets' drag handle: the text colour, turned down (a soft white on the dark theme). */
+  --grip: color-mix(in srgb, var(--fg) 45%, transparent);
   --bg: #ffffff; --fg: #13161b; --muted: #5b6270; --panel: rgba(255, 255, 255, .97); --surface: #ffffff; --border: #e3e6eb;
   --ontime: #1a7f37; --late1: #b7791f; --late2: #d9480f; --late3: #c2261f; --none: #6b7280; --warn-bg: #fdf0da;
   --ok-bg: #e5f3e9; --warn-fg: #9a5b00; --bad-bg: #fce9e7;

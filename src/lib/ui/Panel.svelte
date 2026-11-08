@@ -68,11 +68,38 @@
   };
 
   // «Οδηγίες εδώ» in the search modal: the trip planner opens and takes the place as its end.
-  $effect(() => { if (app.tripTo || app.tripFrom) { pop = "trip"; app.tab = "trip"; } });
+  // The planner's code, fetched once the page is idle: asked for later, it opens at once (no «Φόρτωση» first).
+  $effect(() => {
+    const go = () => { void import("./TripPlanner.svelte"); };
+    const w = window as Window & { requestIdleCallback?: (f: () => void) => number };
+    if (w.requestIdleCallback) w.requestIdleCallback(go); else setTimeout(go, 2000);
+  });
+  // A phone: a trip asked from elsewhere (a stop's «Πώς πάω», a place on the map, Σπίτι) opens in «Πού πας;», which shows
+  // its routes (compact mockup 14); the old planner with its own fields is only the picked route's sheet there (it
+  // comes with app.tripPrefs, from «Πού πας;» itself).
+  $effect(() => {
+    const t = app.tripTo, f = app.tripFrom;
+    if (!t && !f) return;
+    untrack(() => {
+      if (narrow.current && !app.tripPrefs) {
+        app.tripTo = null; app.tripFrom = null;
+        app.startEnds = { from: f ?? (app.myPos ? { label: "Η θέση μου", pts: [app.myPos], lines: [], kind: "me" } : null), to: t };
+        if (pop === "trip") pop = null;
+        if (app.tab === "trip") app.tab = "now";
+        app.start = true;
+        return;
+      }
+      pop = "trip"; app.tab = "trip";
+    });
+  });
   // The «Ταξίδι» tab is the planner: picked, it opens; another tab picked, it closes.
   $effect(() => {
     const t = app.tab;
-    untrack(() => { if (t === "trip") pop = "trip"; else if (pop === "trip") pop = null; });
+    untrack(() => {
+      // A phone, a trip on its way to «Πού πας;» (above): not the old planner.
+      if (t === "trip" && narrow.current && !app.tripPrefs && (app.tripTo || app.tripFrom || app.startEnds)) return;
+      if (t === "trip") pop = "trip"; else if (pop === "trip") pop = null;
+    });
   });
 
   // The chevron: opens and closes the dropdown.
@@ -144,7 +171,7 @@
 <svelte:window onclick={e => { if (pop && pop !== "trip" && !(e.target as Element).closest?.(".pop, .tool")) pop = null; }}
   onkeydowncapture={onEscape} />
 
-<section class="panel" class:compact class:home inert={!!pop && narrow.current} aria-label="Πίνακας ελέγχου" bind:offsetHeight={panelH}>
+<section class="panel" class:compact class:home class:mbar={narrow.current && !home} inert={!!pop && narrow.current} aria-label="Πίνακας ελέγχου" bind:offsetHeight={panelH}>
   <h1 class="sr">Στάσεις: συγκοινωνίες live</h1>
 
   <!-- Always shown: the picked lines, the search, and the chevron. The map buttons are on the right (.rail). -->
@@ -161,6 +188,8 @@
     </div>
   {:else}
   <div class="bar">
+    <!-- A phone (compact mockup 15Γ): «Πού πας;» on top of the map as on the home screen, the lines as pills under it. -->
+    {#if narrow.current}<button type="button" class="where mwhere" aria-haspopup="dialog" onclick={() => (app.start = true)}><Icon name="search" size={19} /><span>Πού πας;</span></button>{/if}
     <LinePicker {app} expanded={!collapsed} onsearch={() => (app.start = true)} {tail} />
   </div>
   {/if}
@@ -320,7 +349,7 @@
         <div class="pop"><p class="hint">Οι οδηγίες (από εδώ ως εκεί) έρχονται σύντομα {app.cityInfo.inName}. Ως τότε, δες τις γραμμές και τις στάσεις στον χάρτη.</p></div>
       {:else}
         {#await import("./TripPlanner.svelte")}
-          <div class="pop"><p class="hint">Φόρτωση…</p></div>
+          <div class="pop loadp" role="status" aria-label="Φόρτωση"><i class="spin" aria-hidden="true"></i></div>
         {:then m}
           <m.default {app} onclose={closeTrip} />
         {:catch}
@@ -464,6 +493,24 @@
   .pop .feedback { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px;
     margin: 0 0 12px; border: 0; border-radius: var(--radius-sm); background: var(--accent); color: var(--on-accent); font: inherit; font-size: 14px;
     font-weight: 600; line-height: 1; cursor: pointer; }
+  /* A phone with lines on the map (compact mockup 15Γ): no panel behind; the search pill, then the lines' pills and the
+     round glass buttons on one row, centred on each other. */
+  @media (max-width: 719px) {
+    .panel.mbar { padding: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: none; }
+    .mbar .mwhere { width: 100%; margin-bottom: 10px; }
+    .mbar .mwhere :global(svg) { color: var(--accent); }
+    .mbar .tool.add, .mbar .sep { display: none; }
+    .mbar .bar :global(.find) { display: none; }   /* the pill above is the search */
+    .mbar .tool, .mbar .fold { width: 36px; height: 36px; min-width: 36px; padding: 0; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 18px;
+      background: color-mix(in srgb, var(--surface) 62%, transparent); -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%);
+      box-shadow: 0 2px 8px rgb(0 0 0 / .35), inset 0 0 0 1px var(--card-border, var(--border)); color: var(--fg); }
+    .mbar .favbtn.on { width: auto; padding: 0 12px; background: color-mix(in srgb, var(--star) 22%, var(--surface)); color: var(--star); }
+    .mbar #panel-body:not([hidden]) { margin-top: 10px; padding: 12px 14px; border-radius: 20px; background: var(--glass-strong);
+      -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); }
+  }
+  .loadp { display: flex; align-items: center; justify-content: center; min-height: 64px; }
+  .spin { width: 22px; height: 22px; border-radius: 50%; border: 2.5px solid color-mix(in srgb, var(--fg) 18%, transparent); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .hint { color: var(--muted); font-size: 12px; }
   .field > span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
   .seg { display: flex; gap: 4px; padding: 4px; border-radius: var(--radius-sm); background: var(--control); margin-bottom: 10px; }

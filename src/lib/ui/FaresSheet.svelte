@@ -154,7 +154,7 @@
   @media (max-width: 719px) {
     .scrim { align-items: flex-end; }
     .sheet { width: 100%; max-width: none; max-height: calc(100dvh - 40px); margin: 0 8px max(8px, env(safe-area-inset-bottom)); padding: 10px 16px 16px; border-radius: 26px; }
-    .grip { display: block; align-self: center; flex: none; width: 40px; height: 4px; border-radius: 2px; background: var(--border); }
+    .grip { display: block; align-self: center; flex: none; width: 40px; height: 4px; border-radius: 2px; background: var(--grip); }
   }
   @media (prefers-reduced-motion: reduce) { .scrim, .sheet { animation: none; } }
 </style>

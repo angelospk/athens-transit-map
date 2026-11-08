@@ -2649,6 +2649,13 @@
     });
     return () => marks.forEach(x => x.remove());
   });
+  // The aim snapped onto Σπίτι or Δουλειά covers its mark: the mark's label is hidden then (it stuck out beside the circle).
+  $effect(() => {
+    const k = app.pickSnap?.mine ?? null;
+    void app.places;   // the marks are made anew when a place moves: after them (a frame later)
+    const f = requestAnimationFrame(() => document.querySelectorAll(".mine-mark").forEach(e => e.classList.toggle("under-aim", !!k && e.classList.contains(k))));
+    return () => cancelAnimationFrame(f);
+  });
 
   // Picking on the map (compact mockup 8β): while the map moves, the stop or station nearest the centre within SNAP_PX
   // (let go past UNSNAP_PX, so it does not flicker at the edge) goes to app.pickSnap, with its place on the screen.
@@ -2953,6 +2960,7 @@
     box-shadow: 0 0 0 2px #ffffff; }
   :global(.mine-mark.work .mm-i) { background: #8a4fbf; }
   :global(.mine-mark b) { font-size: 12.5px; font-weight: 800; line-height: 1; }
+  :global(.mine-mark.under-aim) { opacity: 0 !important; pointer-events: none; }   /* MapLibre sets the mark's opacity inline */
   :global(.stop-pin) { pointer-events: none; width: 44px; height: 44px; position: relative; }
   :global(.stop-pin .sp-halo) { position: absolute; left: 50%; top: 50%; width: 80px; height: 80px; margin: -40px 0 0 -40px; border-radius: 50%;
     background: radial-gradient(circle, rgb(77 138 240 / 0.18) 0 60%, rgb(77 138 240 / 0.10) 61% 100%); }
