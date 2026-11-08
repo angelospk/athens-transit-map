@@ -7,8 +7,9 @@ import { bearingDeg } from "./heading";
 import { distanceM } from "./glide";
 import { fold } from "./search";
 
-// n: the unique cleaned terminus names; s: per stop, [] or [bearing, ...indexes into n].
-export interface StopDirs { n: string[]; s: (number | null)[][] }
+// n: the unique cleaned terminus names; s: per stop, [] or [bearing, ...indexes into n]; h: line → variant →
+// index into n, the variant's readable end (destination.ts; files before it lack it, loops and unclear names have none).
+export interface StopDirs { n: string[]; s: (number | null)[][]; h?: Record<string, Record<string, number>> }
 
 const rad = Math.PI / 180;
 const circ = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);

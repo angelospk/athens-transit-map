@@ -15,6 +15,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { TripIndex } from "../src/lib/trip";
 import { stopDirections } from "../src/lib/towards";
+import { lineDestinations, variantEnds, withDestinations } from "../src/lib/destination";
 import { applyCorrections, type Correction } from "../src/lib/stopfix";
 import type { LineStatic, LinesIndex } from "../src/lib/types";
 
@@ -57,6 +58,10 @@ for (const f of files) {
 // An instance that lost most of its lines (a half-loaded feed) would empty the map: keep the old file.
 const old: TripIndex | null = existsSync(OUT) ? JSON.parse(readFileSync(OUT, "utf8")) : null;
 if (old && data.s.length < old.s.length / 2) throw new Error(`${data.s.length} stops, was ${old.s.length}: not written`);
-data.d = stopDirections(data);
+// Each variant's end, as a readable name, by line (src/lib/destination.ts): from the variant's last stops, named
+// from its headsign or the line's name. Loops and names with no clear cut have none.
+const lineName = new Map(ix.lines.map(l => [l.id, l.name]));
+data.d = withDestinations(stopDirections(data), Object.fromEntries(files.map(f => [f.id, lineDestinations(lineName.get(f.id) ?? "", variantEnds(f))])));
 writeFileSync(OUT, JSON.stringify(data));
-console.log(`${files.length} lines, ${data.s.length} stops, ${Object.values(data.l).reduce((n, v) => n + Object.keys(v).length, 0)} variants`);
+const ends = Object.values(data.d.h ?? {}).reduce((n, v) => n + Object.keys(v).length, 0);
+console.log(`${files.length} lines, ${data.s.length} stops, ${Object.values(data.l).reduce((n, v) => n + Object.keys(v).length, 0)} variants, ${ends} with an end`);

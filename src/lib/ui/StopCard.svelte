@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { fetchLineStatic, fetchStop, peekStop } from "../api";
-  import { alertLinesAt, arrivalGroups, arrivalNote, boardLines, headTo, linesAt, linesToWarm, mineFirst, timeText, toward, twins, usualRows, scheduleRows, signCode, type ArrivalGroup, type ArrivalTime, type StopBoard } from "../stops";
+  import { alertLinesAt, arrivalGroups, arrivalNote, boardLines, headTo, lineTowardAt, linesAt, linesToWarm, mineFirst, timeText, toward, twins, usualRows, scheduleRows, signCode, type ArrivalGroup, type ArrivalTime, type StopBoard } from "../stops";
   import Bell from "./Bell.svelte";
   import type { AppState } from "../state.svelte";
   import type { FetchResult } from "../poller";
@@ -94,9 +94,11 @@
     .filter(u => showAll || mine.includes(u.line)) : []);
   const quiet = $derived(lines.filter(l => (showAll || mine.includes(l.line)) && !groups.some(g => g.line === l.line) && !usual.some(u => u.line === l.line)));
   const big = (t: ArrivalTime) => (t.here ? "τώρα" : timeText(t));
-  // Where a row's bus runs to; on a loop, after the turn, back to the start (headTo).
+  // Where a row's bus runs to: its variant's end from the map data (trips*.json d.h); on a loop, after the turn,
+  // back to the start (headTo). A row with no variant: the end of the line's variants here, else the headsign.
   const dest = (g: { line: string; headsign: string; variant?: string }) =>
-    (ix && i != null && g.variant ? headTo(ix, g.line, g.variant, i, g.headsign) : { to: toward(g.headsign), back: false });
+    (ix && i != null && g.variant ? headTo(ix, g.line, g.variant, i, g.headsign)
+      : { to: (ix && i != null ? lineTowardAt(ix, g.line, i) : null) ?? toward(g.headsign), back: false });
   const variantsOf = (line: string) => lines.find(l => l.line === line)?.variants ?? [];
 
   const boardOf = (r: FetchResult | undefined) => {
@@ -242,8 +244,9 @@
           <span>Χωρίς λεωφορείο κοντά τώρα:</span>
           {#each quiet as l (l.line)}
             {@const c = app.lineColor(l.line)}
-            <button type="button" class="chip" style:--bg={c.bg} style:--fg={c.fg} aria-label="Γραμμή {l.line}"
-              onclick={() => app.openLineAt(l.line, l.variants)}>{l.line}</button>
+            {@const to = ix && i != null ? lineTowardAt(ix, l.line, i) : null}
+            <button type="button" class="q" aria-label="Γραμμή {l.line}{to ? ` προς ${to}` : ""}"
+              onclick={() => app.openLineAt(l.line, l.variants)}><b class="chip" style:--bg={c.bg} style:--fg={c.fg}>{l.line}</b>{#if to}<span class="qto">→ {to}</span>{/if}</button>
           {/each}
         </div>
       {/if}
@@ -324,7 +327,10 @@
   .usual .to { color: var(--muted); font-weight: 500; }
   .usual small { color: var(--muted); font-size: 12px; font-weight: 500; line-height: 1.3; white-space: normal; }
   .quiet { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 0 0; color: var(--muted); font-size: 12px; }
-  .quiet .chip { min-width: 34px; min-height: 28px; padding: 2px 7px; font-size: 12px; cursor: pointer; }
+  .quiet .q { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0; border: 0; background: none;
+    color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; text-align: left; }
+  .quiet .chip { min-width: 34px; min-height: 28px; padding: 2px 7px; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; }
+  .quiet .qto { margin-right: 6px; }
   .empty { margin: 12px 0; font-size: 13px; }
   .on { margin-bottom: 8px; color: var(--accent); }
   .link { padding: 0; border: 0; background: none; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
