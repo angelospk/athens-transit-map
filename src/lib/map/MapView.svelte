@@ -40,6 +40,7 @@
   import type { AppState } from "../state.svelte";
   import SpeedLegend from "../ui/SpeedLegend.svelte";
   import { paintBase } from "./basemap";
+  import { addRelief, RELIEF_LAYER } from "./relief";
   import { AppleBase, MAPKIT_TOKEN } from "./appleBase";
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, smoothLine, stopsFC, variantFC, type DrawnLine } from "./layers";
@@ -109,6 +110,13 @@
   // The base map follows the theme. A new style drops our sources, layers and images: they are added again
   // (addAll) once it has loaded, and `loaded` going false then true makes the effects below send their data again.
   const systemDark = new MediaQuery("(prefers-color-scheme: dark)");
+  // A computer: the hills in relief (relief.ts); a phone keeps the flat map (lighter to draw, less to read).
+  const wideMap = new MediaQuery("(min-width: 720px)");
+  $effect(() => {
+    const on = wideMap.current;
+    void baseGen;
+    untrack(() => { if (map?.getLayer(RELIEF_LAYER)) map.setLayoutProperty(RELIEF_LAYER, "visibility", on ? "visible" : "none"); });
+  });
   const dark = $derived(resolveDark(app.theme, systemDark.current));
   let styleDark = untrack(() => dark);   // the theme of the style on the map
   let styleGen = 0;
@@ -1383,6 +1391,7 @@
     // and its own layers are noted (before ours go in): the ones Apple's map replaces in 2D.
     m.on("style.load", () => {
       paintBase(m, styleDark);
+      addRelief(m, styleDark, wideMap.current);   // the hills in relief, a computer only (relief.ts)
       baseLayers = m.getStyle().layers.map(l => [l.id, (m.getLayoutProperty(l.id, "visibility") as string | undefined) ?? "visible"] as [string, string]);
       baseHidden = false;
       baseGen++;
