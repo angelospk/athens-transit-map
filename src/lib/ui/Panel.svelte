@@ -425,11 +425,11 @@
 
 <style>
   /* One floating glass card over the map (the glass recipe: app.css): top left, 16 px in from the edges. */
-  .panel { position: absolute; z-index: 5; top: calc(16px + env(safe-area-inset-top)); left: 16px; width: var(--col-w);
+  .panel { position: absolute; z-index: 5; top: calc(16px + env(safe-area-inset-top)); left: 16px; width: var(--col-w, 440px);
     max-width: calc(100% - 76px); padding: 12px 14px; border: 0; border-radius: var(--radius); background: var(--glass-strong); --card: var(--glass-fill); --card-border: var(--glass-line); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-rim); text-shadow: var(--glass-text); }
-  .panel.compact { width: var(--col-w); max-width: calc(100% - 76px); }   /* as wide as the cards below it */
+  .panel.compact { width: var(--col-w, 440px); max-width: calc(100% - 76px); }   /* as wide as the cards below it */
   /* The home bar: a search pill and a round layers button, floating on the map with no panel behind them. */
-  .panel.home, .panel.home.compact { width: var(--col-w); max-width: calc(100% - 32px); padding: 0; background: none; border: 0; box-shadow: none;
+  .panel.home, .panel.home.compact { width: var(--col-w, 440px); max-width: calc(100% - 32px); padding: 0; background: none; border: 0; box-shadow: none;
     -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: none; }
   .homebar { display: flex; gap: 10px; }
   .homebar[hidden] { display: none; }
@@ -457,7 +457,7 @@
   .favbtn.on:hover { background: color-mix(in srgb, var(--star) 26%, transparent); color: var(--star); }
   @media (pointer: coarse) { .favbtn { height: 44px; min-width: 44px; } }
   /* The first time: what the star does, once. */
-  .under { position: absolute; z-index: 5; left: 16px; width: var(--col-w); max-width: calc(100% - 76px); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+  .under { position: absolute; z-index: 5; left: 16px; width: var(--col-w, 440px); max-width: calc(100% - 76px); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
   .under > :global(*) { pointer-events: auto; }
   .favtip { box-sizing: border-box; display: flex; align-items: center; gap: 12px;
     padding: 12px 12px 12px 14px; border-radius: 22px; background: color-mix(in srgb, var(--star) 13%, var(--surface));
@@ -590,7 +590,7 @@
   /* On a computer the planner is the left column, under the panel and over the tab bar, as the cards are: the map
      and its buttons stay free on the right. */
   @media (min-width: 720px) {
-    .popwrap.tabbed { top: calc(28px + var(--ph, 60px) + env(safe-area-inset-top)); left: 16px; right: auto; width: var(--col-w); max-width: calc(100% - 84px);
+    .popwrap.tabbed { top: calc(28px + var(--ph, 60px) + env(safe-area-inset-top)); left: 16px; right: auto; width: var(--col-w, 440px); max-width: calc(100% - 84px);
       max-height: calc(100dvh - 36px - var(--ph, 60px) - 92px - env(safe-area-inset-top)); }
   }
   /* Wide enough that the tab bar (in the middle) is clear of the column: the planner goes down to the window's foot. */

@@ -2177,7 +2177,7 @@
   @media (min-width: 1024px) {
     .start { justify-content: flex-start; align-items: stretch; padding: 16px; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; pointer-events: none; }
     /* As wide as the home column and with its padding: «Πού πας;» and «Γραμμές» open in its place (NowPanel). */
-    .box { pointer-events: auto; max-width: var(--col-w); max-height: none !important; height: 100%; padding: 14px 16px 16px; border-radius: var(--radius); gap: 14px; }
+    .box { pointer-events: auto; max-width: var(--col-w, 440px); max-height: none !important; height: 100%; padding: 14px 16px 16px; border-radius: var(--radius); gap: 14px; }
     .box > :global(*) { flex: none; }
     .acts { margin-top: auto; }
   }

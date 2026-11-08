@@ -131,5 +131,5 @@
       padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); max-height: 55dvh; }
   }
   /* A computer (desktop mockups Υ5, Υ6): the left column, from the top of the window down, in the home panel's place. */
-  @media (min-width: 720px) { .card { left: 16px; width: var(--col-w); top: calc(16px + env(safe-area-inset-top)); bottom: auto; max-height: calc(100dvh - 32px - env(safe-area-inset-top)); } }
+  @media (min-width: 720px) { .card { left: 16px; width: var(--col-w, 440px); top: calc(16px + env(safe-area-inset-top)); bottom: auto; max-height: calc(100dvh - 32px - env(safe-area-inset-top)); } }
 </style>

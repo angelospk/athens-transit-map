@@ -728,7 +728,7 @@
   /* A computer (desktop mockup Υ1): the home column runs the window's height, the map beside it; the name and the
      map, alerts and settings buttons at its top, the chips wrap. */
   @media (min-width: 720px) {
-    .now { top: calc(16px + env(safe-area-inset-top)); bottom: 16px; max-height: none; width: var(--col-w); padding-top: 6px; }
+    .now { top: calc(16px + env(safe-area-inset-top)); bottom: 16px; max-height: none; width: var(--col-w, 440px); padding-top: 6px; }
     .chips { flex-wrap: wrap; }
   }
   .brand { flex: none; height: 52px; display: flex; align-items: center; gap: 4px; margin: 0 -6px 0 0; }
