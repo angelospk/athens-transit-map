@@ -428,6 +428,8 @@ export class AppState {
   // The guide's stops at their street's kerb ([lat, lon], by stop id, or by "lat,lon" for one with none): NavGuide
   // finds them (stopSnap), the map's ring and labels stand there, not among the buildings where some stops are given.
   guideKerb = $state.raw<Record<string, [number, number]>>({});
+  // The same as moves ([stop's point, its kerb], [lat, lon]): the 3D stop stands there too (MapView → scene3d).
+  guideKerbMoves = $state.raw<[[number, number], [number, number]][]>([]);
   // The route chosen on «Πού πας;» (StartScreen), drawn on the map while that screen is open; the planner's own after.
   startPreview = $state.raw<FeatureCollection<LineString> | null>(null);
 
@@ -471,6 +473,7 @@ export class AppState {
     this.nav?.closeScreen("guide");
     this.guide = null;
     this.guideKerb = {};
+    this.guideKerbMoves = [];
     this.guideFrame = null;
     this.headingUp = false;
     this.guideWalk = null;

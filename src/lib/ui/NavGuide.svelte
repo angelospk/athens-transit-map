@@ -599,7 +599,11 @@
       if (l.kind !== "ride" || /^[MΜTΤ]\d/.test(l.line)) continue;   // a bus's stops only: a station is not on a kerb
       for (const s of [l.board, l.alight]) {
         if (untrack(() => kerb[kid(s)])) continue;
-        void snapStop(s.at).then(p => { kerb = { ...kerb, [kid(s)]: p }; app.guideKerb = kerb; }, () => {});
+        void snapStop(s.at).then(p => {
+          kerb = { ...kerb, [kid(s)]: p };
+          app.guideKerb = kerb;
+          app.guideKerbMoves = [...app.guideKerbMoves, [s.at, p]];
+        }, () => {});
       }
     }
   });

@@ -2612,9 +2612,13 @@
   });
 
   // The stops for 3D: built close in, as a pole with its sign and, on wide streets, a shelter (scene3d).
+  // The guide's stops at the kerb it walks to (app.guideKerbMoves): their 3D pole stands by that street, not by the
+  // nearest carriageway to the stop's own point (for some stops another street, behind the buildings).
   $effect(() => {
-    const ix = app.stopIx;
-    if (ix) untrack(() => scene3d.setStops(ix.s.map(x => [x[2], x[1]] as LngLat)));
+    const ix = app.stopIx, moves = app.guideKerbMoves;
+    if (!ix) return;
+    const near = (a: [number, number], lat: number, lon: number) => Math.abs(a[0] - lat) < 2e-5 && Math.abs(a[1] - lon) < 2e-5;
+    untrack(() => scene3d.setStops(ix.s.map(x => { const mv = moves.find(([o]) => near(o, x[1], x[2])); return (mv ? [mv[1][1], mv[1][0]] : [x[2], x[1]]) as LngLat; })));
   });
   $effect(() => {
     if (loaded) map!.setFilter("bus-stop-selected", ["==", ["get", "i"], app.busStop ?? -1]);
