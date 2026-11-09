@@ -19,7 +19,8 @@ import type { DelayClass } from "../format";
 import { depthAt, ISLANDS, TRACK_GAP, trackGapAt, type Livery, DEPTH, metroStops } from "./metroDepth";
 import { EntranceModels } from "./entrance/models";
 import { Landmarks } from "./landmarks";
-import { PARLIAMENT_IDS } from "./landmarks/syntagmaData";
+import { MODELLED_ENTRANCES, PARLIAMENT_IDS } from "./landmarks/syntagmaData";
+import { groundAt as landmarkGround } from "./landmarks/syntagmaGround";
 import type { Entrance3D } from "../entrances";
 import { Turners } from "../turn";
 
@@ -1439,7 +1440,7 @@ export class Scene3D {
   /** Every bus stop, [lon, lat]: those near the view are built (pools()). */
   // The metro's street entrances (public/entrances.json, or the admin's edits): sign, stairwell and lift models.
   private entrances = (() => { const e = new EntranceModels(); e.onChange = () => this.map?.triggerRepaint(); return e; })();
-  setEntrances(list: Entrance3D[]) { this.entrances.set(list); }
+  setEntrances(list: Entrance3D[]) { this.entrances.set(list.filter(e => !MODELLED_ENTRANCES.includes(e.id))); }   // some drawn by a landmark
   // Landmarks modelled by hand (landmarks/): Σύνταγμα and the Βουλή. Their own buildings leave the base map's extrusions.
   private landmarks = (() => { const l = new Landmarks(); l.onChange = () => this.map?.triggerRepaint(); return l; })();
   setClosedStations(names: string[]) { this.entrances.setClosed(names); }
@@ -1874,17 +1875,17 @@ export class Scene3D {
     const rnd = () => ((seed = (seed * 16807) % 2147483647), seed / 2147483647);
     const j = () => (rnd() - 0.5) * 2;
     for (const [lon, lat, h0] of spots) {
-      const [x, y] = this.local([lon, lat]);
+      const [x, y] = this.local([lon, lat]), g0 = landmarkGround([lon, lat]);   // on a landmark's ground (Σύνταγμα's sunk square)
       // Wide, flat umbrella crowns (as street trees grow, and as the reference renders them) on a taller trunk.
       const h = Math.max(5, Math.min(h0, 16)), r = Math.max(3, Math.min(7.5, h * 0.52));
       const base = c.leaves[Math.floor(rnd() * c.leaves.length)];
       if (Math.hypot(x - cx, y - cy) > TREE_FULL_M) {
-        o.position.set(x, y, h - r * 0.5); o.rotation.set(rnd() * 6, rnd() * 6, rnd() * 6); o.scale.set(r * 1.23, r * 1.23, r * (toon ? 1 : 0.66)); o.updateMatrix();
+        o.position.set(x, y, g0 + h - r * 0.5); o.rotation.set(rnd() * 6, rnd() * 6, rnd() * 6); o.scale.set(r * 1.23, r * 1.23, r * (toon ? 1 : 0.66)); o.updateMatrix();
         far.setMatrixAt(kf, o.matrix);
         far.setColorAt(kf++, col.setHex(base).offsetHSL(0, 0, (rnd() - 0.5) * 0.06));
         continue;
       }
-      o.position.set(x, y, 0); o.rotation.set(0, 0, 0); o.scale.set(1, 1, h * 0.72); o.updateMatrix();
+      o.position.set(x, y, g0); o.rotation.set(0, 0, 0); o.scale.set(1, 1, h * 0.72); o.updateMatrix();
       trunks.setMatrixAt(kn++, o.matrix);
       const parts: [number, number, number, number][] = [
         [0, 0, h - r * 0.42, r],                                   // the main crown
@@ -1893,7 +1894,7 @@ export class Scene3D {
         [r * 0.3 * j(), r * 0.3 * j(), h - r * 0.15, r * 0.55],    // the top
       ];
       for (const [dx, dy, z, rr] of parts) {
-        o.position.set(x + dx, y + dy, z); o.rotation.set(rnd() * 6, rnd() * 6, rnd() * 6); o.scale.set(rr * 1.12, rr * 1.12, rr * (toon ? 0.9 : 0.6)); o.updateMatrix();
+        o.position.set(x + dx, y + dy, g0 + z); o.rotation.set(rnd() * 6, rnd() * 6, rnd() * 6); o.scale.set(rr * 1.12, rr * 1.12, rr * (toon ? 0.9 : 0.6)); o.updateMatrix();
         crowns.setMatrixAt(k, o.matrix);
         crowns.setColorAt(k++, col.setHex(base).offsetHSL(0, 0, (rnd() - 0.5) * 0.06));
       }
