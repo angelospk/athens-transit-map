@@ -60,14 +60,18 @@
   <p>Το staseis.gr μετράει επισκέψεις με το Cloudflare Web Analytics. Δεν βάζει cookies και δεν σε
     ακολουθεί σε άλλα sites. Βλέπουμε μόνο συνολικούς αριθμούς (π.χ. πόσες επισκέψεις είχε μια σελίδα).
     Τα αγαπημένα του χάρτη μένουν στον browser σου.</p>
-  <p>Δύο λειτουργίες του web στέλνουν δεδομένα, και μόνο όταν τις χρησιμοποιήσεις:</p>
+  <p>Μια λειτουργία του web στέλνει δεδομένα, και μόνο όταν τη χρησιμοποιήσεις:</p>
   <ul>
     <li><strong>Ειδοποίηση στον browser</strong>: η διεύθυνση push του browser σου και η στάση, η γραμμή και το
       λεωφορείο της ειδοποίησης πηγαίνουν στο <code>push.haroldpoi.dev</code>. Σβήνονται όταν τελειώσει η
       ειδοποίηση ή όταν την ακυρώσεις.</li>
-    <li><strong>«Λάθος θέση στάσης»</strong>: η θέση σου εκείνη τη στιγμή (στη στάση), η στάση και ένα τυχαίο
-      αναγνωριστικό του browser, για να διορθωθεί η θέση της στάσης στον χάρτη.</li>
   </ul>
+
+  <h2>«Λάθος θέση στάσης;»</h2>
+  <p>Στην εφαρμογή και στο web, αν πατήσεις «Λάθος θέση στάσης;» και στείλεις, φεύγουν: το σημείο του χάρτη
+    όπου έβαλες την πινέζα (όχι η θέση σου), η στάση και ένας τυχαίος κωδικός συσκευής. Πηγαίνουν σε ένα
+    φύλλο Google (μέσω Google Apps Script), όπου τα διαβάζουμε για να διορθώσουμε τη θέση της στάσης. Ο
+    κωδικός συσκευής σβήνεται από την εφαρμογή με το «Διαγραφή όλων των δεδομένων».</p>
 
   <h2>Το bot στο Telegram</h2>
   <p>Αν το χρησιμοποιείς, το bot κρατά το αναγνωριστικό της συζήτησης, τις ειδοποιήσεις και τις στάσεις που
@@ -109,10 +113,11 @@
         your location. Map tiles load from OpenFreeMap (<code>tiles.openfreemap.org</code>).</li>
       <li>The website counts visits with Cloudflare Web Analytics: no cookies, no cross-site tracking, only
         totals. The map's favourites stay in your browser.</li>
-      <li>Two website features send data, only when you use them: a browser alert sends your browser's push
-        address and the alert's stop, line and bus to <code>push.haroldpoi.dev</code> (deleted when the alert
-        ends or you cancel it); a "wrong stop position" report sends your position at that moment, the stop
-        and a random browser id, to correct the stop on the map.</li>
+      <li>A browser alert on the website sends your browser's push address and the alert's stop, line and bus to
+        <code>push.haroldpoi.dev</code> (deleted when the alert ends or you cancel it).</li>
+      <li>"Wrong stop position?" (app and website), only if you send it: the map point where you placed the pin
+        (not your location), the stop and a random device id go to a Google Sheet (via Google Apps Script), so
+        we can correct the stop. "Delete all data" in the app removes the device id from the phone.</li>
       <li>The Telegram bot, if you use it, keeps the chat id and the alerts and stops you save there.
         <code>/stop</code> deletes the alerts; blocking the bot deletes everything.</li>
       <li>Permissions: location (only if you allow it), notifications (for the alerts you set), exact alarms
