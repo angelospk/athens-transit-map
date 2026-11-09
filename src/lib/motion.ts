@@ -33,7 +33,7 @@ const NOISE_M = 25;            // shorter backward moves are GPS noise
 // Never backwards. The guess leans back as the fix ages (fewer dots ahead of their bus: a dot ahead
 // is the one that has to wait); a dot ahead rolls on at a crawl, or stands at a stop (boarding),
 // until its guess passes under it; too far ahead, or waiting too long, it fades over to the guess.
-export const LEAN = 0.3;        // the guess's advance shrinks by this much...
+export const LEAN = 0.08;       // the guess's advance shrinks by this much...
 export const LEAN_S = 40;       // ...over this long after the fix
 export const CRAWL = 2;         // m/s: the least a dot ahead of its guess rolls at (never standing in the street)
 export const BRAKE = 1.6;       // m/s², the dot's own braking; ACC below is its pulling away
@@ -49,8 +49,9 @@ const HOLD_MIN = 40;            // the dot eases off over this much ahead at lea
 
 // Driving with stops (docs/research/realistic-motion.md, chosen in lab/motion): the bus cruises,
 // brakes into every stop, waits there and pulls away again. Its mean speed, stops included, is
-// PACE times the measured one (a little slow: a late catch-up looks better than a reverse).
-export const PACE = 0.85;
+// PACE times the measured one. (0.85 before 2026-11-09, with LEAN 0.3: measured live against the next fixes, the dots
+// ran a median 71 m behind their buses; at 1 and 0.08, 7 m. A dot ahead waits at a crawl, never reverses.)
+export const PACE = 1;
 export const DWELL_S = 15;      // wait at each stop
 export const HORIZON_S = 180;   // after this long without a new fix, stand
 export const NO_SPEED = 1.5;    // m/s for a vehicle on its route without a measured speed

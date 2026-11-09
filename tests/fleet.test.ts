@@ -180,14 +180,15 @@ describe("Fleet", () => {
 
   it("walks the step speeds that come only with the line's second copy of a fix the city layer showed", () => {
     const f = new Fleet();
-    f.city([city(100, T)], new Set(), T + 20);
-    run(f, T + 20, T + 25);
-    f.line("040", [{ v: line(100, T), route }], T + 25);          // same fix: the city plan goes on
-    const shown = run(f, T + 25.05, T + 30);
+    // (20 s on its guess at 8 m/s: ahead of the crawl, but short of AHEAD_MAX, past which it would fade over)
+    f.city([city(100, T)], new Set(), T + 10);
+    run(f, T + 10, T + 15);
+    f.line("040", [{ v: line(100, T), route }], T + 15);          // same fix: the city plan goes on
+    const shown = run(f, T + 15.05, T + 20);
     const crawl = { path_speeds: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1] };
-    f.line("040", [{ v: line(100, T, crawl), route }], T + 30);   // and again, now with path_speeds
-    expect(distanceM(shown, run(f, T + 30.05, T + 30.05))).toBeLessThan(1.5);   // hands over, no jump
-    const a = run(f, T + 30.1, T + 35), b = run(f, T + 35.05, T + 50);
+    f.line("040", [{ v: line(100, T, crawl), route }], T + 20);   // and again, now with path_speeds
+    expect(distanceM(shown, run(f, T + 20.05, T + 20.05))).toBeLessThan(1.5);   // hands over, no jump
+    const a = run(f, T + 20.1, T + 25), b = run(f, T + 25.05, T + 40);
     expect(distanceM(a, b)).toBeLessThan(15 * CRAWL + 2);
   });
 
