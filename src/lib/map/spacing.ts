@@ -24,7 +24,7 @@ const LOOKAHEAD_S = 9;     // pull out this long before it would reach the one a
 const PULL_M = 20;         // and at least this far back from it
 const CLEAR_M = 9;         // and back in once this far past it (not cutting in just in front of the other)
 const PASS_M = 2;          // its fix no more than this behind the other's: the data has it passing
-const PASS_LAG_M = 30;     // or held this far behind its own place: its data has long gone past, it passes where it can
+const PASS_LAG_M = 18;     // or held this far behind its own place: its data has long gone past, it passes where it can
 const KEEP_M = 4;          // the gap kept in a queue, bumper to bumper, standing...
 const HEADWAY_S = 1.2;     // ...and this much more per m/s it drives at (a driver keeps a second or so behind)
 const CROSS_M = 5;         // across each other: the one giving way stops this far clear of the other...
@@ -209,7 +209,8 @@ export const FOLLOW_ACC = 1.2;    // m/s², pulling away again
 export const FOLLOW_BRAKE = 2.5;  // m/s², braking for the one ahead
 const FOLLOW_TAU = 1.6;           // s: a gap to its target closed over about this
 const FOLLOW_CATCH = 4;           // m/s: at most this faster than its data's place, catching up after
-export const BACK_MAX = 60;       // metres: the most a bus is held behind its data's place (it catches up past this)
+export const BACK_MAX = 30;       // metres: the most a bus is held behind its data's place (it catches up past this)
+//                                   (the hold is a straight line back along its heading: farther than this it leaves its road at a corner)
 
 export interface Follow { back: number; u: number; was?: number }   // u: its drawn speed along its way, m/s (never below 0); was: last frame's target
 
@@ -230,14 +231,18 @@ export function follow(st: Follow, ahead: number, target: number, dt: number): v
   st.u = Math.max(0, st.u + Math.max(-FOLLOW_BRAKE * dt, Math.min(FOLLOW_ACC * dt, want - st.u)));
   st.back += ahead - st.u * dt;
   if (st.back < 0) { st.back = 0; st.u = Math.max(0, v); }   // never drawn ahead of its place
+  // Held farther back than it ever should be (the hard pass stopped it while its place drove on): it at least keeps
+  // pace with its place from here, so the gap grows no more.
+  if (st.back > BACK_MAX) st.u = Math.max(st.u, v);
 }
 
 // ---- Two drawn rectangles that touch, pulled apart: the one behind moved back along its own way, by as little as
 // separates them (a separating-axis test of the two rectangles, both turned as drawn).
-export interface Box { key: string; x: number; y: number; h: number; fresh?: boolean }   // drawn centre, heading in degrees; fresh: it appears this frame
+export interface Box { key: string; x: number; y: number; h: number; fresh?: boolean; room?: number; moving?: boolean }   // drawn centre, heading in degrees; fresh: it appears this frame; room: how much farther back it may still be moved (none given: any); moving: drawn under way
 
 const MARGIN = 1;   // two drawn buses never closer than this, whatever happens
 const STEP_MAX = 2.5;   // metres a frame the hard pass moves a bus that was already there
+const LANE_SLACK = 0.3; // side by side this much more than a width apart: different lanes, left to them
 
 /** How far b must move back along its own heading for the two rectangles (length len, width w) to be apart by
  *  `margin`; 0 when they are. */
@@ -262,6 +267,10 @@ export function backToClear(a: Box, b: Box, len: number, w: number, margin = MAR
  *  the other more in front of it. */
 function behindOf(a: Box, b: Box): [Box, Box] {
   if (a.fresh !== b.fresh) return a.fresh ? [a, b] : [b, a];
+  // One standing that can be moved no farther back (held as far as it ever is): the other gives way. (One under way
+  // is moved back whatever its room: it is the one driving into the other.)
+  const ra = a.moving ? Infinity : a.room ?? Infinity, rb = b.moving ? Infinity : b.room ?? Infinity;
+  if ((ra <= 0) !== (rb <= 0)) return ra <= 0 ? [b, a] : [a, b];
   const da = dirOf(a.h), db = dirOf(b.h), dx = b.x - a.x, dy = b.y - a.y;
   const aSees = dx * da[0] + dy * da[1], bSees = -dx * db[0] - dy * db[1];
   return aSees >= bSees ? [a, b] : [b, a];   // [behind, ahead]
@@ -284,13 +293,18 @@ export function separate(boxes: Box[], len: number, w: number, passes = 3): Map<
       // Neither has the other in front of it (they part, side by side or back to back): moving one back would drive it
       // through the other; they are left to part.
       // (Going the same way, side by side, the one drawn behind is still moved back.)
-      if (!behind.fresh && da[0] * db[0] + da[1] * db[1] < 0.34
+      // Going the same way (within 8°) in different lanes (centres a width apart): their lanes keep them apart; a few
+      // degrees between their headings may touch their corners, and pushing one back every frame for that stops it dead.
+      const same = da[0] * db[0] + da[1] * db[1];
+      if (same > 0.99 && Math.max(Math.abs((b.x - a.x) * da[1] - (b.y - a.y) * da[0]), Math.abs((b.x - a.x) * db[1] - (b.y - a.y) * db[0])) >= w + LANE_SLACK) continue;
+      if (!behind.fresh && same < 0.34
         && (ahead.x - behind.x) * db[0] + (ahead.y - behind.y) * db[1] <= 0 && (behind.x - ahead.x) * da[0] + (behind.y - ahead.y) * da[1] <= 0) continue;
       // Going opposite ways: moving one back would only drive it backwards; they edge apart sideways instead.
       if (da[0] * db[0] + da[1] * db[1] < -0.5) continue;
       let s = backToClear(ahead, behind, len, w);
       if (!(s > 0)) continue;
       if (!behind.fresh) s = Math.min(s, STEP_MAX - (out.get(behind.key) ?? 0));   // a bus already there is never thrown far back in one frame
+      if (behind.room != null && !behind.moving) s = Math.min(s, behind.room - (out.get(behind.key) ?? 0));
       if (!(s > 0)) continue;
       behind.x -= db[0] * s; behind.y -= db[1] * s;
       out.set(behind.key, (out.get(behind.key) ?? 0) + s);

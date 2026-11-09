@@ -9,7 +9,7 @@ import { PALETTE } from "./basemap";
 import { MercatorCoordinate, type CustomLayerInterface, type GeoJSONSource, type Map as MlMap } from "maplibre-gl";
 import type * as Three from "three";
 import { metres, yaw, type LngLat } from "../map3d";
-import { BACK_MAX, follow, LAT_PERIOD, MOVE_OFF, MOVE_ON, separate, springStep, spacingTargets, type Box, type Car, type Follow, type Gap } from "./spacing";
+import { BACK_MAX, follow, FOLLOW_BRAKE, LAT_PERIOD, MOVE_OFF, MOVE_ON, separate, springStep, spacingTargets, type Box, type Car, type Follow, type Gap } from "./spacing";
 import { covers, decode, type AthensRoads, type RoadsFile, type Widths } from "../athensRoads";
 import { RoadIndex, Track } from "../roadSnap";
 import { headlightBeam, lampCone, type Clock } from "./shaders";
@@ -1822,15 +1822,21 @@ export class Scene3D {
       g.px = c.x; g.py = c.y;
       if (h == null) continue;
       const d = unit(h);
-      boxes.push({ key: c.key, x: c.x - d[1] * g.lat - d[0] * g.back, y: c.y + d[0] * g.lat - d[1] * g.back, h, fresh });
+      boxes.push({ key: c.key, x: c.x - d[1] * g.lat - d[0] * g.back, y: c.y + d[0] * g.lat - d[1] * g.back, h, fresh, room: 2 * BACK_MAX - g.back, moving: g.u > 0.5 });
     }
     // Never inside one another, whatever the targets have not foreseen (one appearing, a sharp corner): the one behind
     // is moved back at once, and its drawn speed is what it then really moved.
     const extra = separate(boxes, BUS_LEN, BUS_WIDE);
     for (const [k, s] of extra) {
       const g = this.gaps.get(k)!;
-      g.back = Math.min(2 * BACK_MAX, g.back + s);
-      if (dt) g.u = Math.max(0, g.u - s / dt);
+      g.back += s;
+      // Held twice as far back as it ever should be and still pushed: it cannot drive to where its data has it (a bus
+      // standing in its way whose fix is stale, no lane to pass in). As motion.ts does for a dot that cannot drive to
+      // its place, it goes out here and comes in there: on its place (the pose smoother starts afresh at a jump).
+      if (g.back > 2 * BACK_MAX) { g.back = 0; g.hold = 0; g.lat = g.latV = 0; g.u = 0; continue; }
+      // Its drawn speed loses what it was pushed back by, but no more than a hard brake takes off in a frame: a
+      // one-frame graze does not stop it dead (it stopped, and its place drove on without it); pushing every frame does.
+      if (dt) g.u = Math.max(0, g.u - Math.min(s / dt, 4 * FOLLOW_BRAKE * dt));
     }
     for (const c of cars) {
       const g = this.gaps.get(c.key)!, h = c.heading;

@@ -41,7 +41,7 @@ describe("follow", () => {
   it("stands in a queue whose places creep on: keeps to its target instead of trailing it", () => {
     const st: Follow = { back: 0, u: 0 };
     let target = 0, worst = 0;
-    for (let i = 0; i < 20 * FPS; i++) { target += 2 * dt; follow(st, 2 * dt, target, dt); if (i > 3 * FPS) worst = Math.max(worst, target - st.back); }
+    for (let i = 0; i < 12 * FPS; i++) { target += 2 * dt; follow(st, 2 * dt, target, dt); if (i > 3 * FPS) worst = Math.max(worst, target - st.back); }   // 24 m, within BACK_MAX
     expect(worst).toBeLessThan(0.5);   // under the queue's margin: the hard pass never has to push it back
   });
   it("is never drawn ahead of its place, nor farther back than BACK_MAX", () => {
@@ -98,6 +98,17 @@ describe("separate", () => {
   });
   it("leaves two parting from each other alone (moving one back would drive it through the other)", () => {
     expect(separate([{ key: "a", x: 0, y: 0, h: 90 }, { key: "b", x: -3, y: 2, h: 350 }], LEN, WIDE).size).toBe(0);
+  });
+  it("moves the other one when the one behind has no room left to be moved back", () => {
+    const s = separate([{ key: "a", x: 0, y: 10, h: 0 }, { key: "b", x: 0, y: 0, h: 0, room: 0 }], LEN, WIDE);
+    expect(s.get("b") ?? 0).toBe(0);
+    expect(s.get("a")!).toBeGreaterThan(0);
+    // ...unless it is the one driving on: then it is moved back whatever its room
+    const m = separate([{ key: "a", x: 0, y: 10, h: 0 }, { key: "b", x: 0, y: 0, h: 0, room: 0, moving: true }], LEN, WIDE);
+    expect(m.get("b")!).toBeGreaterThan(0);
+  });
+  it("leaves two going the same way in different lanes to their lanes, though their corners touch", () => {
+    expect(separate([{ key: "a", x: 0, y: 0, h: 0 }, { key: "b", x: 3.6, y: 14, h: 4 }], LEN, WIDE).size).toBe(0);
   });
   it("leaves two going opposite ways to edge apart sideways", () => {
     expect(separate([{ key: "a", x: 0, y: 0, h: 0 }, { key: "b", x: 0.5, y: 4, h: 180 }], LEN, WIDE).size).toBe(0);
