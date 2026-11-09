@@ -1778,7 +1778,7 @@
       // to one side, under the panel).
       m.fitBounds(b, { padding: sheetPad(), maxZoom: 15, duration: reducedMotion.matches ? 0 : 600, absolutePadding: true });
     };
-    if (import.meta.env.DEV) Object.assign(window, { __map: m, __fleet: fleet, __doms: doms, __scene3d: scene3d, __labels: labels, __dive: () => dive, __focus: () => ({ focus, focusAt }), __app: app });
+    if (import.meta.env.DEV) Object.assign(window, { __map: m, __fleet: fleet, __doms: doms, __scene3d: scene3d, __labels: labels, __dive: () => dive, __focus: () => ({ focus, focusAt }), __hl: () => hl, __app: app });
     return () => {
       app.fit = () => {};
       app.locate = () => {};

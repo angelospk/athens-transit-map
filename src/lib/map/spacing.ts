@@ -12,7 +12,7 @@ export interface Gap { lat: number; back: number }   // metres to the left of it
 
 // Moving or standing, with a margin between (GPS speeds jitter): moving from MOVE_ON, standing below MOVE_OFF.
 export const MOVE_ON = 1.5, MOVE_OFF = 0.6;
-const SAME_WAY = 35;       // degrees
+const SAME_WAY = 70;       // degrees: two going roughly the same way (one of them turning, or placed askew) are kept apart too
 const LOOKAHEAD_S = 3;     // pull out this long before it would reach the one ahead
 const CLEAR_M = 4;         // and back in once this far past it
 

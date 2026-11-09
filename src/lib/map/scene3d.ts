@@ -579,10 +579,10 @@ export class Scene3D {
     const idx = this.roads;
     const unit = (h: number | null): [number, number] | undefined => h == null ? undefined : [Math.sin((h * Math.PI) / 180), Math.cos((h * Math.PI) / 180)];
     // Its own heading picks its line's track (the way it runs). Standing, it has none (MapView): it keeps to the track
-    // it was on, and faces the way its model faced. The model's way never picks the track: a model turned wrong once
-    // would keep itself wrong.
-    const dir = unit(heading);
+    // it was on, else the way its model faced picks it (never a track running against it: that put a standing bus on
+    // the other direction's track, facing back along its route, and it stayed there till it moved).
     if (heading == null && key) heading = this.buses.get(key)?.heading ?? null;
+    const dir = unit(heading);
     if (!this.on || !idx || !this.map || this.map.getZoom() < STREET_ZOOM) { if (key) this.onTrack.delete(key); return { pos, heading }; }
     const tracks = (line && this.tracks.get(line)) || [];
     if (tracks.length) {
@@ -593,13 +593,12 @@ export class Scene3D {
         const h = was.t.at(pos, 25, dir, [was.raw - 15, was.raw + 120]);
         if (h) hit = { t: was.t, s: h.s };
       }
-      // Else the nearest of its line's tracks within 25 m, then within 60 m (its GPS, or OASA's path, off its painted
-      // route): on its own route rather than on another road nearer by. Last, any way within 25 m: a heading across
-      // its route (OASA's bearing at a stop) is wrong, not the route.
-      for (const [reach, d] of [[25, dir], [60, dir], ...(dir ? [[25, undefined]] : [])] as [number, [number, number] | undefined][]) {
+      // Else the nearest of its line's tracks running its way within 25 m, then within 60 m (its GPS, or OASA's
+      // path, off its painted route). Never one running against it (the other direction's).
+      for (const reach of [25, 60]) {
         if (hit) break;
         let best = Infinity;
-        for (const t of tracks) { const h = t.at(pos, reach, d); if (h && h.d < best) { best = h.d; hit = { t, s: h.s }; } }
+        for (const t of tracks) { const h = t.at(pos, reach, dir); if (h && h.d < best) { best = h.d; hit = { t, s: h.s }; } }
       }
       if (hit) {
         let err = 0;
