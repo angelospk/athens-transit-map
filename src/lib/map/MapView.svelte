@@ -21,7 +21,7 @@
   import { CITIES, nearestCity as cityAt } from "../cities";
   import { onOpen, type Perm } from "../nearby";
   import { distanceM } from "../glide";
-  import { BUS_ZOOM, prefetchTiles, prepare3d, PREPARED, Scene3D, ST_LEN, STREET_ZOOM as STREET3D_ZOOM, TRAIN_LEN } from "./scene3d";
+  import { BUS_ZOOM, DEBUG, prefetchTiles, prepare3d, PREPARED, Scene3D, ST_LEN, STREET_ZOOM as STREET3D_ZOOM, TRAIN_LEN } from "./scene3d";
   import type { Look3D } from "./look3d";
   import Route3D from "../ui/Route3D.svelte";
   import { busRoute, lateness, minsTo } from "../bus3d";
@@ -1830,7 +1830,7 @@
       // to one side, under the panel).
       m.fitBounds(b, { padding: sheetPad(), maxZoom: 15, duration: reducedMotion.matches ? 0 : 600, absolutePadding: true });
     };
-    if (import.meta.env.DEV) Object.assign(window, { __map: m, __fleet: fleet, __doms: doms, __scene3d: scene3d, __labels: labels, __dive: () => dive, __focus: () => ({ focus, focusAt }), __hl: () => hl, __app: app });
+    if (import.meta.env.DEV || DEBUG) Object.assign(window, { __map: m, __fleet: fleet, __doms: doms, __scene3d: scene3d, __labels: labels, __dive: () => dive, __focus: () => ({ focus, focusAt }), __hl: () => hl, __app: app });
     return () => {
       app.fit = () => {};
       app.locate = () => {};

@@ -142,6 +142,10 @@ function roofTile(flat: boolean): { width: number; height: number; data: Uint8Ar
 // ?shaders=1: in development, three.js reads back every shader's compile log again (to see a broken shader's error).
 const FORCED_SHADER_CHECK = typeof location !== "undefined" && new URLSearchParams(location.search).get("shaders") === "1";
 
+// ?debug: the map and the 3D on window (__map, __scene3d, …) on the live site too, to measure it in a browser. Read
+// when the module loads, before the app rewrites the address with its own state.
+export const DEBUG = typeof location !== "undefined" && new URLSearchParams(location.search).has("debug");
+
 // three.js (~170 kB gzipped) loads once, on demand: when 3D is turned on, or earlier, when the 3D button is pointed
 // at (preloadThree), so the switch is quick.
 let three: Promise<typeof Three> | null = null;
