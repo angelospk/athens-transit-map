@@ -22,6 +22,7 @@ import { Landmarks } from "./landmarks";
 import { MODELLED_ENTRANCES, PARLIAMENT_IDS } from "./landmarks/syntagmaData";
 import { groundAt as landmarkGround, inSquare, squareEntrances } from "./landmarks/syntagmaGround";
 import type { Entrance3D } from "../entrances";
+import { PoseSmoother } from "./smoothPose";
 import { Turners } from "../turn";
 
 export type VehicleKind = "bus" | "trolley" | "tram" | "metro";
@@ -583,6 +584,16 @@ export class Scene3D {
    *  same forks); else where its motion has it, on its line's shape. Never on a road of its own choosing. Close in
    *  only (STREET_ZOOM), in Athens. */
   place(pos: LngLat, heading: number | null, line?: string, key?: string): { pos: LngLat; heading: number | null } {
+    const r = this.placeOn(pos, heading, line, key);
+    if (!key || !this.on || !this.map || this.map.getZoom() < STREET_ZOOM) { if (key) this.smooth.drop(key); return r; }
+    // Drawn where it is placed, glided (smoothPose): a place worked out afresh each frame hops a metre or two at a
+    // vertex, a fork or a lane's edge.
+    const [x, y] = [(r.pos[0] - TRAIL_ORIGIN[0]) * TKX, (r.pos[1] - TRAIL_ORIGIN[1]) * TKY];
+    const g = this.smooth.step(key, x, y, r.heading, performance.now() / 1000);
+    return { pos: [TRAIL_ORIGIN[0] + g.x / TKX, TRAIL_ORIGIN[1] + g.y / TKY], heading: g.heading };
+  }
+  private smooth = new PoseSmoother();
+  private placeOn(pos: LngLat, heading: number | null, line?: string, key?: string): { pos: LngLat; heading: number | null } {
     const idx = this.roads;
     const unit = (h: number | null): [number, number] | undefined => h == null ? undefined : [Math.sin((h * Math.PI) / 180), Math.cos((h * Math.PI) / 180)];
     // Its own heading picks its line's track (the way it runs). Standing, it has none (MapView): it keeps to the track
@@ -646,6 +657,7 @@ export class Scene3D {
   drop(key: string) {
     this.buses.delete(key);
     this.onTrack.delete(key);
+    this.smooth.drop(key);
     this.turns.drop(key);
     const g = this.groups.get(key);
     if (g) { g.removeFromParent(); this.groups.delete(key); }
