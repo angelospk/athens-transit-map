@@ -375,6 +375,9 @@
     if (to !== nsnap) freeAt = from;   // the place changes: its effect starts from here, not from the place itself
     nowTop = from;
     nsnap = to;
+    // Leaving the top while scrolled down: the sheet's content comes back to its top as it goes, or what shows in the
+    // lowered sheet is the middle of the list, or nothing at all (its head above the sheet's edge).
+    if (to !== "full" && nowEl && nowEl.scrollTop > 0) nowEl.scrollTo({ top: 0, behavior: "smooth" });
     stopSpring = springTo(from, t[to], v, x => (nowTop = x), () => { dragging = false; nowTop = to === "half" ? null : tops()[to]; });
   }
   const here = () => nowEl?.getBoundingClientRect().top ?? tops()[nsnap];

@@ -87,6 +87,9 @@ class Acc {
       g.setAttribute("uv", new THREE.Float32BufferAttribute(s.uv, 2));
       const me = new THREE.Mesh(g, s.mat);
       me.name = `syntagma:${name}`;
+      // Before the metro entrances' depth tricks (entrance/models.ts: ground −2, opening −1), so an entrance in the
+      // square's floor opens through it: its stairs show in the opening, not the floor over them.
+      me.renderOrder = -3;
       me.castShadow = !["water", "jet", "pave", "paveInner", "fore", "lawn", "glassRoof", "darkFloor"].includes(name);
       me.receiveShadow = name !== "jet";
       out.push(me);

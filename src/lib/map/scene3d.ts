@@ -19,7 +19,7 @@ import type { DelayClass } from "../format";
 import { depthAt, ISLANDS, TRACK_GAP, trackGapAt, type Livery, DEPTH, metroStops } from "./metroDepth";
 import { EntranceModels } from "./entrance/models";
 import { Landmarks } from "./landmarks";
-import { MODELLED_ENTRANCES, PARLIAMENT_IDS } from "./landmarks/syntagmaData";
+import { PARLIAMENT_IDS } from "./landmarks/syntagmaData";
 import { groundAt as landmarkGround, onLawn } from "./landmarks/syntagmaGround";
 import type { Entrance3D } from "../entrances";
 import { Turners } from "../turn";
@@ -1448,7 +1448,8 @@ export class Scene3D {
   /** Every bus stop, [lon, lat]: those near the view are built (pools()). */
   // The metro's street entrances (public/entrances.json, or the admin's edits): sign, stairwell and lift models.
   private entrances = (() => { const e = new EntranceModels(); e.onChange = () => this.map?.triggerRepaint(); return e; })();
-  setEntrances(list: Entrance3D[]) { this.entrances.set(list.filter(e => !MODELLED_ENTRANCES.includes(e.id))); }   // some drawn by a landmark
+  // An entrance on a landmark's sunk ground (Σύνταγμα's square) stands on that ground, unless its own elevation says.
+  setEntrances(list: Entrance3D[]) { this.entrances.set(list.map(e => e.elevation == null ? { ...e, elevation: landmarkGround([e.at[1], e.at[0]]) || undefined } : e)); }
   // Landmarks modelled by hand (landmarks/): Σύνταγμα and the Βουλή. Their own buildings leave the base map's extrusions.
   private landmarks = (() => { const l = new Landmarks(); l.onChange = () => this.map?.triggerRepaint(); return l; })();
   setClosedStations(names: string[]) { this.entrances.setClosed(names); }
