@@ -20,7 +20,7 @@ import { depthAt, ISLANDS, TRACK_GAP, trackGapAt, type Livery, DEPTH, metroStops
 import { EntranceModels } from "./entrance/models";
 import { Landmarks } from "./landmarks";
 import { MODELLED_ENTRANCES, PARLIAMENT_IDS } from "./landmarks/syntagmaData";
-import { groundAt as landmarkGround, onLawn, wallEntrances } from "./landmarks/syntagmaGround";
+import { groundAt as landmarkGround, inSquare, squareEntrances } from "./landmarks/syntagmaGround";
 import type { Entrance3D } from "../entrances";
 import { Turners } from "../turn";
 
@@ -1449,13 +1449,18 @@ export class Scene3D {
   /** Every bus stop, [lon, lat]: those near the view are built (pools()). */
   // The metro's street entrances (public/entrances.json, or the admin's edits): sign, stairwell and lift models.
   private entrances = (() => { const e = new EntranceModels(); e.onChange = () => this.map?.triggerRepaint(); return e; })();
-  // Σύνταγμα's own entrances (entrances.json) give way to two in the wall under Αμαλίας, either side of the great
-  // steps, built from the same stairwell model (syntagmaGround.wallEntrances); its lift is the landmark's.
+  // Σύνταγμα's own entrances (entrances.json) give way to the landmark's: two stairwells in the wall under Αμαλίας,
+  // either side of the great steps, its lift at the wall's foot, and the stairs across the street on the Garden's
+  // pavement (syntagmaGround.squareEntrances), built from the same models.
   setEntrances(list: Entrance3D[]) {
-    const own = list.find(e => MODELLED_ENTRANCES.includes(e.id) && e.kind !== "elevator");
+    const own = list.filter(e => MODELLED_ENTRANCES.includes(e.id));
     const rest = list.filter(e => !MODELLED_ENTRANCES.includes(e.id));
-    const wall = own ? wallEntrances().map((w, i) => ({ ...own, id: `syntagma-wall-${i + 1}`, at: [w.at[1], w.at[0]] as [number, number], heading: w.heading, elevation: w.elevation, signSide: i ? "left" as const : "right" as const })) : [];
-    this.entrances.set([...rest, ...wall]);
+    const stairs = own.find(e => e.kind !== "elevator"), lift = own.find(e => e.kind === "elevator") ?? stairs;
+    const square = own.length ? squareEntrances().flatMap((w, i) => {
+      const base = w.kind === "elevator" ? lift : stairs;
+      return base ? [{ ...base, kind: w.kind, id: `syntagma-square-${i + 1}`, at: [w.at[1], w.at[0]] as [number, number], heading: w.heading, elevation: w.elevation, signSide: w.signSide }] : [];
+    }) : [];
+    this.entrances.set([...rest, ...square]);
   }
   // Landmarks modelled by hand (landmarks/): Σύνταγμα and the Βουλή. Their own buildings leave the base map's extrusions.
   private landmarks = (() => { const l = new Landmarks(); l.onChange = () => this.map?.triggerRepaint(); return l; })();
@@ -1874,7 +1879,7 @@ export class Scene3D {
       const [tx, ty] = this.local([t[i] / 1e6, t[i + 1] / 1e6]), d = Math.hypot(tx - cx, ty - cy), k = i / 3;
       if (d > reach || (d > 200 && k % 2) || (d > 400 && k % 4)) continue;
       const p = idx ? idx.offRoad([t[i] / 1e6, t[i + 1] / 1e6]) : ([t[i] / 1e6, t[i + 1] / 1e6] as LngLat);
-      if (p && !onLawn(p)) spots.push([p[0], p[1], t[i + 2] / 10]);   // (Σύνταγμα's lawns: the model plants them)
+      if (p && !inSquare(p)) spots.push([p[0], p[1], t[i + 2] / 10]);   // (Σύνταγμα's square: the model plants its own)
     }
     const n = spots.length, blobs = 4;
     const toon = this.look === "toon";

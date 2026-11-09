@@ -22,8 +22,6 @@ const ring = (r: LngLat[]) => {
 };
 export const PLAZA_M = ring(PLAZA);
 const LAWNS_M = LAWNS.map(ring);
-/** On one of the square's lawns: the model plants them itself, so scene3d leaves its own trees off them. */
-export const onLawn = (p: LngLat) => { const q = metres(p); return LAWNS_M.some(r => insideM(q, r)); };
 
 // The square's east edge (along Αμαλίας): the longest of its edges facing east.
 const frame = (() => {
@@ -88,17 +86,32 @@ export function clipS(r: M2[], c: number, below: boolean): M2[] {
   return out;
 }
 
+/** In the sunken square (below the terrace): the model plants its trees, scene3d leaves its own off it (a canopy
+ *  through a stairwell otherwise). */
+export const inSquare = (p: LngLat) => { const q = metres(p); return sOf(q) < S_WALL && insideM(q, PLAZA_M); };
+
+export type SquareEntrance = { at: LngLat; heading: number; elevation: number; kind: "stairs" | "elevator"; signSide: "left" | "right" };
+const toLL = (q: M2): LngLat => [ANCHOR_LL[0] + q[0] / KX, ANCHOR_LL[1] + q[1] / KY];
+/** The entrance across Αμαλίας, on the National Garden's pavement (station-fixes.json, "Πλατεία Συντάγματος"): stairs
+ *  down along the street, northward. */
+export const GARDEN_ENTRANCE: LngLat = [23.7357, 37.974648];
+
 // The metro's entrances in the wall under Αμαλίας, either side of the great steps (Google's 3D view): where the model
 // (syntagma.ts) has its steps, 12 m wide between the balustrades, an entrance 16 m out from the steps' middle on each
-// side, its stairwell in the square before the wall, going east towards it from the square's floor. [lon, lat], heading clockwise from north.
-export function wallEntrances(): { at: LngLat; heading: number; elevation: number }[] {
+// side, its stairwell in the square before the wall, going east towards it from the square's floor (their openings
+// where station-fixes.json puts the station's entrances); the lift against the wall's foot south of the steps
+// (entrances.json's place for it); and the stairs over on the Garden's pavement. [lon, lat], heading clockwise from north.
+export function squareEntrances(): SquareEntrance[] {
   const wall = PLAZA_M.filter(q => Math.abs(sOf(q) - S_WALL) < 0.05).map(tOf);
   const inner = clipS(PLAZA_M, S_WALL, true).filter(q => Math.abs(sOf(q) - S_WALL) < 0.05).map(tOf);
   const ts = wall.length >= 2 ? wall : inner;
   const tA = Math.min(...ts), tB = Math.max(...ts), tS = tA + 0.5 * (tB - tA);
-  const heading = ((Math.atan2(O[0], O[1]) * 180) / Math.PI + 360) % 360;
-  return [-1, 1].map(side => {
-    const q = at(tS + side * 16, S_WALL - 11.5);   // the whole stairwell (10.6 m) in the square before the wall, its portal's back at the wall
-    return { at: [ANCHOR_LL[0] + q[0] / KX, ANCHOR_LL[1] + q[1] / KY] as LngLat, heading, elevation: -DEPTH };
-  });
+  const east = ((Math.atan2(O[0], O[1]) * 180) / Math.PI + 360) % 360, north = ((Math.atan2(E[0], E[1]) * 180) / Math.PI + 360) % 360;
+  const stairs: SquareEntrance[] = [-1, 1].map(side => ({
+    at: toLL(at(tS + side * 16, S_WALL - 11.5)),   // the whole stairwell (10.6 m) in the square before the wall, its portal's back at the wall
+    heading: east, elevation: -DEPTH, kind: "stairs", signSide: side < 0 ? "right" : "left",
+  }));
+  const lift: SquareEntrance = { at: toLL(at(tS - 34, S_WALL - 2)), heading: east, elevation: -DEPTH, kind: "elevator", signSide: "right" };
+  const garden: SquareEntrance = { at: GARDEN_ENTRANCE, heading: north, elevation: 0, kind: "stairs", signSide: "left" };
+  return [...stairs, lift, garden];
 }

@@ -479,7 +479,7 @@ export function buildSyntagma(local: (p: LngLat) => [number, number]): THREE.Gro
   // -- The square, under Αμαλίας (syntagmaGround.ts): its floor sloping down from Ερμού, walls of ashlar round it up to
   // the streets, and on its east side the wall under the terrace along Αμαλίας: in its middle the marble steps (a
   // wide low flight, a landing with the two great urns, then the long flight between solid balustrades, its top cut
-  // into the terrace), the station's glass roof on the terrace to the north, its glass lift at the south end. (The
+  // into the terrace), the station's glass roof on the terrace to the north, its lift scene3d's, south of the steps. (The
   // metro's own entrances are scene3d's.) The map's own street surfaces are cleared over the square (a hole in the
   // depth, as the metro's stairwells are), so the square shows below them.
   const below = clipS(PLAZA_M, S_WALL, true);
@@ -674,7 +674,7 @@ export function buildSyntagma(local: (p: LngLat) => [number, number]): THREE.Gro
   // The station's glass roof, north of the steps: in the square, against the wall's foot (the aerial photographs),
   // sloping down from under the terrace's coping 7 m out, on a dark frame: glazing bars down the slope, a beam along
   // its low edge on slim posts, glass at its ends; clear of the steps by ROOF_GAP, room for the metro's entrance
-  // between (scene3d's). Its glass lift at the south end.
+  // between (scene3d's; the lift too, south of the steps).
   {
     const ROOF_GAP = 18;
     const t0 = tS + edge + ROOF_GAP, t1 = tB - 2, sHi = S_WALL - 0.05, sLo = S_WALL - 7, zHi = -0.55, zLo = -DEPTH + 2.6;
@@ -701,14 +701,11 @@ export function buildSyntagma(local: (p: LngLat) => [number, number]): THREE.Gro
         acc.tri("glassRoof", P3(h, zHi), P3(l, -DEPTH), P3(h, -DEPTH));
       }
     }
-    const lift = atSq(tA + 4, S_WALL - 2.5);
-    cylinder(acc, "glassRoof", lift, 1.9, 1.9, -DEPTH, 2.6, 32);
-    cylinder(acc, "marble", lift, 2.1, 2.1, 2.6, 2.85, 32);
   }
   // Lawns, kerbed in marble, and the fountains (a wide basin, its water, a raised bowl and its jet; the one in the
   // middle of the square, the big one of the photographs, a third wider than mapped), on the sloping floor.
   // Trees on the lawns: broad crowns on short trunks, on a grid about 6.5 m apart (jittered, the same each build),
-  // kept 2.5 m in from the kerb. (scene3d leaves its own canopy trees off the lawns: syntagmaGround.onLawn.)
+  // kept 2.5 m in from the kerb. (scene3d leaves its own canopy trees off the square: syntagmaGround.inSquare.)
   mats.trunk ??= lambert(0x6b5442);
   mats.leaves ??= lambert(0x4d7a3b);
   mats.leaves2 ??= lambert(0x618c46);
