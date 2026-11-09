@@ -20,8 +20,10 @@ export function mixBearing(a: number, b: number, k: number): number {
 export function headingAlong(bearing: number[], cum: number[], s: number, blend = BLEND_M): number | null {
   const n = bearing.length;
   if (!n) return null;
-  let i = 0;
-  while (i < n - 1 && cum[i + 1] < s) i++;
+  // The leg s is on: the first whose end is at or past s (a binary search: called for every vehicle every frame).
+  let lo = 0, hi = n - 1;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid + 1] < s) lo = mid + 1; else hi = mid; }
+  const i = lo;
   let h = bearing[i];
   const toEnd = cum[i + 1] - s, fromStart = s - cum[i];
   if (i < n - 1 && toEnd < blend) h = mixBearing(h, bearing[i + 1], 0.5 * (1 - toEnd / blend));

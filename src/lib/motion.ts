@@ -177,9 +177,13 @@ export function cumulativeLL(geom: LngLat[]): number[] {
 }
 
 export function pointAtLL(geom: LngLat[], cum: number[], s: number): LngLat {
-  for (let i = 1; i < geom.length; i++) {
+  // The first leg of some length whose end is at or past s: a binary search for the first end at or past s, then on
+  // past legs of no length (every vehicle, every frame, a route of a thousand points).
+  let lo = 1, hi = geom.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid] >= s) hi = mid; else lo = mid + 1; }
+  for (let i = lo; i < geom.length; i++) {
     const len = cum[i] - cum[i - 1];
-    if (len > 0 && cum[i] >= s) {
+    if (len > 0) {
       const k = Math.max(0, s - cum[i - 1]) / len, a = geom[i - 1], b = geom[i];
       return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
     }
@@ -201,13 +205,20 @@ export function subLine(geom: LngLat[], cum: number[], s1: number, s2: number): 
   return s1 <= s2 ? out : out.reverse();
 }
 
+// Each polyline's legs' bearings, worked out once (a route is a thousand points, and its vehicles ask for their
+// heading every frame, a bus ahead of a turn dozens of times: roadSnap.turnBlend).
+const legsOf = new WeakMap<LngLat[], { bearing: number[]; at: number[] }>();
 export function headingAtLL(geom: LngLat[], cum: number[], s: number): number | null {
   // The heading turns through each corner over a few metres (turn.ts), not in one jump at the vertex.
-  const bearing: number[] = [], at: number[] = [];
-  for (let i = 1; i < geom.length; i++) if (cum[i] > cum[i - 1]) { bearing.push(bearingDeg(geom[i - 1], geom[i])); at.push(cum[i - 1]); }
-  if (!bearing.length) return null;
-  at.push(cum[geom.length - 1]);
-  return headingAlong(bearing, at, s);
+  let legs = legsOf.get(geom);
+  if (!legs || legs.at[legs.at.length - 1] !== cum[geom.length - 1]) {
+    const bearing: number[] = [], at: number[] = [];
+    for (let i = 1; i < geom.length; i++) if (cum[i] > cum[i - 1]) { bearing.push(bearingDeg(geom[i - 1], geom[i])); at.push(cum[i - 1]); }
+    at.push(cum[geom.length - 1]);
+    legsOf.set(geom, (legs = { bearing, at }));
+  }
+  if (!legs.bearing.length) return null;
+  return headingAlong(legs.bearing, legs.at, s);
 }
 
 const rad = Math.PI / 180;
@@ -215,18 +226,27 @@ const rad = Math.PI / 180;
 // Nearest point of the polyline to p: s and metres off. With `hint`, of the legs nearly as close
 // as the nearest (loops, out-and-back streets), the one whose s is closest to the hint.
 export function project(geom: LngLat[], cum: number[], p: LngLat, hint?: number): { s: number; off: number } {
-  const kx = Math.cos(p[1] * rad), hits: { s: number; off: number }[] = [];
-  for (let i = 1; i < geom.length; i++) {
+  // Called for every vehicle every frame: no arrays, two passes (the nearest; then, with a hint, of those within 20 m
+  // of it, the one nearest the hint).
+  if (geom.length < 2) return { s: 0, off: geom.length ? distanceM(p, geom[0]) : Infinity };
+  const kx = Math.cos(p[1] * rad);
+  const leg = (i: number, out: { s: number; off: number }) => {
     const a = geom[i - 1], b = geom[i];
     const ax = (a[0] - p[0]) * kx, ay = a[1] - p[1], dx = (b[0] - a[0]) * kx, dy = b[1] - a[1];
     const len = dx * dx + dy * dy;
     const t = len ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len)) : 0;
-    hits.push({ s: cum[i - 1] + t * (cum[i] - cum[i - 1]), off: Math.hypot(ax + t * dx, ay + t * dy) * 111_320 });
+    out.s = cum[i - 1] + t * (cum[i] - cum[i - 1]); out.off = Math.hypot(ax + t * dx, ay + t * dy) * 111_320;
+    return out;
+  };
+  const h = { s: 0, off: 0 }, best = { s: 0, off: Infinity };
+  for (let i = 1; i < geom.length; i++) { leg(i, h); if (h.off < best.off) { best.s = h.s; best.off = h.off; } }
+  if (hint == null) return best;
+  const pick = { s: best.s, off: best.off }, lim = best.off + 20;
+  for (let i = 1; i < geom.length; i++) {
+    leg(i, h);
+    if (h.off <= lim && Math.abs(h.s - hint) < Math.abs(pick.s - hint)) { pick.s = h.s; pick.off = h.off; }
   }
-  if (!hits.length) return { s: 0, off: geom.length ? distanceM(p, geom[0]) : Infinity };
-  const min = Math.min(...hits.map(h => h.off));
-  const near = hits.filter(h => h.off <= min + 20);
-  return hint == null ? hits.find(h => h.off === min)! : near.reduce((b, h) => (Math.abs(h.s - hint) < Math.abs(b.s - hint) ? h : b));
+  return pick;
 }
 
 export interface Handoff { plan: Plan; s0: number; off?: LngLat; fix: boolean; back?: boolean }
