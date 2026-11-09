@@ -1,0 +1,463 @@
+{
+"updated_at": 1794213228,
+"next_update_at": 1794213238,
+"vehicles": [
+{
+"id": "oasa:12222",
+"line": "oasa:021",
+"mode": "bus",
+"label": "12222",
+"position": {
+"kind": "gps",
+"lat": 37.98295,
+"lon": 23.73325,
+"bearing": 85,
+"at": 1794212929
+},
+"direction": 0,
+"source": "oasa"
+},
+{
+"id": "oasa:12171",
+"line": "oasa:022",
+"mode": "bus",
+"label": "12171",
+"position": {
+"kind": "gps",
+"lat": 37.97987,
+"lon": 23.73489,
+"bearing": 194,
+"at": 1794213168
+},
+"direction": 0,
+"source": "oasa"
+},
+{
+"id": "oasa:12177",
+"line": "oasa:022",
+"mode": "bus",
+"label": "12177",
+"position": {
+"kind": "gps",
+"lat": 38.00208,
+"lon": 23.74157,
+"bearing": 172,
+"at": 1794213160
+},
+"direction": 0,
+"source": "oasa"
+},
+{
+"id": "oasa:12218",
+"line": "oasa:022",
+"mode": "bus",
+"label": "12218",
+"position": {
+"kind": "gps",
+"lat": 37.99296,
+"lon": 23.73168,
+"bearing": 176,
+"at": 1794213175
+},
+"direction": 0,
+"source": "oasa"
+},
+{
+"id": "oasa:12230",
+"line": "oasa:022",
+"mode": "bus",
+"label": "12230",
+"position": {
+"kind": "gps",
+"lat": 37.99786,
+"lon": 23.73761,
+"bearing": 45,
+"at": 1794213145
+},
+"direction": 0,
+"source": "oasa"
+},
+{
+"id": "oasa:12172",
+"line": "oasa:025",
+"mode": "bus",
+"label": "12172",
+"position": {
+"kind": "gps",
+"lat": 37.98931,
+"lon": 23.70912,
+"bearing": 164,
+"at": 1794213158
+},
+"direction": 1,
+"source": "oasa"
+},
+{
+"id": "oasa:12234",
+"line": "oasa:025",
+"mode": "bus",
+"label": "12234",
+"position": {
+"kind": "gps",
+"lat": 37.98117,
+"lon": 23.73376,
+"bearing": 62,
+"at": 1794213170
+},
+"direction": 1,
+"source": "oasa"
+},
+{
+"id": "oasa:12181",
+"line": "oasa:035",
+"mode": "bus",
+"label": "12181",
+"position": {
+"kind": "gps",
+"lat": 37.97663,
+"lon": 23.72602,
+"bearing": 244,
+"at": 1794213135
+},
+"direction": 0,
+"source": "oasa"
+},
+{
+"id": "oasa:12187",
+"line": "oasa:035",
+"mode": "bus",
+"label": "12187",
+"position": {
+"kind": "gps",
+"lat": 37.97216,
+"lon": 23.70892,
+"bearing": 25,
+"at": 1794213143
+},
+"direction": 1,
+"source": "oasa"
+},
+{
+"id": "oasa:12189",
+"line": "oasa:035",
+"mode": "bus",
+"label": "12189",
+"position": {
+"kind": "gps",
+"lat": 37.99986,
+"lon": 23.73936,
+"bearing": 45,
+"at": 1794213139
+},
+"direction": 1,
+"source": "oasa"
+},
+{
+"id": "oasa:12217",
+"line": "oasa:035",
+"mode": "bus",
+"label": "12217",
+"position": {
+"kind": "gps",
+"lat": 38.00301,
+"lon": 23.74612,
+"bearing": 219,
+"at": 1794213145
+},
+"direction": 0,
+"source": "oasa"
+},
+{
+"id": "oasa:12224",
+"line": "oasa:035",
+"mode": "bus",
+"label": "12224",
+"position": {
+"kind": "gps",
+"lat": 37.98718,
+"lon": 23.73014,
+"bearing": 184,
+"at": 1794213131
+},
+"direction": 0,
+"source": "oasa"
+},
+{
+"id": "oasa:12232",
+"line": "oasa:035",
+"mode": "bus",
+"label": "12232",
+"position": {
+"kind": "gps",
+"lat": 37.98139,
+"lon": 23.72735,
+"bearing": 4,
+"at": 1794213152
+},
+"direction": 1,
+"source": "oasa"
+},
+{
+"id": "oasa:14443",
+"line": "oasa:036",
+"mode": "bus",
+"label": "14443",
+"position": {
+"kind": "gps",
+"lat": 38.00512,
+"lon": 23.76623,
+"bearing": 139,
+"at": 1794213044
+},
+"direction": 0,
+"source": "oasa"
+},
+{
+"id": "oasa:14475",
+"line": "oasa:036",
+"mode": "bus",
+"label": "14475",
+"position": {
+"kind": "gps",
+"lat": 37.99351,
+"lon": 23.77705,
+"bearing": 278,
+"at": 1794213046
+},
+"direction": 0,
+"source": "oasa"
+},
+{
+"id": "oasa:14476",
+"line": "oasa:036",
+"mode": "bus",
+"label": "14476",
+"position": {
+"kind": "gps",
+"lat": 38.00212,
+"lon": 23.76639,
+"bearing": 74,
+"at": 1794213041
+},
+"direction": 0,
+"source": "oasa"
+},
+{
+"id": "oasa:40823",
+"line": "oasa:040",
+"mode": "bus",
+"label": "40823",
+"position": {
+"kind": "gps",
+"lat": 37.95882,
+"lon": 23.70924,
+"bearing": 313,
+"at": 1794213149
+},
+"direction": 1,
+"source": "oasa"
+},
+{
+"id": "oasa:44531",
+"line": "oasa:040",
+"mode": "bus",
+"label": "44531",
+"position": {
+"kind": "gps",
+"lat": 37.9448,
+"lon": 23.66877,
+"bearing": 267,
+"at": 1794213100
+},
+"direction": 1,
+"source": "oasa"
+},
+{
+"id": "oasa:44532",
+"line": "oasa:040",
+"mode": "bus",
+"label": "44532",
+"position": {
+"kind": "gps",
+"lat": 37.95823,
+"lon": 23.70557,
+"bearing": 56,
+"at": 1794213124
+},
+"direction": 0,
+"source": "oasa"
+},
+{
+"id": "oasa:44533",
+"line": "oasa:040",
+"mode": "bus",
+"label": "44533",
+"position": {
+"kind": "gps",
+"lat": 37.97453,
+"lon": 23.73409,
+"bearing": 107,
+"at": 1794213138
+},
+"direction": 1,
+"source": "oasa"
+},
+{
+"id": "oasa:44535",
+"line": "oasa:040",
+"mode": "bus",
+"label": "44535",
+"position": {
+"kind": "gps",
+"lat": 37.94386,
+"lon": 23.65986,
+"bearing": 82,
+"at": 1794213139
+},
+"direction": 0,
+"source": "oasa"
+},
+{
+"id": "oasa:44537",
+"line": "oasa:040",
+"mode": "bus",
+"label": "44537",
+"position": {
+"kind": "gps",
+"lat": 37.93509,
+"lon": 23.63178,
+"bearing": 261,
+"at": 1794213143
+},
+"direction": 1,
+"source": "oasa"
+},
+{
+"id": "oasa:44538",
+"line": "oasa:040",
+"mode": "bus",
+"label": "44538",
+"position": {
+"kind": "gps",
+"lat": 37.97603,
+"lon": 23.7352,
+"bearing": 264,
+"at": 1794213141
+},
+"direction": 0,
+"source": "oasa"
+},
+{
+"id": "oasa:44539",
+"line": "oasa:040",
+"mode": "bus",
+"label": "44539",
+"position": {
+"kind": "gps",
+"lat": 37.93684,
+"lon": 23.64191,
+"bearing": 69,
+"at": 1794213136
+},
+"direction": 0,
+"source": "oasa"
+},
+{
+"id": "oasa:44540",
+"line": "oasa:040",
+"mode": "bus",
+"label": "44540",
+"position": {
+"kind": "gps",
+"lat": 37.97064,
+"lon": 23.73257,
+"bearing": 225,
+"at": 1794213148
+},
+"direction": 1,
+"source": "oasa"
+},
+{
+"id": "oasa:44541",
+"line": "oasa:040",
+"mode": "bus",
+"label": "44541",
+"position": {
+"kind": "gps",
+"lat": 37.95353,
+"lon": 23.69839,
+"bearing": 221,
+"at": 1794213155
+},
+"direction": 1,
+"source": "oasa"
+},
+{
+"id": "oasa:44573",
+"line": "oasa:040",
+"mode": "bus",
+"label": "44573",
+"position": {
+"kind": "gps",
+"lat": 37.95878,
+"lon": 23.71901,
+"bearing": 235,
+"at": 1794213147
+},
+"direction": 1,
+"source": "oasa"
+},
+{
+"id": "oasa:44574",
+"line": "oasa:040",
+"mode": "bus",
+"label": "44574",
+"position": {
+"kind": "gps",
+"lat": 37.94478,
+"lon": 23.67065,
+"bearing": 265,
+"at": 1794213139
+},
+"direction": 1,
+"source": "oasa"
+},
+{
+"id": "oasa:61341",
+"line": "oasa:416",
+"mode": "bus",
+"label": "61341",
+"position": {
+"kind": "gps",
+"lat": 37.99943,
+"lon": 23.78522,
+"bearing": 135,
+"at": 1794212943
+},
+"direction": null,
+"source": "oasa"
+},
+{
+"id": "oasa:32292",
+"line": "oasa:860",
+"mode": "bus",
+"label": "32292",
+"position": {
+"kind": "gps",
+"lat": 37.93058,
+"lon": 23.68653,
+"bearing": 182,
+"at": 1794213066
+},
+"direction": null,
+"source": "oasa"
+}
+],
+"sources": [
+{
+"id": "oasa",
+"state": "ok",
+"updated_at": 1794213228
+}
+]
+}

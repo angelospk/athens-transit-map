@@ -1,0 +1,12 @@
+{
+  "maxAgeS": 120,
+  "minSample": 5,
+  "maxNoPositionRatio": 0.1,
+  "maxStaleRatio": 0.6,
+  "maxNoDirectionRatio": 0.2,
+  "feedOldS": 300,
+  "serviceHours": [7, 22],
+  "persistRuns": 2,
+  "minVehicles": { "athens": 100, "thessaloniki": 30, "patras": 3, "heraklion": 3, "larissa": 3, "volos": 2, "ioannina": 2 },
+  "checkDirection": ["athens", "thessaloniki"]
+}

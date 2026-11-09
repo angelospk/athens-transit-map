@@ -1,0 +1,9 @@
+[Unit]
+Description=Staseis transit feed health check (hourly)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/node %h/transit-health/transit-health.mjs
+EnvironmentFile=%h/.config/transit-health/env
+TimeoutStartSec=300

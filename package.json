@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
-    "bot:build": "bun build bot/main.ts --target=node --format=esm --outfile dist-bot/oasa-bus-bot.mjs"
+    "bot:build": "bun build bot/main.ts --target=node --format=esm --outfile dist-bot/oasa-bus-bot.mjs",
+    "health:build": "bun build ops/transit-health/main.ts --target=node --format=esm --outfile dist-health/transit-health.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
