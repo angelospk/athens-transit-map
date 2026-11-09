@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { nearbyGroups, focusLines, onOpen, elsewhere, distText, titleCase, walkMin, foldRows, rowNote } from "../src/lib/nearby";
+import { beforeAll, describe, expect, it } from "vitest";
+import { nearbyGroups, focusLines, onOpen, elsewhere, distText, loadAccents, titleCase, walkMin, foldRows, rowNote } from "../src/lib/nearby";
 import type { TripIndex } from "../src/lib/trip";
 
 // 0 and 1: one stop on both sides of a street (~44 m apart), 2: the same name 1.1 km away,
@@ -131,7 +131,14 @@ describe("distText", () => {
   });
 });
 
+describe("titleCase before the accents are loaded", () => {
+  it("names in capitals as names, no accents yet (accents.json is its own chunk, loaded with the stop index)", () => {
+    expect(titleCase("ΑΓΙΑΣ ΤΡΙΑΔΟΣ")).toBe("Αγιας Τριαδος");
+  });
+});
+
 describe("titleCase", () => {
+  beforeAll(() => loadAccents());
   it("OASA's capitals as a name: first letter of each word up, the rest down, final sigma kept", () => {
     expect(titleCase("ΠΛ. ΚΥΨΕΛΗΣ")).toBe("Πλ. Κυψέλης");
   });
@@ -146,6 +153,19 @@ describe("titleCase", () => {
     expect(titleCase("ΚΑΙΣΑΡΙΑΝΗ (Προσωρινή λόγω έργων)")).toBe("Καισαριανή (Προσωρινή λόγω έργων)");
     expect(titleCase("Α ΚΥΨΕΛΗ")).toBe("Α Κυψέλη");
     expect(titleCase("ΑΣ ΠΑΜΕ")).toBe("Ας Παμε");   // a final sigma in a two-letter word
+  });
+  it("Athens names the word lists lack, spelled by hand (scripts/accents.py EXTRA)", () => {
+    expect(titleCase("ΑΡΓΥΡΟΥΠΟΛΕΩΣ")).toBe("Αργυρουπόλεως");
+    expect(titleCase("ΚΑΛΟΓΡΕΖΑΣ")).toBe("Καλογρέζας");
+    expect(titleCase("ΘΡΑΚΟΜΑΚΕΔΟΝΩΝ")).toBe("Θρακομακεδόνων");
+    expect(titleCase("ΠΑΡΝΗΘΟΣ")).toBe("Πάρνηθος");
+  });
+  it("acronyms stay in capitals", () => {
+    expect(titleCase("ΙΚΑ ΚΥΨΕΛΗΣ")).toBe("ΙΚΑ Κυψέλης");
+    expect(titleCase("ΣΤ. ΗΣΑΠ")).toBe("Στ. ΗΣΑΠ");
+    expect(titleCase("ΟΤΕ")).toBe("ΟΤΕ");
+    expect(titleCase("ΕΡΤ")).toBe("ΕΡΤ");
+    expect(titleCase("ΛΑΣΚΑΡΕΩΣ")).toBe("Λασκάρεως");
   });
 });
 

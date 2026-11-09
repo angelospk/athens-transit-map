@@ -30,7 +30,7 @@ import { stopIndex } from "./stops";
 import { busFavIds, loadFavs, toggleLine as toggleFavLineIn, toggleStop, type FavLine, type FavStop, type Favs } from "./favs";
 import { fold } from "./search";
 import { parseAlerts, type Disruption } from "./disruptions";
-import { focusLines, nearbyGroups } from "./nearby";
+import { focusLines, loadAccents, nearbyGroups } from "./nearby";
 import type { LocState } from "./locate";
 import { CITIES, type CityId } from "./cities";
 import { cityUrl, favKey } from "./cityBases";
@@ -543,7 +543,8 @@ export class AppState {
   // failure (the next call tries again).
   loadStops(): Promise<TripIndex | null> {
     if (this.stopIx) return Promise.resolve(this.stopIx);
-    return import("./trip").then(t => t.loadTripIndex()).then(ix => (this.stopIx = ix), () => null);
+    // The accents of the names (nearby.ts titleCase) come with it, so the «Κοντά σου» list shows them from the start.
+    return Promise.all([import("./trip").then(t => t.loadTripIndex()), loadAccents()]).then(([ix]) => (this.stopIx = ix), () => null);
   }
 
   // A line tapped on a stop's card: shown for a while (as a city vehicle's line is) on its variants

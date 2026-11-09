@@ -1,6 +1,5 @@
 // «Κοντά σου»: the stops around a point, grouped by name, with the lines that stop there.
 
-import ACCENTED from "./accents.json";
 import { distanceM } from "./glide";
 import { fold } from "./search";
 import type { TripIndex } from "./trip";
@@ -86,14 +85,21 @@ export function distText(m: number): string {
 
 // OASA writes names in capitals, with no accents: each word in capitals is shown as a name (its first letter up, the
 // rest down), with its accent back (accents.json, scripts/accents.py: «ΑΓΙΑΣ ΤΡΙΑΔΟΣ» → «Αγίας Τριάδος»); a word the
-// list does not know stays as it is written. Other words are left as they are.
+// list does not know stays as it is written, an acronym in capitals. Other words are left as they are.
+// The list is its own chunk (~19 KB gzip), loaded with the stop index (state.loadStops): until then, no accents.
 const foldWord = (w: string) => w.toLocaleLowerCase("el").normalize("NFD").replace(/\p{Mn}/gu, "").replace(/ς/g, "σ");
 let accents: Map<string, string> | null = null;
-const accented = (w: string) => (accents ??= new Map((ACCENTED as string[]).map(a => [foldWord(a), a]))).get(foldWord(w));
+let accentsLoad: Promise<void> | null = null;
+export const loadAccents = () =>
+  (accentsLoad ??= import("./accents.json").then(
+    m => { accents = new Map((m.default as string[]).map(a => [foldWord(a), a])); },
+    () => { accentsLoad = null; },   // the next call tries again; names show without accents meanwhile
+  ));
+const ACRONYMS = new Set(["ΙΚΑ", "ΟΤΕ", "ΗΣΑΠ", "ΔΕΗ", "ΕΥΔΑΠ", "ΚΑΠΗ", "ΟΑΕΔ", "ΤΥΠΕΤ", "ΕΚΑΒ", "ΚΑΤ", "ΚΤΕΛ", "ΟΑΚΑ", "ΤΕΙ", "ΕΛΤΑ", "ΟΣΕ", "ΣΕΦ", "ΟΑΣΑ", "ΕΡΤ", "ΕΟΤ"]);
 export const titleCase = (s: string) =>
   s.replace(/\p{L}+/gu, w => {
-    if (w.length < 2 || w !== w.toLocaleUpperCase("el")) return w;
-    const low = w.toLocaleLowerCase("el"), a = /\p{Mn}/u.test(w.normalize("NFD")) ? low : accented(w) ?? low;
+    if (w.length < 2 || w !== w.toLocaleUpperCase("el") || ACRONYMS.has(w)) return w;
+    const low = w.toLocaleLowerCase("el"), a = /\p{Mn}/u.test(w.normalize("NFD")) ? low : accents?.get(foldWord(w)) ?? low;
     return a[0].toUpperCase() + a.slice(1);   // not the Greek locale's upper case: it drops the accent («Ά» → «Α»)
   });
 
