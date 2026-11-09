@@ -87,3 +87,18 @@ export function clipS(r: M2[], c: number, below: boolean): M2[] {
   }
   return out;
 }
+
+// The metro's entrances in the wall under Αμαλίας, either side of the great steps (Google's 3D view): where the model
+// (syntagma.ts) has its steps, 12 m wide between the balustrades, an entrance 12 m out from the steps' middle on each
+// side, its stairwell going east into the wall from the square's floor. [lon, lat], heading clockwise from north.
+export function wallEntrances(): { at: LngLat; heading: number; elevation: number }[] {
+  const wall = PLAZA_M.filter(q => Math.abs(sOf(q) - S_WALL) < 0.05).map(tOf);
+  const inner = clipS(PLAZA_M, S_WALL, true).filter(q => Math.abs(sOf(q) - S_WALL) < 0.05).map(tOf);
+  const ts = wall.length >= 2 ? wall : inner;
+  const tA = Math.min(...ts), tB = Math.max(...ts), tS = tA + 0.5 * (tB - tA);
+  const heading = ((Math.atan2(O[0], O[1]) * 180) / Math.PI + 360) % 360;
+  return [-1, 1].map(side => {
+    const q = at(tS + side * 12, S_WALL - 0.3);
+    return { at: [ANCHOR_LL[0] + q[0] / KX, ANCHOR_LL[1] + q[1] / KY] as LngLat, heading, elevation: -DEPTH };
+  });
+}

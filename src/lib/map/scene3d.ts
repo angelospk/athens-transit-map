@@ -19,8 +19,8 @@ import type { DelayClass } from "../format";
 import { depthAt, ISLANDS, TRACK_GAP, trackGapAt, type Livery, DEPTH, metroStops } from "./metroDepth";
 import { EntranceModels } from "./entrance/models";
 import { Landmarks } from "./landmarks";
-import { PARLIAMENT_IDS } from "./landmarks/syntagmaData";
-import { groundAt as landmarkGround, onLawn } from "./landmarks/syntagmaGround";
+import { MODELLED_ENTRANCES, PARLIAMENT_IDS } from "./landmarks/syntagmaData";
+import { groundAt as landmarkGround, onLawn, wallEntrances } from "./landmarks/syntagmaGround";
 import type { Entrance3D } from "../entrances";
 import { Turners } from "../turn";
 
@@ -1449,8 +1449,14 @@ export class Scene3D {
   /** Every bus stop, [lon, lat]: those near the view are built (pools()). */
   // The metro's street entrances (public/entrances.json, or the admin's edits): sign, stairwell and lift models.
   private entrances = (() => { const e = new EntranceModels(); e.onChange = () => this.map?.triggerRepaint(); return e; })();
-  // An entrance on a landmark's sunk ground (Σύνταγμα's square) stands on that ground, unless its own elevation says.
-  setEntrances(list: Entrance3D[]) { this.entrances.set(list.map(e => e.elevation == null ? { ...e, elevation: landmarkGround([e.at[1], e.at[0]]) || undefined } : e)); }
+  // Σύνταγμα's own entrances (entrances.json) give way to two in the wall under Αμαλίας, either side of the great
+  // steps, built from the same stairwell model (syntagmaGround.wallEntrances); its lift is the landmark's.
+  setEntrances(list: Entrance3D[]) {
+    const own = list.find(e => MODELLED_ENTRANCES.includes(e.id) && e.kind !== "elevator");
+    const rest = list.filter(e => !MODELLED_ENTRANCES.includes(e.id));
+    const wall = own ? wallEntrances().map((w, i) => ({ ...own, id: `syntagma-wall-${i + 1}`, at: [w.at[1], w.at[0]] as [number, number], heading: w.heading, elevation: w.elevation, signSide: i ? "left" as const : "right" as const })) : [];
+    this.entrances.set([...rest, ...wall]);
+  }
   // Landmarks modelled by hand (landmarks/): Σύνταγμα and the Βουλή. Their own buildings leave the base map's extrusions.
   private landmarks = (() => { const l = new Landmarks(); l.onChange = () => this.map?.triggerRepaint(); return l; })();
   setClosedStations(names: string[]) { this.entrances.setClosed(names); }
