@@ -71,9 +71,9 @@ const XRAY = 1;
 // tiles, 48 MB, which the map's worker then held at every zoom: 3 GB, and the browser dropped the page.)
 const ROAD_REACH = 0.012;
 const NO_ROADS: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
-// The street drawn plain (as nextstopsg.app draws Singapore): asphalt, kerbs and pavements, no lane lines, zebras,
-// arrows, bus-lane words or junction islands. MARKINGS true paints them all again (athensRoads.decode too).
-const MARKINGS = false;
+// The street's markings: lane lines, zebras, arrows, bus-lane words, junction islands. False draws it plain (asphalt,
+// kerbs and pavements; tried 2026-11-09), with athensRoads.decode's own flag.
+const MARKINGS = true;
 const STREET_LAYERS = ["x3d-roofs", "x3d-area", "x3d-pools", "x3d-buildings", "x3d-route-edge", "x3d-hl-edge",
   "x3d-tram-bed", "x3d-tram-sleepers", "x3d-tram-rail-1", "x3d-tram-rail-2",
   ...(MARKINGS ? ["x3d-mark-0", "x3d-mark-2", "x3d-mark-3", "x3d-mark-4", "x3d-mark-5", "x3d-arrows", "x3d-busword"] : [])];

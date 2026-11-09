@@ -95,9 +95,9 @@ export function zebra(at: LngLat, bearingDeg: number, half: number): LngLat[][] 
 
 /** The file as map features (properties: kind, w carriageway m, p pavement m each side, t marking type), and the
  *  carriageways for snapping. Marking types: 0 lane line, 1 centre line, 2 bus-lane line, 3 zebra, 4 edge line. */
-/** The street is drawn plain (2026-11-09, as nextstopsg.app draws Singapore): asphalt, kerbs and pavements, no lane
- *  lines, zebras, stop lines, arrows, bus-lane words or junction islands. `marks` true paints them all (the tests). */
-export function decode(f: RoadsFile, marks = false): AthensRoads {
+/** The street with its markings: lane lines, zebras, stop lines, arrows, bus-lane words and junction islands. `marks`
+ *  false draws it plain (asphalt, kerbs and pavements only; tried 2026-11-09, as nextstopsg.app draws Singapore). */
+export function decode(f: RoadsFile, marks = true): AthensRoads {
   const { origin, unit } = f;
   const features: GeoJSON.Feature[] = [], roads: Road[] = [], streets: Street[] = [];
   const box: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
