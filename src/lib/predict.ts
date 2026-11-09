@@ -69,38 +69,52 @@ export function projectCandidates(shape: [number, number][], p: LngLat): { s: nu
   return out;
 }
 
+// Each shape's points as [lon, lat], how far along it each is, and its legs' bearings, worked out once: the trains
+// and the buses' labels ask where on their shape s is, and which way it runs there, every frame.
+interface Measured { pts: LngLat[]; cum: number[]; bearing: number[]; at: number[] }
+const measured = new WeakMap<[number, number][], Measured>();
+function measure(shape: [number, number][]): Measured {
+  let m = measured.get(shape);
+  if (!m) {
+    const pts = shape.map(pt), cum = [0], bearing: number[] = [], at: number[] = [];
+    for (let i = 1; i < pts.length; i++) {
+      const len = distanceM(pts[i - 1], pts[i]);
+      if (len > 0) { bearing.push(bearingDeg(pts[i - 1], pts[i])); at.push(cum[i - 1]); }
+      cum.push(cum[i - 1] + len);
+    }
+    at.push(cum[cum.length - 1]);
+    measured.set(shape, (m = { pts, cum, bearing, at }));
+  }
+  return m;
+}
+
 export function pointAt(shape: [number, number][], s: number): LngLat {
   if (s <= 0 || shape.length < 2) return pt(shape[0]);
-  let walked = 0;
-  for (let i = 1; i < shape.length; i++) {
-    const a = pt(shape[i - 1]), b = pt(shape[i]), len = distanceM(a, b);
-    if (walked + len >= s && len > 0) {
-      const k = (s - walked) / len;
+  const { pts, cum } = measure(shape);
+  // The first leg of some length whose end is at or past s.
+  let lo = 1, hi = pts.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid] >= s) hi = mid; else lo = mid + 1; }
+  for (let i = lo; i < pts.length; i++) {
+    const len = cum[i] - cum[i - 1];
+    if (len > 0) {
+      const k = (s - cum[i - 1]) / len, a = pts[i - 1], b = pts[i];
       return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
     }
-    walked += len;
   }
-  return pt(shape[shape.length - 1]);
+  return pts[pts.length - 1];
 }
 
 export function headingAt(shape: [number, number][], s: number): number | null {
   // Through each corner the heading turns over a few metres (turn.ts), not in one jump at the vertex.
-  const bearing: number[] = [], at: number[] = [];
-  let walked = 0;
-  for (let i = 1; i < shape.length; i++) {
-    const a = pt(shape[i - 1]), b = pt(shape[i]), len = distanceM(a, b);
-    if (len > 0) { bearing.push(bearingDeg(a, b)); at.push(walked); }
-    walked += len;
-  }
+  const { bearing, at } = measure(shape);
   if (!bearing.length) return null;
-  at.push(walked);
   return headingAlong(bearing, at, s);
 }
 
 export function shapeLength(shape: [number, number][]): number {
-  let d = 0;
-  for (let i = 1; i < shape.length; i++) d += distanceM(pt(shape[i - 1]), pt(shape[i]));
-  return d;
+  if (shape.length < 2) return 0;
+  const { cum } = measure(shape);
+  return cum[cum.length - 1];
 }
 
 // s of each stop, in order. Each stop takes one of its legs (a stop stands on the side of the street its
@@ -117,7 +131,17 @@ function frontier<T extends { max: number; cost: number }>(xs: T[]): T[] {
     && (x.max < y.max || x.cost < y.cost || i < j)));
 }
 
+// The same shape and stops give the same offsets: worked out once (a bus's label asks for them every few seconds).
+const offsetsOf = new WeakMap<[number, number][], Map<string, number[]>>();
 export function stopOffsets(shape: [number, number][], stops: LngLat[]): number[] {
+  let byStops = offsetsOf.get(shape);
+  if (!byStops) offsetsOf.set(shape, (byStops = new Map()));
+  const key = stops.map(p => `${p[0]},${p[1]}`).join(";");
+  let out = byStops.get(key);
+  if (!out) { out = stopOffsetsOf(shape, stops); byStops.set(key, out); }
+  return out.slice();
+}
+function stopOffsetsOf(shape: [number, number][], stops: LngLat[]): number[] {
   type Step = { s: number; max: number; cost: number; from: number };
   const steps: Step[][] = [];
   for (const p of stops) {

@@ -125,6 +125,18 @@ export function trackBehind(path: [number, number][], at: [number, number], head
 export function nearestIndex(path: [number, number][], p: [number, number]): number {
   return nearestPoint(path, p);   // through the path's grid (pathIndex.ts): called for every train, every frame
 }
+/** The same for a place that does not move (a station): worked out once per path and place. Every train asks for
+ *  its last, next and last-of-run stations every frame, and a station far from the train's stretch of the line
+ *  searched up to 2 km of the grid each time. */
+const fixedIx = new WeakMap<[number, number][], Map<string, number>>();
+export function stationIndex(path: [number, number][], p: [number, number]): number {
+  let m = fixedIx.get(path);
+  if (!m) fixedIx.set(path, (m = new Map()));
+  const k = `${p[0]},${p[1]}`;
+  let i = m.get(k);
+  if (i == null) m.set(k, (i = nearestPoint(path, p)));
+  return i;
+}
 /** The bearing (degrees from north) from one point to the next. */
 export function bearingOf(a: [number, number], b: [number, number]): number {
   const k = Math.cos((a[1] * Math.PI) / 180);

@@ -27,7 +27,7 @@
   import { busRoute, lateness, minsTo } from "../bus3d";
   import { smoothPath, snapTram } from "./tramRails";
   import { metroGlyph, metroLogo, oasaLogo, stopSign, tramGlyph, tramLogo } from "./mapIcons";
-  import { bearingOf, depthAt, liveryOf, metroStops, nearestIndex, rightOf, straighten, surfaceTracks, trackBehind } from "./metroDepth";
+  import { bearingOf, depthAt, liveryOf, metroStops, nearestIndex, rightOf, stationIndex, straighten, surfaceTracks, trackBehind } from "./metroDepth";
   import { snapLine, turnBlend } from "../roadSnap";
   import { headingAtLL, Mover, planOnto, pointAtLL, project } from "../motion";
   import { predictS, shapeLength, stopOffsets } from "../predict";
@@ -1330,6 +1330,10 @@
   }
   function labelHtml(key: string, now: number): string {
     if (key.startsWith("metro/") || key.startsWith("tram/")) return metroLabelHtml(key, now);
+    if (numberOnly(key)) {   // only its number: not its route and stops (worked out for each label)
+      const line = key.slice(0, key.indexOf("/")), c = app.lineColor(line);
+      return `<span class="b" style="background:${escHtml(c.bg)};color:${escHtml(c.fg)}">${escHtml(line)}</span>`;
+    }
     const { line, v, route } = busOf(key), c = app.lineColor(line), late = lateness(v?.delay_s ?? null);
     const next = route?.ahead[0], eta = next ? minsTo(next.at, now) : "";
     const chip = `<span class="b" style="background:${escHtml(c.bg)};color:${escHtml(c.fg)}">${escHtml(line)}</span>`;
@@ -2014,8 +2018,8 @@
       if (v && centre.length) {
         // Toward the end of its run (its headsign, a station of the line); else from its last station to its next.
         const end = stationAt.get(key1(v.headsign)), here = nearestIndex(centre, on?.pos ?? at);
-        const fi = nearestIndex(centre, [v.from.lon, v.from.lat]), ti = nearestIndex(centre, [v.to.lon, v.to.lat]);
-        if (end) { const ei = nearestIndex(centre, end); if (ei !== here) metroWay.set(key, ei > here); }
+        const fi = stationIndex(centre, [v.from.lon, v.from.lat]), ti = stationIndex(centre, [v.to.lon, v.to.lat]);
+        if (end) { const ei = stationIndex(centre, end); if (ei !== here) metroWay.set(key, ei > here); }
         else if (fi !== ti) metroWay.set(key, ti > fi);
       }
       const laid = trackBehind(centre, on?.pos ?? at, heading, TRAIN_LEN, line, metroWay.get(key), TRAIN_LEN / 2);   // centred on its place
