@@ -12,7 +12,7 @@ import type * as Three from "three";
 import { metres, TREE_TILE_Z as TILE_Z, tilesIn, yaw, type LngLat } from "../map3d";
 import { BACK_PERIOD, LAT_PERIOD, MOVE_OFF, MOVE_ON, springStep, spacingTargets, type Car, type Gap } from "./spacing";
 import { covers, decode, type AthensRoads, type RoadsFile, type Widths } from "../athensRoads";
-import { RoadIndex, Track, type Hit } from "../roadSnap";
+import { RoadIndex, Track } from "../roadSnap";
 import { headlightBeam, lampCone, rain, swayMaterial, type Clock } from "./shaders";
 import type { Look3D } from "./look3d";
 import type { DelayClass } from "../format";
@@ -61,7 +61,7 @@ const TKX = 111320 * Math.cos((TRAIL_ORIGIN[1] * Math.PI) / 180), TKY = 110540; 
 export const RAIN_ZOOM = 17;
 const READY_MS = 15000;   // the loading screen waits at most this long   // rain only this close to the street
 export const STREET_ZOOM = 16;
-const ALONG_DEG = 50;   // a road within this of a bus's way is one it may be on (more: a road across it)
+const SHAPE_RIGHT = 1.7;   // metres a bus off a painted route is drawn to the right of its line's shape (half a lane)
 const LAYER = "x3d-scene";
 const SOURCE = "openmaptiles";   // OpenFreeMap's vector source
 export const TREE_CREDIT = 'Δέντρα: <a href="https://registry.opendata.aws/dataforgood-fb-forests/" target="_blank" rel="noopener">Meta &amp; WRI</a>';
@@ -572,19 +572,17 @@ export class Scene3D {
     }
   }
 
-  /** Where to draw a vehicle in 3D: on its line's drawn route when that runs its way within 25 m (so it drives where
-   *  the route is painted, through the same forks); else in the middle of the lane of a road running its way within
-   *  20 m, turned along it; else where it is. Close in only (STREET_ZOOM), in Athens. */
+  /** Where to draw a vehicle in 3D: on its line's drawn route (so it drives where the route is painted, through the
+   *  same forks); else where its motion has it, on its line's shape. Never on a road of its own choosing. Close in
+   *  only (STREET_ZOOM), in Athens. */
   place(pos: LngLat, heading: number | null, line?: string, key?: string): { pos: LngLat; heading: number | null } {
     const idx = this.roads;
     const unit = (h: number | null): [number, number] | undefined => h == null ? undefined : [Math.sin((h * Math.PI) / 180), Math.cos((h * Math.PI) / 180)];
     // Its own heading picks its line's track (the way it runs). Standing, it has none (MapView): it keeps to the track
-    // it was on, and off its line's tracks it keeps the way its model faced, so it is not laid on whichever road is
-    // nearest (a cross street, a stop's bay) and turned across the street. The model's way never picks the track: a
-    // model turned wrong once would keep itself wrong.
+    // it was on, and faces the way its model faced. The model's way never picks the track: a model turned wrong once
+    // would keep itself wrong.
     const dir = unit(heading);
     if (heading == null && key) heading = this.buses.get(key)?.heading ?? null;
-    const roadDir = unit(heading);
     if (!this.on || !idx || !this.map || this.map.getZoom() < STREET_ZOOM) { if (key) this.onTrack.delete(key); return { pos, heading }; }
     const tracks = (line && this.tracks.get(line)) || [];
     if (tracks.length) {
@@ -621,21 +619,14 @@ export class Scene3D {
     if (key) this.onTrack.delete(key);
     // A bus is on a road: the nearest running its way within 20 m, else any within 60 m (its GPS off at a terminus,
     // or behind a building), rather than in a garden or inside a block.
-    // With a way to go by: the nearest road within 60 m that runs that way (within ALONG_DEG, either of its two
-    // ways), never one across it. At a crossing the cross street is often the nearest; taking it turned the bus
-    // across the street, and keeping the bus where its GPS (or OASA's shape) put it left it in a garden or a block.
-    let near: Hit | null = null;
-    if (heading != null && roadDir) {
-      const off = (c: Hit) => { const a = Math.abs(((Math.atan2(c.tx, c.ty) * 180) / Math.PI - heading! + 540) % 360 - 180); return Math.min(a, 180 - a); };
-      for (const c of idx.candidates(pos, 60, roadDir, 12)) if (off(c) <= ALONG_DEG && (!near || c.d < near.d)) near = c;
-      // None that way within 60 m (mid-turn at a junction, its street not mapped): where it is, facing its way.
-      if (!near) return { pos, heading };
-    } else near = idx.nearest(pos, 20) ?? idx.nearest(pos, 60);
-    if (!near) return { pos, heading };
-    const h = idx.lane(near, roadDir);
-    let hd = (Math.atan2(h.tx, h.ty) * 180) / Math.PI;   // the road's bearing, one of its two ways
-    if (heading != null && Math.abs(((hd - heading + 540) % 360) - 180) > 90) hd += 180;
-    return { pos: idx.ll(h.x, h.y), heading: (hd + 360) % 360 };
+    // Not on a road (2026-11-09): a bus is only ever drawn on its route. Off a painted route it stays where its motion
+    // has it, which is on its line's shape (motion along along_m, or OASA's path), facing its way, kept SHAPE_RIGHT
+    // to the right of the shape (a shape runs down the middle of a two-way street: two buses passing would go through
+    // each other). Laid on the nearest road it went onto cross streets at junctions, and into gardens and blocks
+    // where the shape and the mapped roads part.
+    if (heading == null) return { pos, heading };
+    const r = (heading * Math.PI) / 180, kx = 111320 * Math.cos((pos[1] * Math.PI) / 180);
+    return { pos: [pos[0] + (Math.cos(r) * SHAPE_RIGHT) / kx, pos[1] - (Math.sin(r) * SHAPE_RIGHT) / 110540], heading };
   }
 
   drop(key: string) {
