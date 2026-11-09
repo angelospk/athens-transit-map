@@ -89,7 +89,7 @@ class Acc {
       me.name = `syntagma:${name}`;
       // Before the metro entrances' depth tricks (entrance/models.ts: ground −2, opening −1), so an entrance in the
       // square's floor opens through it: its stairs show in the opening, not the floor over them.
-      me.renderOrder = -3;
+      me.renderOrder = -2.5;   // after the square's own hole in the depth (−3), which would clear theirs
       me.castShadow = !["water", "jet", "pave", "paveInner", "fore", "lawn", "glassRoof", "darkFloor"].includes(name);
       me.receiveShadow = name !== "jet";
       out.push(me);
@@ -764,7 +764,7 @@ export function buildSyntagma(local: (p: LngLat) => [number, number]): THREE.Gro
     // (Always: the map's flat layers have written a depth of their own here, not the ground's.)
     const ground = new THREE.Mesh(new THREE.ShapeGeometry(shape).translate(0, 0, 0.005), new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide, depthFunc: THREE.AlwaysDepth }));
     ground.name = "syntagma:ground";
-    ground.renderOrder = -2;
+    ground.renderOrder = -4;
     g.add(ground);
     const far = new THREE.ShaderMaterial({
       vertexShader: "void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
@@ -776,7 +776,7 @@ export function buildSyntagma(local: (p: LngLat) => [number, number]): THREE.Gro
     for (const h of holes) {
       const hole = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape(h.map(([x, y]) => new THREE.Vector2(x, y)))).translate(0, 0, 0.02), far);
       hole.name = "syntagma:hole";
-      hole.renderOrder = -1;
+      hole.renderOrder = -3;
       g.add(hole);
     }
     const dacc = new Acc({ depth: new THREE.MeshBasicMaterial({ colorWrite: false }) });
