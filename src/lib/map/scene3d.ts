@@ -365,11 +365,27 @@ export class Scene3D {
   private markStencil(g: Three.Object3D) {
     const T = this.T!;
     g.traverse(o => {
-      if (!(o as Three.Mesh).isMesh || !o.layers.isEnabled(XRAY)) return;
+      if (!(o as Three.Mesh).isMesh || o.name === "beam" || o.name === "hull" || o === g.userData.glow) return;
       for (const mat of ([] as Three.Material[]).concat((o as Three.Mesh).material)) {
         mat.stencilWrite = true; mat.stencilRef = 1; mat.stencilFunc = T.AlwaysStencilFunc; mat.stencilZPass = T.ReplaceStencilOp;
       }
     });
+  }
+  // A bus's hull: one box as big as the model (12 m by 2.6, 3.1 high, along +x), drawn without colour or depth (three.js
+  // tests the shadow pass's layers against the main camera's, so it is in the scene as the rest is), casting the bus's
+  // shadow, and on the X-ray's layer. Geometry and material shared by all.
+  private hullGeo: Three.BufferGeometry | null = null;
+  private hullMat: Three.Material | null = null;
+  private hullOf(): Three.Mesh {
+    const T = this.T!;
+    if (!this.hullGeo) { this.hullGeo = new T.BoxGeometry(12.1, 2.6, 3.1); this.hullGeo.translate(0, 0, 0.32 + 1.55); }
+    this.hullMat ??= new T.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+    const h = new T.Mesh(this.hullGeo, this.hullMat);
+    h.name = "hull";
+    h.castShadow = true;
+    h.frustumCulled = false;
+    h.layers.enable(XRAY);
+    return h;
   }
   private trees = new Map<string, TreeTile | "none">();
   private layer: (CustomLayerInterface & { scene?: Three.Scene }) | null = null;
@@ -1996,8 +2012,12 @@ export class Scene3D {
         g = (b.kind === "trolley" ? this.trolleyProto! : b.kind === "tram" ? this.tramProto! : b.kind === "metro" ? this.metroProto(b.livery ?? "m23")
           : this.proto!).clone();
         g.userData.kind = look;
-        g.traverse(o => { if ((o as Three.Mesh).isMesh) { o.castShadow = o.name !== "beam"; o.frustumCulled = false;
-          if (b.kind !== "metro" && o.name !== "beam") o.layers.enable(XRAY); } });   // seen through buildings (render)
+        // A bus or a trolley: its parts are drawn, its hull alone (one box) casts its shadow and is seen through
+        // buildings (the X-ray pass): two draws for those instead of one for each of its ~20 parts, each.
+        const hulled = b.kind === "bus" || b.kind === "trolley";
+        g.traverse(o => { if ((o as Three.Mesh).isMesh) { o.castShadow = !hulled && o.name !== "beam"; o.frustumCulled = false;
+          if (!hulled && b.kind !== "metro" && o.name !== "beam") o.layers.enable(XRAY); } });   // seen through buildings (render)
+        if (hulled) g.add(this.hullOf());
         if (b.kind !== "metro") g.userData.xray = true;
         g.userData.plate = g.getObjectByName("plate");   // found once: a search of the model every frame cost more than the rest
         this.groups.set(key, g);
@@ -2315,28 +2335,59 @@ export class Scene3D {
 function mergeParts<O extends Three.Object3D>(T: typeof Three, root: O): O {
   root.updateMatrixWorld(true);
   const inv = new T.Matrix4().copy(root.matrixWorld).invert(), m4 = new T.Matrix4();
+  // Parts of one plain colour (a Lambert material with no picture and no glow of its own) are merged into one mesh
+  // whatever their colour, the colour in its vertices: a bus's white, dark grey, tyres, rims, hubs and bumpers are
+  // one draw. Parts with a picture, a glow or a sheen merge by material. A box with a material per face is cut into
+  // its faces first, so each face merges with the rest of its material.
+  const plain = (m: Three.Material) => (m as Three.MeshLambertMaterial).isMeshLambertMaterial && !(m as Three.MeshLambertMaterial).map
+    && (m as Three.MeshLambertMaterial).emissive.getHex() === 0 && !m.transparent;
+  let vc: Three.MeshLambertMaterial | null = null;
   const sets = new Map<string, { mat: Three.Material; parts: Three.BufferGeometry[] }>();
   const done: Three.Mesh[] = [];
+  const add = (geo: Three.BufferGeometry, mat: Three.Material) => {
+    const uv = !!geo.attributes.uv, flat = plain(mat);
+    for (const n of Object.keys(geo.attributes)) if (n !== "position" && n !== "normal" && (n !== "uv" || flat)) geo.deleteAttribute(n);
+    if (!geo.attributes.normal) geo.computeVertexNormals();
+    if (flat) {
+      const c = (mat as Three.MeshLambertMaterial).color, n = geo.attributes.position.count, col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+      geo.setAttribute("color", new T.BufferAttribute(col, 3));
+      vc ??= new T.MeshLambertMaterial({ vertexColors: true });
+    }
+    const key = flat ? "plain" : `${mat.uuid}|${uv}`;
+    let set = sets.get(key);
+    if (!set) sets.set(key, (set = { mat: flat ? vc! : mat, parts: [] }));
+    set.parts.push(geo);
+  };
   root.traverse(o => {
     const me = o as Three.Mesh;
-    if (!me.isMesh || !me.visible || me.name || Array.isArray(me.material) || (me as Three.InstancedMesh).isInstancedMesh) return;
-    if ((me.material as Three.ShaderMaterial).isShaderMaterial) return;
+    if (!me.isMesh || !me.visible || me.name || (me as Three.InstancedMesh).isInstancedMesh) return;
+    const mats = ([] as Three.Material[]).concat(me.material);
+    if (mats.some(m => (m as Three.ShaderMaterial).isShaderMaterial)) return;
     for (let a = me.parent; a && a !== root; a = a.parent) if (a.userData.len != null) return;   // inside a tram car
-    const geo = (me.geometry.index ? me.geometry.toNonIndexed() : me.geometry.clone());
-    geo.applyMatrix4(m4.multiplyMatrices(inv, me.matrixWorld));
-    const uv = !!geo.attributes.uv, key = `${me.material.uuid}|${uv}`;
-    for (const n of Object.keys(geo.attributes)) if (n !== "position" && n !== "normal" && n !== "uv") geo.deleteAttribute(n);
-    if (!geo.attributes.normal) geo.computeVertexNormals();
-    let set = sets.get(key);
-    if (!set) sets.set(key, (set = { mat: me.material, parts: [] }));
-    set.parts.push(geo);
+    const whole = (me.geometry.index ? me.geometry.toNonIndexed() : me.geometry.clone());
+    whole.applyMatrix4(m4.multiplyMatrices(inv, me.matrixWorld));
+    if (!Array.isArray(me.material)) add(whole, me.material);
+    else {
+      // One geometry per face group (toNonIndexed keeps the groups, in vertices now).
+      const groups = whole.groups.length ? whole.groups : [{ start: 0, count: whole.attributes.position.count, materialIndex: 0 }];
+      for (const gr of groups) {
+        const part = new T.BufferGeometry();
+        for (const [name, attr] of Object.entries(whole.attributes)) {
+          const a = attr as Three.BufferAttribute;
+          part.setAttribute(name, new T.BufferAttribute((a.array as Float32Array).slice(gr.start * a.itemSize, (gr.start + gr.count) * a.itemSize), a.itemSize));
+        }
+        add(part, me.material[gr.materialIndex ?? 0]);
+      }
+      whole.dispose();
+    }
     done.push(me);
   });
   for (const me of done) me.removeFromParent();
   for (const { mat, parts } of sets.values()) {
     const geo = new T.BufferGeometry();
-    for (const name of ["position", "normal", "uv"]) {
-      if (!parts[0].attributes[name]) continue;
+    for (const name of ["position", "normal", "uv", "color"]) {
+      if (!parts.every(g => g.attributes[name])) continue;
       const size = parts[0].attributes[name].itemSize;
       const out = new Float32Array(parts.reduce((n, g) => n + g.attributes[name].count * size, 0));
       let at = 0;
