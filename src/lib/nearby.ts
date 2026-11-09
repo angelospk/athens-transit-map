@@ -1,5 +1,6 @@
 // «Κοντά σου»: the stops around a point, grouped by name, with the lines that stop there.
 
+import ACCENTED from "./accents.json";
 import { distanceM } from "./glide";
 import { fold } from "./search";
 import type { TripIndex } from "./trip";
@@ -83,10 +84,18 @@ export function distText(m: number): string {
   return `${(n / 1000).toFixed(1).replace(".", ",").replace(",0", "")} χλμ`;
 }
 
-// OASA writes names in capitals: each word in capitals is shown as a name (its first letter up, the rest down);
-// other words are left as they are.
+// OASA writes names in capitals, with no accents: each word in capitals is shown as a name (its first letter up, the
+// rest down), with its accent back (accents.json, scripts/accents.py: «ΑΓΙΑΣ ΤΡΙΑΔΟΣ» → «Αγίας Τριάδος»); a word the
+// list does not know stays as it is written. Other words are left as they are.
+const foldWord = (w: string) => w.toLocaleLowerCase("el").normalize("NFD").replace(/\p{Mn}/gu, "").replace(/ς/g, "σ");
+let accents: Map<string, string> | null = null;
+const accented = (w: string) => (accents ??= new Map((ACCENTED as string[]).map(a => [foldWord(a), a]))).get(foldWord(w));
 export const titleCase = (s: string) =>
-  s.replace(/\p{L}+/gu, w => (w.length > 1 && w === w.toLocaleUpperCase("el") ? w[0] + w.toLocaleLowerCase("el").slice(1) : w));
+  s.replace(/\p{L}+/gu, w => {
+    if (w.length < 2 || w !== w.toLocaleUpperCase("el")) return w;
+    const low = w.toLocaleLowerCase("el"), a = /\p{Mn}/u.test(w.normalize("NFD")) ? low : accented(w) ?? low;
+    return a[0].toUpperCase() + a.slice(1);   // not the Greek locale's upper case: it drops the accent («Ά» → «Α»)
+  });
 
 // Minutes on foot for a straight-line distance, at 80 m a minute: an estimate, at least 1.
 export const walkMin = (m: number) => Math.max(1, Math.ceil(m / 80));
