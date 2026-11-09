@@ -29,7 +29,7 @@
   import { metroGlyph, metroLogo, oasaLogo, stopSign, tramGlyph, tramLogo } from "./mapIcons";
   import { bearingOf, depthAt, liveryOf, metroStops, nearestIndex, rightOf, straighten, surfaceTracks, trackBehind } from "./metroDepth";
   import { snapLine } from "../roadSnap";
-  import { Mover, planOnto } from "../motion";
+  import { headingAtLL, Mover, planOnto, pointAtLL, project } from "../motion";
   import { predictS, shapeLength, stopOffsets } from "../predict";
   import { loadSpeed, SPEED_STOPS, type SpeedData } from "../speed";
   import { municipalFC } from "../municipal";
@@ -942,7 +942,7 @@
         trails.push({ type: "Feature", geometry: { type: "LineString", coordinates: trail.geom }, properties: { alpha: trail.alpha * o, dom } });
       if (dom) {
         // In 3D, close in, the vehicle is drawn in the middle of its lane, where its route is painted (scene3d.place).
-        const placed = scene3d.on ? scene3d.place(pos, doms.get(e.key)?.heading ?? null, e.line, e.key) : null;
+        const placed = scene3d.on ? scene3d.place(...onShape(e, pos, doms.get(e.key)?.heading ?? null), e.line, e.key) : null;
         const d = drawDom(e, placed?.pos ?? pos, still);
         if (e.key === infoKey) infoAt = placed?.pos ?? pos;
         if (e.key === focus?.key) focusAt = placed?.pos ?? pos;
@@ -963,7 +963,7 @@
         // A city vehicle (a line not followed) being chased: the camera rides behind it and it is a model too (the
         // city layer is hidden while chasing).
         if (app.chase === e.key && scene3d.on) {
-          const placed = scene3d.place(pos, h ?? chasedHeading);
+          const placed = scene3d.place(...onShape(e, pos, h ?? chasedHeading), e.line, e.key);
           if (placed.heading != null) chasedHeading = placed.heading;
           scene3d.upsert(e.key, placed.pos, placed.heading, app.lineColor(e.line).bg, app.lineInfo.get(e.line)?.kind === "trolley" ? "trolley" : "bus", e.line, e.cls);
           chaseTo(placed.pos, placed.heading);
@@ -972,7 +972,7 @@
         } else {
           let at = pos;
           if (city3d && city3d.size < CITY_3D && shown && o && !cull!(pos)) {
-            const placed = scene3d.place(pos, h, e.line, e.key);
+            const placed = scene3d.place(...onShape(e, pos, h), e.line, e.key);
             scene3d.upsert(e.key, placed.pos, placed.heading, app.lineColor(e.line).bg, app.lineInfo.get(e.line)?.kind === "trolley" ? "trolley" : "bus", e.line, e.cls);
             city3d.add(e.key);
             at = placed.pos;
@@ -1059,6 +1059,18 @@
       && (e.mover.u > 0.3 || e.mover.plan.target(app.serverMs() / 1000 + 1) > e.mover.s + 0.5);
     return moving ? e.mover.heading() : held || e.standing >= 2 ? null
       : vehicleHeading({ lon: e.pos[0], lat: e.pos[1], bearing: e.bearing }, e.route?.route.shape, e.prev);
+  }
+
+  // A vehicle's model (3D) on its line's shape: a standing one is where its GPS put it (in a building, across the
+  // street) facing OASA's bearing, which at a stop is often anything; the shape of its variant, when the line's file
+  // is loaded, runs down its street in its direction, so within SHAPE_M of it the model goes onto it, along it.
+  const SHAPE_M = 40;
+  function onShape(e: FleetEntry, pos: LngLat, heading: number | null): [LngLat, number | null] {
+    const r = e.route ?? (e.variant ? cityRoute(e.line, e.variant) : null);
+    if (!r) return [pos, heading];
+    const q = project(r.geom, r.cum, pos, e.mover.plan?.geom === r.geom ? e.mover.s : undefined);
+    if (q.off > SHAPE_M) return [pos, heading];
+    return [pointAtLL(r.geom, r.cum, q.s), headingAtLL(r.geom, r.cum, q.s) ?? heading];
   }
 
   function drawDom(e: FleetEntry, pos: LngLat, still: boolean): Dom {
