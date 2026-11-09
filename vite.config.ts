@@ -2,7 +2,9 @@
 import { defineConfig, type Plugin } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { execSync } from "node:child_process";
+import { readdirSync, readFileSync } from "node:fs";
 import pkg from "./package.json" with { type: "json" };
+import { parseTimetable } from "./src/lib/muniTimes";
 
 // The version shown in the ⓘ sheet: package version, build day (Athens) and commit.
 const commit = () => {
@@ -30,8 +32,25 @@ function maplibreWorker(): Plugin {
   };
 }
 
+// /municipal-times.json for the app: every hand-transcribed timetable (data/municipal) that passes
+// parseTimetable, without the watch list. The web bundles the same files (muniTables.ts).
+function municipalTimes(): Plugin {
+  return {
+    name: "municipal-times",
+    apply: "build",
+    generateBundle() {
+      const dir = "data/municipal";
+      const tables = readdirSync(dir).filter(f => f.endsWith(".json")).sort()
+        .map(f => parseTimetable(JSON.parse(readFileSync(`${dir}/${f}`, "utf8"))))
+        .filter(t => t !== null)
+        .map(({ watch: _, ...t }) => t);
+      this.emitFile({ type: "asset", fileName: "municipal-times.json", source: JSON.stringify({ v: 1, tables }) });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [svelte(), maplibreWorker()],
+  plugins: [svelte(), maplibreWorker(), municipalTimes()],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
     __APP_BUILT__: JSON.stringify(built),
