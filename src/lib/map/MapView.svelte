@@ -1078,7 +1078,7 @@
     let best = 1;
     for (const x of st) {
       const d = x - e.mover.s;   // metres ahead to it (behind: just left it)
-      const k = d < -25 ? 0 : d < 0 ? 1 + d / 25 : d <= 40 ? 1 : Math.max(0, (110 - d) / 70);
+      const r = d < -25 ? 0 : d < 0 ? 1 + d / 25 : d <= 40 ? 1 : Math.max(0, (110 - d) / 70), k = r * r * (3 - 2 * r);
       best = Math.min(best, 1 - k);
     }
     return 1 - best;
@@ -1093,7 +1093,15 @@
     const end = r.cum[r.cum.length - 1];
     const t = turnBlend(k => (q.s + k < 0 || q.s + k > end ? null : headingAtLL(r.geom, r.cum, q.s + k)));
     const inner = cruiseLane(e.key) * (1 - Math.max(t.right, stopNear(e)));
-    return [pointAtLL(r.geom, r.cum, q.s), headingAtLL(r.geom, r.cum, q.s) ?? heading, t.left, inner];
+    return [pointAtLL(r.geom, r.cum, q.s), axleHeading(r.geom, r.cum, q.s, end) ?? heading, t.left, inner];
+  }
+  // Its heading as a bus takes a bend: along the line from its rear axle to its front one (AXLE_M back and on along
+  // the shape), so it turns gradually through a corner, as far as the bend turns, not at once at the shape's vertex.
+  const AXLE_M = 4;
+  function axleHeading(geom: LngLat[], cum: number[], s: number, end: number): number | null {
+    const a = pointAtLL(geom, cum, Math.max(0, s - AXLE_M)), b = pointAtLL(geom, cum, Math.min(end, s + AXLE_M));
+    const kx = Math.cos((a[1] * Math.PI) / 180), dx = (b[0] - a[0]) * kx, dy = b[1] - a[1];
+    return dx || dy ? ((Math.atan2(dx, dy) * 180) / Math.PI + 360) % 360 : headingAtLL(geom, cum, s);
   }
 
   function drawDom(e: FleetEntry, pos: LngLat, still: boolean): Dom {

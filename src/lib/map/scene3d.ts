@@ -1995,7 +1995,8 @@ export class Scene3D {
       if (h == null || (!g.lat && !g.back)) { out.set(c.key, { x: c.x, y: c.y, turn: 0 }); continue; }
       const d = [Math.sin((h * Math.PI) / 180), Math.cos((h * Math.PI) / 180)];
       // Turned toward where it moves sideways, from the spring's own speed: smooth as the move itself.
-      const turn = Math.max(-0.3, Math.min(0.3, Math.atan2(g.latV, Math.max(c.v, 4))));
+      // (Its own speed, crawling too: taken as 4 m/s it slid sideways at a crawl.)
+      const turn = Math.max(-0.35, Math.min(0.35, Math.atan2(g.latV, Math.max(c.v, 1.5))));
       out.set(c.key, { x: c.x - d[1] * g.lat - d[0] * g.back, y: c.y + d[0] * g.lat - d[1] * g.back, turn });
     }
     return out;

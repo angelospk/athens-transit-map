@@ -24,14 +24,22 @@ const LANE_W = 3.5;   // a traffic lane's width, metres
 // before; back over TURN_OUT after. The nearest turn decides.
 const TURN_DEG = 50, BEND_M = 30, TURN_FROM = 100, TURN_IN = 50, TURN_OUT = 30;
 export function turnBlend(headingAt: (s: number) => number | null): { left: number; right: number } {
-  for (let d = -TURN_OUT; d <= TURN_FROM; d += 5) {
+  const bend = (d: number) => {
     const a = headingAt(d - BEND_M / 2), b = headingAt(d + BEND_M / 2);
-    if (a == null || b == null) continue;
-    const turn = ((b - a + 540) % 360) - 180;   // + right, - left
+    return a == null || b == null ? 0 : ((b - a + 540) % 360) - 180;   // + right, - left
+  };
+  for (let d = -TURN_OUT; d <= TURN_FROM; d += 5) {
+    const turn = bend(d);
     if (Math.abs(turn) < TURN_DEG) continue;
-    const at = d + BEND_M / 2;   // about where the bend is
+    // Where the bend begins, to a few centimetres (not to the 5 m step: as the bus drives up to it, how far over it is
+    // grows smoothly, not in steps of a metre).
+    let lo = d - 5, hi = d;
+    if (Math.abs(bend(lo)) >= TURN_DEG) lo = hi;
+    else for (let i = 0; i < 8; i++) { const m = (lo + hi) / 2; if (Math.abs(bend(m)) >= TURN_DEG) hi = m; else lo = m; }
+    const at = hi + BEND_M / 2;   // about where the bend is
     const k = at < 0 ? Math.max(0, 1 + at / TURN_OUT) : at <= TURN_IN ? 1 : Math.max(0, (TURN_FROM - at) / (TURN_FROM - TURN_IN));
-    return turn < 0 ? { left: k, right: 0 } : { left: 0, right: k };
+    const e = k * k * (3 - 2 * k);   // eased: it starts over and settles in gently
+    return turn < 0 ? { left: e, right: 0 } : { left: 0, right: e };
   }
   return { left: 0, right: 0 };
 }

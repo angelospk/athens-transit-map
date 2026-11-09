@@ -22,13 +22,24 @@ describe("PoseSmoother", () => {
 
   it("spreads a hop sideways over a glide, and leans into it only a little", () => {
     // 10 m/s north; at 2 s the place moves 1.7 m to the right in one frame (a lane, a road nudge).
-    const o = run(t => [t < 2 ? 0 : 1.7, 10 * t], 4);
+    const o = run(t => [t < 2 ? 0 : 1.7, 10 * t], 6);
     let maxStep = 0;
     for (let i = 1; i < o.length; i++) maxStep = Math.max(maxStep, Math.abs(o[i].x - o[i - 1].x));
     expect(maxStep).toBeLessThan(0.12);   // a metre and a bit, over many frames, not in one
     expect(Math.abs(o[o.length - 1].x - 1.7)).toBeLessThan(0.05);   // and it gets there
     const hs = o.map(r => r.h!).map(h => (h > 180 ? h - 360 : h));
-    expect(Math.max(...hs.map(Math.abs))).toBeLessThanOrEqual(15);
+    expect(Math.max(...hs.map(Math.abs))).toBeLessThanOrEqual(12);
+  });
+
+  it("changes lanes as a smooth turn out and back, without wagging", () => {
+    // 8 m/s north, 12 m over to the left in the 50 m before a turn, eased (as roadSnap.turnBlend has it).
+    const ease = (k: number) => k * k * (3 - 2 * k);
+    const o = run(t => { const y = 8 * t, k = Math.max(0, Math.min(1, (y - 40) / 50)); return [-12 * ease(k), y]; }, 14);
+    const hs = o.map(r => (r.h! > 180 ? r.h! - 360 : r.h!));
+    let sign = 0, flips = 0;
+    for (let i = 1; i < hs.length; i++) { const d = Math.sign(Math.round((hs[i] - hs[i - 1]) * 1000)); if (d && sign && d !== sign) flips++; if (d) sign = d; }
+    expect(flips).toBeLessThanOrEqual(2);   // turns out, turns back: no wag
+    expect(Math.min(...hs)).toBeLessThan(-5);   // and visibly steers into it
   });
 
   it("keeps a jittering place steady", () => {
@@ -37,6 +48,18 @@ describe("PoseSmoother", () => {
     const steps = o.slice(60).map((r, i, a) => (i ? (r.y - a[i - 1].y) * FPS : 8)).slice(1);
     expect(Math.min(...steps)).toBeGreaterThan(5);
     expect(Math.max(...steps)).toBeLessThan(11);
+  });
+
+  it("crawling, changes lanes slowly and steers into it: never slides sideways", () => {
+    // 2 m/s north; the place moves 3.5 m to the left at once (a lane for a turn).
+    const o = run(t => [t < 1 ? 0 : -3.5, 2 * t], 12);
+    for (let i = 1; i < o.length; i++) {
+      const dx = o[i].x - o[i - 1].x, dy = o[i].y - o[i - 1].y;
+      if (Math.abs(dx) > 1e-6) expect(Math.abs(dx) / Math.max(dy, 1e-9)).toBeLessThanOrEqual(0.2 + 0.12 / 60 / Math.max(dy, 1e-9) + 1e-9);
+    }
+    const hs = o.map(r => (r.h! > 180 ? r.h! - 360 : r.h!));
+    expect(Math.min(...hs)).toBeLessThan(-6);   // steered left
+    expect(Math.abs(o[o.length - 1].x + 3.5)).toBeLessThan(0.1);
   });
 
   it("goes round a corner close to it", () => {

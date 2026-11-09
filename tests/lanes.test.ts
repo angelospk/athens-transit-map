@@ -15,6 +15,12 @@ describe("turnBlend", () => {
     expect(turnBlend(L(150)).left).toBe(0);         // on the next road
     expect(turnBlend(L(70)).right).toBe(0);
   });
+  it("grows smoothly as it drives up to the turn, never in steps", () => {
+    const L = route(270);
+    let prev = turnBlend(L(0)).left, worst = 0;
+    for (let here = 0.25; here <= 100; here += 0.25) { const k = turnBlend(L(here)).left; worst = Math.max(worst, Math.abs(k - prev)); prev = k; }
+    expect(worst).toBeLessThan(0.02);   // 25 cm on: under 2% of the way over (20 cm across a 10 m wide road)
+  });
   it("does the same to the right for a right turn, and nothing on a straight road", () => {
     expect(turnBlend(route(90)(70))).toEqual({ left: 0, right: 1 });
     expect(turnBlend(route(0)(70))).toEqual({ left: 0, right: 0 });
