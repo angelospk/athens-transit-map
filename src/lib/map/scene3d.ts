@@ -576,12 +576,15 @@ export class Scene3D {
    *  20 m, turned along it; else where it is. Close in only (STREET_ZOOM), in Athens. */
   place(pos: LngLat, heading: number | null, line?: string, key?: string): { pos: LngLat; heading: number | null } {
     const idx = this.roads;
-    // Standing, a vehicle has no heading of its own (MapView): it keeps the way its model faced, so it is not laid on
-    // whichever road is nearest (a cross street, a stop's bay) and turned across the street.
+    const unit = (h: number | null): [number, number] | undefined => h == null ? undefined : [Math.sin((h * Math.PI) / 180), Math.cos((h * Math.PI) / 180)];
+    // Its own heading picks its line's track (the way it runs). Standing, it has none (MapView): it keeps to the track
+    // it was on, and off its line's tracks it keeps the way its model faced, so it is not laid on whichever road is
+    // nearest (a cross street, a stop's bay) and turned across the street. The model's way never picks the track: a
+    // model turned wrong once would keep itself wrong.
+    const dir = unit(heading);
     if (heading == null && key) heading = this.buses.get(key)?.heading ?? null;
+    const roadDir = unit(heading);
     if (!this.on || !idx || !this.map || this.map.getZoom() < STREET_ZOOM) { if (key) this.onTrack.delete(key); return { pos, heading }; }
-    const dir: [number, number] | undefined = heading == null ? undefined
-      : [Math.sin((heading * Math.PI) / 180), Math.cos((heading * Math.PI) / 180)];
     const tracks = (line && this.tracks.get(line)) || [];
     if (tracks.length) {
       const now = performance.now(), was = key ? this.onTrack.get(key) : undefined;
@@ -591,9 +594,13 @@ export class Scene3D {
         const h = was.t.at(pos, 25, dir, [was.raw - 15, was.raw + 120]);
         if (h) hit = { t: was.t, s: h.s };
       }
-      if (!hit) {
+      // Else the nearest of its line's tracks within 25 m, then within 60 m (its GPS, or OASA's path, off its painted
+      // route): on its own route rather than on another road nearer by. Last, any way within 25 m: a heading across
+      // its route (OASA's bearing at a stop) is wrong, not the route.
+      for (const [reach, d] of [[25, dir], [60, dir], ...(dir ? [[25, undefined]] : [])] as [number, [number, number] | undefined][]) {
+        if (hit) break;
         let best = Infinity;
-        for (const t of tracks) { const h = t.at(pos, 25, dir); if (h && h.d < best) { best = h.d; hit = { t, s: h.s }; } }
+        for (const t of tracks) { const h = t.at(pos, reach, d); if (h && h.d < best) { best = h.d; hit = { t, s: h.s }; } }
       }
       if (hit) {
         let err = 0;
@@ -613,9 +620,9 @@ export class Scene3D {
     if (key) this.onTrack.delete(key);
     // A bus is on a road: the nearest running its way within 20 m, else any within 60 m (its GPS off at a terminus,
     // or behind a building), rather than in a garden or inside a block.
-    const near = idx.nearest(pos, 20, undefined, dir) ?? idx.nearest(pos, 60, undefined, dir) ?? idx.nearest(pos, 60);
+    const near = idx.nearest(pos, 20, undefined, roadDir) ?? idx.nearest(pos, 60, undefined, roadDir) ?? idx.nearest(pos, 60);
     if (!near) return { pos, heading };
-    const h = idx.lane(near, dir);
+    const h = idx.lane(near, roadDir);
     let hd = (Math.atan2(h.tx, h.ty) * 180) / Math.PI;   // the road's bearing, one of its two ways
     if (heading != null) {
       const off = Math.abs(((hd - heading + 540) % 360) - 180);
