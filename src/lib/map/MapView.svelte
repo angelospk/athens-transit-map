@@ -1404,7 +1404,7 @@
   infoCtl.append(infoBtn);
 
   let infoOpen = $state(false);
-  let infoTab = $state<"sources" | "stats" | "feedback">("sources");
+  let infoTab = $state<"sources" | "stats" | "feedback" | "news" | "terms">("sources");
   let Info = $state.raw<typeof import("../ui/InfoDialog.svelte").default | null>(null);
   let infoLoad: Promise<typeof import("../ui/InfoDialog.svelte").default> | null = null;
   async function openInfo(tab?: "feedback") {

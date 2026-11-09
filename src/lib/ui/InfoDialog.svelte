@@ -8,6 +8,7 @@
   import StatsView from "./StatsView.svelte";
   import FeedbackForm from "./FeedbackForm.svelte";
   import AboutView from "./AboutView.svelte";
+  import TermsView from "./TermsView.svelte";
 
   // ended: the day the OASA timetable ended, when it is past (explained at the top).
   // tab: bindable so «Δώσε feedback» (the ? pop) can open the sheet on the feedback tab.
@@ -16,9 +17,11 @@
 
   const city = CITIES[PAGE_CITY];
   const ALL_TABS = [
-    { id: "sources", label: "Πηγές δεδομένων" },
-    { id: "stats", label: "Στατιστικά δικτύου" },
+    { id: "sources", label: "Πηγές" },
+    { id: "stats", label: "Στατιστικά" },
     { id: "feedback", label: "Feedback" },
+    { id: "news", label: "Τι νέο" },
+    { id: "terms", label: "Όροι" },
   ] as const;
   type Tab = (typeof ALL_TABS)[number]["id"];
   // The daily stats are of Athens only: elsewhere no stats tab.
@@ -36,10 +39,15 @@
   let statsSeen = $state(false);
   $effect(() => { if (tab === "stats") statsSeen = true; });
 
-  // The app tab: feedback (B10: moved here from the map's buttons), then version and «Τι νέο». This sheet stays
-  // mounted once loaded, so closing it while feedback is sent loses nothing. Releases load on the first visit.
-  let appSeen = $state(false);
-  $effect(() => { if (open && tab === "feedback") appSeen = true; });
+  // «Τι νέο»: version and the web's releases, loaded on the first visit to the tab. This sheet stays
+  // mounted once loaded, so closing it while feedback is sent loses nothing.
+  let newsSeen = $state(false);
+  $effect(() => { if (open && tab === "news") newsSeen = true; });
+
+  // The tab row scrolls on a phone: keep the chosen tab in view (also when the sheet opens on one).
+  $effect(() => {
+    if (open) document.getElementById(`info-tab-${tab}`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  });
 
   $effect(() => {
     if (open && dlg.isConnected && !dlg.open) dlg.showModal();
@@ -109,7 +117,12 @@
     {/if}
     <div role="tabpanel" id="info-panel-feedback" aria-labelledby="info-tab-feedback" hidden={tab !== "feedback"}>
       <FeedbackForm visible={open && tab === "feedback"} />
-      {#if appSeen}<AboutView />{/if}
+    </div>
+    <div role="tabpanel" id="info-panel-news" aria-labelledby="info-tab-news" hidden={tab !== "news"}>
+      {#if newsSeen}<AboutView />{/if}
+    </div>
+    <div role="tabpanel" id="info-panel-terms" aria-labelledby="info-tab-terms" hidden={tab !== "terms"}>
+      {#if open && tab === "terms"}<TermsView />{/if}
     </div>
   </div>
 </dialog>
@@ -126,8 +139,12 @@
   .close:hover { background: var(--control); color: var(--fg); }
   .old { margin: 0 0 12px; padding: 8px 10px; border-radius: 8px; background: var(--warn-bg); font-size: 13px; }
   .old a { color: inherit; }
-  .tabs { display: flex; padding: 2px; margin-bottom: 14px; border-radius: 9px; background: var(--control); }
-  .tabs button { flex: 1; min-height: 34px; border: 0; border-radius: 7px; background: none; cursor: pointer; font-size: 13px; }
+  /* Five tabs do not fit a phone: the row scrolls sideways (no scrollbar), each tab as wide as its label. */
+  .tabs { display: flex; padding: 2px; margin-bottom: 14px; border-radius: 9px; background: var(--control);
+    overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs button { flex: 1 0 auto; min-height: 34px; padding: 0 12px; border: 0; border-radius: 7px; background: none; cursor: pointer;
+    font-size: 13px; white-space: nowrap; }
   .tabs button[aria-selected="true"] { background: var(--bg); box-shadow: 0 1px 3px rgba(0, 0, 0, .2); font-weight: 600; }
   .tabs.sub { width: fit-content; margin-bottom: 10px; }
   .tabs.sub button { min-height: 32px; padding: 0 14px; font-size: 12px; white-space: nowrap; }

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Version and «Τι νέο» under the feedback form: the web's GitHub Releases, loaded the first time
+  // «Τι νέο», a tab of the ⓘ sheet: the version and the web's GitHub Releases, loaded the first time
   // the tab is shown. The newest one is open, the older ones fold.
   import { dayMonth } from "../format";
   import { RELEASES_PAGE, fetchReleases, type Release } from "../releases";
