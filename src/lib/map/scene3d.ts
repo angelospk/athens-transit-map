@@ -635,7 +635,7 @@ export class Scene3D {
     if (g) { g.removeFromParent(); this.groups.delete(key); }
   }
 
-  // The pavements, kerbs and carriageways: a line layer each, the width per feature, drawn as a mapmaker
+  // The pavements, kerbs and carriageways: one line layer per width (athensRoads.ts Widths), drawn as a mapmaker
   // draws them, every pavement first, then every kerb, then every carriageway, so at a junction the surfaces join and
   // no kerb crosses. Added once the streets have loaded (or at once if they have), under the markings.
   private streetIds: string[] = [];
@@ -649,29 +649,28 @@ export class Scene3D {
     // Streets end round, so where two meet at an angle the corner is filled. Motorways end square: their ways meet
     // in line, but change width at every ramp (a lane more or less), and a round end of the wider one would bulge
     // out past the narrower one as a half disc.
-    // One layer per surface, its width per feature (metres, inside the zoom curve: a composite expression). Until
-    // 2026-11-09 it was one layer per width (athensRoads Widths), a hundred layers in all, so a tilted view at street
-    // level was thousands of draw calls a frame and a pan stuttered on any machine. MapLibre works a composite width
-    // out for each tile at the tile's own zoom and the next, so it is exact where tiles are at the map's zoom (zoomed
-    // in past 17 too: an overzoomed tile is built again at its shown zoom); the far rows of a tilted view, drawn from
-    // tiles of a lower zoom, come out up to half as wide as they should. Far off, that is not seen.
-    const add = (id: string, kind: string, width: unknown[], color: string, cap: "round" | "butt") => {
-      m.addLayer({ id, type: "line", source: "x3d-roads", minzoom: STREET_ZOOM, filter: ["==", ["get", "kind"], kind],
+    // One layer per width (athensRoads Widths), each a plain zoom curve in metres: exact at every zoom on every tile.
+    // A width per feature in one layer per surface (tried 2026-11-09) is worked out by MapLibre at each tile's own
+    // zoom and the next, so while the map zoomed (a tile of the last zoom shown until the new one is laid out) the
+    // streets grew and shrank under the camera. The draw calls this costs stay few since the source's tiles are cut
+    // at zoom 16 (a quarter as many tiles at street level as at 17), and a tile draws only the widths it has.
+    const add = (id: string, kind: string, prop: string, v: number, width: number, color: string, cap: "round" | "butt") => {
+      m.addLayer({ id, type: "line", source: "x3d-roads", minzoom: STREET_ZOOM,
+        filter: ["all", ["==", ["get", "kind"], kind], ["==", ["get", prop], v]],
         layout: { "line-join": "round", "line-cap": cap, visibility: this.under ? "none" : "visible" },
         paint: { "line-color": color, "line-width": metres(width, lat) } } as never, under);
       this.streetIds.push(id);
     };
-    const wq = ["get", "wq"], kerb = ["+", wq, 0.6];   // 30 cm kerbs each side, white (toon: its own)
-    add("x3d-walk", "road", ["get", "pq"], c.walk, "round");
-    add("x3d-path", "path", wq, c.walk, "round");
+    for (const v of A.widths.walk) add(`x3d-walk-${v}`, "road", "pq", v, v, c.walk, "round");
+    for (const v of A.widths.path) add(`x3d-path-${v}`, "path", "wq", v, v, c.walk, "round");
     // A road's pavement where it widens (athensRoads taperPatches), under every kerb and carriageway.
     m.addLayer({ id: "x3d-walk-patch", type: "fill", source: "x3d-roads", minzoom: STREET_ZOOM, filter: ["==", ["get", "kind"], "walkPatch"],
       layout: { visibility: this.under ? "none" : "visible" }, paint: { "fill-color": c.walk, "fill-antialias": false } } as never, under);
     this.streetIds.push("x3d-walk-patch");
-    add("x3d-kerb", "road", kerb, c.kerbA, "round");
-    add("x3d-kerb-m", "motor", kerb, c.kerbA, "butt");
-    add("x3d-road", "road", wq, c.road, "round");
-    add("x3d-road-m", "motor", wq, c.road, "butt");
+    for (const v of A.widths.road) add(`x3d-kerb-${v}`, "road", "wq", v, v + 0.6, c.kerbA, "round");   // 30 cm kerbs, white (toon: its own)
+    for (const v of A.widths.motor) add(`x3d-kerb-m-${v}`, "motor", "wq", v, v + 0.6, c.kerbA, "butt");
+    for (const v of A.widths.road) add(`x3d-road-${v}`, "road", "wq", v, v, c.road, "round");
+    for (const v of A.widths.motor) add(`x3d-road-m-${v}`, "motor", "wq", v, v, c.road, "butt");
     // Where a road forks: its patch, over the carriageways, with its kerbs (athensRoads forkPatches).
     m.addLayer({ id: "x3d-patch", type: "fill", source: "x3d-roads", minzoom: STREET_ZOOM, filter: ["==", ["get", "kind"], "patch"],
       layout: { visibility: this.under ? "none" : "visible" }, paint: { "fill-color": c.road, "fill-antialias": false } } as never, under);

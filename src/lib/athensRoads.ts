@@ -19,10 +19,11 @@ export interface RoadsFile { origin: LngLat; unit: number; r: RawRoad[]; a: Pts[
 /** A street with its pavement, for the street lights. */
 export interface Street { coords: LngLat[]; half: number; pave: number; box: [number, number, number, number] }
 
-/** The widths the map draws, in metres: carriageways to the half metre (`wq`), pavements to the metre (`pq`, the whole
- *  width with both pavements). Until 2026-11-09 each width was a layer of its own (exact at every zoom on every tile,
- *  but a hundred layers: thousands of draw calls a frame); now the width is per feature in one layer per surface
- *  (scene3d.ts streetLayers), and this list only says which widths occur. */
+/** The widths the map draws, in metres, each its own layer (scene3d.ts): a width given per feature (a data
+ *  expression inside a zoom curve) is worked out by MapLibre for each tile at that tile's own zoom, so streets grew
+ *  and shrank while the map zoomed (old tiles shown until new ones load) and changed width where a tilted view
+ *  meets tiles of another zoom. One width per layer is a plain zoom curve, exact at every zoom on every tile.
+ *  Carriageways to the half metre (`wq`), pavements to the metre (`pq`, the whole width with both pavements). */
 export interface Widths { road: number[]; motor: number[]; walk: number[]; path: number[] }
 export const roadQ = (w: number) => Math.max(0.5, Math.round(w * 2) / 2);
 export const walkQ = (w: number) => Math.max(1, Math.round(w));
