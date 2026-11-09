@@ -2,8 +2,9 @@
 // or a page whose times changed, means the municipality may have a new timetable, and a person must look.
 // `bun scripts/municipal-watch.ts`        prints a Markdown report of the changes (empty when none), exit 0
 // `bun scripts/municipal-watch.ts --fill` writes the current hashes into the files (after a transcription)
+// `--misses <file>`: the URLs the previous run could not reach (read), then the ones this run could not (written)
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { timesSignature } from "../src/lib/muniTimes";
@@ -14,9 +15,21 @@ export interface Finding { file: string; municipality: string; url: string; stat
 
 const sha = (b: Uint8Array | string) => createHash("sha256").update(b).digest("hex");
 
-// A page is compared by its times only (timesSignature): its notices and banners change every week.
+// The text a reader sees: no comments (cache stamps like "@ 3:54 PM"), head, scripts, styles, SVG paths or
+// attributes, whose numbers look like times and change on every load (issue #68).
+const visibleText = (html: string) => html
+  .replace(/<!--[\s\S]*?-->/g, " ")
+  .replace(/<(head|script|style|svg)\b[\s\S]*?<\/\1\s*>/gi, " ")
+  .replace(/<[^>]*>/g, " ");
+
+// A page is compared by its visible times only (timesSignature): its notices and banners change every week.
 export const sourceHash = (kind: Kind, body: Uint8Array) =>
-  kind === "file" ? sha(body) : sha(timesSignature(new TextDecoder().decode(body)));
+  kind === "file" ? sha(body) : sha(timesSignature(visibleText(new TextDecoder().decode(body))));
+
+// One failed fetch is often the site or the runner's network, not a removed timetable: an unreachable source is
+// reported only when the previous run could not reach it either.
+export const confirmUnreachable = (found: Finding[], missedBefore: Set<string>) =>
+  found.filter(f => f.status !== "unreachable" || missedBefore.has(f.url));
 
 // The page's links, %XX decoded, so a file name matches however the page spells it.
 const decoded = (html: string) => html.replace(/(%[0-9A-F]{2})+/gi, s => { try { return decodeURIComponent(s); } catch { return s; } });
@@ -62,8 +75,16 @@ if ((import.meta as ImportMeta & { main?: boolean }).main === true) {
       writeFileSync(join(dir, file), JSON.stringify(data, null, 2) + "\n");
     }
     for (const f of found.filter(x => !x.now)) console.error(`${f.status}: ${f.url}`);
-  } else if (found.length) {
+  } else {
+    const at = process.argv.indexOf("--misses"), missesFile = at > 0 ? process.argv[at + 1] : null;
+    let report = found;
+    if (missesFile) {
+      const before = existsSync(missesFile) ? readFileSync(missesFile, "utf8").split("\n").filter(Boolean) : [];
+      report = confirmUnreachable(found, new Set(before));
+      writeFileSync(missesFile, found.filter(f => f.status === "unreachable").map(f => f.url + "\n").join(""));
+    }
+    if (!report.length) process.exit(0);
     console.log("Ένας δήμος ίσως άλλαξε το ωράριο της δημοτικής συγκοινωνίας. Έλεγξε την πηγή και το `data/municipal/<file>`, ξαναπέρασε τις ώρες αν άλλαξαν, και τρέξε `bun scripts/municipal-watch.ts --fill`.\n");
-    for (const f of found) console.log(`- ${{ changed: "Άλλαξε", unreachable: "Δεν απαντά", unlinked: "Δεν υπάρχει πια στη σελίδα" }[f.status]}: ${f.municipality} · \`${f.file}\` · ${f.url}`);
+    for (const f of report) console.log(`- ${{ changed: "Άλλαξε", unreachable: "Δεν απαντά", unlinked: "Δεν υπάρχει πια στη σελίδα" }[f.status]}: ${f.municipality} · \`${f.file}\` · ${f.url}`);
   }
 }

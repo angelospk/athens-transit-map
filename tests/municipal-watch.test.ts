@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
-import { checkSources, sourceHash } from "../scripts/municipal-watch";
+import { checkSources, confirmUnreachable, sourceHash, type Finding } from "../scripts/municipal-watch";
 
 const sha = (s: string | Uint8Array) => createHash("sha256").update(s).digest("hex");
 const enc = (s: string) => new TextEncoder().encode(s);
@@ -13,6 +13,14 @@ describe("sourceHash", () => {
     const a = sourceHash("times", enc("<p>Αναχωρήσεις 7.30, 9:00</p><p>Νέα!</p>"));
     expect(a).toBe(sha("07:30,09:00"));
     expect(sourceHash("times", enc("<div>Άλλο banner</div> 07:30 · 09.00"))).toBe(a);
+  });
+  it("a page: only the visible text counts, not cache comments, timings, CSS, SVG or attributes (issue #68)", () => {
+    const a = sourceHash("times", enc("<p>Αναχωρήσεις 7.30, 9:00</p>"));
+    const noisy = (n: string) => enc(`<html><head><meta content="2025-01-10T12:35:25+00:00"><style>a{gap:1.25em}</style>
+      <script>var t="${n}"</script><!-- SEO | ${n}ms --></head><body><svg><path d="M1.44,6.84 C12.24,3.85"/></svg>
+      <p data-t="10:15">Αναχωρήσεις 7.30, 9:00</p><!-- Cache created on 09/11/2026 @ ${n} PM --></body></html>`);
+    expect(sourceHash("times", noisy("3:54"))).toBe(a);
+    expect(sourceHash("times", noisy("11:33"))).toBe(a);
   });
 });
 
@@ -44,5 +52,14 @@ describe("checkSources", () => {
     ]);
     delete pages["https://a/page"];   // the page does not answer: no finding (its own watch reports it)
     expect(await checkSources([t], get)).toEqual([]);
+  });
+});
+
+describe("confirmUnreachable", () => {
+  const f = (url: string, status: Finding["status"]): Finding => ({ file: "x.json", municipality: "Δήμος Χ", url, status, now: null });
+  it("reports an unreachable source only when the previous run missed it too; other findings always", () => {
+    const found = [f("https://a/1", "unreachable"), f("https://a/2", "unreachable"), f("https://a/3", "changed"), f("https://a/4", "unlinked")];
+    expect(confirmUnreachable(found, new Set(["https://a/2"]))).toEqual([found[1], found[2], found[3]]);
+    expect(confirmUnreachable(found, new Set())).toEqual([found[2], found[3]]);
   });
 });
