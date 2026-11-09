@@ -28,7 +28,7 @@
   import { smoothPath, snapTram } from "./tramRails";
   import { metroGlyph, metroLogo, oasaLogo, stopSign, tramGlyph, tramLogo } from "./mapIcons";
   import { bearingOf, depthAt, liveryOf, metroStops, nearestIndex, rightOf, straighten, surfaceTracks, trackBehind } from "./metroDepth";
-  import { snapLine } from "../roadSnap";
+  import { snapLine, turnBlend } from "../roadSnap";
   import { headingAtLL, Mover, planOnto, pointAtLL, project } from "../motion";
   import { predictS, shapeLength, stopOffsets } from "../predict";
   import { loadSpeed, SPEED_STOPS, type SpeedData } from "../speed";
@@ -942,7 +942,7 @@
         trails.push({ type: "Feature", geometry: { type: "LineString", coordinates: trail.geom }, properties: { alpha: trail.alpha * o, dom } });
       if (dom) {
         // In 3D, close in, the vehicle is drawn in the middle of its lane, where its route is painted (scene3d.place).
-        const placed = scene3d.on ? scene3d.place(...onShape(e, pos, doms.get(e.key)?.heading ?? null), e.line, e.key) : null;
+        const placed = scene3d.on ? placeOn(e, pos, doms.get(e.key)?.heading ?? null) : null;
         const d = drawDom(e, placed?.pos ?? pos, still);
         if (e.key === infoKey) infoAt = placed?.pos ?? pos;
         if (e.key === focus?.key) focusAt = placed?.pos ?? pos;
@@ -963,7 +963,7 @@
         // A city vehicle (a line not followed) being chased: the camera rides behind it and it is a model too (the
         // city layer is hidden while chasing).
         if (app.chase === e.key && scene3d.on) {
-          const placed = scene3d.place(...onShape(e, pos, h ?? chasedHeading), e.line, e.key);
+          const placed = placeOn(e, pos, h ?? chasedHeading);
           if (placed.heading != null) chasedHeading = placed.heading;
           scene3d.upsert(e.key, placed.pos, placed.heading, app.lineColor(e.line).bg, app.lineInfo.get(e.line)?.kind === "trolley" ? "trolley" : "bus", e.line, e.cls);
           chaseTo(placed.pos, placed.heading);
@@ -972,7 +972,7 @@
         } else {
           let at = pos;
           if (city3d && city3d.size < CITY_3D && shown && o && !cull!(pos)) {
-            const placed = scene3d.place(...onShape(e, pos, h), e.line, e.key);
+            const placed = placeOn(e, pos, h);
             scene3d.upsert(e.key, placed.pos, placed.heading, app.lineColor(e.line).bg, app.lineInfo.get(e.line)?.kind === "trolley" ? "trolley" : "bus", e.line, e.cls);
             city3d.add(e.key);
             at = placed.pos;
@@ -1065,12 +1065,35 @@
   // street) facing OASA's bearing, which at a stop is often anything; the shape of its variant, when the line's file
   // is loaded, runs down its street in its direction, so within SHAPE_M of it the model goes onto it, along it.
   const SHAPE_M = 40;
-  function onShape(e: FleetEntry, pos: LngLat, heading: number | null): [LngLat, number | null] {
+  const placeOn = (e: FleetEntry, pos: LngLat, heading: number | null) => {
+    const [p, h, left, inner] = onShape(e, pos, heading);
+    return scene3d.place(p, h, e.line, e.key, left, inner);
+  };
+  // Its lane on a road with two or more its way (3D): its own (cruiseLane), over to the right one for a stop or a
+  // right turn ahead and to the left one for a left turn (roadSnap.turnBlend), in and out gradually.
+  const cruiseLane = (key: string) => { let h = 0; for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0; return (h >>> 0) % 2; };
+  function stopNear(e: FleetEntry): number {
+    const st = e.mover.plan?.stops;
+    if (!st?.length) return 0;
+    let best = 1;
+    for (const x of st) {
+      const d = x - e.mover.s;   // metres ahead to it (behind: just left it)
+      const k = d < -25 ? 0 : d < 0 ? 1 + d / 25 : d <= 40 ? 1 : Math.max(0, (110 - d) / 70);
+      best = Math.min(best, 1 - k);
+    }
+    return 1 - best;
+  }
+  // On its line's shape, with how far over to its left lane for a left turn ahead (roadSnap.turnBlend) and which lane
+  // from the right it keeps to.
+  function onShape(e: FleetEntry, pos: LngLat, heading: number | null): [LngLat, number | null, number, number] {
     const r = e.route ?? (e.variant ? cityRoute(e.line, e.variant) : null);
-    if (!r) return [pos, heading];
+    if (!r) return [pos, heading, 0, 0];
     const q = project(r.geom, r.cum, pos, e.mover.plan?.geom === r.geom ? e.mover.s : undefined);
-    if (q.off > SHAPE_M) return [pos, heading];
-    return [pointAtLL(r.geom, r.cum, q.s), headingAtLL(r.geom, r.cum, q.s) ?? heading];
+    if (q.off > SHAPE_M) return [pos, heading, 0, 0];
+    const end = r.cum[r.cum.length - 1];
+    const t = turnBlend(k => (q.s + k < 0 || q.s + k > end ? null : headingAtLL(r.geom, r.cum, q.s + k)));
+    const inner = cruiseLane(e.key) * (1 - Math.max(t.right, stopNear(e)));
+    return [pointAtLL(r.geom, r.cum, q.s), headingAtLL(r.geom, r.cum, q.s) ?? heading, t.left, inner];
   }
 
   function drawDom(e: FleetEntry, pos: LngLat, still: boolean): Dom {

@@ -15,6 +15,28 @@ export interface Cand extends Hit { score: number }
 
 const CELL = 40;   // metres per grid cell
 const KERB_GAP = 1.95;   // a lane's centre at least this far in from the kerb: half the painted route, and 20 cm
+const LANE_W = 3.5;   // a traffic lane's width, metres
+
+// A bus that turns gets into the lane it turns from before the junction (the left one for a left turn, its right one
+// for a right turn), and back to its own on the next road: how far over to it (0 to 1) at this place, from its
+// heading along its route (degrees clockwise from north at s metres from here; null past the route's ends). A turn is
+// a bend of TURN_DEG or more within BEND_M; over to its lane fully from TURN_IN metres before it, starting TURN_FROM
+// before; back over TURN_OUT after. The nearest turn decides.
+const TURN_DEG = 50, BEND_M = 30, TURN_FROM = 100, TURN_IN = 50, TURN_OUT = 30;
+export function turnBlend(headingAt: (s: number) => number | null): { left: number; right: number } {
+  for (let d = -TURN_OUT; d <= TURN_FROM; d += 5) {
+    const a = headingAt(d - BEND_M / 2), b = headingAt(d + BEND_M / 2);
+    if (a == null || b == null) continue;
+    const turn = ((b - a + 540) % 360) - 180;   // + right, - left
+    if (Math.abs(turn) < TURN_DEG) continue;
+    const at = d + BEND_M / 2;   // about where the bend is
+    const k = at < 0 ? Math.max(0, 1 + at / TURN_OUT) : at <= TURN_IN ? 1 : Math.max(0, (TURN_FROM - at) / (TURN_FROM - TURN_IN));
+    return turn < 0 ? { left: k, right: 0 } : { left: 0, right: k };
+  }
+  return { left: 0, right: 0 };
+}
+export const leftBlend = (headingAt: (s: number) => number | null) => turnBlend(headingAt).left;
+
 const vkey = (x: number, y: number) => `${x.toFixed(2)},${y.toFixed(2)}`;
 
 export class RoadIndex {
@@ -115,9 +137,26 @@ export class RoadIndex {
   /** Where a bus on this hit drives: moved `bus` metres to the right of its way of travel (`dir`, else the way the
    *  road's coordinates run), into the middle of its lane; never closer than KERB_GAP to the kerb, so the painted
    *  route (3.5 m with its white edges) and the bus model stay on the asphalt of an outside lane. */
-  lane(h: Hit, dir?: [number, number]): Hit {
+  /** The lanes its way (one or more), their centres in metres right of the centreline, the rightmost first: the
+   *  rightmost where its buses drive (`bus`, kept KERB_GAP from the kerb), the leftmost the inner one of its side of a
+   *  two-way road, or by the far kerb of a one-way road. */
+  lanes(h: Hit): number[] {
+    const right = Math.sign(h.bus) * Math.min(Math.abs(h.bus), Math.max(0, h.half - KERB_GAP));
+    const one = this.oneway[h.road], room = one ? 2 * h.half : h.half;
+    const n = Math.max(1, Math.floor((room + 0.5) / LANE_W));
+    if (n < 2) return [right];
+    const left = one ? -Math.max(0, h.half - KERB_GAP) : Math.min(right, LANE_W / 2);
+    return Array.from({ length: n }, (_, k) => right + ((left - right) * k) / (n - 1));
+  }
+
+  /** Where a bus on this hit drives: in one of the lanes its way (lanes), moved that far right of its way of travel
+   *  (`dir`, else the way the road's coordinates run). `inner`: lanes in from the right (0 the rightmost, fractions
+   *  between lanes while it changes); `left` (0 to 1): a left turn coming (turnBlend), over to the leftmost that much. */
+  lane(h: Hit, dir?: [number, number], left = 0, inner = 0): Hit {
     if (!h.bus) return h;
-    const off = Math.sign(h.bus) * Math.min(Math.abs(h.bus), Math.max(0, h.half - KERB_GAP));
+    const ls = this.lanes(h), k = Math.max(0, Math.min(ls.length - 1, inner)), i = Math.floor(k);
+    let off = ls[i] + ((ls[Math.min(ls.length - 1, i + 1)] - ls[i]) * (k - i));
+    off += (ls[ls.length - 1] - off) * Math.max(0, Math.min(1, left));
     const s = dir && h.tx * dir[0] + h.ty * dir[1] < 0 ? -1 : 1;
     return { ...h, x: h.x + s * h.ty * off, y: h.y - s * h.tx * off };
   }
@@ -271,9 +310,12 @@ export function snapLine(line: LngLat[], idx: RoadIndex, max = 25, step = 6, cor
   const last = cost.length - 1;
   let j = cost[last].indexOf(Math.min(...cost[last]));
   const chosen: (Hit | null)[] = new Array(dense.length);
+  // Its heading at each dense point (about `step` apart), for the left turns ahead (leftBlend).
+  const hdg = dirs.map(d => (d ? (Math.atan2(d[0], d[1]) * 180) / Math.PI : null));
+  const at = (i: number) => (k: number) => { const n = i + Math.round(k / step); return n < 0 || n >= hdg.length ? null : hdg[n]; };
   for (let i = last; i >= 0; i--) {
     const c = cands[i][j];
-    chosen[i] = c ? idx.lane(c, dirs[i]) : null;
+    chosen[i] = c ? idx.lane(c, dirs[i], leftBlend(at(i))) : null;
     j = from[i][j];
   }
 

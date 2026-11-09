@@ -583,8 +583,8 @@ export class Scene3D {
   /** Where to draw a vehicle in 3D: on its line's drawn route (so it drives where the route is painted, through the
    *  same forks); else where its motion has it, on its line's shape. Never on a road of its own choosing. Close in
    *  only (STREET_ZOOM), in Athens. */
-  place(pos: LngLat, heading: number | null, line?: string, key?: string): { pos: LngLat; heading: number | null } {
-    const r = this.placeOn(pos, heading, line, key);
+  place(pos: LngLat, heading: number | null, line?: string, key?: string, left = 0, inner = 0): { pos: LngLat; heading: number | null } {
+    const r = this.placeOn(pos, heading, line, key, left, inner);
     if (!key || !this.on || !this.map || this.map.getZoom() < STREET_ZOOM) { if (key) this.smooth.drop(key); return r; }
     // Drawn where it is placed, glided (smoothPose): a place worked out afresh each frame hops a metre or two at a
     // vertex, a fork or a lane's edge.
@@ -593,7 +593,7 @@ export class Scene3D {
     return { pos: [TRAIL_ORIGIN[0] + g.x / TKX, TRAIL_ORIGIN[1] + g.y / TKY], heading: g.heading };
   }
   private smooth = new PoseSmoother();
-  private placeOn(pos: LngLat, heading: number | null, line?: string, key?: string): { pos: LngLat; heading: number | null } {
+  private placeOn(pos: LngLat, heading: number | null, line?: string, key?: string, left = 0, inner = 0): { pos: LngLat; heading: number | null } {
     const idx = this.roads;
     const unit = (h: number | null): [number, number] | undefined => h == null ? undefined : [Math.sin((h * Math.PI) / 180), Math.cos((h * Math.PI) / 180)];
     // Its own heading picks its line's track (the way it runs). Standing, it has none (MapView): it keeps to the track
@@ -648,7 +648,7 @@ export class Scene3D {
     const near = idx.nearest(pos, ROAD_NUDGE_M, undefined, dirN);
     if (near) {
       const rd = (Math.atan2(near.tx, near.ty) * 180) / Math.PI, off = Math.abs(((rd - heading + 540) % 360) - 180);
-      if (Math.min(off, 180 - off) <= 30) { const h = idx.lane(near, dirN); return { pos: idx.ll(h.x, h.y), heading }; }
+      if (Math.min(off, 180 - off) <= 30) { const h = idx.lane(near, dirN, left, inner); return { pos: idx.ll(h.x, h.y), heading }; }
     }
     const r = (heading * Math.PI) / 180, kx = 111320 * Math.cos((pos[1] * Math.PI) / 180);
     return { pos: [pos[0] + (Math.cos(r) * SHAPE_RIGHT) / kx, pos[1] - (Math.sin(r) * SHAPE_RIGHT) / 110540], heading };
