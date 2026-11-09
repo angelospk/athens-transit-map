@@ -20,7 +20,6 @@ const GLIDE_M_PER_S = 40;      // GLIDE_S plus a second per this many metres: a 
 //                                (replay of a recorded feed, 2026-11-06: 200 m back in 1.2 s read as a jump) ...
 export const LEAP_M = 600;     // ... but farther than this it is a new place, not a correction: the dot leaps there
 //                                at once (a sweep across the city for seconds is worse than one blink)
-export const OWN_M = 500;      // the measured speed counts over this far from the fix, fading into the step speeds
 export const TRAIL_S = 0.8;    // its trail fades out over this, after the glide
 const OFF_S = 1.2;             // sideways offsets fade out over at least this...
 const OFF_V = 5;               // ...and at most this fast (m/s at the steepest point)
@@ -113,28 +112,21 @@ export function drive(v: number, stops: number[], end: number, horizon = HORIZON
 // `fallback`. Stands for good at a speed <= 0, never past `end`. The backend's typical speeds per
 // 200 m (history, day type, hour; chosen in lab/motion round 2026-10-21) replace the stop waits of
 // drive().
-// With `own`, the bus's own measured speed, the first OWN_M run at it, fading into the steps: a bus
-// in a queue now is not at the road's usual speed, and a dot that races ahead of it is thrown back
-// at the next fix. A standing bus (own under 1 m/s) stands for OWN_STAND_S, then goes.
-export const OWN_STAND_S = 20;
-export function walk(steps: (number | null)[], fallback: number, end: number, horizon = HORIZON_S, own?: number | null): (dt: number) => number {
+// The steps run STEP_PACE times faster. The bus's own measured speed is not used: its fix is about 90 s
+// old when it arrives, and the next fix comes 60-180 s after it, so the speed it had then says little
+// about where it is now. Replayed against the next fixes (22 minutes of the city feed, 2026-11-09 evening,
+// fitted on one half, checked on the other): the median miss fell from 77 m to 60 m, the 80th percentile
+// from 152 m to 119 m, and the drawn bus is no longer behind on average (-14 m, now 0).
+export const STEP_PACE = 1.05;
+export function walk(steps: (number | null)[], fallback: number, end: number, horizon = HORIZON_S): (dt: number) => number {
   if (!(end > 0)) return () => 0;
   const ph: Phase[] = [];
   let t = 0, s = 0;
   const add = (v: number, d: number) => { ph.push({ t, s, v, a: 0 }); t += d / v; s += d; };
-  if (own != null && own < 1) { ph.push({ t, s, v: 0, a: 0 }); t += OWN_STAND_S; own = null; }
   for (let i = 0; s < end; i++) {
-    const v = (i < steps.length ? steps[i] : null) ?? fallback;
+    const v = STEP_PACE * ((i < steps.length ? steps[i] : null) ?? fallback);
     if (!(v > 0)) break;
-    const stepEnd = Math.min(s + STEP_M, end);
-    if (own != null && s < OWN_M) {
-      // In 50 m pieces: the share of its own speed falls with the distance from the fix.
-      while (s < stepEnd && s < OWN_M) {
-        const d = Math.min(50, stepEnd - s, OWN_M - s), w = 1 - (s + d / 2) / OWN_M;
-        add(w * own + (1 - w) * v, d);
-      }
-      if (s < stepEnd) add(v, stepEnd - s);
-    } else add(v, stepEnd - s);
+    add(v, Math.min(s + STEP_M, end) - s);
   }
   if (!ph.length) return () => 0;   // standing from the start
   const limit = s;
@@ -287,9 +279,9 @@ const angle = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
 // A backend `path` ([lon, lat] here) driven at `speed` from position_at `at`, waiting at `stops`
 // (metres along it, contract rev 4). With `steps` (path_speeds, rev 6) it walks those typical speeds
 // instead: no stop waits. Without stops it brakes into the path's end only.
-export function pathPlan(shown: LngLat, path: LngLat[], speed: number, at: number, nowSec: number, stops: number[] = [], steps?: (number | null)[] | null, own?: number | null): Handoff {
+export function pathPlan(shown: LngLat, path: LngLat[], speed: number, at: number, nowSec: number, stops: number[] = [], steps?: (number | null)[] | null): Handoff {
   const cum = cumulativeLL(path), end = cum[cum.length - 1];
-  const f = steps && steps.length ? walk(steps, speed, end, HORIZON_S, own) : drive(speed, stops, end);
+  const f = steps && steps.length ? walk(steps, speed, end) : drive(speed, stops, end);
   return planOnto(shown, { geom: path, cum, target: careful(t => f(t - at), at), stops }, nowSec);
 }
 

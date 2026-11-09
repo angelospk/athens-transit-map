@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { distanceM, type LngLat } from "../src/lib/glide";
 import {
-  AHEAD_MAX, BRAKE, bridge, careful, CATCH_MAX, CRAWL, FADE_S, LEAN, LEAN_S, LEAP_M, OWN_STAND_S, chase, cumulativeLL, drive, DWELL_S, GLIDE_MAX_S, GLIDE_S, glideS, HORIZON_S,
+  AHEAD_MAX, BRAKE, bridge, careful, CATCH_MAX, CRAWL, FADE_S, LEAN, LEAN_S, LEAP_M, STEP_PACE, chase, cumulativeLL, drive, DWELL_S, GLIDE_MAX_S, GLIDE_S, glideS, HORIZON_S,
   linePlan, MIN_CRUISE, Mover, PACE, pathPlan, PENDING_STAND_S, pointAtLL, project, STEP_M, STOP_HOLD_S, subLine, TRAIL_S, WAIT_MAX, WAIT_STAND_S, walk, type Plan,
 } from "../src/lib/motion";
 
@@ -532,25 +532,25 @@ describe("bridge", () => {
 });
 
 describe("walk (contract rev 6 path_speeds)", () => {
-  it("moves at each 200 m step's speed, then at the fallback", () => {
+  it("moves at each 200 m step's speed (times STEP_PACE), then at the fallback", () => {
     expect(STEP_M).toBe(200);
     const f = walk([4, 2], 1, 1000);
-    expect(f(10)).toBeCloseTo(40, 6);
-    expect(f(50)).toBeCloseTo(200, 6);
-    expect(f(60)).toBeCloseTo(220, 6);
-    expect(f(150)).toBeCloseTo(400, 6);
-    expect(f(160)).toBeCloseTo(410, 6);               // past the steps: fallback
+    expect(f(10 / STEP_PACE)).toBeCloseTo(40, 6);
+    expect(f(50 / STEP_PACE)).toBeCloseTo(200, 6);
+    expect(f(60 / STEP_PACE)).toBeCloseTo(220, 6);
+    expect(f(150 / STEP_PACE)).toBeCloseTo(400, 6);
+    expect(f(160 / STEP_PACE)).toBeCloseTo(410, 6);               // past the steps: fallback
   });
   it("takes a null step at the fallback; a zero fallback stands there", () => {
     const f = walk([null, 5], 2, 1000);
-    expect(f(100)).toBeCloseTo(200, 6);
-    expect(f(110)).toBeCloseTo(250, 6);
-    expect(walk([null], 0, 1000)(50)).toBe(0);
-    expect(walk([3, null], 0, 1000)(500)).toBeCloseTo(200, 6);
+    expect(f(100 / STEP_PACE)).toBeCloseTo(200, 6);
+    expect(f(110 / STEP_PACE)).toBeCloseTo(250, 6);
+    expect(walk([null], 0, 1000)(50 / STEP_PACE)).toBe(0);
+    expect(walk([3, null], 0, 1000)(500 / STEP_PACE)).toBeCloseTo(200, 6);
   });
   it("stops at the end and after the horizon; nothing before the fix", () => {
-    expect(walk([10], 10, 150)(100)).toBeCloseTo(150, 6);
-    expect(walk([1], 1, 1e4)(HORIZON_S + 100)).toBeCloseTo(HORIZON_S, 6);
+    expect(walk([10], 10, 150)(100 / STEP_PACE)).toBeCloseTo(150, 6);
+    expect(walk([1], 1, 1e4)(HORIZON_S + 100)).toBeCloseTo(HORIZON_S * STEP_PACE, 6);
     expect(walk([4], 4, 1000)(-5)).toBe(0);
   });
   it("is what pathPlan drives when the vehicle has path_speeds (no stop waits)", () => {
@@ -562,16 +562,3 @@ describe("walk (contract rev 6 path_speeds)", () => {
   });
 });
 
-describe("walk with the bus's own speed", () => {
-  it("runs the first 500 m at the measured speed, fading into the step speeds; a standing bus waits first", () => {
-    const steps = [12, 12, 12, 12, 12, 12];
-    const typical = walk(steps, 5, 2000);
-    const slow = walk(steps, 5, 2000, undefined, 2);
-    expect(slow(30)).toBeLessThan(typical(30) / 2);          // crawling at first
-    expect(slow(100) - slow(99)).toBeCloseTo(12, 0);          // past 500 m, at the road's speed
-    const stand = walk(steps, 5, 2000, undefined, 0);
-    expect(stand(OWN_STAND_S - 1)).toBe(0);
-    expect(stand(OWN_STAND_S + 10)).toBeGreaterThan(0);
-    expect(walk(steps, 5, 2000, undefined, null)(30)).toBe(typical(30));
-  });
-});
