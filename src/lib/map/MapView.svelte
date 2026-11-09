@@ -417,13 +417,14 @@
     const stationVis = app.trainsOn ? "visible" : "none";
     m.addLayer({ id: "metro-station", type: "circle", source: "metro", filter: ["==", ["get", "kind"], "station"], minzoom: RAIL_ZOOM,
       layout: { visibility: stationVis },
-      paint: { "circle-radius": byZoom([RAIL_ZOOM, sel(6, ["case", ["get", "hub"], 4, 3.5]), 14, sel(10, 9), 17, sel(16, 15)]),
+      // Big enough from the first zoom it shows at to carry its logo (a bare dot in the line's colour said little).
+      paint: { "circle-radius": byZoom([RAIL_ZOOM, sel(8.5, 7), 14, sel(10, 9), 17, sel(16, 15)]),
         "circle-color": ["case", ["get", "hub"], "#2b2f36", ["get", "color"]], "circle-stroke-color": sel(accent, ring),
         "circle-stroke-width": byZoom([RAIL_ZOOM, sel(3, 1), 17, sel(3.5, 1.5)]) } });
-    // Close in, the station shows its mode's glyph (metro or tram) on its disc.
-    m.addLayer({ id: "metro-station-glyph", type: "symbol", source: "metro", filter: ["==", ["get", "kind"], "station"], minzoom: 14,
+    // The station shows its mode's logo (the metro's, the tram's) on its disc, at every zoom it shows at.
+    m.addLayer({ id: "metro-station-glyph", type: "symbol", source: "metro", filter: ["==", ["get", "kind"], "station"], minzoom: RAIL_ZOOM,
       layout: { visibility: stationVis, "icon-image": ["concat", "mode-glyph-", ["get", "glyph"]] as ExpressionSpecification,
-        "icon-size": byZoom([14, 0.8, 17, 1.25]), "icon-allow-overlap": true, "icon-ignore-placement": true } });
+        "icon-size": byZoom([RAIL_ZOOM, 0.62, 14, 0.8, 17, 1.25]), "icon-allow-overlap": true, "icon-ignore-placement": true } });
     m.addLayer({ id: "metro-label", type: "symbol", source: "metro", minzoom: RAIL_ZOOM + 1,
       filter: ["==", ["get", "kind"], "station"],
       layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Bold"], "text-size": byZoom([RAIL_ZOOM + 1, 10, 15, 11.5, 17, 13]),
@@ -443,10 +444,10 @@
     m.addSource("suburban", { type: "geojson", data: EMPTY });
     m.addLayer({ id: "suburban-station", type: "circle", source: "suburban", filter: ["==", ["get", "kind"], "station"], minzoom: SUBURBAN_ZOOM,
       layout: { visibility: vis },
-      paint: { "circle-radius": byZoom([SUBURBAN_ZOOM, sel(5, 3), 15, sel(10, 9), 17, sel(13, 12)]), "circle-color": ["get", "color"],
+      paint: { "circle-radius": byZoom([SUBURBAN_ZOOM, sel(7.5, 6), 15, sel(10, 9), 17, sel(13, 12)]), "circle-color": ["get", "color"],
         "circle-stroke-color": sel(accent, ring), "circle-stroke-width": byZoom([SUBURBAN_ZOOM, sel(3, 1), 17, sel(3.5, 1.5)]) } });
-    m.addLayer({ id: "suburban-station-glyph", type: "symbol", source: "suburban", filter: ["==", ["get", "kind"], "station"], minzoom: 15,
-      layout: { visibility: vis, "icon-image": "mode-glyph-metro", "icon-size": byZoom([15, 0.85, 17, 1.1]),
+    m.addLayer({ id: "suburban-station-glyph", type: "symbol", source: "suburban", filter: ["==", ["get", "kind"], "station"], minzoom: SUBURBAN_ZOOM,
+      layout: { visibility: vis, "icon-image": "mode-glyph-metro", "icon-size": byZoom([SUBURBAN_ZOOM, 0.55, 15, 0.85, 17, 1.1]),
         "icon-allow-overlap": true, "icon-ignore-placement": true } });
     m.addLayer({ id: "suburban-label", type: "symbol", source: "suburban", minzoom: RAIL_ZOOM + 1,
       filter: ["==", ["get", "kind"], "station"],

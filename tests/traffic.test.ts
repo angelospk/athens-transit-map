@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backToClear, BACK_MAX, follow, FOLLOW_BRAKE, separate, type Box, type Follow } from "../src/lib/map/spacing";
+import { backToClear, BACK_MAX, follow, FOLLOW_BRAKE, runInto, separate, type Box, type Follow } from "../src/lib/map/spacing";
 
 const LEN = 15.6, WIDE = 3.25, FPS = 60, dt = 1 / FPS;
 
@@ -58,11 +58,11 @@ describe("backToClear", () => {
   const n = (key: string, x: number, y: number, h = 0): Box => ({ key, x, y, h });
   it("is 0 for buses apart, in line or side by side", () => {
     expect(backToClear(n("a", 0, 20), n("b", 0, 0), LEN, WIDE)).toBe(0);
-    expect(backToClear(n("a", 0, 0), n("b", 3.6, 0), LEN, WIDE)).toBe(0);
+    expect(backToClear(n("a", 0, 0), n("b", 4.4, 0), LEN, WIDE)).toBe(0);   // a metre between them
   });
   it("moves the one behind back just far enough, in line", () => {
     const s = backToClear(n("a", 0, 10), n("b", 0, 0), LEN, WIDE);
-    expect(s).toBeCloseTo(LEN - 10 + 0.3, 5);
+    expect(s).toBeCloseTo(LEN - 10 + 1, 5);   // to a metre apart
   });
   it("parts two at right angles (a junction)", () => {
     const a = n("a", 0, 0, 90), b = n("b", -2, -6, 0);   // b heading north into a's side
@@ -74,7 +74,8 @@ describe("backToClear", () => {
 
 describe("separate", () => {
   it("leaves no two drawn buses touching, a queue from its head", () => {
-    const boxes: Box[] = [{ key: "a", x: 0, y: 20, h: 0 }, { key: "b", x: 0.3, y: 12, h: 2 }, { key: "c", x: -0.2, y: 4, h: 358 }, { key: "d", x: 6, y: 9, h: 30 }];
+    // All appearing at once (a view opened onto them): pulled apart at once.
+    const boxes: Box[] = [{ key: "a", x: 0, y: 20, h: 0, fresh: true }, { key: "b", x: 0.3, y: 12, h: 2, fresh: true }, { key: "c", x: -0.2, y: 4, h: 358, fresh: true }, { key: "d", x: 6, y: 9, h: 30, fresh: true }];
     const s = separate(boxes, LEN, WIDE, 6);
     const drawn = boxes.map(b => { const k = s.get(b.key) ?? 0, r = (b.h * Math.PI) / 180; return { ...b, x: b.x - Math.sin(r) * k, y: b.y - Math.cos(r) * k }; });
     for (let i = 0; i < drawn.length; i++) for (let j = i + 1; j < drawn.length; j++) {
@@ -91,7 +92,26 @@ describe("separate", () => {
     expect(t.get("old") ?? 0).toBe(0);
     expect(t.get("new")!).toBeGreaterThan(LEN + 6 - 1);
   });
+  it("never throws a bus already there far back in one frame", () => {
+    const s = separate([{ key: "a", x: 0, y: 10, h: 0 }, { key: "b", x: 0, y: 0, h: 0 }], LEN, WIDE);
+    expect(s.get("b")!).toBeLessThanOrEqual(2.5);
+  });
+  it("leaves two parting from each other alone (moving one back would drive it through the other)", () => {
+    expect(separate([{ key: "a", x: 0, y: 0, h: 90 }, { key: "b", x: -3, y: 2, h: 350 }], LEN, WIDE).size).toBe(0);
+  });
   it("leaves two going opposite ways to edge apart sideways", () => {
     expect(separate([{ key: "a", x: 0, y: 0, h: 0 }, { key: "b", x: 0.5, y: 4, h: 180 }], LEN, WIDE).size).toBe(0);
+  });
+});
+
+describe("runInto", () => {
+  it("is how far its front drives before it meets the other's body, straight on", () => {
+    // b heads north at a (east-west) 20 m ahead of b's front: its front meets a's near side after 20 − W/2.
+    const d = runInto(0, -(20 + LEN / 2), 0, 0, 0, 90, LEN, WIDE)!;
+    expect(d).toBeCloseTo(20 - WIDE / 2, 5);
+  });
+  it("is null when its way passes the other by, or the other is behind it", () => {
+    expect(runInto(0, -30, 0, 30, 0, 90, LEN, WIDE)).toBeNull();      // a well off to the side of b's road
+    expect(runInto(0, 30, 0, 0, 0, 90, LEN, WIDE)).toBeNull();        // a behind b
   });
 });

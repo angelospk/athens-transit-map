@@ -50,7 +50,7 @@ export const MAX_PITCH_3D = 80;    // the tilt allowed in 3D (see enable): short
 export const BUILD_ZOOM = 15;   // the buildings stand up from here; below it the base map's flat ones (memory: a tilted view sees far)
 const BUS_SCALE = 1.3;
 const BUS_LEN = 12 * BUS_SCALE;   // the models are 12 m long (buildBus, buildTrolley), drawn larger
-const LANE_W = 3.6;               // how far a bus pulls out to pass
+const LANE_W = 4.8;               // how far a bus pulls out to pass: a lane and a good gap beside the other (they are drawn 1.3× wide)
 const BUS_WIDE = 2.5 * BUS_SCALE;  // the models are 2.5 m wide: side by side closer than this, two buses touch
 const TRAM_WIDE = 1.25;   // a tram as wide and tall as the buses look (its length real: its cars follow the track)
 // A tram rides on its direction's line itself (metro.json has one per direction, a few metres apart), where its rails

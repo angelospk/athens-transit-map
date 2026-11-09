@@ -92,6 +92,24 @@ describe("PoseSmoother", () => {
     expect(Math.abs(((hs[hs.length - 1] + 540) % 360) - 180)).toBeLessThan(2);   // north again, 40 m on
   });
 
+  it("turns led by its front wheels: it starts turning before its middle reaches the corner, never sharper than a bus", () => {
+    // East at 6 m/s along y = 0, the way turning north at x = 40.
+    const sm = new PoseSmoother(), hs: [number, number][] = [];
+    for (let i = 0; i <= 14 * FPS; i++) {
+      const t = i / FPS, d = 6 * t, raw: [number, number] = d < 40 ? [d, 0] : [40, d - 40];
+      // the way's heading as MapView gives it: the shape's chord from 4 m back to 4 m on (axleHeading), so it
+      // turns over the 8 m round the corner
+      const k = Math.max(0, Math.min(1, (d - 36) / 8)), way = 90 - 90 * k;
+      hs.push([d, sm.step("a", raw[0], raw[1], way, t).heading!]);
+    }
+    const at = (m: number) => hs.find(([d]) => d >= m)![1];
+    expect(at(39)).toBeLessThan(89);   // turning already, its front at the corner
+    let worst = 0;
+    for (let i = 1; i < hs.length; i++) { const dd = hs[i][0] - hs[i - 1][0]; if (dd > 0) worst = Math.max(worst, Math.abs(((hs[i][1] - hs[i - 1][1] + 540) % 360) - 180) / dd); }
+    expect(worst).toBeLessThan(9);     // degrees a metre of its place: no tighter than a bus turns
+    expect(Math.abs(((at(70) + 540) % 360) - 180)).toBeLessThan(2);   // straight north again
+  });
+
   it("standing, does not turn when its way's heading changes", () => {
     const sm = new PoseSmoother();
     sm.step("a", 0, 0, 0, 0);

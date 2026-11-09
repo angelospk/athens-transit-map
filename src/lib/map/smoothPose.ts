@@ -6,10 +6,12 @@
 // Along its way it follows a critically damped spring told the speed the place moves at (so it does not lag behind
 // at a steady speed). Sideways (a lane change, a place a metre off) it moves only as a bus can: at most SLOPE metres
 // for each metre it drives on, so crawling it changes lanes slowly and standing it does not (but for a slow CREEP).
-// Its heading is a bus's (2026-11-09): the rear axle is dragged behind the drawn point, REAR_M back, never sideways
-// (a tractrix), and the bus points from its rear axle to that point. Through a corner its nose swings out and its
-// rear cuts in, as far as the bend turns; a lane change steers out and back; standing, it does not turn at all. Only
-// the heading comes of this: where it is drawn is the place, smoothed as above.
+// Its heading is a bus's (2026-11-09): the front axle, FRONT_M ahead of the drawn point, is steered toward its way,
+// no sharper than a bus can turn (TURN_PER_M degrees a metre driven: never on the spot); the rear axle is dragged
+// after it, WHEELBASE back, never sideways (a tractrix); the bus points from its rear axle to its front one. So it
+// starts to turn as its front reaches the corner, its rear cuts in, and it straightens after; a lane change steers
+// out and back; standing, it does not turn at all. Only the heading comes of this: where it is drawn is the place,
+// smoothed as above.
 
 const W = 5;            // the spring along its way, 1/s: a hop is closed over about half a second
 const TV = 0.25;        // the speed it is told: how the place moved over about this many seconds
@@ -20,10 +22,14 @@ const SLOPE = 0.2;      // sideways, metres for each metre on (about 11°)
 const SIDE_TAU = 0.6;   // s: how quickly it closes a gap sideways, within SLOPE
 const CREEP = 0.12;     // m/s sideways standing (a place moved while it stands: it gets there, unseen)
 export const REAR_M = 3.4;   // the rear axle behind the model's middle (buildBus: 2.6 m, drawn 1.3 times larger)
+export const FRONT_M = 4.3;  // the front axle ahead of it (buildBus: 3.3 m)
+const WHEELBASE = REAR_M + FRONT_M;
+const TURN_PER_M = 6.5;      // degrees its front wheels turn it for each metre it drives: a turning circle of ~9 m
+const BODY_PER_M = 7.5;      // and the body at most this (the tightest a 12 m bus turns: about 7.5 m round)
 const ASTRAY_DEG = 150; // a heading this far from its way's: it has been put somewhere new facing the other way
 
 type State = { x: number; y: number; v: number; ex: number; ey: number; rx: number; ry: number; at: number; h: number | null;
-  ax: number; ay: number; hd: number | null };   // ax, ay: the rear axle; hd: the heading drawn
+  ax: number; ay: number; hd: number | null; fh: number | null };   // ax, ay: the rear axle; hd: the heading drawn; fh: the front wheels' way
 
 const unit = (h: number): [number, number] => [Math.sin((h * Math.PI) / 180), Math.cos((h * Math.PI) / 180)];
 const bearing = (dx: number, dy: number) => ((Math.atan2(dx, dy) * 180) / Math.PI + 360) % 360;
@@ -34,7 +40,7 @@ export class PoseSmoother {
 
   private start(key: string, x: number, y: number, heading: number | null, t: number) {
     const [fx, fy] = heading == null ? [0, 0] : unit(heading);
-    this.s.set(key, { x, y, v: 0, ex: 0, ey: 0, rx: x, ry: y, at: t, h: heading, ax: x - fx * REAR_M, ay: y - fy * REAR_M, hd: heading });
+    this.s.set(key, { x, y, v: 0, ex: 0, ey: 0, rx: x, ry: y, at: t, h: heading, ax: x - fx * REAR_M, ay: y - fy * REAR_M, hd: heading, fh: heading });
   }
 
   /** Where to draw `key`, given where it should be (x, y metres east and north of any fixed point) and its way
@@ -74,20 +80,30 @@ export class PoseSmoother {
     const room = SLOPE * Math.abs(on) + CREEP * dt;
     const side = Math.max(-room, Math.min(room, eR * (1 - Math.exp(-dt / SIDE_TAU))));
     o.x += fx * on + qx * side; o.y += fy * on + qy * side;
-    // The rear axle dragged after it, REAR_M behind: the heading is from it to the drawn point.
-    let dx = o.x - o.ax, dy = o.y - o.ay, d = Math.hypot(dx, dy);
-    if (on < 0 || d < 1e-6) {
-      // Moved back (a correction) or on its axle: the axle moves with it, the heading as it was.
-      const [bx, by] = unit(face);
-      o.ax = o.x - bx * REAR_M; o.ay = o.y - by * REAR_M;
-      dx = bx; dy = by; d = 1;
-    } else { o.ax = o.x - (dx / d) * REAR_M; o.ay = o.y - (dy / d) * REAR_M; }
-    let hd = bearing(dx, dy);
-    // Nearly opposite to its way (put on a stretch that runs back, a U-turn): it faces its way at once. Any turn
-    // short of that the axle takes, however sharp.
-    if (off(hd, h) > ASTRAY_DEG) {
-      hd = h;
+    // The front wheels turned toward its way, as far as the metres it drove allow.
+    const moved = Math.abs(on) + Math.abs(side);
+    if (o.fh == null) o.fh = face;
+    let reset = off(o.fh, h) > ASTRAY_DEG;   // nearly opposite to its way (put on a stretch that runs back): faces it at once
+    if (!reset) {
+      const d = ((h - o.fh + 540) % 360) - 180, most = TURN_PER_M * moved;
+      o.fh = (o.fh + Math.max(-most, Math.min(most, d)) + 360) % 360;
+    }
+    // The front axle there; the rear axle dragged after it, a wheelbase behind; the bus from one to the other.
+    const [gx, gy] = unit(reset ? h : o.fh), fx2 = o.x + gx * FRONT_M, fy2 = o.y + gy * FRONT_M;
+    const dx = fx2 - o.ax, dy = fy2 - o.ay, d = Math.hypot(dx, dy);
+    if (!reset && d > 1e-6) { o.ax = fx2 - (dx / d) * WHEELBASE; o.ay = fy2 - (dy / d) * WHEELBASE; }
+    let hd = bearing(fx2 - o.ax, fy2 - o.ay);
+    // A place that turns a corner sharper than a bus can (a shape's vertex): the body turns no faster than its
+    // wheels would let it, the rear axle put back behind it.
+    const prev = o.hd ?? hd, dh = ((hd - prev + 540) % 360) - 180, most = BODY_PER_M * moved;
+    if (Math.abs(dh) > most) {
+      hd = (prev + Math.sign(dh) * most + 360) % 360;
+      const [bx, by] = unit(hd);
+      o.ax = fx2 - bx * WHEELBASE; o.ay = fy2 - by * WHEELBASE;
+    }
+    if (reset || off(hd, h) > ASTRAY_DEG) {
       const [bx, by] = unit(h);
+      hd = o.fh = h;
       o.ax = o.x - bx * REAR_M; o.ay = o.y - by * REAR_M;
     }
     o.hd = hd;

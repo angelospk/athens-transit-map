@@ -36,7 +36,7 @@ describe("spacingTargets", () => {
   it("puts standing buses in line, one behind the other", () => {
     const r = t([car("a", 10, 0), car("b", 5, 0), car("c", 0, 0)]);
     expect(r.get("a")!.back).toBe(0);
-    expect(r.get("b")!.back).toBeCloseTo(LEN + 1.5 - 5);
+    expect(r.get("b")!.back).toBeCloseTo(LEN + 4 - 5);   // a 4 m gap, bumper to bumper
     expect(r.get("c")!.back).toBeGreaterThan(r.get("b")!.back);
   });
   it("keeps one drawn behind behind, even when its place has run on past the other's (a guess past one at a stop)", () => {
@@ -44,7 +44,7 @@ describe("spacingTargets", () => {
     const now = new Map<string, Gap>([["a", { lat: 0, back: 12 }]]);
     const r = t([car("a", 4, 0), car("b", 0, 0)], now);
     expect(r.get("b")!.back).toBe(0);
-    expect(r.get("a")!.back).toBeCloseTo(LEN + 1.5 + 4);
+    expect(r.get("a")!.back).toBeCloseTo(LEN + 4 + 4);
   });
   it("goes round one standing at a stop once its own data has long gone past it", () => {
     const now = new Map<string, Gap>([["a", { lat: 0, back: 35 }]]);
@@ -52,6 +52,10 @@ describe("spacingTargets", () => {
     expect(r.get("a")!.lat).toBe(LANE);
     // not held so long: it waits in line
     expect(t([car("a", 0, 6), car("b", 10, 0)]).get("a")!.lat).toBe(0);
+  });
+  it("passes on the side away from the other: its place a little right of the other's, it goes round on the right", () => {
+    const b = car("b", 25, 3, -1);   // b a metre to the left (west) of a, both north
+    expect(t([passing(car("a", 0, 9), b), b]).get("a")!.lat).toBe(-LANE);
   });
   it("counts a bus a little to the side as in the way (they would touch)", () => {
     expect(t([car("a", 0, 0), car("b", 4, 0, 2.6)]).get("a")!.back).toBeGreaterThan(0);
@@ -138,6 +142,24 @@ describe("across each other", () => {
     const out = spacingTargets(cars, new Map(), 12, 3.4);
     expect(out.get("a")!.back).toBeGreaterThan(3);   // a has b in front: a holds back
     expect(out.get("b")!.back).toBe(0);
+  });
+});
+
+describe("at a junction", () => {
+  it("the one coming at the other's side stops well clear of it, the farther the faster it comes", () => {
+    // a crosses east; b comes north at its side, its nose 6 m from a's side.
+    const W = 3.25, L = 15.6;
+    const gapAt = (v: number) => {
+      const cars = [
+        { key: "a", x: 0, y: 0, heading: 90, v: 5, moving: true },
+        { key: "b", x: 0, y: -(W / 2 + 6 + L / 2), heading: 0, v, moving: v > 1 },
+      ];
+      const back = spacingTargets(cars, new Map(), L, 4.8, W).get("b")!.back;
+      expect(spacingTargets(cars, new Map(), L, 4.8, W).get("a")!.back).toBe(0);   // a goes on
+      return -W / 2 - (cars[1].y - back + L / 2);   // b's nose to a's side, as drawn
+    };
+    expect(gapAt(0)).toBeGreaterThanOrEqual(5 - 1e-6);
+    expect(gapAt(8)).toBeGreaterThanOrEqual(5 + 8 - 1e-6);
   });
 });
 
