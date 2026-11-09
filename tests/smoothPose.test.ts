@@ -77,4 +77,33 @@ describe("PoseSmoother", () => {
     sm.step("a", 100, 0, 0, 2 / 60);
     expect(sm.step("a", 105, 0, 0, 2).x).toBe(105);
   });
+
+  it("turns through a corner as a bus: gradually, its rear cutting in, and straight again after", () => {
+    // East at 8 m/s, then at (40, 0) north, the way's heading turning at the corner in one frame.
+    const sm = new PoseSmoother(), hs: number[] = [];
+    for (let i = 0; i <= 10 * FPS; i++) {
+      const t = i / FPS, east = t < 5, raw: [number, number] = east ? [8 * t, 0] : [40, 8 * (t - 5)];
+      hs.push(sm.step("a", raw[0], raw[1], east ? 90 : 0, t).heading!);
+    }
+    let maxStep = 0;
+    for (let i = 1; i < hs.length; i++) maxStep = Math.max(maxStep, Math.abs(((hs[i] - hs[i - 1] + 540) % 360) - 180));
+    expect(maxStep).toBeLessThan(6);            // degrees a frame: a swing, not a snap
+    expect(hs[4 * FPS]).toBeCloseTo(90, 0);     // on the straight, along it
+    expect(Math.abs(((hs[hs.length - 1] + 540) % 360) - 180)).toBeLessThan(2);   // north again, 40 m on
+  });
+
+  it("standing, does not turn when its way's heading changes", () => {
+    const sm = new PoseSmoother();
+    sm.step("a", 0, 0, 0, 0);
+    let h = 0;
+    for (let i = 1; i <= 2 * FPS; i++) h = sm.step("a", 0, 0, 30, i / FPS).heading!;   // its way now 30° off, it stands
+    expect(h).toBeCloseTo(0, 5);
+  });
+
+  it("faces its way at once when put on a stretch that runs the other way (a new place, a U-turn)", () => {
+    const sm = new PoseSmoother();
+    for (let i = 0; i <= FPS; i++) sm.step("a", 0, 8 * (i / FPS), 0, i / FPS);
+    const r = sm.step("a", 0, 8 + 8 / FPS, 180, 1 + 1 / FPS);
+    expect(r.heading).toBe(180);
+  });
 });

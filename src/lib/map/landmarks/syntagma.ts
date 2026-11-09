@@ -704,38 +704,10 @@ export function buildSyntagma(local: (p: LngLat) => [number, number]): THREE.Gro
   }
   // Lawns, kerbed in marble, and the fountains (a wide basin, its water, a raised bowl and its jet; the one in the
   // middle of the square, the big one of the photographs, a third wider than mapped), on the sloping floor.
-  // Trees on the lawns: broad crowns on short trunks, on a grid about 6.5 m apart (jittered, the same each build),
-  // kept 2.5 m in from the kerb. (scene3d leaves its own canopy trees off the square: syntagmaGround.inSquare.)
-  mats.trunk ??= lambert(0x6b5442);
-  mats.leaves ??= lambert(0x4d7a3b);
-  mats.leaves2 ??= lambert(0x618c46);
-  const edgeDist = (p: XY, r: XY[]) => {
-    let m = Infinity;
-    for (let i = 0; i < r.length; i++) {
-      const a = r[i], b = r[(i + 1) % r.length], L2 = (b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 || 1;
-      const k = Math.max(0, Math.min(1, ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / L2));
-      m = Math.min(m, Math.hypot(a[0] + (b[0] - a[0]) * k - p[0], a[1] + (b[1] - a[1]) * k - p[1]));
-    }
-    return m;
-  };
-  LAWNS.forEach((l, li) => {
+  LAWNS.forEach(l => {
     const r = ccw(ring(l)), z = groundM(centroid(r));
     prism(acc, grow(r, 0.25), z - 0.3, z + 0.3, "marble", "marble");
     prism(acc, r, z - 0.3, z + 0.32, "lawn", "lawn");
-    let seed = 7 + li * 101;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647), seed / 2147483647);
-    const xs = r.map(p => p[0]), ys = r.map(p => p[1]), zt = z + 0.32;
-    for (let x = Math.min(...xs) + 3; x < Math.max(...xs) - 1; x += 6.5) for (let y = Math.min(...ys) + 3; y < Math.max(...ys) - 1; y += 6.5) {
-      const p: XY = [x + (rnd() - 0.5) * 2.4, y + (rnd() - 0.5) * 2.4];
-      if (!inside(p, r) || edgeDist(p, r) < 2.5) continue;
-      const h = 6.5 + rnd() * 3, cr = 2.2 + rnd() * 0.9, trunk = h * 0.4;
-      cylinder(acc, "trunk", p, 0.24, 0.16, zt, zt + trunk + 0.8, 8);
-      const g = new THREE.IcosahedronGeometry(1, 1);
-      g.scale(cr, cr, (h - trunk) / 2);
-      g.computeVertexNormals();
-      acc.geo(rnd() < 0.5 ? "leaves" : "leaves2", g, new THREE.Matrix4().makeTranslation(p[0], p[1], zt + trunk + (h - trunk) / 2));
-      g.dispose();
-    }
   });
   FOUNTAINS.forEach(([lon, lat, r0], i) => {
     const c = xy([lon, lat]), z = groundM(c), main = i === 0, r = main ? r0 * 1.35 : r0;   // the first is the middle one

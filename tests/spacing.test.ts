@@ -39,6 +39,20 @@ describe("spacingTargets", () => {
     expect(r.get("b")!.back).toBeCloseTo(LEN + 1.5 - 5);
     expect(r.get("c")!.back).toBeGreaterThan(r.get("b")!.back);
   });
+  it("keeps one drawn behind behind, even when its place has run on past the other's (a guess past one at a stop)", () => {
+    // a's place is 4 m past b's, but a is drawn 12 m back (held behind b): a stays behind, by its place's lead too.
+    const now = new Map<string, Gap>([["a", { lat: 0, back: 12 }]]);
+    const r = t([car("a", 4, 0), car("b", 0, 0)], now);
+    expect(r.get("b")!.back).toBe(0);
+    expect(r.get("a")!.back).toBeCloseTo(LEN + 1.5 + 4);
+  });
+  it("goes round one standing at a stop once its own data has long gone past it", () => {
+    const now = new Map<string, Gap>([["a", { lat: 0, back: 35 }]]);
+    const r = t([car("a", 30, 6), car("b", 0, 0)], now);   // a's place 30 m past b's; drawn 5 m behind it
+    expect(r.get("a")!.lat).toBe(LANE);
+    // not held so long: it waits in line
+    expect(t([car("a", 0, 6), car("b", 10, 0)]).get("a")!.lat).toBe(0);
+  });
   it("counts a bus a little to the side as in the way (they would touch)", () => {
     expect(t([car("a", 0, 0), car("b", 4, 0, 2.6)]).get("a")!.back).toBeGreaterThan(0);
   });
@@ -55,8 +69,18 @@ describe("spacingTargets", () => {
   });
   it("leaves buses side by side apart, or going the other way", () => {
     const side = t([car("a", 0, 0), car("b", 4, 0, 3.5)]);
-    const back = t([car("a", 0, 0), car("b", 4, 0, 0, 180)]);
+    const back = t([car("a", 0, 0), car("b", 4, 0, 3.5, 180)]);
     for (const r of [side, back]) expect([...r.values()].every(g => g.lat === 0 && g.back === 0)).toBe(true);
+  });
+  it("edges two going opposite ways apart sideways when they are drawn inside each other, never back", () => {
+    // b half a metre east of a, coming the other way: a (north) edges west, its left; b (south) edges east, its left.
+    const r = t([car("a", 0, 6), car("b", 4, 6, 0.5, 180)]);
+    for (const k of ["a", "b"]) { expect(r.get(k)!.lat).toBeGreaterThan(0); expect(r.get(k)!.back).toBe(0); }
+    const ax = -r.get("a")!.lat, bx = 0.5 + r.get("b")!.lat;   // drawn x (scene3d: x − d[1]·lat)
+    expect(bx - ax).toBeGreaterThanOrEqual(WIDE);
+    // dead level: each to its right
+    const lv = t([car("a", 0, 6), car("b", 4, 6, 0, 180)]);
+    for (const k of ["a", "b"]) expect(lv.get(k)!.lat).toBeLessThan(0);
   });
 });
 

@@ -1,7 +1,6 @@
 // The 3D street mode: tilt, extruded buildings, a street style (asphalt, paving, kerbs, lane marks and, at night,
 // pools of street light) and, drawn with three.js in one MapLibre custom layer, modelled OASA buses for the
-// vehicles of the followed lines and low-poly trees from the Meta / WRI canopy height map (scripts/trees.py), all
-// with soft shadows. three.js and the tree tiles load only when the mode is turned on.
+// vehicles of the followed lines, all with soft shadows. three.js loads only when the mode is turned on.
 //
 // MapView owns the vehicles: it calls upsert() for each drawn vehicle every frame and drop() when one goes. The
 // models are placed in metres around an origin near the view (re-anchored when the view moves far), so float32
@@ -9,20 +8,21 @@
 import { PALETTE } from "./basemap";
 import { MercatorCoordinate, type CustomLayerInterface, type GeoJSONSource, type Map as MlMap } from "maplibre-gl";
 import type * as Three from "three";
-import { metres, TREE_TILE_Z as TILE_Z, tilesIn, yaw, type LngLat } from "../map3d";
-import { BACK_PERIOD, LAT_PERIOD, MOVE_OFF, MOVE_ON, springStep, spacingTargets, type Car, type Gap } from "./spacing";
+import { metres, yaw, type LngLat } from "../map3d";
+import { BACK_MAX, follow, LAT_PERIOD, MOVE_OFF, MOVE_ON, separate, springStep, spacingTargets, type Box, type Car, type Follow, type Gap } from "./spacing";
 import { covers, decode, type AthensRoads, type RoadsFile, type Widths } from "../athensRoads";
 import { RoadIndex, Track } from "../roadSnap";
-import { headlightBeam, lampCone, swayMaterial, type Clock } from "./shaders";
+import { headlightBeam, lampCone, type Clock } from "./shaders";
 import type { Look3D } from "./look3d";
 import type { DelayClass } from "../format";
 import { depthAt, ISLANDS, TRACK_GAP, trackGapAt, type Livery, DEPTH, metroStops } from "./metroDepth";
 import { EntranceModels } from "./entrance/models";
 import { Landmarks } from "./landmarks";
 import { MODELLED_ENTRANCES, PARLIAMENT_IDS } from "./landmarks/syntagmaData";
-import { groundAt as landmarkGround, inSquare, squareEntrances } from "./landmarks/syntagmaGround";
+import { squareEntrances } from "./landmarks/syntagmaGround";
 import type { Entrance3D } from "../entrances";
 import { PoseSmoother } from "./smoothPose";
+import { BusInstances, SignAtlas, type BusPose } from "./busInstances";
 import { Turners } from "../turn";
 
 export type VehicleKind = "bus" | "trolley" | "tram" | "metro";
@@ -43,15 +43,10 @@ function sideCanvas(w: number, h: number, back: boolean, draw: (x: CanvasRenderi
 
 /** One stop's arrival screen: where the stop is ([lon, lat]) and its rows: line, where to, minutes. */
 export interface Board { at: LngLat; rows: [string, string, string][] }
-// crowns/trunks: the trees near the view's centre, in full; far: the rest, one coarse blob each and no trunk, casting
-// no shadow (the sun's shadow box, 120 m about the centre, never reaches them).
-type TreeTile = { key: string; crowns: Three.InstancedMesh; trunks: Three.InstancedMesh; far: Three.InstancedMesh; origin: LngLat; roads: RoadIndex | null };
 
 export const BUS_ZOOM = 16;    // models from here; below it the pills alone
-export const TREE_ZOOM = 16;
 export const MAX_PITCH_3D = 80;    // the tilt allowed in 3D (see enable): short of the horizon
 export const BUILD_ZOOM = 15;   // the buildings stand up from here; below it the base map's flat ones (memory: a tilted view sees far)
-const TREE_FULL_M = 220;   // trees closer than this to the view's centre in full (four blobs), the rest one blob
 const BUS_SCALE = 1.3;
 const BUS_LEN = 12 * BUS_SCALE;   // the models are 12 m long (buildBus, buildTrolley), drawn larger
 const LANE_W = 3.6;               // how far a bus pulls out to pass
@@ -69,7 +64,6 @@ const SHAPE_RIGHT = 1.7;
 const TURN_DEG = 6;        // a heading change of this much in under half a second: the bus is turning (no overtaking then)   // metres a bus off a painted route is drawn to the right of its line's shape (half a lane)
 const LAYER = "x3d-scene";
 const SOURCE = "openmaptiles";   // OpenFreeMap's vector source
-export const TREE_CREDIT = 'Δέντρα: <a href="https://registry.opendata.aws/dataforgood-fb-forests/" target="_blank" rel="noopener">Meta &amp; WRI</a>';
 const XRAY = 1;
 // Every way is drawn flat on the street, bridges and tunnels too (athensRoads.decode).
 // Degrees: the road tiles (0.04° each, ~8 MB of streets) loaded round the view's centre: the one it is in, and a
@@ -91,17 +85,17 @@ const COLORS = {
   // its white (light) or slate (dark) streets; the pavements its paths', the kerbs its avenues' edge.
   light: { park: PALETTE.light.park, water: PALETTE.light.water, bldA: PALETTE.light.building, bldB: "#d6d9df", bldC: "#dee1e5",
     road: PALETTE.light.minor, walk: PALETTE.light.path, kerbA: PALETTE.light.majorEdge, mark: "#c3c8d0", busMark: "#f0b400", markOpacity: 1, bldTop: "#e8eaee",
-    pool: "#ffffff", leaves: [0x8fc46e, 0x9bcd78, 0x84ba63, 0xa5d384], trunk: 0x7a5f45, white: "#fbfcfd", sky: 0xeef4ff, ground: 0x707060,
+    pool: "#ffffff", white: "#fbfcfd", sky: 0xeef4ff, ground: 0x707060,
     hemi: 2.3, sun: 2.0, shadow: 0.34 },
   dark: { park: PALETTE.dark.park, water: PALETTE.dark.water, bldA: PALETTE.dark.building, bldB: "#322f45", bldC: "#3b3850",
     road: PALETTE.dark.minor, walk: PALETTE.dark.path, kerbA: PALETTE.dark.major, mark: "#dcdfe4", busMark: "#d9a521", markOpacity: 0.8, bldTop: PALETTE.dark.buildingEdge,
-    pool: "#f6e0a4", leaves: [0x557f3b, 0x5f8a43, 0x4d7536, 0x689350], trunk: 0x4a3d30, white: "#f2f4f6", sky: 0xd6deef, ground: 0x3a3a30,
+    pool: "#f6e0a4", white: "#f2f4f6", sky: 0xd6deef, ground: 0x3a3a30,
     hemi: 1.9, sun: 1.5, shadow: 0.45 },
   // «Μινιατούρα»: a city model in warm daylight, as a toy town is painted: sand ground, mid-grey asphalt, cream walls
-  // with rows of windows, terracotta roofs on the low houses and pale ones on the blocks, bright faceted trees.
+  // with rows of windows, terracotta roofs on the low houses and pale ones on the blocks.
   toon: { park: "#d6d79c", water: "#9fcbe6", bldA: "#efe8da", bldB: "#e9e1d0", bldC: "#f3eee3",
     road: "#8f9195", walk: "#ddd0b1", kerbA: "#c5b99c", mark: "#f4f1ea", busMark: "#e8c25a", markOpacity: 0.55, bldTop: "#f3eee3",
-    pool: "#ffffff", leaves: [0x9cc35a, 0x8db74d, 0xa8cc68, 0x93bb52], trunk: 0x8b6b4b, white: "#fbfaf6", sky: 0xfff6e2, ground: 0x9b8b62,
+    pool: "#ffffff", white: "#fbfaf6", sky: 0xfff6e2, ground: 0x9b8b62,
     hemi: 2.25, sun: 2.3, shadow: 0.4 },
 };
 // The «Μινιατούρα» look's own colours: the ground, the roofs (low houses, tall blocks), the walls' windows, labels.
@@ -243,53 +237,6 @@ function mergeRoads(ix: RoadsIndexFile, parts: AthensRoads[]): AthensRoads {
     widths: ix.widths, box, origin: ix.origin };
 }
 
-// The trees (scripts/trees.py: public/trees, ~1.5 MB in 20 tiles): kept in the browser's Cache Storage after the
-// first download, and in memory for the session. The index is asked for each visit (it is small); when it changes
-// (the trees were made again), the kept tiles go.
-const TREE_CACHE = "athens-trees";
-const treeTiles = new Map<string, number[]>();
-let treeIdx: Promise<Set<string>> | null = null;
-const openCache = () => (typeof caches !== "undefined" ? caches.open(TREE_CACHE).catch(() => undefined) : Promise.resolve(undefined));
-const hashText = (t: string) => { let h = 5381; for (let i = 0; i < t.length; i++) h = (h * 33 + t.charCodeAt(i)) | 0; return String(h >>> 0); };
-function treeIndex(base: string): Promise<Set<string>> {
-  return (treeIdx ??= (async () => {
-    const url = `${base}trees/index.json`, store = await openCache();
-    let text: string;
-    try {
-      const r = await fetch(url, { cache: "no-cache" });
-      if (!r.ok) throw new Error(String(r.status));
-      text = await r.text();
-      if (store) {
-        const ver = hashText(text), was = await store.match(`${base}trees/.version`);
-        if (!was || (await was.text()) !== ver) {
-          for (const k of await store.keys()) await store.delete(k);
-          await store.put(`${base}trees/.version`, new Response(ver));
-        }
-        await store.put(url, new Response(text));
-      }
-    } catch {
-      const kept = await store?.match(url);   // offline: the index kept last time
-      if (!kept) { treeIdx = null; return new Set<string>(); }
-      text = await kept.text();
-    }
-    try { return new Set((JSON.parse(text) as { tiles: string[] }).tiles); } catch { return new Set<string>(); }
-  })());
-}
-async function treeTile(base: string, key: string): Promise<number[] | null> {
-  const hit = treeTiles.get(key);
-  if (hit) return hit;
-  const url = `${base}trees/${TILE_Z}/${key}.json`, store = await openCache();
-  let res = await store?.match(url);
-  if (!res) {
-    res = await fetch(url);
-    if (!res.ok) return null;
-    await store?.put(url, res.clone()).catch(() => {});
-  }
-  const t = ((await res.json()) as { t: number[] }).t;
-  treeTiles.set(key, t);
-  return t;
-}
-
 // The poster in the bus shelters' side panels (public/ads): loaded once, before the stops are built.
 const AD_URL = "ads/xoris-empodia.jpg";
 let adImage: HTMLImageElement | null = null;
@@ -304,7 +251,7 @@ function loadAd(base: string): Promise<HTMLImageElement | null> {
 }
 
 /** Everything the 3D mode needs, fetched before it shows (the loading screen): three.js, the streets of Athens, all
- *  the trees, the shelters' poster. Each is kept (the browser's caches), so the next time it is quick, and the mode
+ *  the shelters' poster. Each is kept (the browser's caches), so the next time it is quick, and the mode
  *  does not stall on a download while the map moves. `step` hears how far it has got (0 to PREPARED) and what it
  *  is on; the map's own tiles come after (prefetchTiles). */
 export const PREPARED = 0.7;
@@ -314,10 +261,7 @@ export async function prepare3d(step: (done: number, label: string) => void, bas
   await preloadThree();
   step(0.15, "Δρόμοι");
   await roads;
-  step(0.4, "Δέντρα");
-  const idx = [...(await treeIndex(base))];
-  let n = 0;
-  await Promise.all(idx.map(k => treeTile(base, k).catch(() => null).finally(() => step(0.4 + ((PREPARED - 0.4) * ++n) / idx.length, "Δέντρα"))));
+  step(0.5, "Αφίσες");
   await ad;
   step(PREPARED, "Κτίρια");
 }
@@ -375,23 +319,6 @@ export class Scene3D {
       }
     });
   }
-  // A bus's hull: one box as big as the model (12 m by 2.6, 3.1 high, along +x), drawn without colour or depth (three.js
-  // tests the shadow pass's layers against the main camera's, so it is in the scene as the rest is), casting the bus's
-  // shadow, and on the X-ray's layer. Geometry and material shared by all.
-  private hullGeo: Three.BufferGeometry | null = null;
-  private hullMat: Three.Material | null = null;
-  private hullOf(): Three.Mesh {
-    const T = this.T!;
-    if (!this.hullGeo) { this.hullGeo = new T.BoxGeometry(12.1, 2.6, 3.1); this.hullGeo.translate(0, 0, 0.32 + 1.55); }
-    this.hullMat ??= new T.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
-    const h = new T.Mesh(this.hullGeo, this.hullMat);
-    h.name = "hull";
-    h.castShadow = true;
-    h.frustumCulled = false;
-    h.layers.enable(XRAY);
-    return h;
-  }
-  private trees = new Map<string, TreeTile | "none">();
   private layer: (CustomLayerInterface & { scene?: Three.Scene }) | null = null;
   private renderer: Three.WebGLRenderer | null = null;
   private scene: Three.Scene | null = null;
@@ -408,7 +335,14 @@ export class Scene3D {
   private tunnelMeshes: Three.Object3D[] = [];
   private tunnelAt: [number, number] | null = null;
   private tramProto: Three.Group | null = null;
-  private plates = new Map<string, Three.Material>();
+  // Buses and trolleys: all of a kind in one set of instanced draws (busInstances.ts), their displays in one atlas.
+  private busInst: BusInstances | null = null;
+  private trolleyInst: BusInstances | null = null;
+  private atlas: SignAtlas | null = null;
+  private busPoses: BusPose[] = [];
+  private trolleyPoses: BusPose[] = [];
+  private busShown = new Set<string>();
+  private drawnRot = new Map<string, number>();
   private origin: LngLat = [0, 0];
   private ref: MercatorCoordinate | null = null;
   private scale = 1;
@@ -669,6 +603,8 @@ export class Scene3D {
     this.onTrack.delete(key);
     this.smooth.drop(key);
     this.turns.drop(key);
+    this.drawnRot.delete(key);
+    if (this.busShown.delete(key)) this.drawn.delete(key);
     const g = this.groups.get(key);
     if (g) { g.removeFromParent(); this.groups.delete(key); }
   }
@@ -732,8 +668,7 @@ export class Scene3D {
   }
 
   // Underground on (a metro train picked, or the «Υπόγεια» button): only the underground. The street level goes: its
-  // streets, buildings, lamps and stops hidden, the trees let go (their memory freed; loaded again after), the
-  // map under a dark veil, so the tunnels and the trains in them stand alone. Kept across a restyle (addStyle).
+  // streets, buildings, lamps and stops hidden, the map under a dark veil, so the tunnels and the trains in them stand alone. Kept across a restyle (addStyle).
   under = false;   // read by MapView (labels, discs)
   setUnder(on: boolean) {
     if (this.under === on) return;
@@ -779,10 +714,6 @@ export class Scene3D {
     }
     if (!m || !this.styleReady) return;
     for (const id of [...STREET_LAYERS, ...this.streetIds]) if (m.getLayer(id)) m.setLayoutProperty(id, "visibility", this.under ? "none" : "visible");
-    if (this.under) {
-      for (const t of this.trees.values()) if (t !== "none") { t.crowns.removeFromParent(); t.trunks.removeFromParent(); t.far.removeFromParent(); dispose(t); }
-      this.trees.clear();
-    }
     if (this.under && !m.getLayer("x3d-under")) {
       if (!m.getSource("x3d-under")) m.addSource("x3d-under", { type: "geojson", data: { type: "Feature", properties: {},
         geometry: { type: "Polygon", coordinates: [[[-179, -85], [179, -85], [179, 85], [-179, 85], [-179, -85]]] } } });
@@ -1112,8 +1043,7 @@ export class Scene3D {
         "text-allow-overlap": true, "text-ignore-placement": true, "symbol-placement": "point" },
       paint: { "text-color": c.busMark, "text-opacity": ["interpolate", ["linear"], ["zoom"], 17.5, 0, 18.2, 0.9] } } as never, before);
     this.tramLayers(before, lat);
-    // The pools' source also carries the credit of the trees (CC BY 4.0) into the map's attribution while 3D is on.
-    m.addSource("x3d-pools", { type: "geojson", data: { type: "FeatureCollection", features: [] }, attribution: TREE_CREDIT });
+    m.addSource("x3d-pools", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
     m.addLayer({ id: "x3d-pools", type: "circle", source: "x3d-pools", minzoom: STREET_ZOOM,
       paint: { "circle-color": c.pool, "circle-blur": 1, "circle-opacity": this.dark ? 0.26 : 0, "circle-pitch-alignment": "map",
         "circle-radius": metres(4.5, lat, 2) } } as never, before);
@@ -1431,27 +1361,7 @@ export class Scene3D {
     this.stopsNear = this.nearStops([c0.lng, c0.lat], Math.min(reach, 600));
     this.buildStops();
     this.buildBoards();
-    // The trees around the new view: each tile built again from the data it already has (only the trees within
-    // reach are built), the new meshes in before the old go out, so nothing blinks. One tile a frame, not all at
-    // once: building them all in one go held the map still for a moment after each move.
-    const gen = ++this.treeGen, keys = [...this.trees.keys()];
-    const next = () => {
-      if (gen !== this.treeGen || !this.T || !this.scene || this.under) return;
-      const key = keys.shift();
-      if (key === undefined) return;
-      const tile = this.trees.get(key), t = treeTiles.get(key);
-      if (tile && tile !== "none" && t) {
-        const fresh = this.treeMeshes(this.T, key, t);
-        this.scene.add(fresh.crowns, fresh.trunks, fresh.far);
-        tile.crowns.removeFromParent(); tile.trunks.removeFromParent(); tile.far.removeFromParent(); dispose(tile);
-        this.trees.set(key, fresh);
-        this.map?.triggerRepaint();
-      }
-      if (keys.length) requestAnimationFrame(next);
-    };
-    next();
   }
-  private treeGen = 0;
   private poolsIdle = 0;
 
   /** How far from the centre the view reaches (to its farthest screen corner, a fifth more), in metres, within
@@ -1766,9 +1676,8 @@ export class Scene3D {
         self.trolleyProto = mergeParts(T, buildTrolley(T, self.dark));
         self.tramProto = buildTram(T, self.dark);
         for (const car of self.tramProto.children) if (car.userData.len != null) mergeParts(T, car);
-        self.plates.clear();
         self.groups.clear();
-        self.trees.clear();
+        self.instances();
         self.anchor(map.getCenter().toArray() as LngLat);
         self.renderer = new T.WebGLRenderer({ canvas: map.getCanvas(), context: gl, antialias: true });
         self.renderer.autoClear = false;
@@ -1777,12 +1686,12 @@ export class Scene3D {
         self.renderer.debug.checkShaderErrors = !!import.meta.env?.DEV && FORCED_SHADER_CHECK;
         self.renderer.shadowMap.enabled = true;
         self.renderer.shadowMap.type = phone ? T.PCFShadowMap : T.PCFSoftShadowMap;
-        // A phone draws the shadow map (every tree, building and bus once more, from the sun) every other frame: a
+        // A phone draws the shadow map (every building, lamp and bus once more, from the sun) every other frame: a
         // shadow one frame behind is not seen, half the shadow passes are.
         // (On a computer too, since 2026-11-09: a pan across the city was choppy.)
         self.renderer.shadowMap.autoUpdate = false;
         self.shadowEvery = 2;
-        // Once the trees around are built, every shader is compiled at the next frame (prewarm), under the loading
+        // Once the lamps and stops around are built, every shader is compiled at the next frame (prewarm), under the loading
         // screen, not one by one as each thing first comes into view.
         void (self.refresh() ?? Promise.resolve()).finally(() => { self.warmUp = true; map.triggerRepaint(); });
       },
@@ -1800,8 +1709,6 @@ export class Scene3D {
     this.scale = this.ref.meterInMercatorCoordinateUnits();
     for (const g of this.groups.values()) g.removeFromParent();
     this.groups.clear();
-    for (const t of this.trees.values()) if (t !== "none") { t.crowns.removeFromParent(); t.trunks.removeFromParent(); t.far.removeFromParent(); dispose(t); }
-    this.trees.clear();
     this.poolsAt = "";   // lamps again, around the new origin
     this.tunnelAt = null;
     this.buildLamps();
@@ -1832,7 +1739,7 @@ export class Scene3D {
     this.cover();
     this.tunnelsNear();
     void this.streets();   // other road tiles, when the view has moved on to them
-    // The lamps, stops and trees around: at once the first time (under the loading screen), after a move when the
+    // The lamps and stops around: at once the first time (under the loading screen), after a move when the
     // browser has a moment, so the move itself does not stop to build them.
     if (this.under) { /* underground only: nothing to build at street level */ }
     else if (!this.built) this.pools();
@@ -1840,104 +1747,14 @@ export class Scene3D {
       if (this.poolsIdle) (window.cancelIdleCallback ?? clearTimeout)(this.poolsIdle);
       this.poolsIdle = (window.requestIdleCallback ?? ((f: () => void) => setTimeout(f, 60)))(() => { this.poolsIdle = 0; if (this.on) this.pools(); }, { timeout: 400 });
     }
-    return this.loadTrees();
+    return Promise.resolve();
   }
 
-  private async loadTrees() {
-    const m = this.map!, T = this.T!;
-    if (m.getZoom() < TREE_ZOOM || this.under) return;
-    const index = await treeIndex(this.base);
-    const b = m.getBounds();
-    const want = tilesIn(b.getWest(), b.getSouth(), b.getEast(), b.getNorth()).filter(k => index.has(k));
-    // Every missing tile at once (they are small): a slow one does not hold up the others.
-    await Promise.all(want.filter(key => !this.trees.has(key)).map(async key => {
-      this.trees.set(key, "none");   // loading; a failure stays empty
-      try {
-        const t = await treeTile(this.base, key);
-        if (!t) return;
-        if (!this.on || !this.scene || this.under || this.trees.get(key) !== "none") { if (this.under) this.trees.delete(key); return; }
-        const tile = this.treeMeshes(T, key, t);
-        this.trees.set(key, tile);
-        this.scene.add(tile.crowns, tile.trunks, tile.far);
-        m.triggerRepaint();
-      } catch { /* no trees there */ }
-    }));
-    // Keep the tiles near the view; let the far ones go.
-    for (const [key, tile] of this.trees) {
-      if (tile === "none" || want.includes(key) || this.trees.size < 8) continue;
-      tile.crowns.removeFromParent(); tile.trunks.removeFromParent(); tile.far.removeFromParent(); dispose(tile);
-      this.trees.delete(key);
-    }
-  }
-
-  // Trees as in a hand-made city model: a thin trunk and a soft crown of four lumpy blobs (an icosphere with its
-  // surface pushed in and out by a fixed noise, smooth-shaded), lighter on top (shaders.ts), in a few greens. A tree
-  // whose trunk falls on a carriageway (the canopy map sees the crown, which may hang over the street) is moved to
-  // the pavement, or left out when there is none.
-  private treeMeshes(T: typeof Three, key: string, t: number[]): TreeTile {
-    const c = this.pal(), idx = this.roads;
-    const spots: [number, number, number][] = [];
-    // Only the trees within reach of the view: the tile is built again when the view moves (with the roads).
-    // Fewer the farther off (for a smoother pan): all within 200 m, every second one to 400 m, every fourth beyond.
-    const [cx, cy] = this.local(this.map!.getCenter().toArray() as LngLat), reach = this.reach(500) * 1.2;
-    for (let i = 0; i < t.length; i += 3) {
-      const [tx, ty] = this.local([t[i] / 1e6, t[i + 1] / 1e6]), d = Math.hypot(tx - cx, ty - cy), k = i / 3;
-      if (d > reach || (d > 200 && k % 2) || (d > 400 && k % 4)) continue;
-      const p = idx ? idx.offRoad([t[i] / 1e6, t[i + 1] / 1e6]) : ([t[i] / 1e6, t[i + 1] / 1e6] as LngLat);
-      if (p && !inSquare(p)) spots.push([p[0], p[1], t[i + 2] / 10]);   // (Σύνταγμα's square: the model plants its own)
-    }
-    const n = spots.length, blobs = 4;
-    const toon = this.look === "toon";
-    const crownG = toon ? facetedSphere(T) : lumpySphere(T);
-    const trunkG = new T.CylinderGeometry(0.14, 0.26, 1, 10);
-    trunkG.rotateX(Math.PI / 2);
-    trunkG.translate(0, 0, 0.5);
-    // The far trees (most of them, small on the screen): one coarse blob each, a quarter of the triangles of a near
-    // one's blob, and its trunk in the same mesh, with no shadow (the sun's shadow box never reaches them).
-    const farG = toon ? facetedSphere(T) : lumpySphere(T, 1);
-    const crowns = new T.InstancedMesh(crownG, swayMaterial(T, this.time, toon), Math.max(1, n * blobs));
-    const trunks = new T.InstancedMesh(trunkG, new T.MeshLambertMaterial({ color: c.trunk }), Math.max(1, n));
-    const far = new T.InstancedMesh(farG, swayMaterial(T, this.time, toon), Math.max(1, n));
-    const o = new T.Object3D(), col = new T.Color();
-    let seed = 11, k = 0, kn = 0, kf = 0;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647), seed / 2147483647);
-    const j = () => (rnd() - 0.5) * 2;
-    for (const [lon, lat, h0] of spots) {
-      const [x, y] = this.local([lon, lat]), g0 = landmarkGround([lon, lat]);   // on a landmark's ground (Σύνταγμα's sunk square)
-      // Wide, flat umbrella crowns (as street trees grow, and as the reference renders them) on a taller trunk.
-      const h = Math.max(5, Math.min(h0, 16)), r = Math.max(3, Math.min(7.5, h * 0.52));
-      const base = c.leaves[Math.floor(rnd() * c.leaves.length)];
-      if (Math.hypot(x - cx, y - cy) > TREE_FULL_M) {
-        o.position.set(x, y, g0 + h - r * 0.5); o.rotation.set(rnd() * 6, rnd() * 6, rnd() * 6); o.scale.set(r * 1.23, r * 1.23, r * (toon ? 1 : 0.66)); o.updateMatrix();
-        far.setMatrixAt(kf, o.matrix);
-        far.setColorAt(kf++, col.setHex(base).offsetHSL(0, 0, (rnd() - 0.5) * 0.06));
-        continue;
-      }
-      o.position.set(x, y, g0); o.rotation.set(0, 0, 0); o.scale.set(1, 1, h * 0.72); o.updateMatrix();
-      trunks.setMatrixAt(kn++, o.matrix);
-      const parts: [number, number, number, number][] = [
-        [0, 0, h - r * 0.42, r],                                   // the main crown
-        [r * 0.75 * j(), r * 0.75 * j(), h - r * 0.62, r * 0.72],  // lumps round its rim
-        [r * 0.75 * j(), r * 0.75 * j(), h - r * 0.6, r * 0.68],
-        [r * 0.3 * j(), r * 0.3 * j(), h - r * 0.15, r * 0.55],    // the top
-      ];
-      for (const [dx, dy, z, rr] of parts) {
-        o.position.set(x + dx, y + dy, g0 + z); o.rotation.set(rnd() * 6, rnd() * 6, rnd() * 6); o.scale.set(rr * 1.12, rr * 1.12, rr * (toon ? 0.9 : 0.6)); o.updateMatrix();
-        crowns.setMatrixAt(k, o.matrix);
-        crowns.setColorAt(k++, col.setHex(base).offsetHSL(0, 0, (rnd() - 0.5) * 0.06));
-      }
-    }
-    crowns.count = k; trunks.count = kn; far.count = kf;
-    for (const mesh of [crowns, trunks]) { mesh.castShadow = true; mesh.frustumCulled = false; }
-    far.castShadow = false; far.frustumCulled = false;
-    return { key, crowns, trunks, far, origin: this.origin, roads: idx };
-  }
-
-  // Buses kept apart (spacing.ts): each one's eased gap (out to the left, back in line), its speed from its last
-  // positions, and when the gaps were last moved.
-  // Buses kept apart (spacing.ts): each one's gap now and how fast it changes (a spring: no jumps), its speed over its
-  // last positions, whether it moves (with a margin), and when the gaps were last moved.
-  private gaps = new Map<string, Gap & { latV: number; backV: number; v: number; moving: boolean; at?: [number, number]; t?: number; h?: number; hT?: number; turning?: boolean }>();
+  // Buses as traffic (spacing.ts): each one's sideways gap (a spring: out to pass, back in), how far back it is drawn
+  // and its drawn speed (follow: it brakes and pulls away as a bus does, never backwards), its speed over its last
+  // positions, whether it moves (with a margin), its place last frame, and when the gaps were last moved.
+  private gaps = new Map<string, Gap & Follow & { latV: number; v: number; moving: boolean; at?: [number, number]; t?: number;
+    h?: number; hT?: number; turning?: boolean; px?: number; py?: number }>();
   private gapsAt = 0;
   private spaced(now: number): Map<string, { x: number; y: number; turn: number }> {
     const out = new Map<string, { x: number; y: number; turn: number }>();
@@ -1948,7 +1765,7 @@ export class Scene3D {
       if (b.kind === "tram" || b.kind === "metro") continue;
       const [x, y] = this.local(b.pos);
       let g = this.gaps.get(key);
-      if (!g) this.gaps.set(key, (g = { lat: 0, back: 0, latV: 0, backV: 0, v: 0, moving: false }));
+      if (!g) this.gaps.set(key, (g = { lat: 0, back: 0, latV: 0, u: 0, v: 0, moving: false }));
       if (!g.at || !g.t) { g.at = [x, y]; g.t = now; }
       else if (now - g.t >= 250) {
         const v = Math.hypot(x - g.at[0], y - g.at[1]) / ((now - g.t) / 1000);
@@ -1976,20 +1793,40 @@ export class Scene3D {
       return !!idx.onRoad(this.unlocal(c.x - d[1] * LANE_W * side, c.y + d[0] * LANE_W * side), -0.6);
     } : undefined;
     const want = spacingTargets(cars, this.gaps, BUS_LEN, LANE_W, BUS_WIDE, canPass);
+    const boxes: Box[] = [];
+    const unit = (h: number): [number, number] => [Math.sin((h * Math.PI) / 180), Math.cos((h * Math.PI) / 180)];
     for (const c of cars) {
       const g = this.gaps.get(c.key)!, t = want.get(c.key)!;
-      if (dt) {
-        [g.lat, g.latV] = springStep(g.lat, g.latV, t.lat, LAT_PERIOD, dt);     // out to the next lane in about two seconds
-        [g.back, g.backV] = springStep(g.back, g.backV, t.back, BACK_PERIOD, dt);   // back in line in about one
-      }
+      if (dt) [g.lat, g.latV] = springStep(g.lat, g.latV, t.lat, LAT_PERIOD, dt);     // out to the next lane in about three and a half seconds
       if (Math.abs(g.lat) < 0.01 && Math.abs(g.latV) < 0.01) g.lat = g.latV = 0;
-      if (Math.abs(g.back) < 0.01 && Math.abs(g.backV) < 0.01) g.back = g.backV = 0;
       const h = c.heading;
+      // Along its way: how far its place moved this frame, and the speed it is drawn at to keep its gap (follow).
+      // A new place (a fade over, a fix far off): it starts again there, on it.
+      const jumped = g.px != null && Math.hypot(c.x - g.px, c.y - (g.py ?? 0)) > 30, fresh = g.px == null || jumped;
+      if (h != null && dt && g.px != null && !jumped) {
+        const d = unit(h);
+        follow(g, (c.x - g.px) * d[0] + (c.y - g.py!) * d[1], t.back, dt);
+      } else if (jumped) { g.back = 0; g.u = 0; }
+      g.px = c.x; g.py = c.y;
+      if (h == null) continue;
+      const d = unit(h);
+      boxes.push({ key: c.key, x: c.x - d[1] * g.lat - d[0] * g.back, y: c.y + d[0] * g.lat - d[1] * g.back, h, fresh });
+    }
+    // Never inside one another, whatever the targets have not foreseen (one appearing, a sharp corner): the one behind
+    // is moved back at once, and its drawn speed is what it then really moved.
+    const extra = separate(boxes, BUS_LEN, BUS_WIDE);
+    for (const [k, s] of extra) {
+      const g = this.gaps.get(k)!;
+      g.back = Math.min(2 * BACK_MAX, g.back + s);
+      if (dt) g.u = Math.max(0, g.u - s / dt);
+    }
+    for (const c of cars) {
+      const g = this.gaps.get(c.key)!, h = c.heading;
       if (h == null || (!g.lat && !g.back)) { out.set(c.key, { x: c.x, y: c.y, turn: 0 }); continue; }
-      const d = [Math.sin((h * Math.PI) / 180), Math.cos((h * Math.PI) / 180)];
+      const d = unit(h);
       // Turned toward where it moves sideways, from the spring's own speed: smooth as the move itself.
       // (Its own speed, crawling too: taken as 4 m/s it slid sideways at a crawl.)
-      const turn = Math.max(-0.35, Math.min(0.35, Math.atan2(g.latV, Math.max(c.v, 1.5))));
+      const turn = Math.max(-0.35, Math.min(0.35, Math.atan2(g.latV, Math.max(g.u, c.v, 1.5))));
       out.set(c.key, { x: c.x - d[1] * g.lat - d[0] * g.back, y: c.y + d[0] * g.lat - d[1] * g.back, turn });
     }
     return out;
@@ -2004,38 +1841,41 @@ export class Scene3D {
     // The buses: one group per vehicle, cloned from the prototype; the roof plate in the line's colour. Only those
     // within reach of the view (the farthest corner of the screen): the rest of the city's are not drawn at all.
     const seen = new Set<string>();
+    this.atlas?.tick();
     const [vx, vy] = this.local(m.getCenter().toArray() as LngLat), near = (this.reach(1200) + 40) ** 2;
     if (z >= BUS_ZOOM) for (const [key, b] of this.buses) {
       if (this.under && b.kind !== "metro") continue;   // underground: nothing on the street
       const [bx, by] = this.local(b.pos);
       if ((bx - vx) ** 2 + (by - vy) ** 2 > near) continue;
+      if (b.kind === "bus" || b.kind === "trolley") {
+        // Instanced (busInstances.ts): its place, its turn, its line's colour and number, its delay's glow.
+        const sp = spaced?.get(key), [x, y] = sp ? [sp.x, sp.y] : [bx, by];
+        if (b.heading == null && !this.drawnRot.has(key)) continue;   // never drawn and no way to face yet
+        const rot = b.heading != null ? yaw(b.heading) + (sp?.turn ?? 0) : this.drawnRot.get(key)!;
+        this.drawnRot.set(key, rot);
+        (b.kind === "trolley" ? this.trolleyPoses : this.busPoses).push({ x, y, rot, color: b.color, sign: `${b.kind}|${b.label}`, glow: glowColor(b.glow) });
+        this.drawn.set(key, [x, y]);
+        this.busShown.add(key);
+        seen.add(key);
+        continue;
+      }
       let g = this.groups.get(key);
       const look = b.kind === "metro" ? `metro-${b.livery ?? "m23"}` : b.kind;
       if (g && g.userData.kind !== look) { g.removeFromParent(); this.groups.delete(key); g = undefined; }
       if (!g) {
-        g = (b.kind === "trolley" ? this.trolleyProto! : b.kind === "tram" ? this.tramProto! : b.kind === "metro" ? this.metroProto(b.livery ?? "m23")
-          : this.proto!).clone();
+        g = (b.kind === "tram" ? this.tramProto! : this.metroProto(b.livery ?? "m23")).clone();
         g.userData.kind = look;
-        // A bus or a trolley: its parts are drawn, its hull alone (one box) casts its shadow and is seen through
-        // buildings (the X-ray pass): two draws for those instead of one for each of its ~20 parts, each.
-        const hulled = b.kind === "bus" || b.kind === "trolley";
-        g.traverse(o => { if ((o as Three.Mesh).isMesh) { o.castShadow = !hulled && o.name !== "beam"; o.frustumCulled = false;
-          if (!hulled && b.kind !== "metro" && o.name !== "beam") o.layers.enable(XRAY); } });   // seen through buildings (render)
-        if (hulled) g.add(this.hullOf());
+        g.traverse(o => { if ((o as Three.Mesh).isMesh) { o.castShadow = o.name !== "beam"; o.frustumCulled = false;
+          if (b.kind !== "metro" && o.name !== "beam") o.layers.enable(XRAY); } });   // seen through buildings (render)
         if (b.kind !== "metro") g.userData.xray = true;
-        g.userData.plate = g.getObjectByName("plate");   // found once: a search of the model every frame cost more than the rest
         this.groups.set(key, g);
         this.scene.add(g);
       }
-      const plate = g.userData.plate as Three.Mesh | undefined;
-      let fresh = false;
-      if (plate && g.userData.color !== b.color) { g.userData.color = b.color; plate.material = this.plate(b.color); fresh = true; }
       if (g.userData.label !== b.label) {
         g.userData.label = b.label;
         g.traverse(o => { if (o.name === "sign") (o as Three.Mesh).material = this.sign(b.kind, b.label); });
-        fresh = true;
+        if (g.userData.xray) this.markStencil(g);
       }
-      if (fresh && g.userData.xray) this.markStencil(g);
       if (b.kind === "tram" || b.kind === "metro") {
         // Each car on the track where it is: its two ends that far back along the trail, turned from one to the other.
         // A metro car at its depth there (metroDepth.ts): under the street, climbing out at a portal.
@@ -2063,17 +1903,13 @@ export class Scene3D {
         if (c0) this.drawn.set(key, [c0.position.x, c0.position.y]);
         continue;
       }
-      const sp = spaced?.get(key), [x, y] = sp ? [sp.x, sp.y] : this.local(b.pos);
-      g.position.set(x, y, 0);
-      this.drawn.set(key, [x, y]);
-      this.glowOn(g, b.glow);
-      g.scale.setScalar(BUS_SCALE);
-      if (b.heading != null) g.rotation.z = yaw(b.heading) + (sp?.turn ?? 0);
-      g.visible = true;
-      seen.add(key);
     }
     for (const [key, g] of this.groups) if (!seen.has(key)) { g.visible = false; this.drawn.delete(key); }
-    for (const t of this.trees.values()) if (t !== "none") t.crowns.visible = t.trunks.visible = t.far.visible = z >= TREE_ZOOM;
+    for (const key of this.busShown) if (!seen.has(key)) { this.busShown.delete(key); this.drawn.delete(key); }
+    this.busInst?.set(this.busPoses);
+    this.trolleyInst?.set(this.trolleyPoses);
+    this.busPoses.length = 0;
+    this.trolleyPoses.length = 0;
     const street = z >= STREET_ZOOM && !this.under;   // underground only: no street level
     for (const l of this.lampMeshes) l.visible = street;
     for (const l of this.stopMeshes) l.visible = street;
@@ -2100,7 +1936,7 @@ export class Scene3D {
     this.renderer.render(this.scene, this.camera);
     // X-ray: the buses, trolleys and trams once more, only where something stands in front of them (a building, a
     // tree): there they show as a see-through blue shape, so a bus behind a block is not lost.
-    if (!this.under && this.groups.size) {
+    if (!this.under && (this.groups.size || this.busShown.size)) {
       const T = this.T!, sm = this.renderer.shadowMap.autoUpdate;
       this.xrayMat ??= new T.MeshBasicMaterial({ color: 0x6fa8ff, transparent: true, opacity: 0.42, depthWrite: false, depthFunc: T.GreaterDepth,
         stencilWrite: true, stencilRef: 1, stencilFunc: T.NotEqualStencilFunc, stencilWriteMask: 0, stencilFail: T.KeepStencilOp,
@@ -2128,10 +1964,16 @@ export class Scene3D {
   private frameNo = 0;
   screenAt(key: string): [number, number] | null {
     const g = this.groups.get(key), T = this.T, m = this.map;
-    if (!g?.visible || !T || !m || !this.camera) return null;
-    const c0 = g.children.find(c => c.userData.len != null);
-    if (c0 && !c0.visible) return null;
-    const p = c0 ? c0.position : g.position, roof = c0 ? 3.9 : 3.3 * BUS_SCALE;
+    if (!T || !m || !this.camera) return null;
+    let p: { x: number; y: number; z: number }, roof: number;
+    const bus = this.busShown.has(key) ? this.drawn.get(key) : undefined;
+    if (bus) { p = { x: bus[0], y: bus[1], z: 0 }; roof = 3.3 * BUS_SCALE; }
+    else {
+      if (!g?.visible) return null;
+      const c0 = g.children.find(c => c.userData.len != null);
+      if (c0 && !c0.visible) return null;
+      p = c0 ? c0.position : g.position; roof = c0 ? 3.9 : 3.3 * BUS_SCALE;
+    }
     const v = new T.Vector3(p.x, p.y, p.z + roof).applyMatrix4(this.camera.projectionMatrix);
     if (!(v.z > -1 && v.z < 1)) return null;
     const cv = m.getCanvas();
@@ -2143,37 +1985,36 @@ export class Scene3D {
   }
 
   // ---- The glow under a bus, in its delay's colour: a soft disc on the ground, a little longer than the bus, lit by
-  // itself (added light at night; by day, a tint). One material per colour, shared.
-  private glowTex: Three.Texture | null = null;
-  private glowMats = new Map<string, Three.Material>();
-  private glowOn(g: Three.Group, cls: DelayClass) {
-    const T = this.T!, col = cls === "ontime" ? 0x46c267 : cls === "late1" || cls === "late2" ? 0xf0a033 : cls === "late3" ? 0xff5a4f : null;
-    let m = g.userData.glow as Three.Mesh | undefined;
-    if (col == null) { if (m) m.visible = false; return; }
-    if (!this.glowTex) {
-      const c = document.createElement("canvas");
-      c.width = c.height = 128;
-      const x = c.getContext("2d")!, gr = x.createRadialGradient(64, 64, 0, 64, 64, 64);
-      gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.45, "rgba(255,255,255,.45)"); gr.addColorStop(1, "rgba(255,255,255,0)");
-      x.fillStyle = gr; x.fillRect(0, 0, 128, 128);
-      this.glowTex = new T.CanvasTexture(c);
+  // itself (added light at night; by day, a tint). One material, white: each bus's colour multiplies it.
+  private glowMaterial(): Three.Material {
+    const T = this.T!, c = document.createElement("canvas");
+    c.width = c.height = 128;
+    const x = c.getContext("2d")!, gr = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+    gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.45, "rgba(255,255,255,.45)"); gr.addColorStop(1, "rgba(255,255,255,0)");
+    x.fillStyle = gr; x.fillRect(0, 0, 128, 128);
+    return new T.MeshBasicMaterial({ map: new T.CanvasTexture(c), color: 0xffffff, transparent: true, depthWrite: false,
+      blending: this.dark ? T.AdditiveBlending : T.NormalBlending, opacity: this.dark ? 0.95 : 0.6 });
+  }
+
+  // The buses' and trolleys' instanced sets, from their models (onAdd, after each style or theme). The hull, one box
+  // as big as the model (12 m by 2.6, 3.1 high, along +x), drawn without colour or depth, casts each one's shadow and
+  // is its shape in the X-ray.
+  private hullGeo: Three.BufferGeometry | null = null;
+  private hullMat: Three.Material | null = null;
+  private instances() {
+    const T = this.T!, scene = this.scene!;
+    if (!this.hullGeo) { this.hullGeo = new T.BoxGeometry(12.1, 2.6, 3.1); this.hullGeo.translate(0, 0, 0.32 + 1.55); }
+    this.hullMat ??= new T.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+    const glowGeo = new T.PlaneGeometry(21, 9.5);   // in the model's frame: 12 m along x (scaled 1.3)
+    glowGeo.translate(0, 0, 0.15);
+    const glowMat = this.glowMaterial();
+    this.atlas = new SignAtlas(T, (x, w, h, key) => { const k = key.indexOf("|"); paintSign(x, w, h, key.slice(0, k) as VehicleKind, key.slice(k + 1)); });
+    this.busInst = new BusInstances(T, this.proto!, this.hullGeo, this.hullMat, glowGeo, glowMat, this.atlas, BUS_SCALE, XRAY);
+    this.trolleyInst = new BusInstances(T, this.trolleyProto!, this.hullGeo, this.hullMat, glowGeo, glowMat, this.atlas, BUS_SCALE, XRAY);
+    for (const inst of [this.busInst, this.trolleyInst]) {
+      scene.add(inst.root);
+      for (const mat of inst.seenMaterials) { mat.stencilWrite = true; mat.stencilRef = 1; mat.stencilFunc = T.AlwaysStencilFunc; mat.stencilZPass = T.ReplaceStencilOp; }
     }
-    let mat = this.glowMats.get(`${col}`);
-    if (!mat) {
-      mat = new T.MeshBasicMaterial({ map: this.glowTex, color: col, transparent: true, depthWrite: false,
-        blending: this.dark ? T.AdditiveBlending : T.NormalBlending, opacity: this.dark ? 0.95 : 0.6 });
-      this.glowMats.set(`${col}`, mat);
-    }
-    if (!m) {
-      m = new T.Mesh(new T.PlaneGeometry(21, 9.5), mat);   // in the model's frame: 12 m along x (scaled 1.3)
-      m.position.z = 0.15;
-      m.renderOrder = -1;
-      m.castShadow = false;
-      g.add(m);
-      g.userData.glow = m;
-    }
-    m.material = mat;
-    m.visible = true;
   }
 
   // ---- Ready: the loading screen waits for the first full frame (trees built, shaders compiled, the map's tiles in).
@@ -2188,9 +2029,11 @@ export class Scene3D {
   private flushReady() { for (const ok of this.warmWait.splice(0)) ok(); }
   private prewarm() {
     this.warmUp = false;
-    const extra = [this.proto, this.trolleyProto, this.tramProto].flatMap(p => (p ? [p.clone()] : []));
+    const extra = [this.tramProto].flatMap(p => (p ? [p.clone()] : []));
     for (const e of extra) this.scene!.add(e);
+    const back = [this.busInst?.showAllForCompile(), this.trolleyInst?.showAllForCompile()];
     this.renderer!.compile(this.scene!, this.camera!);
+    for (const f of back) f?.();
     for (const e of extra) e.removeFromParent();
     this.renderer!.resetState();
     // Then the map's tiles (buildings, streets): "idle" would not do, the moving buses keep the map drawing.
@@ -2212,27 +2055,13 @@ export class Scene3D {
     if (!mat) {
       const T = this.T!, c = document.createElement("canvas");
       c.width = 512; c.height = 72;
-      const x = c.getContext("2d")!;
-      x.fillStyle = "#050506"; x.fillRect(0, 0, c.width, c.height);
-      x.fillStyle = kind === "trolley" ? "#cfe84e" : kind === "tram" ? "#ff8a1c" : "#ffae1f";
-      x.font = "bold 58px 'Courier New', monospace"; x.textAlign = "center"; x.textBaseline = "middle";
-      x.fillText(label, c.width / 2, c.height / 2 + 3, c.width - 40);
-      // The dot matrix: a dark grid over the letters leaves them made of separate LEDs.
-      x.fillStyle = "#050506";
-      for (let i = 0; i < c.width; i += 6) x.fillRect(i, 0, 2, c.height);
-      for (let j = 0; j < c.height; j += 6) x.fillRect(0, j, c.width, 2);
+      paintSign(c.getContext("2d")!, c.width, c.height, kind, label);
       const t = new T.CanvasTexture(c);
       t.colorSpace = T.SRGBColorSpace;
       t.anisotropy = 8;
       mat = new T.MeshBasicMaterial({ map: t });   // self-lit: readable day and night
       this.signs.set(key, mat);
     }
-    return mat;
-  }
-
-  private plate(color: string) {
-    let mat = this.plates.get(color);
-    if (!mat) this.plates.set(color, (mat = new this.T!.MeshLambertMaterial({ color })));
     return mat;
   }
 
@@ -2248,10 +2077,6 @@ export class Scene3D {
 
   private teardown() {
     this.drawn.clear();
-    for (const mat of this.glowMats.values()) mat.dispose();
-    this.glowMats.clear();
-    this.glowTex?.dispose();
-    this.glowTex = null;
     this.warmed = false;
     this.warmUp = false;
     const m = this.map;
@@ -2289,8 +2114,6 @@ export class Scene3D {
     this.stopMeshes = [];
     for (const mesh of this.boardMeshes) { mesh.geometry.dispose(); for (const mat of ([] as Three.Material[]).concat(mesh.material)) { (mat as Three.MeshLambertMaterial).map?.dispose(); mat.dispose(); } }
     this.boardMeshes = [];
-    for (const t of this.trees.values()) if (t !== "none") dispose(t);
-    this.trees.clear();
     this.groups.clear();
     // Free the GPU memory three.js holds (renderer.dispose() alone leaves buffers, textures and the shadow map), and
     // the renderer itself: MapLibre does not call the layer's onRemove when the whole style is replaced.
@@ -2314,14 +2137,18 @@ export class Scene3D {
     this.tunnelMeshes = [];
     this.tunnelAt = null;
     this.stopGlow = null;
-    for (const mat of this.plates.values()) freeMat(mat);
-    this.plates.clear();
     for (const mat of this.signs.values()) freeMat(mat);
     this.signs.clear();
     this.sun?.shadow.dispose();
     this.renderer?.dispose();
     this.proto = null;
     this.trolleyProto = null;
+    this.busInst = this.trolleyInst = null;
+    this.atlas = null;
+    this.busShown.clear();
+    this.drawnRot.clear();
+    this.hullGeo = null;
+    this.hullMat = null;
     this.tramProto = null;
     this.sun = null;
     this.ground = null;
@@ -2331,6 +2158,23 @@ export class Scene3D {
     this.scene = null;
     this.renderer = null;
   }
+}
+
+// A destination display's picture: black, the number in LEDs (amber on a bus, green-yellow on a trolley).
+function paintSign(x: CanvasRenderingContext2D, w: number, h: number, kind: VehicleKind, label: string) {
+  x.fillStyle = "#050506"; x.fillRect(0, 0, w, h);
+  x.fillStyle = kind === "trolley" ? "#cfe84e" : kind === "tram" ? "#ff8a1c" : "#ffae1f";
+  x.font = "bold 58px 'Courier New', monospace"; x.textAlign = "center"; x.textBaseline = "middle";
+  x.fillText(label, w / 2, h / 2 + 3, w - 40);
+  // The dot matrix: a dark grid over the letters leaves them made of separate LEDs.
+  x.fillStyle = "#050506";
+  for (let i = 0; i < w; i += 6) x.fillRect(i, 0, 2, h);
+  for (let j = 0; j < h; j += 6) x.fillRect(0, j, w, 2);
+}
+
+// A delay's glow colour under a bus (format.ts delayClass), or none.
+function glowColor(cls: DelayClass): number | null {
+  return cls === "ontime" ? 0x46c267 : cls === "late1" || cls === "late2" ? 0xf0a033 : cls === "late3" ? 0xff5a4f : null;
 }
 
 // A model's parts merged into one mesh per material, in the model's own frame (for each draw call saved, a bus
@@ -2402,10 +2246,6 @@ function mergeParts<O extends Three.Object3D>(T: typeof Three, root: O): O {
     root.add(new T.Mesh(geo, mat));
   }
   return root;
-}
-
-function dispose(t: TreeTile) {
-  for (const m of [t.crowns, t.trunks, t.far]) { m.geometry.dispose(); (m.material as Three.Material).dispose(); m.dispose(); }
 }
 
 // Destination displays on a model (Scene3D.sign() gives them the line's number): across the top of the windscreen,
@@ -2795,33 +2635,6 @@ export function buildTram(T: typeof Three, dark: boolean): Three.Group {
   return root;
 }
 
-// A unit icosphere with its surface pushed in and out by a smooth, fixed noise: one soft lump of foliage.
-// «Μινιατούρα»'s crowns: a few big facets, flat-shaded, as a low-poly model tree.
-function facetedSphere(T: typeof Three): Three.BufferGeometry {
-  const g = new T.IcosahedronGeometry(1, 1);
-  const p = g.attributes.position as Three.BufferAttribute, v = new T.Vector3();
-  for (let i = 0; i < p.count; i++) {
-    v.fromBufferAttribute(p, i);
-    const n = Math.sin(v.x * 4.1 + 0.7) * Math.sin(v.y * 3.3 + 1.9) * Math.sin(v.z * 3.7 + 0.2);
-    v.multiplyScalar(1 + 0.1 * n - (v.z < -0.4 ? 0.15 * (-v.z - 0.4) : 0));
-    p.setXYZ(i, v.x, v.y, v.z);
-  }
-  g.computeVertexNormals();
-  return g;
-}
-function lumpySphere(T: typeof Three, detail = 2): Three.BufferGeometry {
-  const g = new T.IcosahedronGeometry(1, detail);
-  const p = g.attributes.position as Three.BufferAttribute, v = new T.Vector3();
-  for (let i = 0; i < p.count; i++) {
-    v.fromBufferAttribute(p, i).normalize();
-    const n = Math.sin(v.x * 3.1 + 1.7) * Math.sin(v.y * 2.7 + 0.4) * Math.sin(v.z * 3.4 + 2.2) * 0.5
-      + Math.sin(v.x * 7.3) * Math.sin(v.y * 6.1 + 1.1) * Math.sin(v.z * 6.7) * 0.18;
-    v.multiplyScalar(1 + 0.16 * n - (v.z < -0.3 ? 0.12 * (-v.z - 0.3) : 0));   // lumpy, the underside a little flat
-    p.setXYZ(i, v.x, v.y, v.z);
-  }
-  g.computeVertexNormals();
-  return g;
-}
 
 // A base-map layer filter as an expression, so it can be combined with one: expressions pass as they are; the legacy
 // forms the base map uses (all/any/none, ==, !=, <, <=, >, >=, in, !in, has, !has, $type) are converted; null for

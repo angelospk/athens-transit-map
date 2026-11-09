@@ -9,6 +9,7 @@
 import type * as Three from "three";
 import type { LngLat } from "../../map3d";
 import { type Entrance3D } from "../../entrances";
+import { mergeStatic } from "../mergeStatic";
 
 type Lib = typeof import("./metroEntrance") & typeof import("./metroElevator");
 type Built = { key: string; g: Three.Group };
@@ -124,6 +125,8 @@ function build(lib: Lib, T: typeof Three, e: Entrance3D, p: Pics, shut: boolean)
       if (s.isMeshStandardMaterial && s.metalness > 0.5) { s.metalness = 0.3; s.roughness = Math.max(s.roughness, 0.4); }
     }
   });
+  // Built once and never changed: its parts merged by material (a stairwell was ~44 draws, most twice with the shadow).
+  mergeStatic(T, model);
   outer.add(model);
   if (lift) return outer;
   // At street level, invisible (see the top of this file): the ground around the opening, wide enough to cover

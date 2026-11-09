@@ -866,7 +866,10 @@
   // send is parsed and tiled again in the worker, its icons packed into a new atlas and uploaded; at street zoom in
   // 3D the loop runs every frame (the models, the camera), which sent them 60 times a second for steps under a pixel.
   const DATA_MS = 50;
-  let lastData = 0;
+  // In 3D close in, with every vehicle in view a model (its point unseen, kept for taps and the info chip), the city
+  // source changes nothing on the screen: it is sent four times a second, not twenty (each send re-tiles it).
+  const DATA_HIDDEN_MS = 250;
+  let lastData = 0, lastCity = 0;
   // Each vehicle's feature, kept and moved, not made anew every tick (less garbage between frames).
   const cityFeatures = new Map<string, GeoJSON.Feature<GeoJSON.Point>>();
   // Every vehicle's drawn heading turns toward its true one (turn.ts): no pictogram, pointer or arrow snaps round.
@@ -915,6 +918,7 @@
     // their feature stays, unseen (m3d), for the taps and the info chip.
     const city3d = scene3d.on && z >= BUS_ZOOM && cull && !app.chase ? new Set<string>() : null;   // a chase shows its bus alone
     const labelAt = new Map<string, LngLat>();
+    let flatSeen = false;   // a city vehicle in view drawn flat (not a model): its source must move smoothly
     for (const e of fleet.entries.values()) {
       const dom = owned.has(e.line);
       const shown = e.key === selKey || (!isGonePos(now - e.at) && passes(only, e.cls, now - e.at));
@@ -992,7 +996,7 @@
       pr.line = e.line; pr.id = e.id; pr.cls = e.cls; pr.mode = app.lineInfo.get(e.line)?.kind ?? "bus"; pr.stale = isStalePos(now - e.at);
       if (h != null) pr.h = h; else delete pr.h;
       if (alpha < 1) pr.fade = Math.round(alpha * 100) / 100; else delete pr.fade;
-      if (city3d?.has(e.key)) pr.m3d = true; else delete pr.m3d;
+      if (city3d?.has(e.key)) pr.m3d = true; else { delete pr.m3d; if (!flatSeen && !(cull && cull(pos))) flatSeen = true; }
       features.push(f);
       }
     }
@@ -1013,7 +1017,9 @@
     const sendData = t - lastData >= DATA_MS;
     if (sendData) lastData = t;
     if (features.length < cityFeatures.size) { const keep = new Set(features.map(f => (f.properties as { id: string }).id)); for (const [k, f] of cityFeatures) if (!keep.has((f.properties as { id: string }).id)) cityFeatures.delete(k); }
-    if (sendData && app.cityOn && (features.length || !cityWasEmpty)) {
+    const sendCity = sendData && (flatSeen || !city3d || t - lastCity >= DATA_HIDDEN_MS);
+    if (sendCity && app.cityOn && (features.length || !cityWasEmpty)) {
+      lastCity = t;
       (m.getSource("city") as GeoJSONSource).setData({ type: "FeatureCollection", features });
       cityWasEmpty = !features.length;
     }
