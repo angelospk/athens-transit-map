@@ -10,6 +10,7 @@ import type * as Three from "three";
 import type { LngLat } from "../../map3d";
 import { type Entrance3D } from "../../entrances";
 import { mergeStatic } from "../mergeStatic";
+import { nightTint } from "../nightTint";
 
 type Lib = typeof import("./metroEntrance") & typeof import("./metroElevator");
 type Built = { key: string; g: Three.Group };
@@ -41,6 +42,9 @@ export class EntranceModels {
   private local: ((p: LngLat) => [number, number]) | null = null;
   private shown = false;
   private queue: Promise<void> = Promise.resolve();
+  /** The dark 3D look: built dimmed (nightTint); a change builds them again. */
+  private night = false;
+  setNight(on: boolean) { if (on !== this.night) { this.night = on; this.sync(); } }
   /** Called after a change has been built and placed: the map should draw a frame. */
   onChange: (() => void) | null = null;
 
@@ -84,13 +88,14 @@ export class EntranceModels {
     for (const [id, b] of this.objs) if (!ids.has(id)) { b.g.removeFromParent(); dispose(b.g); this.objs.delete(id); }
     for (const e of this.list) {
       const shut = e.kind !== "elevator" && this.closed.has(e.name);
-      const key = buildKey(e) + (shut ? "|shut" : "");
+      const key = buildKey(e) + (shut ? "|shut" : "") + (this.night ? "|night" : "");
       let b = this.objs.get(e.id);
       if (!b || b.key !== key) {
         if (b) { b.g.removeFromParent(); dispose(b.g); this.objs.delete(e.id); }
         const [adFront, adBack, roundel] = await Promise.all([picture(e.adFront), picture(e.adBack), picture(e.roundel)]);
         if (!this.list.includes(e)) continue;   // changed again while the pictures loaded: the next pass builds it
         b = { key, g: build(lib, T, e, { adFront, adBack, roundel }, shut) };
+        if (this.night) nightTint(b.g);
         this.objs.set(e.id, b);
       }
       if (b.g.parent !== scene) scene.add(b.g);

@@ -2,6 +2,7 @@
 // (a new one after each style load, or a move of the scene's origin), shown at street level only. Σύνταγμα for now.
 import type * as Three from "three";
 import type { LngLat } from "../../map3d";
+import { nightTint } from "../nightTint";
 
 type Lib = typeof import("./syntagma");
 
@@ -11,6 +12,8 @@ export class Landmarks {
   private scene: Three.Scene | null = null;
   private shown = false;
   private gen = 0;
+  /** The dark 3D look: the models dimmed as the city's walls are (nightTint). Set before mount. */
+  night = false;
   /** Called once a model is in the scene: the map should draw a frame. */
   onChange: (() => void) | null = null;
 
@@ -22,6 +25,7 @@ export class Landmarks {
       if (gen !== this.gen || this.scene !== scene) return;
       if (this.g) { this.g.removeFromParent(); lib.disposeSyntagma(this.g); }
       this.g = lib.buildSyntagma(local);
+      if (this.night) nightTint(this.g);
       this.g.visible = this.shown;
       scene.add(this.g);
       this.onChange?.();

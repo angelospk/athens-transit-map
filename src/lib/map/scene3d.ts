@@ -120,6 +120,32 @@ function windowTile(): { width: number; height: number; data: Uint8Array } {
   x.fillStyle = "rgba(0,0,0,.08)"; x.fillRect(5, 22, 14, 2);
   return { width: W, height: H, data: new Uint8Array(x.getImageData(0, 0, W, H).data.buffer) };
 }
+// The night walls (the dark «Ρεαλιστική» look): dark facades with rows of windows, some lit warm, most dark, a pane's
+// cool sheen on the unlit ones. 6 × 6 windows to a tile (two to a floor), in a pattern of its own per `seed`: the buildings pick one of
+// three (by id), so no two blocks side by side light up alike. A picture on the walls: no extra draws, no light pass.
+export const NIGHT = { wall: "#171923", pane: "#232838", sheen: "rgba(150,170,210,.10)", lit: ["#ffd27a", "#ffe2a6", "#f6bd62", "#fff0cf"],
+  roof: "#262935", litShare: 0.46 };
+function nightTile(seed: number): { width: number; height: number; data: Uint8Array } {
+  const CW = 14, CH = 16, N = 6, W = CW * N, H = CH * N, c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const x = c.getContext("2d")!;
+  let r = seed * 7919 + 13;
+  const rnd = () => ((r = (r * 16807) % 2147483647), r / 2147483647);
+  x.fillStyle = NIGHT.wall; x.fillRect(0, 0, W, H);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const px = i * CW + 3, py = j * CH + 4, w = 8, h = 9;
+    if (rnd() < NIGHT.litShare) {
+      x.fillStyle = NIGHT.lit[Math.floor(rnd() * NIGHT.lit.length)]; x.fillRect(px, py, w, h);
+      x.fillStyle = "rgba(255,255,255,.2)"; x.fillRect(px, py, w, 2);           // brighter near the ceiling light
+      if (rnd() < 0.3) { x.fillStyle = "rgba(60,40,20,.35)"; x.fillRect(px + (rnd() < 0.5 ? 0 : 5), py, 3, h); }   // a curtain
+    } else {
+      x.fillStyle = NIGHT.pane; x.fillRect(px, py, w, h);
+      x.fillStyle = NIGHT.sheen; x.fillRect(px, py, w, 3);
+    }
+  }
+  return { width: W, height: H, data: new Uint8Array(x.getImageData(0, 0, W, H).data.buffer) };
+}
+
 // The roofs, so they read as roofs, not as blank floors: on a low house, terracotta tiles in rows; on a block, a
 // flat concrete roof in slabs, with a water tank or a vent here and there (as on every Athens roof).
 function roofTile(flat: boolean): { width: number; height: number; data: Uint8Array } {
@@ -1066,6 +1092,17 @@ export class Scene3D {
       m.addLayer({ id: "x3d-roofs", type: "fill-extrusion", source: SOURCE, "source-layer": "building", minzoom: BUILD_ZOOM, filter: NOT_MODELLED,
         paint: { "fill-extrusion-pattern": ["step", H, "x3d-roof-tiles", TOON.roofTall, "x3d-roof-flat"],
           "fill-extrusion-base": H, "fill-extrusion-height": ["+", H, 0.6], "fill-extrusion-opacity": 1 } } as never, before);
+    } else if (this.dark) {
+      // Night (2026-11-09): dark facades with lit windows (nightTile, one of three per building), a dark roof slab on
+      // top so the roof is not windowed too. The same two layers as «Μινιατούρα»: no more draws than the plain blocks
+      // and their roofs would be.
+      for (const k of [0, 1, 2]) if (!m.hasImage(`x3d-night-${k}`)) m.addImage(`x3d-night-${k}`, nightTile(k + 1), { pixelRatio: 2 });
+      m.addLayer({ id: "x3d-buildings", type: "fill-extrusion", source: SOURCE, "source-layer": "building", minzoom: BUILD_ZOOM, filter: NOT_MODELLED,
+        paint: { "fill-extrusion-pattern": ["match", ["%", ["coalesce", ["to-number", ["id"]], 0], 3], 0, "x3d-night-0", 1, "x3d-night-1", "x3d-night-2"],
+          "fill-extrusion-height": H, "fill-extrusion-base": B, "fill-extrusion-opacity": 1 } } as never, before);
+      m.addLayer({ id: "x3d-roofs", type: "fill-extrusion", source: SOURCE, "source-layer": "building", minzoom: BUILD_ZOOM, filter: NOT_MODELLED,
+        paint: { "fill-extrusion-color": NIGHT.roof, "fill-extrusion-base": H, "fill-extrusion-height": ["+", H, 0.4], "fill-extrusion-opacity": 1,
+          "fill-extrusion-vertical-gradient": false } } as never, before);
     } else m.addLayer({ id: "x3d-buildings", type: "fill-extrusion", source: SOURCE, "source-layer": "building", minzoom: BUILD_ZOOM, filter: NOT_MODELLED,
       // Three shades, picked by the building's id, so a block reads as separate buildings; taller ones a little lighter.
       paint: { "fill-extrusion-color": ["interpolate", ["linear"], ["coalesce", ["get", "render_height"], 10],
@@ -1723,6 +1760,9 @@ export class Scene3D {
     this.buildLamps();
     this.buildStops();
     this.buildBoards();
+    // At night (the dark look, not «Μινιατούρα»'s daylight) the models are dimmed as the walls are (nightTint).
+    this.entrances.setNight(this.dark);
+    this.landmarks.night = this.dark;
     if (this.scene) this.entrances.mount(this.scene, p => this.local(p));
     if (this.scene) this.landmarks.mount(this.scene, p => this.local(p));
   }
