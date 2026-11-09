@@ -7,7 +7,7 @@
 //   queue, however its GPS has it.
 // These are targets; scene3d moves each vehicle to its own on a spring (no jumps), turned a little as it steers.
 
-export interface Car { key: string; x: number; y: number; heading: number | null; v: number; moving: boolean }   // local metres; v: m/s
+export interface Car { key: string; x: number; y: number; heading: number | null; v: number; moving: boolean; turning?: boolean }   // local metres; v: m/s; turning: its heading is changing (a bend, a junction)
 export interface Gap { lat: number; back: number }   // metres to the left of its way (right: negative), and back along it
 
 // Moving or standing, with a margin between (GPS speeds jitter): moving from MOVE_ON, standing below MOVE_OFF.
@@ -75,9 +75,11 @@ export function spacingTargets(cars: Car[], now: Map<string, Gap>, len: number, 
         // Both under way (or it is passing already): it pulls out early enough to pass, where there is a lane.
         const soon = need + closing * LOOKAHEAD_S;
         if (gap < soon || (outNow(behind) && gap < need + CLEAR_M)) {
-          const side = sideOf(behind);
+          // Not on a bend or through a junction (either of them turning): it stays in line behind till the road runs
+          // straight again. One already out carries on past.
+          const side = (behind.turning || ahead.turning) && !outNow(behind) ? 0 : sideOf(behind);
           if (side) out.get(behind.key)!.lat = lane * side;
-          else queue(behind, ahead, need + closing, gap);   // nowhere to pass: in line behind
+          else queue(behind, ahead, need + closing, gap);   // nowhere to pass, or a bend: in line behind
         }
       } else {
         // The one ahead stands (a stop, the lights): it comes into line behind it, slowing in time.

@@ -105,3 +105,17 @@ describe("across each other", () => {
     expect(out.get("b")!.back).toBe(0);
   });
 });
+
+describe("on a bend", () => {
+  it("does not pull out to pass while either is turning: it falls in line behind instead", () => {
+    const cars = [
+      { key: "a", x: 0, y: 0, heading: 0, v: 9, moving: true, turning: true },
+      { key: "b", x: 0, y: 16, heading: 0, v: 4, moving: true },
+    ];
+    const out = spacingTargets(cars, new Map(), 12, 3.4);
+    expect(out.get("a")!.lat).toBe(0);
+    expect(out.get("a")!.back).toBeGreaterThan(0);
+    const straight = spacingTargets(cars.map(c => ({ ...c, turning: false })), new Map(), 12, 3.4);
+    expect(straight.get("a")!.lat).not.toBe(0);
+  });
+});

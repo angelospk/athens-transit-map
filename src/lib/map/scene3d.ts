@@ -65,7 +65,8 @@ export const RAIN_ZOOM = 17;
 const READY_MS = 15000;   // the loading screen waits at most this long   // rain only this close to the street
 export const STREET_ZOOM = 16;
 const ROAD_NUDGE_M = 12;   // a bus on its shape moves onto the road running its way this close (OASA's shapes are coarse)
-const SHAPE_RIGHT = 1.7;   // metres a bus off a painted route is drawn to the right of its line's shape (half a lane)
+const SHAPE_RIGHT = 1.7;
+const TURN_DEG = 6;        // a heading change of this much in under half a second: the bus is turning (no overtaking then)   // metres a bus off a painted route is drawn to the right of its line's shape (half a lane)
 const LAYER = "x3d-scene";
 const SOURCE = "openmaptiles";   // OpenFreeMap's vector source
 export const TREE_CREDIT = 'Δέντρα: <a href="https://registry.opendata.aws/dataforgood-fb-forests/" target="_blank" rel="noopener">Meta &amp; WRI</a>';
@@ -1920,7 +1921,7 @@ export class Scene3D {
   // positions, and when the gaps were last moved.
   // Buses kept apart (spacing.ts): each one's gap now and how fast it changes (a spring: no jumps), its speed over its
   // last positions, whether it moves (with a margin), and when the gaps were last moved.
-  private gaps = new Map<string, Gap & { latV: number; backV: number; v: number; moving: boolean; at?: [number, number]; t?: number }>();
+  private gaps = new Map<string, Gap & { latV: number; backV: number; v: number; moving: boolean; at?: [number, number]; t?: number; h?: number; hT?: number; turning?: boolean }>();
   private gapsAt = 0;
   private spaced(now: number): Map<string, { x: number; y: number; turn: number }> {
     const out = new Map<string, { x: number; y: number; turn: number }>();
@@ -1939,7 +1940,15 @@ export class Scene3D {
         g.at = [x, y]; g.t = now;
         g.moving = g.moving ? g.v > MOVE_OFF : g.v > MOVE_ON;
       }
-      cars.push({ key, x, y, heading: b.heading, v: g.v, moving: g.moving });
+      // Turning: its heading changed more than TURN_DEG over the last half second or so (a bend, a junction).
+      if (b.heading != null) {
+        if (g.h == null || g.hT == null) { g.h = b.heading; g.hT = now; }
+        else if (now - g.hT >= 400) {
+          g.turning = Math.abs(((b.heading - g.h + 540) % 360) - 180) > TURN_DEG;
+          g.h = b.heading; g.hT = now;
+        }
+      }
+      cars.push({ key, x, y, heading: b.heading, v: g.v, moving: g.moving, turning: g.turning });
     }
     for (const k of this.gaps.keys()) if (!this.buses.has(k)) this.gaps.delete(k);
     // Out to pass only where there is road to pull out onto (a lane's width to that side, on a carriageway): not into
