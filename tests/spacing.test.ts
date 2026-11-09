@@ -93,3 +93,15 @@ describe("two standing at one stop", () => {
     expect(Math.min(...backs)).toBe(0);
   });
 });
+
+describe("across each other", () => {
+  it("holds the one that has the other in front of it back, so they are never inside one another", () => {
+    const cars = [
+      { key: "a", x: 0, y: 0, heading: 90, v: 2, moving: true },     // going east
+      { key: "b", x: 4, y: 1, heading: 0, v: 0, moving: false },     // across it, going north, 4 m ahead of a
+    ];
+    const out = spacingTargets(cars, new Map(), 12, 3.4);
+    expect(out.get("a")!.back).toBeGreaterThan(3);   // a has b in front: a holds back
+    expect(out.get("b")!.back).toBe(0);
+  });
+});

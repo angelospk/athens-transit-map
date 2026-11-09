@@ -13,7 +13,7 @@ export interface Gap { lat: number; back: number }   // metres to the left of it
 // Moving or standing, with a margin between (GPS speeds jitter): moving from MOVE_ON, standing below MOVE_OFF.
 export const MOVE_ON = 1.5, MOVE_OFF = 0.6;
 const SAME_WAY = 70;       // degrees: two going roughly the same way (one of them turning, or placed askew) are kept apart too
-const LOOKAHEAD_S = 3;     // pull out this long before it would reach the one ahead
+const LOOKAHEAD_S = 6;     // pull out this long before it would reach the one ahead (early: a driver changes lane well before)
 const CLEAR_M = 4;         // and back in once this far past it
 
 const dirOf = (h: number): [number, number] => [Math.sin((h * Math.PI) / 180), Math.cos((h * Math.PI) / 180)];
@@ -45,8 +45,22 @@ export function spacingTargets(cars: Car[], now: Map<string, Gap>, len: number, 
   for (let pass = 0; pass < 2; pass++) {
     for (let i = 0; i < cars.length; i++) for (let j = i + 1; j < cars.length; j++) {
       const a = cars[i], b = cars[j];
-      if (a.heading == null || b.heading == null || turn(a.heading, b.heading) > SAME_WAY) continue;
+      if (a.heading == null || b.heading == null) continue;
       const [dx, dy] = [b.x - a.x, b.y - a.y];
+      const tw = turn(a.heading, b.heading);
+      if (tw > 180 - SAME_WAY) continue;   // the other way: the other carriageway
+      if (tw > SAME_WAY) {
+        // Across each other (one turning at a junction, one placed askew): never inside one another. The one that has
+        // the other in front of it holds back until they are clear by a bus's half length and a little.
+        const d = Math.hypot(dx, dy), room = len / 2 + width / 2 + 1;
+        if (d >= room) continue;
+        const da = dirOf(a.heading), db = dirOf(b.heading);
+        const aSees = dx * da[0] + dy * da[1], bSees = -dx * db[0] - dy * db[1];   // the other ahead of a? of b?
+        const [behind, ahead] = aSees >= bSees ? [a, b] : [b, a];
+        const t = out.get(behind.key)!;
+        t.back = Math.max(t.back, room - d + out.get(ahead.key)!.back);
+        continue;
+      }
       const reach = need + CLEAR_M + Math.max(a.v, b.v) * LOOKAHEAD_S;
       if (dx * dx + dy * dy > reach * reach) continue;
       const d = dirOf(a.heading), along = dx * d[0] + dy * d[1], side = -dx * d[1] + dy * d[0];
@@ -80,4 +94,4 @@ export function springStep(x: number, v: number, to: number, period: number, dt:
   const w = (2 * Math.PI) / period, acc = w * w * (to - x) - 2 * w * v, nv = v + acc * dt;
   return [x + nv * dt, nv];
 }
-export const LAT_PERIOD = 2.2, BACK_PERIOD = 1.2;
+export const LAT_PERIOD = 3.6, BACK_PERIOD = 2.0;   // a lane change in about three and a half seconds, into line in two: no lurch
