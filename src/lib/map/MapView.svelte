@@ -1054,8 +1054,9 @@
   // for a vehicle that stands and did not move over its last two fixes.
   function headingOf(e: FleetEntry, still: boolean): number | null {
     const held = !still && e.mover.cap != null && e.mover.s >= e.mover.cap - 0.5;   // behind another on its line
+    // Moving: its guess ahead of it, or the dot rolling on its own (a crawl ahead of its guess, motion.ts).
     const moving = !still && !held && e.mover.plan && e.mover.plan.geom.length > 1
-      && e.mover.plan.target(app.serverMs() / 1000 + 1) > e.mover.s + 0.5;
+      && (e.mover.u > 0.3 || e.mover.plan.target(app.serverMs() / 1000 + 1) > e.mover.s + 0.5);
     return moving ? e.mover.heading() : held || e.standing >= 2 ? null
       : vehicleHeading({ lon: e.pos[0], lat: e.pos[1], bearing: e.bearing }, e.route?.route.shape, e.prev);
   }

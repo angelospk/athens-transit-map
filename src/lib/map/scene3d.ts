@@ -576,6 +576,9 @@ export class Scene3D {
    *  20 m, turned along it; else where it is. Close in only (STREET_ZOOM), in Athens. */
   place(pos: LngLat, heading: number | null, line?: string, key?: string): { pos: LngLat; heading: number | null } {
     const idx = this.roads;
+    // Standing, a vehicle has no heading of its own (MapView): it keeps the way its model faced, so it is not laid on
+    // whichever road is nearest (a cross street, a stop's bay) and turned across the street.
+    if (heading == null && key) heading = this.buses.get(key)?.heading ?? null;
     if (!this.on || !idx || !this.map || this.map.getZoom() < STREET_ZOOM) { if (key) this.onTrack.delete(key); return { pos, heading }; }
     const dir: [number, number] | undefined = heading == null ? undefined
       : [Math.sin((heading * Math.PI) / 180), Math.cos((heading * Math.PI) / 180)];
@@ -1032,12 +1035,14 @@ export class Scene3D {
     const lat = m.getCenter().lat;
     // The streets of Athens (athensRoads.ts), at their real widths from OpenStreetMap: drawn as a mapmaker draws
     // them, every pavement first, then every kerb, then every carriageway, then the markings, so at a junction the
-    // surfaces join and no kerb or line crosses. Set once for the whole area and never rebuilt; the source does not
-    // simplifies the lines by 5 cm at most where they are drawn (z16-17; tolerance 0.1) and above zoom 17 reuses that
-    // zoom's tiles, so a street keeps its shape as the map zooms. Not tolerance 0: the source's worker keeps a tile at
-    // every zoom down the way to the one asked for, and unsimplified each held every dash and kerb of the area again.
-    // Not maxzoom 18: four times the tiles. A buffer of 64 (30 m at z17) holds the widest avenue across a tile's edge.
-    m.addSource("x3d-roads", { type: "geojson", data: this.roadData ?? NO_ROADS, tolerance: 0.1, maxzoom: 17, buffer: 64 });
+    // surfaces join and no kerb or line crosses. Set once for the whole area and never rebuilt. The source cuts its
+    // tiles once, at zoom 16, where the street is first drawn, and every closer zoom reuses them (overzoomed: no new
+    // cut, only the tile's drawing again at that zoom), so a zoom in and out at street level does not cut the area
+    // again (2026-11-09: it was 17, so crossing 17 cut every tile once more). The lines are simplified by 0.1 px of
+    // a z16 tile (about 20 cm), unseen. Not tolerance 0: the source's worker keeps a tile at every zoom down the way
+    // to the one asked for, and unsimplified each held every kerb of the area again. A buffer of 64 (60 m at z16)
+    // holds the widest avenue across a tile's edge.
+    m.addSource("x3d-roads", { type: "geojson", data: this.roadData ?? NO_ROADS, tolerance: 0.1, maxzoom: STREET_ZOOM, buffer: 64 });
     const kind = (k: string | string[]) => typeof k === "string" ? ["==", ["get", "kind"], k] : ["in", ["get", "kind"], ["literal", k]];
     m.addLayer({ id: "x3d-area", type: "fill", source: "x3d-roads", minzoom: STREET_ZOOM, filter: kind("area"),
       paint: { "fill-color": c.walk, "fill-antialias": true } } as never, before);
