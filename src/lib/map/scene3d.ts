@@ -1758,6 +1758,8 @@ export class Scene3D {
       onRemove() { self.renderer?.dispose(); self.renderer = null; },
     };
     m.addLayer(this.layer);
+    // The stations' discs, logos and names over the models (the Σύνταγμα terrace, a bus at the entrance), not under.
+    for (const id of ["metro-station", "metro-station-glyph", "metro-label"]) if (m.getLayer(id)) m.moveLayer(id);
   }
 
   private anchor(at: LngLat) {

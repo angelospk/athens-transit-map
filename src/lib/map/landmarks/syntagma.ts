@@ -14,7 +14,7 @@
 import * as THREE from "three";
 import type { LngLat } from "../../map3d";
 import { ANCHOR_LL, FORECOURT, FORECOURT_GARDENS, FOUNTAINS, LAWNS, NEAR_BUILDINGS, PARLIAMENT_HULL, PARLIAMENT_PARTS, TOMB_AREA } from "./syntagmaData";
-import { at as atSq, clipS, DEPTH, floorIn, groundM, metres as sqM, O as EAST, PLAZA_M, S_FLAT, S_WALL, tOf, sOf } from "./syntagmaGround";
+import { at as atSq, clipS, DEPTH, floorIn, groundM, insideM, metres as sqM, O as EAST, PLAZA_M, S_FLAT, S_WALL, tOf, sOf } from "./syntagmaGround";
 
 export const ANCHOR: LngLat = ANCHOR_LL;
 
@@ -516,7 +516,10 @@ export function buildSyntagma(local: (p: LngLat) => [number, number]): THREE.Gro
       }
       if (best < 0) continue;
       const a = r[best], b = r[(best + 1) % r.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      const u: XY = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], n: XY = [-u[1], u[0]];   // along the wall; into the square
+      const u: XY = [(b[0] - a[0]) / L, (b[1] - a[1]) / L];
+      let n: XY = [-u[1], u[0]];   // along the wall; into the square (checked: the flight must go down into it, not out onto the street)
+      const F0: XY = [a[0] + (b[0] - a[0]) * bk, a[1] + (b[1] - a[1]) * bk];
+      if (!insideM([F0[0] + n[0] * 2, F0[1] + n[1] * 2], r)) n = [-n[0], -n[1]];
       const W = 5, half = W / 2 + 0.5;
       if (L < 2 * half) continue;
       const k = Math.max(half / L, Math.min(1 - half / L, bk)), F: XY = [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
