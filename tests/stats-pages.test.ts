@@ -88,6 +88,22 @@ describe("linesCsv", () => {
 describe("cityStatsPage", () => {
   const days = ["2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05"].map(d => day(d, { trips: true, delay: true }));
   const html = cityStatsPage(athens, days);
+  it("names the plan the trips count against: OASA's daily schedule, the expired GTFS only for the lines left on it (rt#99)", () => {
+    const withSource = (source: "oasa_daily" | "mixed" | undefined) => {
+      const d = day("2026-11-08", { trips: true });
+      d.trips = { ...d.trips!, gtfs_expired: true, schedule_source: source,
+        by_line: d.trips!.by_line.map((l, i) => ({ ...l, schedule_source: source === "mixed" && i === 1 ? "gtfs" as const : "oasa_daily" as const })) };
+      return cityStatsPage(athens, [d]);
+    };
+    const daily = withSource("oasa_daily");
+    expect(daily).toContain("ημερήσιο πρόγραμμα του ΟΑΣΑ");
+    expect(daily).not.toContain("έχει λήξει");
+    const mixed = withSource("mixed");
+    expect(mixed).toContain("ημερήσιο πρόγραμμα του ΟΑΣΑ");
+    expect(mixed).toContain("Για 1 γραμμή");
+    expect(withSource(undefined)).toContain("έχει λήξει");
+  });
+
   const ld = JSON.parse(html.match(/<script type="application\/ld\+json">(.*?)<\/script>/s)![1]);
 
   it("is a page of its own with a canonical URL on staseis.gr", () => {

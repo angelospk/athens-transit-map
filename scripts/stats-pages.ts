@@ -174,7 +174,7 @@ function newestDay(c: StatsCity, d: DayStats): string {
 ${missing.length ? `<p class="note warn">Η μέρα είναι μερική: δεν υπάρχουν θέσεις για τις ώρες ${missing.map(hh).join(", ")}.</p>\n` : ""}<ul class="facts">
 ${facts.map(([v, t]) => `<li><b>${v}</b><span>${t}</span></li>`).join("\n")}
 </ul>
-${trips?.expired ? `<p class="note">Το πρόγραμμα δρομολογίων (GTFS ${escape(trips.gtfs)}) έχει λήξει· τα δρομολόγια μετρούν με το παλιό πρόγραμμα.</p>\n` : ""}</section>
+${trips ? planNote(trips) : ""}</section>
 <section>
 <h2>Ανά ώρα</h2>
 ${bars(rows.map(r => r.vehicles), "Οχήματα ανά ώρα")}
@@ -228,6 +228,17 @@ ${table("faster", ["Γραμμή", "Πριν", "Τώρα", "Αλλαγή"], tren
 }
 
 // days: the city's readable days, oldest first; at least one. cities: the cities with a stats page.
+// The plan the day's trips count against (rt#99): OASA's daily schedule, and the expired GTFS only
+// for the lines left on it (a day before rt#99 is all GTFS).
+function planNote(t: NonNullable<ReturnType<typeof tripShare>>): string {
+  const daily = t.source !== "gtfs" ? "Τα δρομολόγια μετρούν με το ημερήσιο πρόγραμμα του ΟΑΣΑ." : "";
+  const old = !t.expired ? "" : t.source === "mixed"
+    ? `${t.gtfsLines === 1 ? "Για 1 γραμμή" : `Για ${n(t.gtfsLines)} γραμμές`} χωρίς ημερήσιο πρόγραμμα μετρούν με το ληγμένο GTFS ${escape(t.gtfs)}.`
+    : `Το πρόγραμμα δρομολογίων (GTFS ${escape(t.gtfs)}) έχει λήξει· τα δρομολόγια μετρούν με το παλιό πρόγραμμα.`;
+  const text = [daily, old].filter(Boolean).join(" ");
+  return text ? `<p class="note">${text}</p>\n` : "";
+}
+
 export function cityStatsPage(c: StatsCity, days: DayStats[], cities: StatsCity[] = [c]): string {
   const latest = days.at(-1)!;
   const canonical = SITE + statsPath(c);
