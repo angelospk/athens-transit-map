@@ -14,7 +14,7 @@
 import * as THREE from "three";
 import type { LngLat } from "../../map3d";
 import { ANCHOR_LL, FORECOURT, FORECOURT_GARDENS, FOUNTAINS, LAWNS, NEAR_BUILDINGS, PARLIAMENT_HULL, PARLIAMENT_PARTS, TOMB_AREA } from "./syntagmaData";
-import { at as atSq, clipS, DEPTH, floorS, groundM, O as EAST, PLAZA_M, S_FLAT, S_WALL, tOf, sOf } from "./syntagmaGround";
+import { at as atSq, clipS, DEPTH, floorIn, groundM, metres as sqM, O as EAST, PLAZA_M, S_FLAT, S_WALL, tOf, sOf } from "./syntagmaGround";
 
 export const ANCHOR: LngLat = ANCHOR_LL;
 
@@ -413,9 +413,25 @@ export function buildSyntagma(local: (p: LngLat) => [number, number]): THREE.Gro
   flight(1); flight(-1);
 
   // -- The forecourt on Αμαλίας: dark paving in a diamond grid (its texture 16 m a tile), a ring of marble before the
-  // Tomb, the gardens at either end with their cypresses; the paving before the Tomb.
+  // Tomb, the gardens at either end with their cypresses; the paving before the Tomb. Its outline as mapped, but
+  // square at its south end: the mapping cuts it on a slant there, where the aerial photographs have the fan's paving
+  // run out to the pavement as at the north end (the street side's line carried on to the south corner).
+  const fcRing = ((): LngLat[] => {
+    const R = FORECOURT.slice(), n0 = R.length;
+    if (n0 > 1 && R[0][0] === R[n0 - 1][0] && R[0][1] === R[n0 - 1][1]) R.pop();
+    const T = R.map(p => tOf(sqM(p))), S = R.map(p => sOf(sqM(p))), sMin = Math.min(...S), n = R.length;
+    const st = R.map((_, i) => i).filter(i => S[i] < sMin + 2).sort((i, j) => T[i] - T[j]);
+    const i0 = st[0], i1 = st[st.length - 1], ic = T.indexOf(Math.min(...T));
+    if (i0 === i1 || ic === i0) return R;
+    const u = (T[ic] - T[i0]) / (T[i1] - T[i0]);
+    const q: LngLat = [R[i0][0] + (R[i1][0] - R[i0][0]) * u, R[i0][1] + (R[i1][1] - R[i0][1]) * u];
+    if (S[ic] - sOf(sqM(q)) < 0.5) return R;
+    if ((ic + 1) % n === i0) R.splice(ic + 1, 0, q);
+    else if ((i0 + 1) % n === ic) R.splice(ic, 0, q);
+    return R;
+  })();
   {
-    const r = ccw(ring(FORECOURT)), z = 0.06;
+    const r = ccw(ring(fcRing)), z = 0.06;
     const tris = THREE.ShapeUtils.triangulateShape(r.map(p => new THREE.Vector2(p[0], p[1])), []);
     // One picture over it, square to the palace's front (u along the wall, v away from it, west), the fan's centre
     // at the Tomb's slab.
@@ -442,128 +458,242 @@ export function buildSyntagma(local: (p: LngLat) => [number, number]): THREE.Gro
     }
   }
   cap(acc, ccw(tomb), 0.09, "paveInner");
+  // Before the forecourt, along Αμαλίας (the aerial photographs): a pavement of light marble 4 m wide with its kerb
+  // (the width estimated; the map's own pavement is drawn under it).
+  {
+    const f = fcRing.map(sqM).map(q => [tOf(q), sOf(q)] as XY);   // (t, s): along the street, east of the square
+    const sMin = Math.min(...f.map(p => p[1]));
+    const st = f.filter(p => p[1] < sMin + 2).sort((p, q) => p[0] - q[0]);   // the straight street side
+    const p0 = st[0], p1 = st[st.length - 1], k = (p1[1] - p0[1]) / (p1[0] - p0[0] || 1);
+    const line = (t: number) => p0[1] + k * (t - p0[0]);
+    const tLo = Math.min(...f.map(p => p[0])), tHi = Math.max(...f.map(p => p[0]));
+    const P = (t: number, s: number) => atSq(t, s) as XY;
+    const w = 4, a = P(tLo, line(tLo) - w), b = P(tHi, line(tHi) - w);
+    cap(acc, ccw([a, b, P(tHi, line(tHi)), P(tLo, line(tLo))]), 0.05, "pave");
+    box(acc, "marble", [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 0.075], [Math.hypot(b[0] - a[0], b[1] - a[1]), 0.3, 0.15], Math.atan2(b[1] - a[1], b[0] - a[0]));
+  }
 
   // -- The square, under Αμαλίας (syntagmaGround.ts): its floor sloping down from Ερμού, walls of ashlar round it up to
-  // the streets, and on its east side the wall under the terrace along Αμαλίας: in its middle the marble steps (three
-  // flights, the lowest the widest, between balustrades with urns at their foot, their top cut into the terrace),
-  // either side of them the metro's entrances (deep portals in a heavy frame), the station's glass roof on the
-  // terrace to the north, its glass lift at the south end. The map's own street surfaces are cleared over the square
-  // (a hole in the depth, as the metro's stairwells are), so the square shows below them.
+  // the streets, and on its east side the wall under the terrace along Αμαλίας: in its middle the marble steps (a
+  // wide low flight, a landing with the two great urns, then the long flight between solid balustrades, its top cut
+  // into the terrace), the station's glass roof on the terrace to the north, its glass lift at the south end. (The
+  // metro's own entrances are scene3d's.) The map's own street surfaces are cleared over the square (a hole in the
+  // depth, as the metro's stairwells are), so the square shows below them.
   const below = clipS(PLAZA_M, S_WALL, true);
   const wallLine = below.filter(q => Math.abs(sOf(q) - S_WALL) < 0.05).map(tOf);
   const tA = Math.min(...wallLine), tB = Math.max(...wallLine);
-  // The steps where they are mapped: their middle 0.52 of the way along the wall (the mapped flight), 12 m wide (the
-  // lowest flight 17), cut 4 m into the terrace.
-  const tS = tA + 0.5 * (tB - tA), hTop = 6, hLow = 8.5, cut = 4, rail = 0.6;
+  // The steps where they are mapped: their middle half way along the wall (the mapped flight), 12 m wide between the
+  // balustrades (the lowest flight 21: the photographs, against the urns), cut 1.5 m into the terrace.
+  const tS = tA + 0.5 * (tB - tA), hTop = 6, hLow = 10.5, cut = 1.5, rail = 0.6;
   const yawE = Math.atan2(EAST[1], EAST[0]);
   const P3 = (q: XY, z: number) => [q[0], q[1], z];
-  // The floor: sloping part and flat part (each a plane, so its corners' heights are enough), paved.
+  // The floor: sloping part and flat part (each a plane, so its corners' heights are enough), paved. Its points on
+  // the wall's line are at the wall's foot (floorIn), so the floor meets the wall level.
   for (const part of [clipS(below, S_FLAT, true), clipS(below, S_FLAT, false)]) {
     if (part.length < 3) continue;
     const r = ccw(part as XY[]);
     const tris = THREE.ShapeUtils.triangulateShape(r.map(p => new THREE.Vector2(p[0], p[1])), []);
-    const fz = (q: XY) => floorS(sOf(q));
+    const fz = (q: XY) => floorIn(sOf(q));
     for (const [a, b, c] of tris) acc.tri("pave", P3(r[a], fz(r[a])), P3(r[b], fz(r[b])), P3(r[c], fz(r[c])), [0, 0, 1],
       [[r[a][0] / 4, r[a][1] / 4], [r[b][0] / 4, r[b][1] / 4], [r[c][0] / 4, r[c][1] / 4]]);
   }
-  // The walls round it up to the streets (not the east one: below), a marble coping on top.
+  // Smaller steps down from the pavement on the square's sides (on the south wall, between its fountain and the
+  // lawns): one flight 5 m wide straight out from the wall to the floor, between solid balustrades as the great
+  // steps'. Each placed by a point by the wall, (t, s) as atSq takes them.
+  const SIDE_STEPS: XY[] = [[-1.4, -56]];
+  const sideGaps = new Map<number, [number, number][]>();   // per wall edge: where its balustrade opens (m along it)
+  {
+    const r = ccw(below as XY[]);
+    for (const [t, s] of SIDE_STEPS) {
+      const p = atSq(t, s);
+      let best = -1, bd = Infinity, bk = 0;
+      for (let i = 0; i < r.length; i++) {
+        const a = r[i], b = r[(i + 1) % r.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 1e-3 || (Math.abs(sOf(a) - S_WALL) < 0.05 && Math.abs(sOf(b) - S_WALL) < 0.05)) continue;
+        const k = Math.max(0, Math.min(1, ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / (L * L)));
+        const d = Math.hypot(a[0] + (b[0] - a[0]) * k - p[0], a[1] + (b[1] - a[1]) * k - p[1]);
+        if (d < bd) { bd = d; best = i; bk = k; }
+      }
+      if (best < 0) continue;
+      const a = r[best], b = r[(best + 1) % r.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const u: XY = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], n: XY = [-u[1], u[0]];   // along the wall; into the square
+      const W = 5, half = W / 2 + 0.5;
+      if (L < 2 * half) continue;
+      const k = Math.max(half / L, Math.min(1 - half / L, bk)), F: XY = [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+      const zf = floorIn(sOf(F));
+      if (zf > -0.6) continue;
+      const nSt = Math.max(2, Math.round(-zf / RISE)), rise = -zf / nSt, tread = 0.33, run = (nSt - 1) * tread, base = zf - 0.4;
+      const yawN = Math.atan2(n[1], n[0]);
+      for (let j = 0; j < nSt - 1; j++) {   // from the top, by the wall: a riser down from the pavement first
+        const top = -rise * (j + 1), d = tread * (j + 0.5);
+        box(acc, "marble", [F[0] + n[0] * d, F[1] + n[1] * d, (base + top) / 2], [tread + 0.002, W + 0.02, top - base], yawN);
+      }
+      // The balustrades: 0.95 m over the pavement at the wall, 1 m over the floor at the foot; into the wall a little.
+      const prof = new THREE.Shape([new THREE.Vector2(-0.25, base), new THREE.Vector2(run + 0.3, base), new THREE.Vector2(run + 0.3, zf + 1.0),
+        new THREE.Vector2(0, 0.95), new THREE.Vector2(-0.25, 0.95)]);
+      const ex = new THREE.ExtrudeGeometry(prof, { depth: 0.5, bevelEnabled: false });
+      const w = new THREE.Vector3(n[1], -n[0], 0);
+      const basis = new THREE.Matrix4().makeBasis(new THREE.Vector3(n[0], n[1], 0), new THREE.Vector3(0, 0, 1), w);
+      for (const off of [W / 2, -W / 2 - 0.5]) acc.geo("marble", ex, basis.clone().setPosition(F[0] + w.x * off, F[1] + w.y * off, 0));
+      ex.dispose();
+      const at0 = k * L;
+      (sideGaps.get(best) ?? sideGaps.set(best, []).get(best)!).push([at0 - half, at0 + half]);
+    }
+  }
+  // The walls round it up to the streets (not the east one: below), a marble coping on top (open over side steps).
   {
     const r = ccw(below as XY[]);
     for (let i = 0; i < r.length; i++) {
       const a = r[i], b = r[(i + 1) % r.length];
       if (Math.abs(sOf(a) - S_WALL) < 0.05 && Math.abs(sOf(b) - S_WALL) < 0.05) continue;
-      const za = floorS(sOf(a)), zb = floorS(sOf(b));
+      const za = floorIn(sOf(a)), zb = floorIn(sOf(b));
       if (za > -0.05 && zb > -0.05) continue;
       // Facing into the square (the ring runs counter-clockwise: inside is on the left; the face is drawn both ways).
       acc.quad("stoneIn", P3(a, za), P3(b, zb), P3(b, 0), P3(a, 0), [[0, za / 2], [Math.hypot(b[0] - a[0], b[1] - a[1]) / 4, zb / 2], [Math.hypot(b[0] - a[0], b[1] - a[1]) / 4, 0], [0, 0]]);
-      const L = Math.hypot(b[0] - a[0], b[1] - a[1]), mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-      box(acc, "marble", [mid[0], mid[1], 0.45], [L, 0.45, 0.9], Math.atan2(b[1] - a[1], b[0] - a[0]));   // the balustrade
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]), ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+      let from = 0;   // the balustrade, in pieces round the side steps' openings
+      for (const [g0, g1] of [...(sideGaps.get(i) ?? []), [L, L] as [number, number]].sort((x, y) => x[0] - y[0])) {
+        if (g0 - from > 0.05) {
+          const c = (from + g0) / 2 / L;
+          box(acc, "marble", [a[0] + (b[0] - a[0]) * c, a[1] + (b[1] - a[1]) * c, 0.45], [g0 - from, 0.45, 0.9], ang);
+        }
+        from = Math.max(from, g1);
+      }
     }
   }
-  // The wall under the terrace, facing the square: whole except at the steps and the two portals.
-  const portalW = 6, portalH = 2.7, portalD = 6;
-  const portals = [tS - hTop - rail - 5.5, tS + hTop + rail + 5.5];
-  const gaps: [number, number, number][] = [[tS - hTop - rail, tS + hTop + rail, 0], ...portals.map(t => [t - portalW / 2, t + portalW / 2, -DEPTH + portalH] as [number, number, number])];
-  gaps.sort((x, y) => x[0] - y[0]);
-  const face = (t0: number, t1: number, z0: number, z1: number) => {
+  // The wall under the terrace, facing the square: whole but where the steps come through it.
+  const edge = hTop + rail;   // the stair block's half width, out to its balustrades' outer faces
+  /** A face across the wall's line at `s` (t0 to t1, z0 to z1), facing west (into the square) or east. */
+  const faceAt = (s: number, t0: number, t1: number, z0: number, z1: number, m = "stone", east = false) => {
+    if (t1 < t0) [t0, t1] = [t1, t0];
     if (t1 - t0 < 0.01 || z1 - z0 < 0.01) return;
-    const a = atSq(t0, S_WALL), b = atSq(t1, S_WALL);
-    acc.quad("stone", P3(b, z0), P3(a, z0), P3(a, z1), P3(b, z1), [[t1 / 4, z0 / 2], [t0 / 4, z0 / 2], [t0 / 4, z1 / 2], [t1 / 4, z1 / 2]]);
+    const a = atSq(t0, s), b = atSq(t1, s);
+    const uv: [number, number][] = [[t1 / 4, z0 / 2], [t0 / 4, z0 / 2], [t0 / 4, z1 / 2], [t1 / 4, z1 / 2]];
+    if (east) acc.quad(m, P3(a, z0), P3(b, z0), P3(b, z1), P3(a, z1), [uv[1], uv[0], uv[3], uv[2]]);
+    else acc.quad(m, P3(b, z0), P3(a, z0), P3(a, z1), P3(b, z1), uv);
   };
-  let tc = tA;
-  for (const [g0, g1, top] of gaps) {
-    face(tc, g0, -DEPTH, 0);
-    if (top < 0) face(g0, g1, top, 0);   // over a portal: its lintel
-    tc = g1;
-  }
-  face(tc, tB, -DEPTH, 0);
-  // The terrace's edge over the wall: a parapet, open over the steps.
-  for (const [t0, t1] of [[tA, tS - hTop - rail], [tS + hTop + rail, tB]]) {
+  /** A face along the wall's normal at `t` (sa to sb; its foot ba..bb, its top ta..tb), facing north (+1) or south. */
+  const sideT = (t: number, sa: number, sb: number, ba: number, bb: number, ta: number, tb: number, m: string, facing: number) => {
+    if (ta - ba < 0.005 && tb - bb < 0.005) return;
+    const a = atSq(t, sa), b = atSq(t, sb), A = P3(a, ba), B = P3(b, bb), C = P3(b, tb), D = P3(a, ta);
+    const uv: [number, number][] = [[sa / 4, ba / 2], [sb / 4, bb / 2], [sb / 4, tb / 2], [sa / 4, ta / 2]];
+    if (facing > 0) acc.quad(m, B, A, D, C, [uv[1], uv[0], uv[3], uv[2]]); else acc.quad(m, A, B, C, D, uv);
+  };
+  faceAt(S_WALL, tA, tS - edge, -DEPTH, 0);
+  faceAt(S_WALL, tS + edge, tB, -DEPTH, 0);
+  // The terrace's edge over the wall (open over the steps): a marble coping, white posts on it every 2.4 m, an iron
+  // railing between them (the photographs).
+  for (const [t0, t1] of [[tA, tS - edge], [tS + edge, tB]]) {
     const m = atSq((t0 + t1) / 2, S_WALL + 0.3);
-    box(acc, "marble", [m[0], m[1], 0.5], [0.6, t1 - t0, 1.0], yawE);
-  }
-  // The portals: a deep dark entrance, a heavy white frame round it, a slab over.
-  for (const t of portals) {
-    const z0 = -DEPTH, z1 = -DEPTH + portalH;
-    const a = atSq(t - portalW / 2, S_WALL), b = atSq(t + portalW / 2, S_WALL), a2 = atSq(t - portalW / 2, S_WALL + portalD), b2 = atSq(t + portalW / 2, S_WALL + portalD);
-    acc.quad("dark", P3(a2, z0), P3(b2, z0), P3(b2, z1), P3(a2, z1));   // the back
-    acc.quad("dark", P3(a, z0), P3(a2, z0), P3(a2, z1), P3(a, z1));     // the sides
-    acc.quad("dark", P3(b2, z0), P3(b, z0), P3(b, z1), P3(b2, z1));
-    acc.quad("dark", P3(a, z1), P3(a2, z1), P3(b2, z1), P3(b, z1));     // the ceiling
-    acc.quad("darkFloor", P3(a, z0 + 0.01), P3(b, z0 + 0.01), P3(b2, z0 + 0.01), P3(a2, z0 + 0.01));
-    for (const side of [-1, 1]) {
-      const j = atSq(t + side * (portalW / 2 + 0.3), S_WALL - 0.45);
-      box(acc, "marble", [j[0], j[1], z0 + (portalH + 0.4) / 2], [0.9, 0.6, portalH + 0.4], yawE);
+    box(acc, "marble", [m[0], m[1], 0.225], [0.6, t1 - t0, 0.45], yawE);
+    for (const z of [0.6, 0.98]) box(acc, "dark", [m[0], m[1], z], [0.05, t1 - t0, 0.05], yawE);
+    for (let t = t0 + 0.2; t < t1 - 0.1; t += 0.2) {
+      const p = atSq(t, S_WALL + 0.3);
+      box(acc, "dark", [p[0], p[1], 0.72], [0.025, 0.025, 0.54], yawE);
     }
-    const l = atSq(t, S_WALL - 0.7);
-    box(acc, "marble", [l[0], l[1], z1 + 0.25], [1.4, portalW + 1.8, 0.5], yawE);
-    const sign = atSq(t, S_WALL - 0.02);   // the station's blue sign on the lintel
-    box(acc, "sign", [sign[0], sign[1], z1 + 0.8], [0.06, 2.4, 0.5], yawE);
+    const n = Math.max(1, Math.round((t1 - t0) / 2.4));
+    for (let k = 0; k <= n; k++) {
+      const p = atSq(t0 + ((t1 - t0) * k) / n, S_WALL + 0.3);
+      box(acc, "marble", [p[0], p[1], 0.75], [0.34, 0.34, 0.6], yawE);
+      box(acc, "marble", [p[0], p[1], 1.1], [0.44, 0.44, 0.1], yawE);
+    }
   }
-  // The steps: from the square up east to the terrace. Lowest flight widest, then two narrower ones with landings.
+  // The steps (the photographs, Google's 3D view): a wide low flight of five, a landing with the two great urns, the
+  // long flight up between the balustrades (eleven steps, a landing, the rest), its last steps cut into the terrace.
+  // Each step a block from the square's floor, so the flights are solid under.
+  const nLow = 5, n1 = 11, n2 = Math.max(4, Math.round(DEPTH / RISE) - nLow - n1), rise = DEPTH / (nLow + n1 + n2);
+  const tLow = 0.42, tUp = 0.34, land = 3.2, mid = 2.0;
+  const sTop = S_WALL + cut, s2 = sTop - n2 * tUp, sMid = s2 - mid, s1 = sMid - n1 * tUp, sLand = s1 - land, sFoot = sLand - nLow * tLow;
+  const zLand = -DEPTH + nLow * rise, zMid = zLand + n1 * rise;
+  const flightOf = (s0: number, n: number, tread: number, z0: number, width: number) => {
+    for (let k = 0; k < n; k++) {
+      const top = z0 + rise * (k + 1), m = atSq(tS, s0 + tread * (k + 0.5));
+      box(acc, "marble", [m[0], m[1], (top - DEPTH) / 2], [tread + 0.002, width, top + DEPTH], yawE);
+    }
+  };
+  const level = (sa: number, sb: number, z: number, width: number) => {
+    const m = atSq(tS, (sa + sb) / 2);
+    box(acc, "marble", [m[0], m[1], (z - DEPTH) / 2], [sb - sa, width, z + DEPTH], yawE);
+  };
+  const wUp = 2 * hTop + 0.02;   // into the balustrades a little: no seam
+  flightOf(sFoot, nLow, tLow, -DEPTH, 2 * hLow);
+  level(sLand, s1, zLand, 2 * hLow);
+  flightOf(s1, n1, tUp, zLand, wUp);
+  level(sMid, s2, zMid, wUp);
+  flightOf(s2, n2, tUp, zMid, wUp);
+  // The balustrades: solid marble, 0.95 m over the line of the steps, sweeping up at the top to the terrace's railing;
+  // under them the block's sides, ashlar, down to the square.
   {
-    const n = 7, rise = DEPTH / (n * 3), tread = 0.36, landing = 1.6, run = n * tread;
-    const total = run * 3 + landing * 2, sTop = S_WALL + cut, sFoot = sTop - total;
-    const flightAt = (k: number) => sFoot + k * (run + landing);
-    const widths = [hLow * 2, hTop * 2, hTop * 2];
-    for (let k = 0; k < 3; k++) {
-      const s0 = flightAt(k), z0 = -DEPTH + k * n * rise, foot = atSq(tS, s0);
-      steps(acc, "marble", foot, EAST as XY, widths[k], -DEPTH, -DEPTH + (k + 1) * n * rise, tread);
-      if (k < 2) {
-        // The landing after it, solid from the square's floor.
-        const lm = atSq(tS, s0 + run + landing / 2), zl = z0 + n * rise;
-        box(acc, "marble", [lm[0], lm[1], (-DEPTH + zl) / 2], [landing, widths[k + 1] + (k === 0 ? 2 * rail : 0), zl + DEPTH], yawE);
+    const prof: [number, number][] = [[s1, zLand + rise + 0.95], [sMid, zMid + 0.95], [s2, zMid + 0.95], [S_WALL, 1.15], [sTop, 1.15]];
+    const topAt = (s: number) => {
+      for (let i = 1; i < prof.length; i++) {
+        const [a, za] = prof[i - 1], [b, zb] = prof[i];
+        if (s <= b + 1e-6) return b - a < 1e-6 ? zb : za + ((zb - za) * (s - a)) / (b - a);
+      }
+      return prof[prof.length - 1][1];
+    };
+    for (const sd of [-1, 1]) {
+      const tIn = tS + sd * hTop, tOut = tS + sd * edge, tLo = Math.min(tIn, tOut), tHi = Math.max(tIn, tOut);
+      for (let i = 0; i + 1 < prof.length; i++) {
+        const a = prof[i][0], b = prof[i + 1][0];
+        if (b - a < 1e-3) continue;
+        const za = topAt(a), zb = topAt(b), terrace = a >= S_WALL - 1e-6, base = terrace ? 0 : -DEPTH;
+        if (!terrace) sideT(tOut, a, b, base, base, za - 0.95, zb - 0.95, "stone", sd);   // the block's side
+        const ma = terrace ? 0 : za - 0.95, mb = terrace ? 0 : zb - 0.95;
+        sideT(tOut, a, b, ma, mb, za, zb, "marble", sd);                                // the balustrade, outside
+        sideT(tIn, a, b, za - 1.4, zb - 1.4, za, zb, "marble", -sd);                     // and inside, over the steps
+        const A = atSq(tLo, a), B = atSq(tLo, b), C = atSq(tHi, b), D = atSq(tHi, a);
+        acc.quad("marble", P3(A, za), P3(B, zb), P3(C, zb), P3(D, za));                   // its top
+      }
+      faceAt(s1, tIn, tOut, -DEPTH, topAt(s1), "marble");          // its foot, on the landing
+      faceAt(sTop, tIn, tOut, 0, topAt(sTop), "marble", true);     // its end on the terrace
+      // The urn at its foot, on the landing: a plinth with a moulded base and cap, the urn, an agave in it.
+      const c = atSq(tS + sd * (hTop + rail / 2), s1 - 0.95), z0 = zLand;
+      box(acc, "marble", [c[0], c[1], z0 + 0.15], [1.8, 1.8, 0.3], yawE);
+      box(acc, "marble", [c[0], c[1], z0 + 1.1], [1.45, 1.45, 1.6], yawE);
+      box(acc, "marble", [c[0], c[1], z0 + 2.02], [1.75, 1.75, 0.25], yawE);
+      cylinder(acc, "urn", c, 0.32, 0.38, z0 + 2.15, z0 + 2.4, 20);
+      cylinder(acc, "urn", c, 0.42, 0.8, z0 + 2.4, z0 + 3.05, 24);
+      cylinder(acc, "urn", c, 0.86, 0.86, z0 + 3.05, z0 + 3.15, 24);
+      mats.agave ??= lambert(0x7d9a73);
+      for (let k = 0; k < 9; k++) {
+        const len = k === 0 ? 1.2 : 1.0 + (k % 3) * 0.15, tilt = k === 0 ? 0 : 0.7 + (k % 2) * 0.25, az = k * 0.8;
+        const g = new THREE.ConeGeometry(0.11, len, 5).rotateX(Math.PI / 2).translate(0, 0, len / 2);
+        g.applyMatrix4(new THREE.Matrix4().makeRotationY(tilt)).applyMatrix4(new THREE.Matrix4().makeRotationZ(az));
+        acc.geo("agave", g, new THREE.Matrix4().makeTranslation(c[0], c[1], z0 + 3.05));
+        g.dispose();
       }
     }
-    // The cut in the terrace for the top flight: its walls, down to the steps.
-    for (const side of [-1, 1]) {
-      const t = tS + side * (hTop + rail / 2);
-      // The balustrade beside the two upper flights and their landing, sloping with them (a block per step), on to
-      // the top; pillars with urns at its foot.
-      const sFrom = flightAt(1);
-      for (let s = sFrom; s < sTop; s += tread) {
-        const k = Math.min(2 * n, Math.max(0, Math.floor((s - sFrom) / (run + landing)) * n + Math.min(n, Math.floor(((s - sFrom) % (run + landing)) / tread) + 1)));
-        const zt = -DEPTH + n * rise + k * rise + 1.0, m = atSq(t, s + tread / 2);
-        box(acc, "marble", [m[0], m[1], (-DEPTH + zt) / 2], [tread + 0.01, rail, zt + DEPTH], yawE);
-      }
-      const f = atSq(t, sFrom - 0.5), zf = -DEPTH;
-      box(acc, "marble", [f[0], f[1], zf + 0.75], [1.0, 1.0, 1.5], yawE);
-      cylinder(acc, "urn", [f[0], f[1]], 0.28, 0.55, zf + 1.5, zf + 2.2, 20);
-      cylinder(acc, "urn", [f[0], f[1]], 0.55, 0.6, zf + 2.2, zf + 2.32, 20);
-      cylinder(acc, "lawn", [f[0], f[1]], 0.5, 0.15, zf + 2.32, zf + 2.8, 10);
-      // The wall of the cut, under the terrace's edge.
-      const c0 = atSq(t + side * rail / 2, S_WALL), c1 = atSq(t + side * rail / 2, sTop);
-      acc.quad("stoneIn", P3(c0, -DEPTH), P3(c1, -DEPTH), P3(c1, 0), P3(c0, 0));
-    }
   }
-  // The station's glass roof on the terrace, north of the steps; its glass lift at the south end.
+  // The station's glass roof, north of the steps: in the square, against the wall's foot (the aerial photographs),
+  // sloping down from under the terrace's coping 7 m out, on a dark frame: glazing bars down the slope, a beam along
+  // its low edge on slim posts, glass at its ends; clear of the steps by ROOF_GAP, room for the metro's entrance
+  // between (scene3d's). Its glass lift at the south end.
   {
-    const t0 = portals[1] + portalW / 2 + 3, t1 = tB - 2;
+    const ROOF_GAP = 18;
+    const t0 = tS + edge + ROOF_GAP, t1 = tB - 2, sHi = S_WALL - 0.05, sLo = S_WALL - 7, zHi = -0.55, zLo = -DEPTH + 2.6;
     if (t1 - t0 > 6) {
-      const a = atSq(t0, S_WALL + 1), b = atSq(t1, S_WALL + 1), c = atSq(t1, S_WALL + 8), d = atSq(t0, S_WALL + 8);
-      prism(acc, [a, b, c, d], 0, 0.4, "marble", null);
-      acc.quad("glassRoof", P3(a, 1.4), P3(b, 1.4), P3(c, 0.4), P3(d, 0.4));
-      acc.quad("glassRoof", P3(a, 0.4), P3(b, 0.4), P3(b, 1.4), P3(a, 1.4));
+      const a = atSq(t0, sHi), b = atSq(t1, sHi), c = atSq(t1, sLo), d = atSq(t0, sLo);
+      acc.quad("glassRoof", P3(a, zHi), P3(b, zHi), P3(c, zLo), P3(d, zLo));
+      const L = Math.hypot(sHi - sLo, zHi - zLo), pitch = Math.atan2(zHi - zLo, sHi - sLo);
+      for (let t = t0; t <= t1 + 0.01; t += (t1 - t0) / Math.max(1, Math.round((t1 - t0) / 1.6))) {
+        const m = atSq(t, (sHi + sLo) / 2), g = new THREE.BoxGeometry(L, 0.06, 0.08);
+        g.applyMatrix4(new THREE.Matrix4().makeRotationY(-pitch)).applyMatrix4(new THREE.Matrix4().makeRotationZ(yawE));
+        acc.geo("dark", g, new THREE.Matrix4().makeTranslation(m[0], m[1], (zHi + zLo) / 2 + 0.04));
+        g.dispose();
+      }
+      const lo = atSq((t0 + t1) / 2, sLo);
+      box(acc, "dark", [lo[0], lo[1], zLo - 0.12], [0.2, t1 - t0 + 0.2, 0.24], yawE);
+      const nP = Math.max(1, Math.round((t1 - t0) / 4.5));
+      for (let k = 0; k <= nP; k++) {
+        const p = atSq(t0 + ((t1 - t0) * k) / nP, sLo + 0.1);
+        box(acc, "dark", [p[0], p[1], (zLo - 0.24 - DEPTH) / 2], [0.12, 0.12, zLo - 0.24 + DEPTH], yawE);
+      }
+      for (const t of [t0, t1]) {
+        const h = atSq(t, sHi), l = atSq(t, sLo);
+        acc.tri("glassRoof", P3(h, zHi), P3(l, zLo), P3(l, -DEPTH));
+        acc.tri("glassRoof", P3(h, zHi), P3(l, -DEPTH), P3(h, -DEPTH));
+      }
     }
     const lift = atSq(tA + 4, S_WALL - 2.5);
     cylinder(acc, "glassRoof", lift, 1.9, 1.9, -DEPTH, 2.6, 32);
@@ -571,11 +701,39 @@ export function buildSyntagma(local: (p: LngLat) => [number, number]): THREE.Gro
   }
   // Lawns, kerbed in marble, and the fountains (a wide basin, its water, a raised bowl and its jet; the one in the
   // middle of the square, the big one of the photographs, a third wider than mapped), on the sloping floor.
-  for (const l of LAWNS) {
+  // Trees on the lawns: broad crowns on short trunks, on a grid about 6.5 m apart (jittered, the same each build),
+  // kept 2.5 m in from the kerb. (scene3d leaves its own canopy trees off the lawns: syntagmaGround.onLawn.)
+  mats.trunk ??= lambert(0x6b5442);
+  mats.leaves ??= lambert(0x4d7a3b);
+  mats.leaves2 ??= lambert(0x618c46);
+  const edgeDist = (p: XY, r: XY[]) => {
+    let m = Infinity;
+    for (let i = 0; i < r.length; i++) {
+      const a = r[i], b = r[(i + 1) % r.length], L2 = (b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 || 1;
+      const k = Math.max(0, Math.min(1, ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / L2));
+      m = Math.min(m, Math.hypot(a[0] + (b[0] - a[0]) * k - p[0], a[1] + (b[1] - a[1]) * k - p[1]));
+    }
+    return m;
+  };
+  LAWNS.forEach((l, li) => {
     const r = ccw(ring(l)), z = groundM(centroid(r));
     prism(acc, grow(r, 0.25), z - 0.3, z + 0.3, "marble", "marble");
     prism(acc, r, z - 0.3, z + 0.32, "lawn", "lawn");
-  }
+    let seed = 7 + li * 101;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647), seed / 2147483647);
+    const xs = r.map(p => p[0]), ys = r.map(p => p[1]), zt = z + 0.32;
+    for (let x = Math.min(...xs) + 3; x < Math.max(...xs) - 1; x += 6.5) for (let y = Math.min(...ys) + 3; y < Math.max(...ys) - 1; y += 6.5) {
+      const p: XY = [x + (rnd() - 0.5) * 2.4, y + (rnd() - 0.5) * 2.4];
+      if (!inside(p, r) || edgeDist(p, r) < 2.5) continue;
+      const h = 6.5 + rnd() * 3, cr = 2.2 + rnd() * 0.9, trunk = h * 0.4;
+      cylinder(acc, "trunk", p, 0.24, 0.16, zt, zt + trunk + 0.8, 8);
+      const g = new THREE.IcosahedronGeometry(1, 1);
+      g.scale(cr, cr, (h - trunk) / 2);
+      g.computeVertexNormals();
+      acc.geo(rnd() < 0.5 ? "leaves" : "leaves2", g, new THREE.Matrix4().makeTranslation(p[0], p[1], zt + trunk + (h - trunk) / 2));
+      g.dispose();
+    }
+  });
   FOUNTAINS.forEach(([lon, lat, r0], i) => {
     const c = xy([lon, lat]), z = groundM(c), main = i === 0, r = main ? r0 * 1.35 : r0;   // the first is the middle one
     ringTube(acc, "marble", c, r, r - 0.5, z - 0.3, z + 0.65);

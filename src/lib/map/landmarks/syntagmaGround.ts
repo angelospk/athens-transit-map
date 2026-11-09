@@ -5,9 +5,9 @@
 // Pure (no three.js): scene3d asks it where the trees stand; the model (syntagma.ts) is built on it.
 
 import type { LngLat } from "../../map3d";
-import { ANCHOR_LL, PLAZA } from "./syntagmaData";
+import { ANCHOR_LL, LAWNS, PLAZA } from "./syntagmaData";
 
-export const DEPTH = 3.2;
+export const DEPTH = 4.2;   // 28 steps of 15 cm up to Αμαλίας (the photographs: the wall about 2.4 people high)
 export const WALL_IN = 10.5;
 export const FLAT = 24;
 
@@ -21,6 +21,9 @@ const ring = (r: LngLat[]) => {
   return m.length > 1 && m[0][0] === m[m.length - 1][0] && m[0][1] === m[m.length - 1][1] ? m.slice(0, -1) : m;
 };
 export const PLAZA_M = ring(PLAZA);
+const LAWNS_M = LAWNS.map(ring);
+/** On one of the square's lawns: the model plants them itself, so scene3d leaves its own trees off them. */
+export const onLawn = (p: LngLat) => { const q = metres(p); return LAWNS_M.some(r => insideM(q, r)); };
 
 // The square's east edge (along Αμαλίας): the longest of its edges facing east.
 const frame = (() => {
@@ -55,8 +58,11 @@ export function insideM(p: M2, r: M2[]) {
   return c;
 }
 
+/** The square's floor at `s`, the terrace aside: what the floor's points on the wall's line take (at the wall's foot,
+ *  not on its top). */
+export const floorIn = (s: number) => -DEPTH * Math.max(0, Math.min(1, (s - S_WEST) / (S_FLAT - S_WEST)));
 /** The square's floor at `s` (inside the square; 0 from the wall's line east). */
-export const floorS = (s: number) => (s >= S_WALL ? 0 : -DEPTH * Math.max(0, Math.min(1, (s - S_WEST) / (S_FLAT - S_WEST))));
+export const floorS = (s: number) => (s >= S_WALL ? 0 : floorIn(s));
 /** The square's ground at a point (metres from the anchor): 0 outside it and on the terrace, else below 0. (Not for a
  *  point on its edge: inside or not is a toss-up there. The model takes floorS.) */
 export function groundM(q: M2): number {

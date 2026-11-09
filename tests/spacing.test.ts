@@ -80,3 +80,16 @@ describe("spacing over time", () => {
     expect(r.worst).toBe(Infinity);   // never within a length of it
   });
 });
+
+describe("two standing at one stop", () => {
+  it("queues the one behind a full bus length back, whatever their speeds, when both face the same way", () => {
+    const cars = [
+      { key: "a", x: 0, y: 0, heading: 90, v: 0, moving: false },
+      { key: "b", x: 0.5, y: 0.2, heading: 92, v: 0, moving: false },
+    ];
+    const out = spacingTargets(cars, new Map(), 12, 3.4);
+    const backs = [out.get("a")!.back, out.get("b")!.back];
+    expect(Math.max(...backs)).toBeGreaterThanOrEqual(12);
+    expect(Math.min(...backs)).toBe(0);
+  });
+});

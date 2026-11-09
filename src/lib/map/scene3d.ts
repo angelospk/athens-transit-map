@@ -20,7 +20,7 @@ import { depthAt, ISLANDS, TRACK_GAP, trackGapAt, type Livery, DEPTH, metroStops
 import { EntranceModels } from "./entrance/models";
 import { Landmarks } from "./landmarks";
 import { MODELLED_ENTRANCES, PARLIAMENT_IDS } from "./landmarks/syntagmaData";
-import { groundAt as landmarkGround } from "./landmarks/syntagmaGround";
+import { groundAt as landmarkGround, onLawn } from "./landmarks/syntagmaGround";
 import type { Entrance3D } from "../entrances";
 import { Turners } from "../turn";
 
@@ -64,6 +64,7 @@ const TKX = 111320 * Math.cos((TRAIL_ORIGIN[1] * Math.PI) / 180), TKY = 110540; 
 export const RAIN_ZOOM = 17;
 const READY_MS = 15000;   // the loading screen waits at most this long   // rain only this close to the street
 export const STREET_ZOOM = 16;
+const ROAD_NUDGE_M = 12;   // a bus on its shape moves onto the road running its way this close (OASA's shapes are coarse)
 const SHAPE_RIGHT = 1.7;   // metres a bus off a painted route is drawn to the right of its line's shape (half a lane)
 const LAYER = "x3d-scene";
 const SOURCE = "openmaptiles";   // OpenFreeMap's vector source
@@ -629,6 +630,14 @@ export class Scene3D {
     // each other). Laid on the nearest road it went onto cross streets at junctions, and into gardens and blocks
     // where the shape and the mapped roads part.
     if (heading == null) return { pos, heading };
+    // OASA's shapes run a few metres off the mapped street here and there: on the asphalt of the road running its
+    // way within ROAD_NUDGE_M of the shape's point, in its lane, keeping the shape's heading; else right of the shape.
+    const dirN = unit(heading)!;
+    const near = idx.nearest(pos, ROAD_NUDGE_M, undefined, dirN);
+    if (near) {
+      const rd = (Math.atan2(near.tx, near.ty) * 180) / Math.PI, off = Math.abs(((rd - heading + 540) % 360) - 180);
+      if (Math.min(off, 180 - off) <= 30) { const h = idx.lane(near, dirN); return { pos: idx.ll(h.x, h.y), heading }; }
+    }
     const r = (heading * Math.PI) / 180, kx = 111320 * Math.cos((pos[1] * Math.PI) / 180);
     return { pos: [pos[0] + (Math.cos(r) * SHAPE_RIGHT) / kx, pos[1] - (Math.sin(r) * SHAPE_RIGHT) / 110540], heading };
   }
@@ -1855,7 +1864,7 @@ export class Scene3D {
       const [tx, ty] = this.local([t[i] / 1e6, t[i + 1] / 1e6]), d = Math.hypot(tx - cx, ty - cy), k = i / 3;
       if (d > reach || (d > 200 && k % 2) || (d > 400 && k % 4)) continue;
       const p = idx ? idx.offRoad([t[i] / 1e6, t[i + 1] / 1e6]) : ([t[i] / 1e6, t[i + 1] / 1e6] as LngLat);
-      if (p) spots.push([p[0], p[1], t[i + 2] / 10]);
+      if (p && !onLawn(p)) spots.push([p[0], p[1], t[i + 2] / 10]);   // (Σύνταγμα's lawns: the model plants them)
     }
     const n = spots.length, blobs = 4;
     const toon = this.look === "toon";
