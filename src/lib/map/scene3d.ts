@@ -23,6 +23,7 @@ import { squareEntrances } from "./landmarks/syntagmaGround";
 import type { Entrance3D } from "../entrances";
 import { PoseSmoother } from "./smoothPose";
 import { BusInstances, SignAtlas, type BusPose } from "./busInstances";
+import { XRay } from "./xray";
 import { Turners } from "../turn";
 
 export type VehicleKind = "bus" | "trolley" | "tram" | "metro";
@@ -64,7 +65,9 @@ const SHAPE_RIGHT = 1.7;
 const TURN_DEG = 6;        // a heading change of this much in under half a second: the bus is turning (no overtaking then)   // metres a bus off a painted route is drawn to the right of its line's shape (half a lane)
 const LAYER = "x3d-scene";
 const SOURCE = "openmaptiles";   // OpenFreeMap's vector source
-const XRAY = 1;
+const XRAY = 1;        // buses and trolleys seen through what hides them, as themselves (xray.ts)
+const XRAY_HULL = 3;   // their hulls: where the X-ray looks
+const XRAY_FLAT = 2;   // trams: as a flat blue shape (each is ~35 meshes: four passes of them would cost more than all the buses)
 // Every way is drawn flat on the street, bridges and tunnels too (athensRoads.decode).
 // Degrees: the road tiles (0.04° each, ~8 MB of streets) loaded round the view's centre: the one it is in, and a
 // neighbour only within ~1 km of its edge. At STREET_ZOOM and closer the view is about that wide. (0.028 loaded six
@@ -307,7 +310,8 @@ export class Scene3D {
   private loading: Promise<typeof Three> | null = null;
   private buses = new Map<string, Bus>();
   private groups = new Map<string, Three.Group>();
-  private xrayMat: Three.MeshBasicMaterial | null = null;
+  private xray: XRay | null = null;
+  private xrayFlat: Three.MeshBasicMaterial | null = null;
   // Where a vehicle is seen (its depth test passed) it marks the stencil with 1, so the X-ray pass (render) leaves
   // it be and shows only the parts something hides.
   private markStencil(g: Three.Object3D) {
@@ -1654,8 +1658,11 @@ export class Scene3D {
         const c = self.pal();
         self.scene = new T.Scene();
         self.camera = new T.Camera();
-        self.scene.add(new T.HemisphereLight(c.sky, c.ground, c.hemi));
+        const hemi = new T.HemisphereLight(c.sky, c.ground, c.hemi);
+        self.scene.add(hemi);
         const sun = new T.DirectionalLight(self.dark ? 0xbfd0ff : 0xfff6e5, c.sun);
+        // The X-ray pass draws its layer alone, and three.js leaves out lights not on the camera's layers.
+        hemi.layers.enable(XRAY); sun.layers.enable(XRAY);
         sun.castShadow = true;
         const sc = sun.shadow.camera;
         sc.left = -120; sc.right = 120; sc.top = 120; sc.bottom = -120; sc.near = 1; sc.far = 400;
@@ -1866,7 +1873,7 @@ export class Scene3D {
         g = (b.kind === "tram" ? this.tramProto! : this.metroProto(b.livery ?? "m23")).clone();
         g.userData.kind = look;
         g.traverse(o => { if ((o as Three.Mesh).isMesh) { o.castShadow = o.name !== "beam"; o.frustumCulled = false;
-          if (b.kind !== "metro" && o.name !== "beam") o.layers.enable(XRAY); } });   // seen through buildings (render)
+          if (b.kind !== "metro" && o.name !== "beam") o.layers.enable(XRAY_FLAT); } });   // seen through buildings (render)
         if (b.kind !== "metro") g.userData.xray = true;
         this.groups.set(key, g);
         this.scene.add(g);
@@ -1935,19 +1942,24 @@ export class Scene3D {
     if (this.shadowEvery > 1) this.renderer.shadowMap.needsUpdate = this.frameNo++ % this.shadowEvery === 0;
     this.renderer.render(this.scene, this.camera);
     // X-ray: the buses, trolleys and trams once more, only where something stands in front of them (a building, a
-    // tree): there they show as a see-through blue shape, so a bus behind a block is not lost.
+    // lamp): there they show through it as themselves, tinted blue (xray.ts), so a bus behind a block is not lost.
     if (!this.under && (this.groups.size || this.busShown.size)) {
-      const T = this.T!, sm = this.renderer.shadowMap.autoUpdate;
-      this.xrayMat ??= new T.MeshBasicMaterial({ color: 0x6fa8ff, transparent: true, opacity: 0.42, depthWrite: false, depthFunc: T.GreaterDepth,
-        stencilWrite: true, stencilRef: 1, stencilFunc: T.NotEqualStencilFunc, stencilWriteMask: 0, stencilFail: T.KeepStencilOp,
-        stencilZFail: T.KeepStencilOp, stencilZPass: T.KeepStencilOp });
-      this.camera.layers.set(XRAY);
-      this.scene.overrideMaterial = this.xrayMat;
+      const sm = this.renderer.shadowMap.autoUpdate;
+      this.xray ??= new XRay(this.T!, XRAY, XRAY_HULL);
       this.renderer.shadowMap.autoUpdate = false;
-      this.renderer.render(this.scene, this.camera);
+      if (this.busShown.size) this.xray.render(this.renderer, this.scene, this.camera);
+      if (this.groups.size) {
+        const T = this.T!;
+        this.xrayFlat ??= new T.MeshBasicMaterial({ color: 0x6fa8ff, transparent: true, opacity: 0.42, depthWrite: false, depthFunc: T.GreaterDepth,
+          stencilWrite: true, stencilRef: 1, stencilFunc: T.NotEqualStencilFunc, stencilWriteMask: 0, stencilFail: T.KeepStencilOp,
+          stencilZFail: T.KeepStencilOp, stencilZPass: T.KeepStencilOp });
+        this.camera.layers.set(XRAY_FLAT);
+        this.scene.overrideMaterial = this.xrayFlat;
+        this.renderer.render(this.scene, this.camera);
+        this.scene.overrideMaterial = null;
+        this.camera.layers.set(0);
+      }
       this.renderer.shadowMap.autoUpdate = sm;
-      this.scene.overrideMaterial = null;
-      this.camera.layers.set(0);
     }
     this.onFrame?.();
   }
@@ -2009,8 +2021,8 @@ export class Scene3D {
     glowGeo.translate(0, 0, 0.15);
     const glowMat = this.glowMaterial();
     this.atlas = new SignAtlas(T, (x, w, h, key) => { const k = key.indexOf("|"); paintSign(x, w, h, key.slice(0, k) as VehicleKind, key.slice(k + 1)); });
-    this.busInst = new BusInstances(T, this.proto!, this.hullGeo, this.hullMat, glowGeo, glowMat, this.atlas, BUS_SCALE, XRAY);
-    this.trolleyInst = new BusInstances(T, this.trolleyProto!, this.hullGeo, this.hullMat, glowGeo, glowMat, this.atlas, BUS_SCALE, XRAY);
+    this.busInst = new BusInstances(T, this.proto!, this.hullGeo, this.hullMat, glowGeo, glowMat, this.atlas, BUS_SCALE, XRAY, XRAY_HULL);
+    this.trolleyInst = new BusInstances(T, this.trolleyProto!, this.hullGeo, this.hullMat, glowGeo, glowMat, this.atlas, BUS_SCALE, XRAY, XRAY_HULL);
     for (const inst of [this.busInst, this.trolleyInst]) {
       scene.add(inst.root);
       for (const mat of inst.seenMaterials) { mat.stencilWrite = true; mat.stencilRef = 1; mat.stencilFunc = T.AlwaysStencilFunc; mat.stencilZPass = T.ReplaceStencilOp; }
@@ -2149,6 +2161,10 @@ export class Scene3D {
     this.drawnRot.clear();
     this.hullGeo = null;
     this.hullMat = null;
+    this.xray?.dispose();
+    this.xray = null;
+    this.xrayFlat?.dispose();
+    this.xrayFlat = null;
     this.tramProto = null;
     this.sun = null;
     this.ground = null;

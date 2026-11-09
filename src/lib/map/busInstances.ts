@@ -5,7 +5,7 @@
 // - both destination displays are one mesh whose picture is a cell of a shared atlas (a slot per line number, an
 //   instanced offset picks it), so buses of different lines still share one draw;
 // - the delay glow is one more instanced plane, coloured per bus, drawn only for those that have one;
-// - the hull (one box) casts the shadow and is the X-ray's shape, instanced too.
+// - the hull (one box) casts the shadow, instanced too; the X-ray (xray.ts) shows the parts themselves.
 import type * as Three from "three";
 
 export const SIGN_W = 512, SIGN_H = 72;        // one display's picture (Scene3D.sign drew the same size)
@@ -90,7 +90,7 @@ export class BusInstances {
    *  shadow and X-ray box; glowMat: the glow's material (white: each bus's colour multiplies it). */
   constructor(private T: typeof Three, proto: Three.Group, hullGeo: Three.BufferGeometry, hullMat: Three.Material,
     glowGeo: Three.BufferGeometry, glowMat: Three.Material, private atlas: SignAtlas, private scale: number,
-    xrayLayer: number, cap = 256) {
+    xrayLayer: number, hullLayer: number, cap = 256) {
     this.cap = cap;
     this.root = new T.Group();
     this.root.name = "bus-instances";
@@ -105,6 +105,7 @@ export class BusInstances {
       const mat = me.material as Three.Material;
       if (me.name === "beam") { this.beam = this.mesh(geo, instancedBeam(mat as Three.ShaderMaterial)); this.beam.renderOrder = 5; return; }
       const im = this.mesh(geo, mat);
+      im.layers.enable(xrayLayer);   // seen through what hides it, as itself (xray.ts)
       if (me.name === "plate") {
         // White in the model: each bus's colour multiplies it.
         im.material = new T.MeshLambertMaterial({ color: 0xffffff });
@@ -122,13 +123,12 @@ export class BusInstances {
     }
     this.hull = this.mesh(hullGeo, hullMat);
     this.hull.castShadow = true;
-    this.hull.layers.enable(xrayLayer);
+    this.hull.layers.enable(hullLayer);   // the X-ray's outline (xray.ts)
     this.glow = this.mesh(glowGeo, glowMat);
     this.glow.renderOrder = -1;
     this.glow.instanceColor = new T.InstancedBufferAttribute(new Float32Array(cap * 3), 3);
   }
 
-  // The bus's own parts are not on the X-ray's layer: its hull alone stands for it there.
   private mesh(geo: Three.BufferGeometry, mat: Three.Material): Three.InstancedMesh {
     const im = new this.T.InstancedMesh(geo, mat, this.cap);
     im.instanceMatrix.setUsage(this.T.DynamicDrawUsage);
