@@ -11,7 +11,7 @@ export interface Road { coords: LngLat[]; half: number; oneway?: boolean; bus?: 
 interface Seg { ax: number; ay: number; bx: number; by: number; road: number; half: number; oneway: boolean; bus: number; s0: number }
 // s: metres along the road's centreline (from its first point) where the hit is.
 export interface Hit { x: number; y: number; d: number; road: number; half: number; nx: number; ny: number; tx: number; ty: number; bus: number; s: number }
-interface Cand extends Hit { score: number }
+export interface Cand extends Hit { score: number }
 
 const CELL = 40;   // metres per grid cell
 const KERB_GAP = 1.95;   // a lane's centre at least this far in from the kerb: half the painted route, and 20 cm
