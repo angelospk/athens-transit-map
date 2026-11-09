@@ -3,18 +3,28 @@ import { BACK_PERIOD, LAT_PERIOD, spacingTargets, springStep, type Car, type Gap
 
 const LEN = 15.6, LANE = 3.6, WIDE = 3.25;
 // Heading north (0°): y grows ahead.
-const car = (key: string, y: number, v: number, x = 0, heading: number | null = 0): Car => ({ key, x, y, heading, v, moving: v > 1 });
+const car = (key: string, y: number, v: number, x = 0, heading: number | null = 0, fix?: [number, number]): Car => ({ key, x, y, heading, v, moving: v > 1, fix });
+// Its GPS fix level with the other's (the data has it passing).
+const passing = (c: Car, other: Car): Car => ((other.fix ??= [other.x, other.y]), { ...c, fix: [other.x, other.y] });
 const t = (cars: Car[], now = new Map<string, Gap>()) => spacingTargets(cars, now, LEN, LANE, WIDE);
 
 describe("spacingTargets", () => {
   it("leaves buses apart alone", () => {
     expect([...t([car("a", 0, 8), car("b", 60, 8)]).values()]).toEqual([{ lat: 0, back: 0 }, { lat: 0, back: 0 }]);
   });
-  it("pulls out early, before it reaches a slower one ahead", () => {
-    // 25 m apart (not touching yet), closing at 6 m/s: it would be there in under 3 s.
-    expect(t([car("a", 0, 9), car("b", 25, 3)]).get("a")).toEqual({ lat: LANE, back: 0 });
+  it("pulls out early, before it reaches a slower one ahead, where their fixes have it passing", () => {
+    // 25 m apart (not touching yet), closing at 6 m/s: it would be there in under 3 s; its fix level with the other's.
+    const b = car("b", 25, 3);
+    expect(t([passing(car("a", 0, 9), b), b]).get("a")).toEqual({ lat: LANE, back: 0 });
     // Same gap, the same speed: no reason to pass.
     expect(t([car("a", 0, 6), car("b", 25, 6)]).get("a")!.lat).toBe(0);
+  });
+  it("does not pass where the fixes have it behind: it keeps in line, however it is drawn closing in", () => {
+    const r = t([car("a", 0, 9, 0, 0, [0, 0]), car("b", 10, 3, 0, 0, [0, 10])]);
+    expect(r.get("a")!.lat).toBe(0);
+    expect(r.get("a")!.back).toBeGreaterThan(0);
+    // and none known: the same
+    expect(t([car("a", 0, 9), car("b", 10, 3)]).get("a")!.lat).toBe(0);
   });
   it("keeps the passing one out once it is ahead, until it is clear", () => {
     const now = new Map<string, Gap>([["a", { lat: LANE, back: 0 }]]);
@@ -33,9 +43,10 @@ describe("spacingTargets", () => {
     expect(t([car("a", 0, 0), car("b", 4, 0, 2.6)]).get("a")!.back).toBeGreaterThan(0);
   });
   it("passes on the right when there is no road on the left, and keeps in line when there is none either side", () => {
-    const right = spacingTargets([car("a", 0, 9), car("b", 25, 3)], new Map(), LEN, LANE, WIDE, (_c, side) => side === -1);
+    const b25 = car("b", 25, 3), b10 = car("b", 10, 3);
+    const right = spacingTargets([passing(car("a", 0, 9), b25), b25], new Map(), LEN, LANE, WIDE, (_c, side) => side === -1);
     expect(right.get("a")).toEqual({ lat: -LANE, back: 0 });
-    const none = spacingTargets([car("a", 0, 9), car("b", 10, 3)], new Map(), LEN, LANE, WIDE, () => false);
+    const none = spacingTargets([passing(car("a", 0, 9), b10), b10], new Map(), LEN, LANE, WIDE, () => false);
     expect(none.get("a")!.lat).toBe(0);
     expect(none.get("a")!.back).toBeGreaterThan(0);
     // out on the right already: it stays out on the right until clear
@@ -51,13 +62,13 @@ describe("spacingTargets", () => {
 
 // The two together over time, as scene3d runs them at 30 frames a second: a fast bus catching a slow one never
 // touches it (it is out of the lane before they meet), and stands in line behind it when both stop.
-function run(speeds: (t: number) => [number, number], start: [number, number], secs: number) {
+function run(speeds: (t: number) => [number, number], start: [number, number], secs: number, fixes = false) {
   const g = new Map<string, Gap & { latV: number; backV: number }>([["a", { lat: 0, back: 0, latV: 0, backV: 0 }], ["b", { lat: 0, back: 0, latV: 0, backV: 0 }]]);
   let [ya, yb] = start, worst = Infinity, maxStep = 0;
   for (let t = 0; t < secs; t += 1 / 30) {
     const [va, vb] = speeds(t);
     ya += va / 30; yb += vb / 30;
-    const want = spacingTargets([car("a", ya, va), car("b", yb, vb)], g, LEN, LANE, WIDE);
+    const want = spacingTargets([car("a", ya, va, 0, 0, fixes ? [0, yb] : undefined), car("b", yb, vb, 0, 0, fixes ? [0, yb] : undefined)], g, LEN, LANE, WIDE);
     for (const k of ["a", "b"]) {
       const s = g.get(k)!, w = want.get(k)!, lat0 = s.lat;
       [s.lat, s.latV] = springStep(s.lat, s.latV, w.lat, LAT_PERIOD, 1 / 30);
@@ -71,7 +82,7 @@ function run(speeds: (t: number) => [number, number], start: [number, number], s
 }
 describe("spacing over time", () => {
   it("passes without touching, and smoothly", () => {
-    const r = run(() => [9, 3], [0, 40], 20);
+    const r = run(() => [9, 3], [0, 40], 20, true);   // the fixes have it passing
     expect(r.worst).toBeGreaterThanOrEqual(WIDE - 0.3);
     expect(r.maxStep).toBeLessThan(0.15);   // metres a frame sideways: a glide, not a jump
   });
@@ -109,8 +120,8 @@ describe("across each other", () => {
 describe("on a bend", () => {
   it("does not pull out to pass while either is turning: it falls in line behind instead", () => {
     const cars = [
-      { key: "a", x: 0, y: 0, heading: 0, v: 9, moving: true, turning: true },
-      { key: "b", x: 0, y: 16, heading: 0, v: 4, moving: true },
+      { key: "a", x: 0, y: 0, heading: 0, v: 9, moving: true, turning: true, fix: [0, 16] as [number, number] },
+      { key: "b", x: 0, y: 16, heading: 0, v: 4, moving: true, fix: [0, 16] as [number, number] },
     ];
     const out = spacingTargets(cars, new Map(), 12, 3.4);
     expect(out.get("a")!.lat).toBe(0);

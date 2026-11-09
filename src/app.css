@@ -329,6 +329,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .label3d::after { content: ""; position: absolute; left: 9px; top: 100%; width: 10px; height: 10px; margin-top: -6px; transform: rotate(45deg);
   box-sizing: border-box; background: var(--glass-strong); border-right: 1px solid var(--label-edge); border-bottom: 1px solid var(--label-edge);
   clip-path: polygon(100% 0, 100% 100%, 0 100%); }
+.label3d.num { padding: 4px; border-radius: 12px; }
 .label3d.picked { box-shadow: 0 0 0 2px var(--accent), var(--glass-rim); }
 .label3d:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .label3d .b { flex: none; display: inline-flex; align-items: center; justify-content: center; height: 26px; min-width: 26px; padding: 0 8px; box-sizing: border-box;

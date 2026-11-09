@@ -32,50 +32,6 @@ export function swayMaterial(T: typeof Three, time: Clock, flat = false): Three.
   return mat;
 }
 
-/** Rain: thin streaks falling through a box that follows the view. The scene sets its centre (uCenter) and its size
- *  (uBox, metres across, to cover what is in view) each frame, so the rain fills the screen at any zoom. */
-export function rain(T: typeof Three, time: Clock, dark: boolean, count = 14000): Three.LineSegments {
-  const seeds = new Float32Array(count * 2 * 3), ends = new Float32Array(count * 2);
-  for (let i = 0; i < count; i++) {
-    const sx = Math.random(), sy = Math.random(), sz = Math.random();
-    for (const e of [0, 1]) {
-      seeds.set([sx, sy, sz], (i * 2 + e) * 3);
-      ends[i * 2 + e] = e;
-    }
-  }
-  const g = new T.BufferGeometry();
-  g.setAttribute("position", new T.BufferAttribute(new Float32Array(count * 2 * 3), 3));   // unused: placed in the shader
-  g.setAttribute("seed", new T.BufferAttribute(seeds, 3));
-  g.setAttribute("end", new T.BufferAttribute(ends, 1));
-  const mat = new T.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    uniforms: { uTime: time, uCenter: { value: new T.Vector2() }, uBox: { value: 200 }, uColor: { value: new T.Color(dark ? 0xd4dce8 : 0x6f8098) },
-      uAlpha: { value: dark ? 0.6 : 0.5 } },
-    vertexShader: `
-      attribute vec3 seed; attribute float end;
-      uniform float uTime; uniform vec2 uCenter; uniform float uBox;
-      varying float vFade;
-      void main() {
-        float BOX = uBox, H = clamp(uBox * 0.35, 60.0, 260.0);
-        vec2 drift = vec2(0.9, 0.3) * uTime;                       // a light wind
-        vec2 xy = uCenter + mod(seed.xy * BOX + drift - uCenter, BOX) - BOX * 0.5;
-        float z = H - mod(uTime * 11.0 + seed.z * H, H);              // 11 m/s
-        z += end * 2.2;                                               // the streak's length
-        xy -= end * vec2(0.09, 0.03);
-        vFade = smoothstep(0.0, 6.0, z) * (1.0 - smoothstep(H - 10.0, H, z)) * (0.4 + 0.6 * end);
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(xy, z, 1.0);
-      }`,
-    fragmentShader: `
-      uniform vec3 uColor; uniform float uAlpha; varying float vFade;
-      void main() { gl_FragColor = vec4(uColor, uAlpha * vFade); }`,
-  });
-  const lines = new T.LineSegments(g, mat);
-  lines.frustumCulled = false;
-  lines.renderOrder = 10;
-  return lines;
-}
-
 /** The beam of a bus's two headlights on the road ahead (+x), as a soft additive cone: night only. */
 export function headlightBeam(T: typeof Three): Three.Mesh {
   const len = 14, wide = 7;

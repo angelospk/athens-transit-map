@@ -13,7 +13,7 @@ import { metres, TREE_TILE_Z as TILE_Z, tilesIn, yaw, type LngLat } from "../map
 import { BACK_PERIOD, LAT_PERIOD, MOVE_OFF, MOVE_ON, springStep, spacingTargets, type Car, type Gap } from "./spacing";
 import { covers, decode, type AthensRoads, type RoadsFile, type Widths } from "../athensRoads";
 import { RoadIndex, Track } from "../roadSnap";
-import { headlightBeam, lampCone, rain, swayMaterial, type Clock } from "./shaders";
+import { headlightBeam, lampCone, swayMaterial, type Clock } from "./shaders";
 import type { Look3D } from "./look3d";
 import type { DelayClass } from "../format";
 import { depthAt, ISLANDS, TRACK_GAP, trackGapAt, type Livery, DEPTH, metroStops } from "./metroDepth";
@@ -28,7 +28,7 @@ import { Turners } from "../turn";
 export type VehicleKind = "bus" | "trolley" | "tram" | "metro";
 // trail (trams): where its front has been, oldest first, in metres east and north of TRAIL_ORIGIN, about 1 m apart.
 // glow: how late it is (format.ts delayClass): a glow under the model, green on time, orange late, red very late.
-type Bus = { pos: LngLat; heading: number | null; color: string; kind: VehicleKind; label: string; glow: DelayClass; trail?: [number, number][]; livery?: Livery; laid?: boolean };
+type Bus = { pos: LngLat; heading: number | null; color: string; kind: VehicleKind; label: string; glow: DelayClass; trail?: [number, number][]; livery?: Livery; laid?: boolean; fix?: LngLat };   // fix: its last GPS fix (spacing: who passes whom)
 // A box's ±x face lays its texture's width along the box's z (our up), so a picture drawn upright, w wide and h high,
 // goes on a canvas h wide and w high, turned a quarter: one way for the front (+x), the other for the back, so both
 // read the right way from their side.
@@ -62,8 +62,7 @@ const TRAM_WIDE = 1.25;   // a tram as wide and tall as the buses look (its leng
 const TRAM_TRACK = 0;
 const TRAIL_ORIGIN: LngLat = [23.73, 37.98];
 const TKX = 111320 * Math.cos((TRAIL_ORIGIN[1] * Math.PI) / 180), TKY = 110540;   // the model a third bigger than life: as wide as its painted lane, readable from above
-export const RAIN_ZOOM = 17;
-const READY_MS = 15000;   // the loading screen waits at most this long   // rain only this close to the street
+const READY_MS = 15000;   // the loading screen waits at most this long
 export const STREET_ZOOM = 16;
 const ROAD_NUDGE_M = 12;   // a bus on its shape moves onto the road running its way this close (OASA's shapes are coarse)
 const SHAPE_RIGHT = 1.7;
@@ -142,12 +141,6 @@ function roofTile(flat: boolean): { width: number; height: number; data: Uint8Ar
 
 // ?shaders=1: in development, three.js reads back every shader's compile log again (to see a broken shader's error).
 const FORCED_SHADER_CHECK = typeof location !== "undefined" && new URLSearchParams(location.search).get("shaders") === "1";
-
-// ?rain=1 / ?rain=0: read when the module loads, before the app rewrites the address with its own state.
-const FORCED_RAIN: boolean | null = (() => {
-  const v = typeof location !== "undefined" ? new URLSearchParams(location.search).get("rain") : null;
-  return v === "1" ? true : v === "0" ? false : null;
-})();
 
 // three.js (~170 kB gzipped) loads once, on demand: when 3D is turned on, or earlier, when the 3D button is pointed
 // at (preloadThree), so the switch is quick.
@@ -404,13 +397,8 @@ export class Scene3D {
   private built: { at: LngLat; reach: number } | null = null;
   private athens: AthensRoads | null = null;
   private inside: boolean | null = null;   // the view's centre in the streets' area (the base map's roads hidden there)
-  // Shaders (shaders.ts): one clock; rain only while it rains in Athens (Open-Meteo, every 10 minutes; ?rain=1 or
-  // ?rain=0 in the address forces it); no motion with reduced motion; at most ~30 redraws a second while it moves.
+  // Shaders (shaders.ts): one clock; no motion with reduced motion.
   private time: Clock = { value: 0 };
-  private rainMesh: Three.LineSegments | null = null;
-  private raining = false;
-  private weatherAt = 0;
-  private tick = 0;
   private sky: unknown = undefined;
   // Street lights: a pole on the pavement, an arm over the road, a lamp head; at night a cone of light under it.
   private lamps: { pole: LngLat; head: LngLat }[] = [];
@@ -474,7 +462,6 @@ export class Scene3D {
       map.touchPitch.enable();
       if (map.getPitch() < 30) map.easeTo({ pitch: 60, zoom: Math.max(map.getZoom(), 16.5), duration: 900 });
     }
-    void this.weather();
     void this.streets();
     this.T = await (this.loading ??= preloadThree());
     if (!this.on || this.map !== map || !this.styleReady) return;   // off again, or a new style: restyled() adds it
@@ -556,6 +543,9 @@ export class Scene3D {
     if (kind === "tram" || (kind === "metro" && !nb.laid)) this.tramTrail(nb);
     if (this.on && this.layer) this.map?.triggerRepaint();
   }
+
+  /** Where a bus's last GPS fix is (not where it is drawn): spacing lets one pass another only where these say so. */
+  setFix(key: string, at: LngLat) { const b = this.buses.get(key); if (b) b.fix = at; }
 
   /** A metro train's cars laid along its own track (metroDepth.trackBehind: [lon, lat], oldest first, the front last),
    *  instead of along where its front has been: they follow the rails exactly. */
@@ -722,7 +712,7 @@ export class Scene3D {
   }
 
   // Underground on (a metro train picked, or the «Υπόγεια» button): only the underground. The street level goes: its
-  // streets, buildings, lamps, stops and rain hidden, the trees let go (their memory freed; loaded again after), the
+  // streets, buildings, lamps and stops hidden, the trees let go (their memory freed; loaded again after), the
   // map under a dark veil, so the tunnels and the trains in them stand alone. Kept across a restyle (addStyle).
   under = false;   // read by MapView (labels, discs)
   setUnder(on: boolean) {
@@ -1756,9 +1746,6 @@ export class Scene3D {
         self.trolleyProto = mergeParts(T, buildTrolley(T, self.dark));
         self.tramProto = buildTram(T, self.dark);
         for (const car of self.tramProto.children) if (car.userData.len != null) mergeParts(T, car);
-        self.rainMesh = rain(T, self.time, self.dark);
-        self.rainMesh.visible = false;
-        self.scene.add(self.rainMesh);
         self.plates.clear();
         self.groups.clear();
         self.trees.clear();
@@ -1833,21 +1820,7 @@ export class Scene3D {
       if (this.poolsIdle) (window.cancelIdleCallback ?? clearTimeout)(this.poolsIdle);
       this.poolsIdle = (window.requestIdleCallback ?? ((f: () => void) => setTimeout(f, 60)))(() => { this.poolsIdle = 0; if (this.on) this.pools(); }, { timeout: 400 });
     }
-    if (Date.now() - this.weatherAt > 600_000) void this.weather();
     return this.loadTrees();
-  }
-
-  private async weather() {
-    if (FORCED_RAIN != null) { this.raining = FORCED_RAIN; return; }
-    if (!this.map || Date.now() - this.weatherAt < 60_000) return;
-    this.weatherAt = Date.now();
-    const [lon, lat] = this.map.getCenter().toArray();
-    try {
-      const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(3)}&longitude=${lon.toFixed(3)}&current=precipitation`);
-      const j = (await r.json()) as { current?: { precipitation?: number } };
-      this.raining = (j.current?.precipitation ?? 0) > 0.05;
-      this.map?.triggerRepaint();
-    } catch { /* no weather: no rain */ }
   }
 
   private async loadTrees() {
@@ -1971,7 +1944,7 @@ export class Scene3D {
           g.h = b.heading; g.hT = now;
         }
       }
-      cars.push({ key, x, y, heading: b.heading, v: g.v, moving: g.moving, turning: g.turning });
+      cars.push({ key, x, y, heading: b.heading, v: g.v, moving: g.moving, turning: g.turning, fix: b.fix && this.local(b.fix) });
     }
     for (const k of this.gaps.keys()) if (!this.buses.has(k)) this.gaps.delete(k);
     // Out to pass only where there is road to pull out onto (a lane's width to that side, on a carriageway): not into
@@ -2090,27 +2063,6 @@ export class Scene3D {
     this.sun!.target.position.set(cx, cy, 0);
     this.ground!.position.set(cx, cy, 0.05);
     if (!this.still) this.time.value = performance.now() / 1000;
-    // Rain only close to the street (further out it would be a block of streaks over the city), in a box as wide
-    // as the view: twice the distance from the centre to the farthest corner of the screen, within 150-1200 m.
-    const rainOn = this.raining && z >= RAIN_ZOOM && !this.under;
-    if (this.rainMesh) {
-      this.rainMesh.visible = rainOn;
-      if (rainOn) {
-        const u = (this.rainMesh.material as Three.ShaderMaterial).uniforms;
-        (u.uCenter.value as Three.Vector2).set(cx, cy);
-        const cv = m.getCanvas(), w = cv.clientWidth, h = cv.clientHeight;
-        let far = 0;
-        for (const pt of [[0, 0], [w, 0], [0, h], [w, h]] as [number, number][]) {
-          const [x, y] = this.local(m.unproject(pt).toArray() as LngLat);
-          far = Math.max(far, Math.hypot(x - cx, y - cy));
-        }
-        u.uBox.value = Math.min(1200, Math.max(150, 2 * far));
-      }
-    }
-    // Wind in the trees and the rain move on their own: ask for the next frame (about 30 a second).
-    if (!this.still && !this.tick && rainOn) {
-      this.tick = window.setTimeout(() => { this.tick = 0; if (this.on) this.map?.triggerRepaint(); }, 33);
-    }
     const l = new T.Matrix4().makeTranslation(this.ref.x, this.ref.y, this.ref.z).scale(new T.Vector3(this.scale, -this.scale, this.scale));
     this.camera.projectionMatrix = new T.Matrix4().fromArray(main).multiply(l);
     this.renderer.resetState();
@@ -2307,8 +2259,6 @@ export class Scene3D {
       if (this.sky !== undefined && this.styleReady) m.setSky((this.sky ?? undefined) as never);
     }
     this.sky = undefined;
-    this.rainMesh?.geometry.dispose();
-    this.rainMesh = null;
     for (const mesh of this.lampMeshes) mesh.dispose();
     this.lampMeshes = [];
     for (const mesh of this.stopMeshes) mesh.dispose();

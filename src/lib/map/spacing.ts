@@ -1,20 +1,23 @@
 // Two 3D buses on one lane never sit inside each other (scene3d draws them where their GPS puts them, and two of them
 // close behind one another often overlap). For each pair going the same way, side by side closer than a bus's width:
-// - both under way: the one behind pulls out to the lane on its left (or, with no road there, on its right: canPass)
-//   early enough to pass (as soon as it is closing in and would reach the one ahead within LOOKAHEAD_S), stays out
-//   until it is clear by CLEAR_M, then glides back; with no lane either side, it keeps in line behind instead;
+// - both under way: the one behind passes only where their GPS says it does: its last fix level with the other's, or
+//   ahead of it (PASS_M), not because it is drawn closing in (the motion between fixes is a guess). Then it pulls out
+//   to the lane on its left (or, with no road there, on its right: canPass), stays out until it is clear by CLEAR_M,
+//   then glides back. Else, or with no lane either side, it keeps in line behind;
 // - the one ahead standing (at a stop, at the lights): the one behind comes into line behind it, and so on down the
 //   queue, however its GPS has it.
 // These are targets; scene3d moves each vehicle to its own on a spring (no jumps), turned a little as it steers.
 
-export interface Car { key: string; x: number; y: number; heading: number | null; v: number; moving: boolean; turning?: boolean }   // local metres; v: m/s; turning: its heading is changing (a bend, a junction)
+export interface Car { key: string; x: number; y: number; heading: number | null; v: number; moving: boolean; turning?: boolean; fix?: [number, number] }   // local metres; v: m/s; turning: its heading is changing (a bend, a junction); fix: where its last GPS fix is (local metres)
 export interface Gap { lat: number; back: number }   // metres to the left of its way (right: negative), and back along it
 
 // Moving or standing, with a margin between (GPS speeds jitter): moving from MOVE_ON, standing below MOVE_OFF.
 export const MOVE_ON = 1.5, MOVE_OFF = 0.6;
 const SAME_WAY = 70;       // degrees: two going roughly the same way (one of them turning, or placed askew) are kept apart too
-const LOOKAHEAD_S = 6;     // pull out this long before it would reach the one ahead (early: a driver changes lane well before)
+const LOOKAHEAD_S = 9;     // pull out this long before it would reach the one ahead (early: a driver changes lane well before)
+const PULL_M = 20;         // and at least this far back from it
 const CLEAR_M = 4;         // and back in once this far past it
+const PASS_M = 2;          // its fix no more than this behind the other's: the data has it passing
 
 const dirOf = (h: number): [number, number] => [Math.sin((h * Math.PI) / 180), Math.cos((h * Math.PI) / 180)];
 const turn = (a: number, b: number) => Math.abs(((a - b) % 360 + 540) % 360 - 180);
@@ -63,7 +66,7 @@ export function spacingTargets(cars: Car[], now: Map<string, Gap>, len: number, 
       }
       const reach = need + CLEAR_M + Math.max(a.v, b.v) * LOOKAHEAD_S;
       if (dx * dx + dy * dy > reach * reach) continue;
-      const d = dirOf(a.heading), along = dx * d[0] + dy * d[1], side = -dx * d[1] + dy * d[0];
+      const d = dirOf(a.heading), along = dx * d[0] + dy * d[1], side = -dx * d[1] + dy * d[0], side0 = side;
       if (Math.abs(side) >= width) continue;   // side by side apart already (another lane)
       const gap = Math.abs(along);
       const [ahead, behind] = along >= 0 ? [b, a] : [a, b];
@@ -73,13 +76,20 @@ export function spacingTargets(cars: Car[], now: Map<string, Gap>, len: number, 
         out.get(ahead.key)!.lat = lane * Math.sign(now.get(ahead.key)!.lat);   // it passed: out until it is clear
       } else if (behind.moving && (ahead.moving || outNow(behind))) {
         // Both under way (or it is passing already): it pulls out early enough to pass, where there is a lane.
-        const soon = need + closing * LOOKAHEAD_S;
+        const soon = need + Math.max(PULL_M, closing * LOOKAHEAD_S);
         if (gap < soon || (outNow(behind) && gap < need + CLEAR_M)) {
-          // Not on a bend or through a junction (either of them turning): it stays in line behind till the road runs
-          // straight again. One already out carries on past.
-          const side = (behind.turning || ahead.turning) && !outNow(behind) ? 0 : sideOf(behind);
-          if (side) out.get(behind.key)!.lat = lane * side;
-          else queue(behind, ahead, need + closing, gap);   // nowhere to pass, or a bend: in line behind
+          // Only where the data has it passing (its fix level with the other's or ahead); not on a bend or through a
+          // junction (either of them turning): it stays in line behind till then. One already out carries on past.
+          const passing = !!behind.fix && !!ahead.fix
+            && (behind.fix[0] - ahead.fix[0]) * d[0] + (behind.fix[1] - ahead.fix[1]) * d[1] >= -PASS_M;
+          const side = ((behind.turning || ahead.turning || !passing) && !outNow(behind)) ? 0 : sideOf(behind);
+          if (side) {
+            out.get(behind.key)!.lat = lane * side;
+            // Not yet out beside it (how far apart sideways they are drawn now): it holds back till it is, so it
+            // never drives into the other while pulling out.
+            const apart = Math.abs(side0 + ((now.get(behind.key)?.lat ?? 0) - (now.get(ahead.key)?.lat ?? 0)) * (along >= 0 ? -1 : 1));
+            if (apart < width) queue(behind, ahead, need, gap);
+          } else queue(behind, ahead, need + closing, gap);   // nowhere to pass, or a bend: in line behind
         }
       } else {
         // The one ahead stands (a stop, the lights): it comes into line behind it, slowing in time.

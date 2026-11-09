@@ -951,6 +951,7 @@
         d.wrap.classList.toggle("filtered", !shown);
         if (scene3d.on) {
           if (shown) scene3d.upsert(e.key, placed?.pos ?? pos, placed?.heading ?? d.heading, app.lineColor(e.line).bg, app.lineInfo.get(e.line)?.kind === "trolley" ? "trolley" : "bus", e.line, e.cls); else scene3d.drop(e.key);
+          scene3d.setFix(e.key, e.pos);   // its last GPS fix (spacing: who passes whom)
           if (shown && z >= BUS_ZOOM) labelAt.set(e.key, placed?.pos ?? pos);
           const label = etaLabel(e);
           if (d.eta.textContent !== label) d.eta.textContent = label;
@@ -966,6 +967,7 @@
           const placed = placeOn(e, pos, h ?? chasedHeading);
           if (placed.heading != null) chasedHeading = placed.heading;
           scene3d.upsert(e.key, placed.pos, placed.heading, app.lineColor(e.line).bg, app.lineInfo.get(e.line)?.kind === "trolley" ? "trolley" : "bus", e.line, e.cls);
+          scene3d.setFix(e.key, e.pos);   // its last GPS fix (spacing: who passes whom)
           chaseTo(placed.pos, placed.heading);
           chasedCity = e.key;
           if (e.key === infoKey) infoAt = placed.pos;
@@ -974,6 +976,7 @@
           if (city3d && city3d.size < CITY_3D && shown && o && !cull!(pos)) {
             const placed = placeOn(e, pos, h);
             scene3d.upsert(e.key, placed.pos, placed.heading, app.lineColor(e.line).bg, app.lineInfo.get(e.line)?.kind === "trolley" ? "trolley" : "bus", e.line, e.cls);
+            scene3d.setFix(e.key, e.pos);   // its last GPS fix (spacing: who passes whom)
             city3d.add(e.key);
             at = placed.pos;
             labelAt.set(e.key, at);
@@ -1296,6 +1299,9 @@
   // models): each placed at its model's roof as the 3D draws it (scene3d.screenAt, onFrame).
   let labelLayer: HTMLDivElement | null = null;
   const narrowLabels = () => innerWidth < 720;
+  // Further out than FULL_LABEL_ZOOM a label is only its line's number (the one opened keeps the whole of it).
+  const FULL_LABEL_ZOOM = 18;
+  const numberOnly = (key: string) => key !== app.bus3d && (map?.getZoom() ?? 0) < FULL_LABEL_ZOOM;
   const escHtml = (t: string) => t.replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]!);
   function busOf(key: string) {
     const [line, id] = key.split("/");
@@ -1317,6 +1323,7 @@
     const tram = key.startsWith("tram/"), v = app.stasyTrains.find(x => x.trip === key.slice(key.indexOf("/") + 1));
     if (!v) return "";
     const chip = `<span class="b" style="background:${escHtml(v.route_color || "#0a7cc4")};color:#fff">${escHtml(v.line)}</span>`;
+    if (numberOnly(key)) return chip;
     const eta = minsTo(v.to.at, now);
     if (narrowLabels()) return chip + `<em>${escHtml(eta)}</em>`;
     return chip + `<span class="t"><b>${escHtml(titleCase(v.to.name))}</b><small>${tram ? "επόμενη στάση" : "επόμενος σταθμός"}</small></span><span class="m"><b>${escHtml(eta)}</b></span>`;
@@ -1326,6 +1333,7 @@
     const { line, v, route } = busOf(key), c = app.lineColor(line), late = lateness(v?.delay_s ?? null);
     const next = route?.ahead[0], eta = next ? minsTo(next.at, now) : "";
     const chip = `<span class="b" style="background:${escHtml(c.bg)};color:${escHtml(c.fg)}">${escHtml(line)}</span>`;
+    if (numberOnly(key)) return chip;
     if (narrowLabels()) return chip + (eta || late.short ? `<em class="${late.tone === "none" ? "" : late.tone}">${escHtml(eta || late.short)}</em>` : "");
     const head = v?.variant ? app.statics[line]?.variants[v.variant]?.headsign : undefined;
     const name = next ? next.name : head ? `→ ${titleCase(placeNote(toward(head)).place)}` : "";
@@ -1336,7 +1344,7 @@
     const m = map!;
     const keys: string[] = [];
     if (m.getZoom() >= LABEL_ZOOM && want.size) {
-      const c = m.getCenter(), k = Math.cos((c.lat * Math.PI) / 180), [bw, bh] = narrowLabels() ? [84, 34] : [214, 54];
+      const c = m.getCenter(), k = Math.cos((c.lat * Math.PI) / 180), [bw, bh] = m.getZoom() < FULL_LABEL_ZOOM ? [52, 34] : narrowLabels() ? [84, 34] : [214, 54];
       // The open one first, then nearest the centre; one that would cover another on the screen is left out.
       const taken: { x: number; y: number }[] = [];
       const d = (p: LngLat) => Math.hypot((p[0] - c.lng) * k, p[1] - c.lat);
@@ -1381,10 +1389,11 @@
       const picked = app.bus3d === k || (app.train?.kind === "metro" && k === `metro/${app.train.id}`);   // (a metro key in bus3d too)
       l.el.classList.toggle("picked", picked);
       l.el.setAttribute("aria-expanded", String(app.bus3d === k));
-      if (now - l.at > 2) {
+      if (now - l.at > 2 || numberOnly(k) !== l.el.classList.contains("num")) {   // (zoomed across FULL_LABEL_ZOOM: at once)
         l.at = now;
         const html = labelHtml(k, now);
-        if (html !== l.html) { l.html = html; l.el.innerHTML = html; l.el.hidden = !html; }   // nothing to say: no empty box
+        if (html !== l.html) { l.html = html; l.el.innerHTML = html; l.el.hidden = !html; }
+        l.el.classList.toggle("num", numberOnly(k));   // nothing to say: no empty box
       }
     }
     rideLabels();
