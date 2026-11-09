@@ -106,7 +106,7 @@ describe("PoseSmoother", () => {
     expect(at(39)).toBeLessThan(89);   // turning already, its front at the corner
     let worst = 0;
     for (let i = 1; i < hs.length; i++) { const dd = hs[i][0] - hs[i - 1][0]; if (dd > 0) worst = Math.max(worst, Math.abs(((hs[i][1] - hs[i - 1][1] + 540) % 360) - 180) / dd); }
-    expect(worst).toBeLessThan(9);     // degrees a metre of its place: no tighter than a bus turns
+    expect(worst).toBeLessThan(13);     // degrees a metre of its place: no tighter than a bus turns
     expect(Math.abs(((at(70) + 540) % 360) - 180)).toBeLessThan(2);   // straight north again
   });
 

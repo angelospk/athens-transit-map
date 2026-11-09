@@ -89,7 +89,7 @@ export class BusInstances {
   /** proto: the model as mergeParts left it (along +x, its named parts "plate", "sign" and "beam" apart); hull: the
    *  shadow and X-ray box; glowMat: the glow's material (white: each bus's colour multiplies it). */
   constructor(private T: typeof Three, proto: Three.Group, hullGeo: Three.BufferGeometry, hullMat: Three.Material,
-    glowGeo: Three.BufferGeometry, glowMat: Three.Material, private atlas: SignAtlas, private scale: number,
+    glowGeo: Three.BufferGeometry, glowMat: Three.Material, private atlas: SignAtlas, private scale: number, private wide: number,
     xrayLayer: number, hullLayer: number, cap = 256) {
     this.cap = cap;
     this.root = new T.Group();
@@ -156,7 +156,7 @@ export class BusInstances {
     let g = 0;
     for (let i = 0; i < n; i++) {
       const p = poses[i];
-      this.m4.makeRotationZ(p.rot).scale(this.sc.set(s, s, s)).setPosition(p.x, p.y, 0);
+      this.m4.makeRotationZ(p.rot).scale(this.sc.set(s, this.wide, s)).setPosition(p.x, p.y, 0);
       for (const im of this.parts) im.setMatrixAt(i, this.m4);
       this.hull.setMatrixAt(i, this.m4);
       if (this.beam) this.beam.setMatrixAt(i, this.m4);

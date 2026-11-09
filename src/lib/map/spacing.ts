@@ -30,6 +30,7 @@ const HEADWAY_S = 1.2;     // ...and this much more per m/s it drives at (a driv
 const CROSS_M = 5;         // across each other: the one giving way stops this far clear of the other...
 const CROSS_S = 1;         // ...and this much farther per m/s it drives at (it slows well before, not at the other's side)
 const EDGE_M = 1.8;        // the most two going opposite ways edge to their right
+const SIDE_GAP = 0.8;      // two side by side keep at least this between them (next lanes: they edge apart)
 
 const dirOf = (h: number): [number, number] => [Math.sin((h * Math.PI) / 180), Math.cos((h * Math.PI) / 180)];
 const turn = (a: number, b: number) => Math.abs(((a - b) % 360 + 540) % 360 - 180);
@@ -94,11 +95,15 @@ export function spacingTargets(cars: Car[], now: Map<string, Gap>, len: number, 
         // Which: the one whose way runs into the other (its front's road straight on meets the other's body).
         if (pass) continue;
         for (const [behind, ahead] of [[a, b], [b, a]] as const) {
+          // Only for one coming across (a bus standing by a junction, at its stop, is not crossing anything: a straight
+          // look ahead on a bending road "met" it, and the bus waited for a minute); and not once its data has long
+          // gone on (held PASS_LAG_M back already): then it goes, the hard pass keeps them apart.
+          if (lagging(behind)) continue;
           const margin = CROSS_M + CROSS_S * behind.v;
           if ((ahead.x - behind.x) ** 2 + (ahead.y - behind.y) ** 2 > (len + width + margin) ** 2) continue;
           const ga = now.get(ahead.key), ua = dirOf(ahead.heading!), lat = ga?.lat ?? 0, bk = ga?.back ?? 0;
           const ox = ahead.x - ua[1] * lat - ua[0] * bk, oy = ahead.y + ua[0] * lat - ua[1] * bk;
-          const hit = runInto(behind.x, behind.y, behind.heading!, ox, oy, ahead.heading!, len, width);
+          const hit = ahead.moving ? runInto(behind.x, behind.y, behind.heading!, ox, oy, ahead.heading!, len, width) : null;
           let need = hit != null && hit <= margin ? margin - hit : 0;
           // Already inside one another (its front past the other's side): the one with the other in front of it backs
           // off as far as it takes to be clear.
@@ -115,7 +120,18 @@ export function spacingTargets(cars: Car[], now: Map<string, Gap>, len: number, 
       const reach = need + CLEAR_M + Math.max(a.v, b.v) * LOOKAHEAD_S;
       if (dx * dx + dy * dy > reach * reach) continue;
       const d = dirOf(a.heading), along = dx * d[0] + dy * d[1], side = -dx * d[1] + dy * d[0], side0 = side;
-      if (Math.abs(side) >= width) continue;   // side by side apart already (another lane)
+      if (Math.abs(side) >= width + SIDE_GAP) continue;   // side by side apart already (another lane)
+      if (Math.abs(side) >= width) {
+        // In the next lane, but drawn closer than SIDE_GAP (the models are wider than life, the lanes are not):
+        // each edges a little away from the other while they are level, as two drivers keep their distance.
+        if (!pass && Math.abs(along) < len) {
+          const k = Math.min(EDGE_M / 2, (width + SIDE_GAP - Math.abs(side)) / 2);
+          const ta = out.get(a.key)!, tb = out.get(b.key)!, away = Math.sign(side);   // b to a's left: a goes right, b left
+          if (Math.abs(ta.lat) < k) ta.lat = -away * k;
+          if (Math.abs(tb.lat) < k) tb.lat = away * k;
+        }
+        continue;
+      }
       // Which is ahead is where they are drawn (each held back by its own gap), not where their places are: a guess
       // that has run on past one standing at a stop stays behind it until the data has it passing. The gap is then
       // signed, from its place to the other's: below 0 when its place is past the other's.
@@ -267,7 +283,9 @@ export function separate(boxes: Box[], len: number, w: number, passes = 3): Map<
       const da = dirOf(ahead.h), db = dirOf(behind.h);
       // Neither has the other in front of it (they part, side by side or back to back): moving one back would drive it
       // through the other; they are left to part.
-      if (!behind.fresh && (ahead.x - behind.x) * db[0] + (ahead.y - behind.y) * db[1] <= 0 && (behind.x - ahead.x) * da[0] + (behind.y - ahead.y) * da[1] <= 0) continue;
+      // (Going the same way, side by side, the one drawn behind is still moved back.)
+      if (!behind.fresh && da[0] * db[0] + da[1] * db[1] < 0.34
+        && (ahead.x - behind.x) * db[0] + (ahead.y - behind.y) * db[1] <= 0 && (behind.x - ahead.x) * da[0] + (behind.y - ahead.y) * da[1] <= 0) continue;
       // Going opposite ways: moving one back would only drive it backwards; they edge apart sideways instead.
       if (da[0] * db[0] + da[1] * db[1] < -0.5) continue;
       let s = backToClear(ahead, behind, len, w);

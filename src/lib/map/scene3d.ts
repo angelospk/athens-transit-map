@@ -50,8 +50,10 @@ export const MAX_PITCH_3D = 80;    // the tilt allowed in 3D (see enable): short
 export const BUILD_ZOOM = 15;   // the buildings stand up from here; below it the base map's flat ones (memory: a tilted view sees far)
 const BUS_SCALE = 1.3;
 const BUS_LEN = 12 * BUS_SCALE;   // the models are 12 m long (buildBus, buildTrolley), drawn larger
+const RELEASE = 4;                // m/s: how fast a bus's held-back target may fall (spaced)
 const LANE_W = 4.8;               // how far a bus pulls out to pass: a lane and a good gap beside the other (they are drawn 1.3× wide)
-const BUS_WIDE = 2.5 * BUS_SCALE;  // the models are 2.5 m wide: side by side closer than this, two buses touch
+const BUS_WIDTH = 1.12;           // drawn this much wider than life, not BUS_SCALE: two in next lanes had no gap left
+const BUS_WIDE = 2.5 * BUS_WIDTH;  // the models are 2.5 m wide: side by side closer than this, two buses touch
 const TRAM_WIDE = 1.25;   // a tram as wide and tall as the buses look (its length real: its cars follow the track)
 // A tram rides on its direction's line itself (metro.json has one per direction, a few metres apart), where its rails
 // are drawn: no shift to the side, so the model sits on them whichever way the line was drawn.
@@ -1761,7 +1763,7 @@ export class Scene3D {
   // and its drawn speed (follow: it brakes and pulls away as a bus does, never backwards), its speed over its last
   // positions, whether it moves (with a margin), its place last frame, and when the gaps were last moved.
   private gaps = new Map<string, Gap & Follow & { latV: number; v: number; moving: boolean; at?: [number, number]; t?: number;
-    h?: number; hT?: number; turning?: boolean; px?: number; py?: number }>();
+    h?: number; hT?: number; turning?: boolean; px?: number; py?: number; hold?: number }>();
   private gapsAt = 0;
   private spaced(now: number): Map<string, { x: number; y: number; turn: number }> {
     const out = new Map<string, { x: number; y: number; turn: number }>();
@@ -1812,8 +1814,11 @@ export class Scene3D {
       const jumped = g.px != null && Math.hypot(c.x - g.px, c.y - (g.py ?? 0)) > 30, fresh = g.px == null || jumped;
       if (h != null && dt && g.px != null && !jumped) {
         const d = unit(h);
-        follow(g, (c.x - g.px) * d[0] + (c.y - g.py!) * d[1], t.back, dt);
-      } else if (jumped) { g.back = 0; g.u = 0; }
+        // The target it keeps: up at once, down at most RELEASE m/s, so one that comes and goes between frames (a
+        // turning bus's look ahead sweeping across another) does not stop it and start it again and again.
+        g.hold = Math.max(t.back, (g.hold ?? 0) - RELEASE * dt);
+        follow(g, (c.x - g.px) * d[0] + (c.y - g.py!) * d[1], g.hold, dt);
+      } else if (jumped) { g.back = 0; g.u = 0; g.hold = 0; }
       g.px = c.x; g.py = c.y;
       if (h == null) continue;
       const d = unit(h);
@@ -2021,8 +2026,8 @@ export class Scene3D {
     glowGeo.translate(0, 0, 0.15);
     const glowMat = this.glowMaterial();
     this.atlas = new SignAtlas(T, (x, w, h, key) => { const k = key.indexOf("|"); paintSign(x, w, h, key.slice(0, k) as VehicleKind, key.slice(k + 1)); });
-    this.busInst = new BusInstances(T, this.proto!, this.hullGeo, this.hullMat, glowGeo, glowMat, this.atlas, BUS_SCALE, XRAY, XRAY_HULL);
-    this.trolleyInst = new BusInstances(T, this.trolleyProto!, this.hullGeo, this.hullMat, glowGeo, glowMat, this.atlas, BUS_SCALE, XRAY, XRAY_HULL);
+    this.busInst = new BusInstances(T, this.proto!, this.hullGeo, this.hullMat, glowGeo, glowMat, this.atlas, BUS_SCALE, BUS_WIDTH, XRAY, XRAY_HULL);
+    this.trolleyInst = new BusInstances(T, this.trolleyProto!, this.hullGeo, this.hullMat, glowGeo, glowMat, this.atlas, BUS_SCALE, BUS_WIDTH, XRAY, XRAY_HULL);
     for (const inst of [this.busInst, this.trolleyInst]) {
       scene.add(inst.root);
       for (const mat of inst.seenMaterials) { mat.stencilWrite = true; mat.stencilRef = 1; mat.stencilFunc = T.AlwaysStencilFunc; mat.stencilZPass = T.ReplaceStencilOp; }

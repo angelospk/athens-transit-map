@@ -72,9 +72,16 @@ describe("spacingTargets", () => {
     expect(spacingTargets([car("a", 18, 9), car("b", 0, 3)], now, LEN, LANE, WIDE, () => true).get("a")!.lat).toBe(-LANE);
   });
   it("leaves buses side by side apart, or going the other way", () => {
-    const side = t([car("a", 0, 0), car("b", 4, 0, 3.5)]);
+    const side = t([car("a", 0, 0), car("b", 4, 0, 4.2)]);
     const back = t([car("a", 0, 0), car("b", 4, 0, 3.5, 180)]);
     for (const r of [side, back]) expect([...r.values()].every(g => g.lat === 0 && g.back === 0)).toBe(true);
+  });
+  it("edges two in next lanes apart a little while they are level, so they never ride touching", () => {
+    const r = t([car("a", 0, 6), car("b", 4, 6, 3.5)]);   // b 3.5 m to a's right (east)
+    expect(r.get("a")!.lat).toBeGreaterThan(0);   // a edges left (west)
+    expect(r.get("b")!.lat).toBeLessThan(0);      // b edges right (east)
+    expect(3.5 + r.get("a")!.lat - r.get("b")!.lat).toBeGreaterThanOrEqual(WIDE + 0.8 - 1e-9);
+    expect(r.get("a")!.back + r.get("b")!.back).toBe(0);
   });
   it("edges two going opposite ways apart sideways when they are drawn inside each other, never back", () => {
     // b half a metre east of a, coming the other way: a (north) edges west, its left; b (south) edges east, its left.

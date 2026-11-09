@@ -24,8 +24,9 @@ const CREEP = 0.12;     // m/s sideways standing (a place moved while it stands:
 export const REAR_M = 3.4;   // the rear axle behind the model's middle (buildBus: 2.6 m, drawn 1.3 times larger)
 export const FRONT_M = 4.3;  // the front axle ahead of it (buildBus: 3.3 m)
 const WHEELBASE = REAR_M + FRONT_M;
-const TURN_PER_M = 6.5;      // degrees its front wheels turn it for each metre it drives: a turning circle of ~9 m
-const BODY_PER_M = 7.5;      // and the body at most this (the tightest a 12 m bus turns: about 7.5 m round)
+const TURN_PER_M = 11;       // degrees its front wheels turn it for each metre it drives (the route's corners are tight: slower, and it
+//                              lagged through every turn)
+const BODY_PER_M = 12;       // and the body at most this
 const ASTRAY_DEG = 150; // a heading this far from its way's: it has been put somewhere new facing the other way
 
 type State = { x: number; y: number; v: number; ex: number; ey: number; rx: number; ry: number; at: number; h: number | null;
