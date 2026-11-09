@@ -18,6 +18,8 @@ import type { Look3D } from "./look3d";
 import type { DelayClass } from "../format";
 import { depthAt, ISLANDS, TRACK_GAP, trackGapAt, type Livery, DEPTH, metroStops } from "./metroDepth";
 import { EntranceModels } from "./entrance/models";
+import { Landmarks } from "./landmarks";
+import { PARLIAMENT_IDS } from "./landmarks/syntagmaData";
 import type { Entrance3D } from "../entrances";
 import { Turners } from "../turn";
 
@@ -71,6 +73,8 @@ const XRAY = 1;
 // neighbour only within ~1 km of its edge. At STREET_ZOOM and closer the view is about that wide. (0.028 loaded six
 // tiles, 48 MB, which the map's worker then held at every zoom: 3 GB, and the browser dropped the page.)
 const ROAD_REACH = 0.012;
+// The base map's buildings modelled by hand (landmarks/), left out of its extrusions.
+const NOT_MODELLED = ["!", ["in", ["id"], ["literal", PARLIAMENT_IDS]]];
 const NO_ROADS: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 // The street's markings: lane lines, zebras, arrows, bus-lane words, junction islands. False draws it plain (asphalt,
 // kerbs and pavements; tried 2026-11-09), with athensRoads.decode's own flag.
@@ -1089,12 +1093,12 @@ export class Scene3D {
       if (!m.hasImage("x3d-windows")) m.addImage("x3d-windows", windowTile(), { pixelRatio: 2 });
       if (!m.hasImage("x3d-roof-tiles")) m.addImage("x3d-roof-tiles", roofTile(false), { pixelRatio: 2 });
       if (!m.hasImage("x3d-roof-flat")) m.addImage("x3d-roof-flat", roofTile(true), { pixelRatio: 2 });
-      m.addLayer({ id: "x3d-buildings", type: "fill-extrusion", source: SOURCE, "source-layer": "building", minzoom: BUILD_ZOOM,
+      m.addLayer({ id: "x3d-buildings", type: "fill-extrusion", source: SOURCE, "source-layer": "building", minzoom: BUILD_ZOOM, filter: NOT_MODELLED,
         paint: { "fill-extrusion-pattern": "x3d-windows", "fill-extrusion-height": H, "fill-extrusion-base": B, "fill-extrusion-opacity": 1 } } as never, before);
-      m.addLayer({ id: "x3d-roofs", type: "fill-extrusion", source: SOURCE, "source-layer": "building", minzoom: BUILD_ZOOM,
+      m.addLayer({ id: "x3d-roofs", type: "fill-extrusion", source: SOURCE, "source-layer": "building", minzoom: BUILD_ZOOM, filter: NOT_MODELLED,
         paint: { "fill-extrusion-pattern": ["step", H, "x3d-roof-tiles", TOON.roofTall, "x3d-roof-flat"],
           "fill-extrusion-base": H, "fill-extrusion-height": ["+", H, 0.6], "fill-extrusion-opacity": 1 } } as never, before);
-    } else m.addLayer({ id: "x3d-buildings", type: "fill-extrusion", source: SOURCE, "source-layer": "building", minzoom: BUILD_ZOOM,
+    } else m.addLayer({ id: "x3d-buildings", type: "fill-extrusion", source: SOURCE, "source-layer": "building", minzoom: BUILD_ZOOM, filter: NOT_MODELLED,
       // Three shades, picked by the building's id, so a block reads as separate buildings; taller ones a little lighter.
       paint: { "fill-extrusion-color": ["interpolate", ["linear"], ["coalesce", ["get", "render_height"], 10],
         0, ["match", ["%", ["coalesce", ["to-number", ["id"]], 0], 3], 0, c.bldA, 1, c.bldB, c.bldC], 40, c.bldTop],
@@ -1436,6 +1440,8 @@ export class Scene3D {
   // The metro's street entrances (public/entrances.json, or the admin's edits): sign, stairwell and lift models.
   private entrances = (() => { const e = new EntranceModels(); e.onChange = () => this.map?.triggerRepaint(); return e; })();
   setEntrances(list: Entrance3D[]) { this.entrances.set(list); }
+  // Landmarks modelled by hand (landmarks/): Σύνταγμα and the Βουλή. Their own buildings leave the base map's extrusions.
+  private landmarks = (() => { const l = new Landmarks(); l.onChange = () => this.map?.triggerRepaint(); return l; })();
   setClosedStations(names: string[]) { this.entrances.setClosed(names); }
 
   setStops(stops: LngLat[]) {
@@ -1759,6 +1765,7 @@ export class Scene3D {
     this.buildStops();
     this.buildBoards();
     if (this.scene) this.entrances.mount(this.scene, p => this.local(p));
+    if (this.scene) this.landmarks.mount(this.scene, p => this.local(p));
   }
 
   // Metres east and north of the origin.
@@ -2030,6 +2037,7 @@ export class Scene3D {
     for (const l of this.stopMeshes) l.visible = street;
     for (const l of this.boardMeshes) l.visible = street;
     this.entrances.show(street);
+    this.landmarks.show(street);
     this.ground!.visible = !this.under;
     // The sun and the shadow catcher follow the view.
     const [cx, cy] = this.local(m.getCenter().toArray() as LngLat);
