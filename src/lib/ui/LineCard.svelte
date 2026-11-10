@@ -13,6 +13,10 @@
   import DisruptionRows from "./DisruptionRows.svelte";
   import { forLine } from "../disruptions";
   import Timetable from "./Timetable.svelte";
+  import Icon from "./Icon.svelte";
+  import LineChip from "./LineChip.svelte";
+  import LineStop from "./LineStop.svelte";
+  import { titleCase } from "../nearby";
 
   let { app }: { app: AppState } = $props();
 
@@ -74,6 +78,12 @@
   const labels = $derived<(string | null)[]>(groups.length === 2 ? groups.map(g => g.to) : dirLabels(patterns, detail?.stops));
   const dir = $derived<0 | 1>(card?.dir ?? (card?.pattern ? patterns.find(p => p.id === card.pattern)?.direction : undefined) ?? 0);
   const label = $derived(detail?.line.label ?? detail?.line.name ?? nativeLine);
+  // Two named directions: the header says «προς X» / «από Y» and one ⇅ turns it round; else the two buttons.
+  const pair = $derived(labels.length === 2 && labels[0] !== null && labels[1] !== null);
+  // Names with accents (titleCase): its list comes with the stop index, so the names are drawn again when it lands.
+  // A bus line asks for the index anyway: its card shows the rider's stop (LineStop).
+  const tc = $derived.by(() => { void app.stopIx; return (x: string | null | undefined) => titleCase(x ?? ""); });
+  $effect(() => { if (isBus) void app.loadStops(); });
   // With the /v1 directions, a vehicle's own (OASA: 0) direction is no better than its pattern's: its headsign decides.
   const own = $derived(patterns === detail?.patterns ? vehicles : vehicles?.map(v => ({ ...v, direction: null })));
   const rows = $derived(detail && own ? lineVehicleRows(own, patterns, detail.stops, dir) : null);
@@ -112,8 +122,15 @@
   <CardSheet {app} key={card.id} starred={starred} starLabel={starred ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
     onstar={() => app.toggleFavLine({ id: card.id, label })}>
     {#snippet header()}
-      <span class="pill" style:--c={color.bg} style:--t={color.fg}>{label}</span>
-      <h2>{detail?.line.name ?? ""}</h2>
+      {#if isBus}<LineChip {label} bg={color.bg} fg={color.fg} oasa={app.cityId === "athens"} />
+      {:else}<span class="pill" style:--c={color.bg} style:--t={color.fg}>{label}</span>{/if}
+      {#if detail && pair}
+        <h2 class="to">προς {tc(labels[dir])}<small>από {tc(labels[dir === 0 ? 1 : 0])}</small></h2>
+        <button type="button" class="swap" aria-label="Η άλλη κατεύθυνση: προς {tc(labels[dir === 0 ? 1 : 0])}" title="Η άλλη κατεύθυνση"
+          onclick={() => pick(dir === 0 ? 1 : 0)}><Icon name="swap" size={18} /></button>
+      {:else}
+        <h2>{tc(detail?.line.name)}</h2>
+      {/if}
     {/snippet}
     <DisruptionRows alerts={disruptions} />
     {#if missing}
@@ -123,21 +140,26 @@
     {:else if !detail}
       <p class="muted">Φόρτωση…</p>
     {:else}
-      <div class="dirs" role="group" aria-label="Κατεύθυνση">
-        {#each labels as l, d (d)}
-          {#if l !== null}
-            <button type="button" aria-pressed={dir === d} onclick={() => pick(d as 0 | 1)}>→ {l}</button>
-          {/if}
-        {/each}
-      </div>
+      {#if !pair}
+        <div class="dirs" role="group" aria-label="Κατεύθυνση">
+          {#each labels as l, d (d)}
+            {#if l !== null}
+              <button type="button" aria-pressed={dir === d} onclick={() => pick(d as 0 | 1)}>→ {tc(l)}</button>
+            {/if}
+          {/each}
+        </div>
+      {/if}
+      {#if isBus && groups[dir]}
+        <LineStop {app} line={nativeLine} variants={groups[dir].variants} toward={groups[dir].to} />
+      {/if}
 
       <h3 class="sub">Οχήματα τώρα{rows ? ` · ${rows.length}` : ""}</h3>
       {#if rows?.length}
         <ul class="runs" aria-live="polite" aria-label="Τα οχήματα της κατεύθυνσης">
           {#each rows as r (r.id)}
             <li><button type="button" onclick={() => open(r.vehicle)}>
-              {#if r.label}<span class="lab">#{r.label}</span>{/if}
-              <span class="next">{r.next ?? "—"}</span>
+              <span class="lab" title={r.label ? `Όχημα ${r.label}` : undefined}><Icon name={isBus ? "bus" : "dot"} size={16} /></span>
+              <span class="next">{r.next ? tc(r.next) : "—"}</span>
               {#if r.delay_s !== null}<span class="delay">{fmtDelay(r.delay_s)}</span>{/if}
               <span aria-hidden="true" class="chev">›</span>
             </button></li>
@@ -174,7 +196,13 @@
   .runs button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 0 4px; margin: 0 -4px; border: 0;
     border-radius: 8px; background: none; color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
   .runs button:hover { background: var(--control); }
-  .lab { flex: none; min-width: 44px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .lab { flex: none; display: grid; place-items: center; width: 22px; color: var(--muted); }
+  h2.to { display: flex; flex-direction: column; min-width: 0; color: var(--fg); font-size: 16px; white-space: nowrap; }
+  h2.to small { overflow: hidden; text-overflow: ellipsis; }
+  h2.to small { color: var(--muted); font-size: 12px; font-weight: 500; }
+  .swap { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%;
+    background: var(--control); color: var(--fg); cursor: pointer; }
+  .swap:hover { background: var(--control-hover); color: var(--accent); }
   .next { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .delay { flex: none; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
   .chev { flex: none; color: var(--muted); }
