@@ -44,7 +44,7 @@
   };
 
   // «Οδηγίες εδώ» in the search modal: the trip planner opens and takes the place as its end.
-  $effect(() => { if (app.tripTo) pop = "trip"; });
+  $effect(() => { if (app.tripTo || app.tripFrom) pop = "trip"; });
 
   // The chevron: opens and closes the dropdown.
   function fold() {

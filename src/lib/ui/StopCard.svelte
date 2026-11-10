@@ -16,6 +16,9 @@
   import { reportedStops } from "../stopfix";
   import StopFixBar from "./StopFixBar.svelte";
   import { stopSource } from "../service";
+  import { titleCase } from "../nearby";
+  import { hhmm, stopPlace } from "../lineStop";
+  import LineChip from "./LineChip.svelte";
 
   // The tapped bus stop, laid out as the phone app's: the user's lines first («Οι γραμμές μου | Όλες»), each
   // line and headsign with its next bus in big minutes, where it is and whether it runs late, the next ones,
@@ -35,7 +38,7 @@
     return l?.kind === "bus-stop" ? l.code : null;
   });
   const id = $derived(stop ? stop[3] : early);
-  const name = $derived(stop?.[0] ?? board?.stop.name ?? top?.title ?? "Στάση");
+  const name = $derived(titleCase(stop?.[0] ?? board?.stop.name ?? top?.title ?? "Στάση"));
   const lines = $derived(ix && i != null ? linesAt(ix, i) : board ? boardLines(board) : []);
   // The star: the stop's /v2 id is <bus namespace>:<GTFS id>; an index from before the ids has none.
   const favId = $derived(id ? busId(id) : null);
@@ -84,6 +87,7 @@
   }
   const REFRESH_MS = 20_000, QUICK_RETRY_MS = 2_000;
   let failed = $state(false);
+  let updated = $state<number | null>(null);   // server time of the last board that loaded: «ζωντανά · 23:08»
   let now = $state(Date.now());   // set from app.serverMs() when a stop opens
   const groups = $derived(board ? arrivalGroups(board.arrivals, now) : []);
   const split = $derived(mineFirst(groups, mine));
@@ -100,6 +104,14 @@
   const dest = (g: { line: string; headsign: string; variant?: string }) =>
     (ix && i != null && g.variant ? headTo(ix, g.line, g.variant, i, g.headsign)
       : { to: (ix && i != null ? lineTowardAt(ix, g.line, i) : null) ?? toward(g.headsign), back: false });
+  const destOf = (g: { line: string; headsign: string; variant?: string }) => { const d = dest(g); return { ...d, to: titleCase(d.to) }; };
+  // «Πώς πάω εκεί» / «Ταξίδι από εδώ»: the trip planner with this stop as its end or its start.
+  function plan(end: "to" | "from") {
+    if (!ix || i == null) return;
+    const p = stopPlace(ix, i, name);
+    app.closeCards();
+    if (end === "to") app.tripTo = p; else app.tripFrom = p;
+  }
   const variantsOf = (line: string) => lines.find(l => l.line === line)?.variants ?? [];
 
   const boardOf = (r: FetchResult | undefined) => {
@@ -110,6 +122,7 @@
   $effect(() => {
     const sid = id;
     board = null;
+    updated = null;
     failed = !sid;   // an index from before the ids: no live arrivals
     if (!sid) return;
     const ac = new AbortController();
@@ -130,6 +143,7 @@
         const b = boardOf(r);
         if (b) {
           board = b;
+          updated = now;
           // Loaded once per page (api.ts): a tapped bus then shows its stops ahead with no wait.
           for (const l of linesToWarm(b.arrivals)) void fetchLineStatic(l).catch(() => {});
         }
@@ -158,7 +172,7 @@
 {/snippet}
 {#snippet chip(line: string)}
   {@const c = app.lineColor(line)}
-  <b class="chip" style:--bg={c.bg} style:--fg={c.fg}>{line}</b>
+  <LineChip label={line} bg={c.bg} fg={c.fg} oasa={app.cityId === "athens"} />
 {/snippet}
 
 {#if fixing}
@@ -184,6 +198,12 @@
       {/if}
       <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.closeCards()}>×</button>
     </header>
+    {#if ix && i != null}
+      <div class="acts">
+        <button type="button" onclick={() => plan("to")}><Icon name="route" size={16} />Πώς πάω εκεί</button>
+        <button type="button" onclick={() => plan("from")}><Icon name="area" size={16} />Ταξίδι από εδώ</button>
+      </div>
+    {/if}
     <DisruptionRows alerts={disruptions} lines={lineIds} />
     {#if app.alert}
       {@const a = app.alert}
@@ -204,7 +224,7 @@
           {#each shown as g (g.line + g.headsign)}
             {@const t = g.times[0]}
             {@const note = arrivalNote(t, app.cityInfo.gtfsHost === "citybus.gr")}
-            {@const d = dest(g)}
+            {@const d = destOf(g)}
             <li><button type="button" class="row" onclick={() => app.openLineAt(g.line, g.variant ? [g.variant] : variantsOf(g.line), t.vehicle)}>
               {@render chip(g.line)}
               <span class="mid"><span class="to" title={g.headsign}>→ {d.to}{#if d.back}{" "}<span class="back">(επιστροφή)</span>{/if}</span><small class={note.tone}>{note.text}</small></span>
@@ -222,7 +242,7 @@
         <ul class="also">
           {#each also as g (g.line + g.headsign)}
             {@const t = g.times[0]}
-            {@const d = dest(g)}
+            {@const d = destOf(g)}
             <li><button type="button" class="row" onclick={() => app.openLineAt(g.line, g.variant ? [g.variant] : variantsOf(g.line), t.vehicle)}>
               {@render chip(g.line)}
               <span class="to" title={g.headsign}>→ {d.to}{#if d.back}{" (επιστροφή)"}{/if}{#if t.away}{` · ${t.away} στάσεις`}{/if}</span>
@@ -235,7 +255,7 @@
       {#if usual.length}
         <ul class="usual" aria-label="Χωρίς λεωφορείο κοντά τώρα">
           {#each usual as u (u.line + u.headsign)}
-            {@const d = dest(u)}
+            {@const d = destOf(u)}
             <li><button type="button" class="row" onclick={() => app.openLineAt(u.line, variantsOf(u.line))}>
               {@render chip(u.line)}
               <span class="mid"><span class="to" title={u.headsign}>→ {d.to}{#if d.back}{" (επιστροφή)"}{/if}</span><small>{u.text}</small></span>
@@ -249,12 +269,16 @@
           {#each quiet as l (l.line)}
             {@const c = app.lineColor(l.line)}
             {@const to = ix && i != null ? lineTowardAt(ix, l.line, i) : null}
-            <button type="button" class="q" aria-label="Γραμμή {l.line}{to ? ` προς ${to}` : ""}"
-              onclick={() => app.openLineAt(l.line, l.variants)}><b class="chip" style:--bg={c.bg} style:--fg={c.fg}>{l.line}</b>{#if to}<span class="qto">→ {to}</span>{/if}</button>
+            <button type="button" class="q" aria-label="Γραμμή {l.line}{to ? ` προς ${titleCase(to)}` : ""}"
+              onclick={() => app.openLineAt(l.line, l.variants)}><LineChip label={l.line} bg={c.bg} fg={c.fg} oasa={app.cityId === "athens"} />{#if to}<span class="qto">→ {titleCase(to)}</span>{/if}</button>
           {/each}
         </div>
       {/if}
-      <p class="src">{stopSource(app.cityInfo.gtfsHost, app.cityInfo.service)}{#if failed}{" "}Η τελευταία ενημέρωση απέτυχε.{/if}</p>
+      {#if app.cityInfo.gtfsHost === "citybus.gr"}
+        <p class="src">{stopSource(app.cityInfo.gtfsHost, app.cityInfo.service)}{#if failed}{" "}Η τελευταία ενημέρωση απέτυχε.{/if}</p>
+      {:else}
+        <p class="src live" class:stale={failed} title="Ανανεώνεται μόνο του κάθε 20″, από το GPS των λεωφορείων">{#if failed}Η τελευταία ενημέρωση απέτυχε{:else}<span class="dot" aria-hidden="true"></span>ζωντανά{/if}{#if updated}{` · ${hhmm(updated)}`}{/if}</p>
+      {/if}
     {:else if failed}
       <p>{id ? "Δεν φόρτωσαν οι αφίξεις. Ξαναδοκιμάζω σε 20″." : "Οι αφίξεις δεν είναι διαθέσιμες. Ανανέωσε τη σελίδα."}</p>
     {:else}
@@ -262,7 +286,7 @@
     {/if}
     {#if (id && at) || code}
       <div class="foot">
-        {#if id && at}<p class="fix">{#if sent}Έστειλες τη θέση αυτής της στάσης. Ευχαριστούμε!{:else}<button type="button" class="link" onclick={startFix}>Λάθος θέση στάσης;</button>{/if}</p>{/if}
+        {#if id && at}<p class="fix">{#if sent}Έστειλες τη θέση αυτής της στάσης. Ευχαριστούμε!{:else}<button type="button" class="fixbtn" onclick={startFix}><Icon name="pin" size={15} />Λάθος θέση;</button>{/if}</p>{/if}
         {#if code}<p class="code">Κωδ. στάσης <b>{code}</b></p>{/if}
       </div>
     {/if}
@@ -300,8 +324,6 @@
     font-weight: 600; cursor: pointer; white-space: nowrap; }
   .seg button + button { border-left: 1px solid var(--border); }
   .seg button[aria-pressed="true"] { background: var(--control); }
-  .chip { flex: none; min-width: 40px; padding: 5px 7px; border: 0; border-radius: 7px; background: var(--bg); color: var(--fg);
-    font: inherit; font-size: 13px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; box-sizing: border-box; }
   ul { list-style: none; margin: 0; padding: 0; }
   .arr li { display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--border); }
   .row { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 6px 0; border: 0; background: none;
@@ -333,7 +355,6 @@
   .quiet { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 0 0; color: var(--muted); font-size: 12px; }
   .quiet .q { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0; border: 0; background: none;
     color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; text-align: left; }
-  .quiet .chip { min-width: 34px; min-height: 28px; padding: 2px 7px; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; }
   .quiet .qto { margin-right: 6px; }
   .empty { margin: 12px 0; font-size: 13px; }
   .on { margin-bottom: 8px; color: var(--accent); }
@@ -343,7 +364,17 @@
   .fix { margin: 0; font-size: 12px; }
   .code { margin: 0 0 0 auto; font-size: 12px; color: var(--muted); user-select: all; }
   .code b { font-weight: 600; font-variant-numeric: tabular-nums; }
-  .fix .link { min-height: 32px; color: var(--muted); }
+  .fixbtn { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 12px; border: 1px solid var(--border);
+    border-radius: 17px; background: none; color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .fixbtn:hover { background: var(--control); color: var(--fg); }
+  .acts { display: flex; gap: 8px; margin: 0 0 10px; }
+  .acts button { flex: 1; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px;
+    padding: 0 10px; border: 0; border-radius: 10px; background: var(--control); color: var(--fg); font: inherit; font-size: 13px;
+    font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .acts button:hover { background: var(--control-hover); }
+  .src.live { display: flex; align-items: center; gap: 6px; }
+  .src .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ontime); }
+  .src.stale { color: var(--late2); }
   header .bell { margin-top: -2px; }
   .starbtn { flex: none; width: 36px; height: 36px; margin: -4px -4px 0 0; border: 0; background: none; color: var(--muted); font-size: 20px;
     cursor: pointer; border-radius: 8px; }

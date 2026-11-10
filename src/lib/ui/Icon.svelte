@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  export type IconName = "star" | "star-filled" | "bus" | "metro" | "tram" | "suburban" | "pin" | "stop" | "area" | "street" | "dot" | "walk" | "chevron";
+  export type IconName = "star" | "star-filled" | "bus" | "metro" | "tram" | "suburban" | "pin" | "stop" | "area" | "street" | "dot" | "walk" | "chevron" | "swap" | "directions" | "route";
 </script>
 
 <script lang="ts">
@@ -30,6 +30,12 @@
     <circle cx="11" cy="3.6" r="1.6" /><path d="M9.6 7.2 7.2 9.4v2.6M9.6 7.2l1.6 4.2 2.6 1.6M9.6 7.2l2.6.4 1.4 2.4M10.4 10l-2 7.5M11.2 11.4l1.2 6.1" />
   {:else if name === "chevron"}
     <path d="M5.5 8l4.5 4.5L14.5 8" />
+  {:else if name === "swap"}
+    <path d="M6.5 16V4M3.5 7 6.5 4l3 3M13.5 4v12M10.5 13l3 3 3-3" />
+  {:else if name === "directions"}
+    <path d="M10 2.2 17.8 10 10 17.8 2.2 10z" /><path d="M7.6 12.2V10a1.4 1.4 0 0 1 1.4-1.4h3.6M11 6.9l1.7 1.7L11 10.3" />
+  {:else if name === "route"}
+    <circle cx="5" cy="15" r="2" /><circle cx="15" cy="5" r="2" /><path d="M7 15h5.5a2.5 2.5 0 0 0 0-5h-5a2.5 2.5 0 0 1 0-5H13" />
   {:else if name === "area"}
     <circle cx="10" cy="10" r="7" /><circle cx="10" cy="10" r="3" />
   {:else if name === "street"}

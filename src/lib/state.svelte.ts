@@ -136,6 +136,8 @@ export class AppState {
   finder = $state<"all" | "lines" | "stops" | "places" | null>(null);
   // A place from the search modal to plan a trip to: the panel opens the trip planner, which takes it as its end.
   tripTo = $state.raw<Place | null>(null);
+  // The same from a stop card's «Ταξίδι από εδώ»: the planner takes it as its start.
+  tripFrom = $state.raw<Place | null>(null);
   // Favourites only (B7): the map shows the favourite bus lines and not the city layer. The user's own cityOn
   // choice is kept in localStorage and comes back when this is off.
   favOnly = $state(stored("favOnly", true, isBool));

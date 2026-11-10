@@ -138,6 +138,20 @@
       next("to");
     });
   });
+  // From a stop card's «Ταξίδι από εδώ» (app.tripFrom): the start; the end is asked for next.
+  $effect(() => {
+    const p = app.tripFrom;
+    if (!p) return;
+    untrack(() => {
+      app.tripFrom = null;
+      stopSearch();
+      openField = null;
+      locGen.from++;
+      if (locating === "from") locating = null;
+      ends = { ...ends, from: { text: p.label, place: p } };
+      next("from");
+    });
+  });
 
   function locate(f: Field) {
     const g = ++locGen[f];
