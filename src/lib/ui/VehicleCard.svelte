@@ -1,11 +1,12 @@
 <script lang="ts">
-  // The card of a tapped vehicle. A bus: from the line's live data (the stops ahead with their estimated
-  // times, and a bell on each). A train, metro or tram: from /v2 (its run's stops ahead, a bell on each: web
-  // push when this train nears that stop), asked again every 20 s.
+  // The card of a tapped vehicle. A bus: from the line's live data (every stop of its route: the passed ones
+  // muted, the ones ahead with their estimated minutes and a bell on each). A train, metro or tram: from /v2
+  // (its run's stops ahead, a bell on each: web push when this train nears that stop), asked again every 20 s.
   import { untrack } from "svelte";
   import { isBusId } from "../busNs";
   import { fetchV2Line, fetchV2LineVehicles, fetchV2Run } from "../api";
   import { upcomingStops } from "../eta";
+  import { minutesText, passedStops, runTime } from "../busRun";
   import { CITYBUS } from "../citybus";
   import { PAGE_CITY } from "../config";
   import { ageLabel, delayText, fmtDelay } from "../format";
@@ -36,12 +37,50 @@
     return { line: sv.line, v: sv.v, variant, st };
   });
   // A citybus.gr city sends no path_speeds; its vehicle speed comes from citybus.gr's own time to the next stop.
-  const ownSpeed = CITYBUS.some(c => c.slug === PAGE_CITY);
-  const ahead = $derived(bus?.st && bus.variant ? upcomingStops(bus.variant, bus.st.stops, bus.v, ownSpeed) : []);
+  const citybus = CITYBUS.some(c => c.slug === PAGE_CITY);
+  const ahead = $derived(bus?.st && bus.variant ? upcomingStops(bus.variant, bus.st.stops, bus.v, citybus) : []);
+  const passed = $derived(bus?.st && bus.variant && ahead.length ? passedStops(bus.variant, bus.st.stops, ahead[0].i) : []);
+  // A citybus.gr vehicle id is a trip slot, not a bus number: the card names the run («Δρομολόγιο 17:20»), not the id.
+  const busMeta = $derived.by(() => {
+    if (!bus) return "";
+    if (!citybus) return `${delayText(bus.v.delay_s)} · #${bus.v.id}`;
+    const run = runTime(bus.v);
+    return run ? [`Δρομολόγιο ${run}`, bus.v.delay_s != null ? fmtDelay(bus.v.delay_s) : ""].filter(Boolean).join(" · ") : delayText(bus.v.delay_s);
+  });
   const busHead = $derived(bus?.variant?.headsign ? toward(bus.variant.headsign) : "");
   const busAge = $derived(bus ? app.serverNow / 1000 - bus.v.position_at : 0);
   // An old position (the server got nothing new for 2 min): a time it puts in the past is not «τώρα» but unknown.
   const busStale = $derived(busAge > 120);
+
+  // The stop list is a window of up to 8 rows over the whole route, so the card is no taller than with the
+  // stops ahead alone. It opens with the next stop on top and stays there while the bus moves on, until the
+  // list is scrolled away from that place (by a finger, the wheel, the keyboard, the scrollbar or the
+  // arrows) and again once it is scrolled back there; the two arrows page it and count the stops hidden
+  // each way.
+  const ROW = 36;
+  const rows = $derived(Math.min(8, ahead.length));
+  let hidden = $state.raw({ above: 0, below: 0 });
+  let follow = true, followKey = "";
+  // The scroll place that shows the next stop on top (near the route's end, as far down as the list goes).
+  const nextTop = (el: HTMLElement) => Math.min(el.querySelector<HTMLElement>("li.next")?.offsetTop ?? 0, el.scrollHeight - el.clientHeight);
+  function scrolled(el: HTMLElement) {
+    follow = Math.abs(el.scrollTop - nextTop(el)) < 2;
+    const above = Math.round(el.scrollTop / ROW);
+    const below = Math.max(0, Math.round((el.scrollHeight - el.scrollTop - el.clientHeight) / ROW));
+    const h = untrack(() => hidden);
+    if (h.above !== above || h.below !== below) hidden = { above, below };
+  }
+  function stopList(el: HTMLElement) {
+    void passed.length; void ahead.length;   // run again when the bus passes a stop
+    if (key !== followKey) { followKey = key; follow = true; }
+    if (follow) el.scrollTop = nextTop(el);
+    scrolled(el);
+  }
+  function page(e: MouseEvent, dir: -1 | 1) {
+    const el = (e.currentTarget as HTMLElement).closest(".stops")?.querySelector<HTMLElement>(".ahead");
+    if (!el) return;
+    el.scrollBy({ top: dir * Math.max(ROW, el.clientHeight - ROW), behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }
 
   // The alert form at one of those stops (AlertForm, loaded on the first bell): the stop's id and its place.
   let alertAt = $state.raw<{ id: string; i: number; from: number | null; name: string; line: string; variant: string } | null>(null);
@@ -130,13 +169,28 @@
       {#if bus}<span class="fresh" class:warn={busAge > 90}>{ageLabel(busAge)}</span>{/if}
     {/snippet}
     {#if bus}
-      <p class="meta">{delayText(bus.v.delay_s)} · #{bus.v.id}</p>
+      <p class="meta">{busMeta}</p>
       {#if ahead.length}
-        <p class="note" class:warn={busStale}>{busStale ? `Καμία νέα θέση εδώ και ${Math.round(busAge / 60)}′· οι ώρες μπορεί να μην ισχύουν` : "ώρες κατά προσέγγιση"}</p>
-        <ol class="ahead" aria-live="polite" aria-label="Επόμενες στάσεις">
-          {#each ahead.slice(0, 8) as a, k (a.id + "/" + a.i)}
+        <div class="stops">
+        <div class="bar">
+          <p class="note" class:warn={busStale}>{busStale ? `Καμία νέα θέση εδώ και ${Math.round(busAge / 60)}′· τα λεπτά μπορεί να μην ισχύουν` : "λεπτά κατά προσέγγιση"}</p>
+          {#if passed.length + ahead.length > rows}
+            <button type="button" class="pg" disabled={!hidden.above} title="Προηγούμενες στάσεις" aria-label="Προηγούμενες στάσεις: {hidden.above}"
+              onclick={e => page(e, -1)}>▲{#if hidden.above}<span>{hidden.above}</span>{/if}</button>
+            <button type="button" class="pg" disabled={!hidden.below} title="Επόμενες στάσεις" aria-label="Επόμενες στάσεις: {hidden.below}"
+              onclick={e => page(e, 1)}>▼{#if hidden.below}<span>{hidden.below}</span>{/if}</button>
+          {/if}
+        </div>
+        <ol class="ahead" aria-live="polite" aria-label="Στάσεις της διαδρομής" style:--rows={rows} {@attach stopList}
+          onscroll={e => scrolled(e.currentTarget)}>
+          {#each passed as a (a.id + "/" + a.i)}
+            <li class="passed">
+              <span class="t"></span><button type="button" class="name" title="Η στάση {a.name}" onclick={() => app.push(busStopCard(a.id, a.name))}>{a.name}</button>
+            </li>
+          {/each}
+          {#each ahead as a, k (a.id + "/" + a.i)}
             <li class:next={k === 0}>
-              <span class="t">{busStale && a.at * 1000 <= app.serverNow ? "—" : whenText(a.at, app.serverNow)}</span><button type="button" class="name" title="Η στάση {a.name}" onclick={() => app.push(busStopCard(a.id, a.name))}>{a.name}</button>
+              <span class="t">{busStale && a.at * 1000 <= app.serverNow ? "—" : minutesText(a.at, app.serverNow)}</span><button type="button" class="name" title="Η στάση {a.name}" onclick={() => app.push(busStopCard(a.id, a.name))}>{a.name}</button>
               {#if app.cityInfo.alerts}<button type="button" class="bell" class:on={alertAt?.id === a.id && alertAt.i === a.i} aria-expanded={alertAt?.id === a.id && alertAt.i === a.i}
                 title="Ειδοποίηση άφιξης σε αυτή τη στάση" aria-label="Ειδοποίηση άφιξης του {line} στη στάση {a.name}"
                 onclick={() => bellAt(a)}><Bell /></button>{/if}
@@ -146,6 +200,7 @@
             {/if}
           {/each}
         </ol>
+        </div>
       {:else if !bus.variant}
         <p class="muted">Φόρτωση δρομολογίου…</p>
       {/if}
@@ -221,6 +276,16 @@
   .note { margin: 8px 0 2px; font-size: 11px; color: var(--muted); }
   .note.warn { color: #e03131; }
   .ahead { list-style: none; margin: 0; padding: 0; }
+  /* The bus's list: a window of --rows rows over every stop of the route (the rail list has no --rows). */
+  .stops .ahead { position: relative; max-height: min(calc(var(--rows) * 36px), 36dvh); overflow-y: auto; overscroll-behavior: contain; }
+  /* The bar takes the room the note alone took (the arrows reach 2 px into the line above, at its empty right end), so the card keeps its height. */
+  .stops .bar { display: flex; align-items: flex-end; gap: 4px; margin-top: -6px; }
+  .stops .bar .note { flex: 1; min-width: 0; margin: 0 0 4px; }
+  .pg { flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-width: 40px; height: 28px; padding: 0 8px;
+    border: 0; border-radius: 8px; background: var(--control); color: var(--fg); font: inherit; font-size: 11px; font-variant-numeric: tabular-nums; cursor: pointer; }
+  .pg:hover:not(:disabled) { background: var(--control-hover); }
+  .pg:disabled { color: var(--muted); opacity: .45; cursor: default; }
+  .ahead li.passed { color: var(--muted); }
   .ahead li { display: flex; align-items: center; gap: 10px; min-height: 36px; font-size: 13px; }
   .ahead li.next .name { font-weight: 700; }
   .ahead li:not(.sched) .t { font-weight: 700; }

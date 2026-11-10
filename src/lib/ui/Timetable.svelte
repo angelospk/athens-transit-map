@@ -7,6 +7,8 @@
 
   // Today's runs of a route's direction (shown only while open): gone ones muted, a missed one (no bus
   // left the start for it) struck through, the next three bold. Asked again every 60 s (the server's cache).
+  // A citybus.gr city (source "citybus") shows only some of its buses, so it has no missed runs: a run a bus
+  // was seen on gets a tick, the one a bus is on now a dot, the rest of the past ones stay muted.
   let { line, headsign, now }: { line: string; headsign: string; now: number } = $props();
 
   const REFRESH_MS = 60_000;
@@ -39,18 +41,21 @@
   });
 
   const dir = $derived(sched ? matchDirection(sched.directions, headsign) : null);
-  const view = $derived(dir ? timetableView(dir, athensClock(now, sched!.date)) : null);
+  const soft = $derived(sched?.source === "citybus");
+  const view = $derived(dir ? timetableView(dir, athensClock(now, sched!.date), 3, !soft) : null);
 </script>
 
 {#if view}
   <p class="sum">
     {sched?.source === "oasa-daily" ? `Πρόγραμμα ημέρας ${agency}` : sched?.expired ? "Ενδεικτικά, από παλιό πρόγραμμα" : `Από το πρόγραμμα ${agency}`}
-    {#if view.known}· <span class:bad={view.seen < view.known}>έγιναν {view.seen} από {view.known} ως τώρα</span>{/if}
+    {#if soft}{#if view.seen}· φάνηκαν στον χάρτη {view.seen} από {view.past} ως τώρα{/if}
+    {:else if view.known}· <span class:bad={view.seen < view.known}>έγιναν {view.seen} από {view.known} ως τώρα</span>{/if}
   </p>
   {#if view.items.length}
     <ol class="runs" bind:this={list} aria-label="Δρομολόγια σήμερα">
       {#each view.items as it, i (i)}
-        <li class={it.state} title={it.state === "missed" ? "Δεν φάνηκε λεωφορείο να ξεκινά" : undefined}>{it.t}</li>
+        <li class={it.state} class:seen={soft && it.seen && !it.live} class:live={soft && it.live}
+          title={it.state === "missed" ? "Δεν φάνηκε λεωφορείο να ξεκινά" : soft && it.live ? "Λεωφορείο στον δρόμο τώρα" : soft && it.seen ? "Φάνηκε λεωφορείο στον χάρτη" : undefined}>{it.t}</li>
       {/each}
     </ol>
   {:else}
@@ -72,4 +77,8 @@
   .gone { color: var(--muted); }
   .missed { color: var(--late3); text-decoration: line-through; }
   .next { font-weight: 700; }
+  .seen { color: var(--fg); }
+  .seen::before { content: "✓ "; color: var(--ontime); }
+  .live { color: var(--accent); font-weight: 700; }
+  .live::before { content: "● "; font-size: 9px; vertical-align: 2px; }
 </style>

@@ -5,7 +5,8 @@
 import { API_BASE } from "./config";
 import { fold } from "./search";
 
-export interface ScheduleDeparture { t: string; trip: string; seen?: boolean }
+// `live` (a citybus.gr city): a bus is on that run now.
+export interface ScheduleDeparture { t: string; trip: string; seen?: boolean; live?: boolean }
 export interface ScheduleDirection { direction: number; headsign: string; departures: ScheduleDeparture[] }
 export interface Schedule { line: string; date: string; expired: boolean; source?: string; directions: ScheduleDirection[] }
 
@@ -43,20 +44,26 @@ export function athensClock(ms: number, day: string): number {
 }
 
 export type RunState = "gone" | "missed" | "next" | "later";
-export interface TimetableView { items: { t: string; state: RunState }[]; seen: number; known: number }
+// `seen` on an item: a bus was seen on that run; `live`: one is on it now. `past`: the runs gone by now.
+export interface TimetableView { items: { t: string; state: RunState; seen?: boolean; live?: boolean }[]; seen: number; known: number; past: number }
 
 // The runs of one direction at `nowMin` (athensClock): the next three marked, a missed one apart from
 // the others gone. A run with a seen flag is gone whatever the clock says (the hour repeated when clocks
-// go back). "24:10" (GTFS style, after midnight) shows as "00:10".
-export function timetableView(dir: ScheduleDirection, nowMin: number, next = 3): TimetableView {
+// go back). "24:10" (GTFS style, after midnight) shows as "00:10". `missed` false (a citybus.gr city: we
+// see only some of the buses, so a run with no bus seen is not known, never missed): seen false reads as
+// no flag.
+export function timetableView(dir: ScheduleDirection, nowMin: number, next = 3, missed = true): TimetableView {
   let left = next;
+  const flag = (d: ScheduleDeparture) => (d.seen === false && !missed ? undefined : d.seen);
   const items = dir.departures.map(d => {
     const [h, m] = d.t.split(":").map(Number);
     const min = h * 60 + m;
     const t = `${String(h % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-    const state: RunState = min < nowMin || d.seen != null ? (d.seen === false ? "missed" : "gone") : left-- > 0 ? "next" : "later";
-    return { t, state };
+    const seen = flag(d);
+    const state: RunState = min < nowMin || seen != null ? (seen === false ? "missed" : "gone") : left-- > 0 ? "next" : "later";
+    return { t, state, ...(seen ? { seen } : {}), ...(d.live ? { live: true } : {}) };
   });
-  const known = dir.departures.filter(d => d.seen != null);
-  return { items, seen: known.filter(d => d.seen).length, known: known.length };
+  const known = dir.departures.filter(d => flag(d) != null);
+  return { items, seen: known.filter(d => d.seen).length, known: known.length,
+    past: items.filter(i => i.state === "gone" || i.state === "missed").length };
 }

@@ -90,6 +90,19 @@ describe("timetableView", () => {
     const v = timetableView(dir("Χ", [["03:30", true], ["03:45", false], ["04:00"]]), 3 * 60 + 10);
     expect(v.items.map(i => i.state)).toEqual(["gone", "missed", "next"]);
   });
+  it("counts the runs past by the clock or seen", () => {
+    const v = timetableView(dir("Χ", [["10:00", true], ["10:30"], ["11:00", false], ["13:00"]]), 12 * 60);
+    expect(v.past).toBe(3);
+  });
+  it("without missed runs (a citybus.gr city), seen: false is a run not known", () => {
+    const d = dir("Χ", [["10:00", true], ["10:30", false], ["11:50", true], ["12:30", false], ["13:00", false]]);
+    d.departures[2].live = true;
+    const v = timetableView(d, 12 * 60, 3, false);
+    expect(v.items.map(i => i.state)).toEqual(["gone", "gone", "gone", "next", "next"]);
+    expect(v.items.map(i => !!i.seen)).toEqual([true, false, true, false, false]);
+    expect(v.items.map(i => !!i.live)).toEqual([false, false, true, false, false]);
+    expect([v.seen, v.known, v.past]).toEqual([2, 2, 3]);
+  });
   it("a run not yet known stays unmarked even if seen is missing", () => {
     const v = timetableView(dir("Χ", [["10:00"], ["10:30"]]), 12 * 60);
     expect(v.items.map(i => i.state)).toEqual(["gone", "gone"]);
