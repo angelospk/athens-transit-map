@@ -86,8 +86,8 @@ export const fetchLineStatic = (line: string) =>
 // The cards' data goes through one cache: a card opened again shows the last answer at once (peek)
 // and asks again only past the server's cache time.
 export const railCache = new SwrCache();
-const railGet = (url: string, ttl: number, mock: () => Promise<FetchResult>) =>
-  railCache.get(url, ttl, () => (import.meta.env.VITE_MOCK === "1" ? mock() : getJSON(url, AbortSignal.timeout(10_000))));
+const railGet = (url: string, ttl: number, mock: () => Promise<FetchResult>, from = url) =>
+  railCache.get(url, ttl, () => (import.meta.env.VITE_MOCK === "1" ? mock() : getJSON(from, AbortSignal.timeout(10_000))));
 
 export async function fetchSchedule(line: string, signal?: AbortSignal): Promise<FetchResult> {
   if (import.meta.env.VITE_MOCK === "1") return (await import("./mock")).mockSchedule(line);
@@ -107,8 +107,10 @@ export async function fetchRailMotion(signal?: AbortSignal): Promise<FetchResult
 
 // A bus stop's lines and live arrivals (backend, cached 15 s), shared like the rail boards.
 export const stopUrl = (id: string) => `${API_BASE}/v1/stops/${encodeURIComponent(id)}`;
-export const fetchStop = (id: string) =>
-  railGet(stopUrl(id), 15_000, async () => (await import("./mock")).mockStop(id));
+// fresh: past the 15 s caches (here, the browser's and the CDN's), for a board that may be from before a restart.
+export const fetchStop = (id: string, fresh = false) =>
+  railGet(stopUrl(id), fresh ? 0 : 15_000, async () => (await import("./mock")).mockStop(id),
+    fresh ? `${stopUrl(id)}?fresh=${Date.now()}` : undefined);
 export const peekStop = (id: string) => railCache.peek(stopUrl(id));
 
 // The unified /v2 API (v2.ts) for the cards: a Line with its patterns, its vehicles now, a Stop board, a Run.

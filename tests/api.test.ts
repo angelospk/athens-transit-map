@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchLines, fetchLineStatic, fetchV2Alerts, fetchV2Line, fetchV2LineVehicles, fetchV2Lines, fetchV2Run, fetchV2Stop, fetchV2Stops, getJSON, lineStaticUrl, lineUrl } from "../src/lib/api";
+import { fetchLines, fetchLineStatic, fetchV2Alerts, fetchV2Line, fetchV2LineVehicles, fetchV2Lines, fetchV2Run, fetchV2Stop, fetchV2Stops, fetchStop, getJSON, lineStaticUrl, lineUrl } from "../src/lib/api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -75,4 +75,18 @@ describe("api", () => {
     for (const r of await Promise.all([fetchV2LineVehicles("qa:good"), fetchV2Line("qa:good"), fetchV2Stop("qa:good"), fetchV2Run("qa:good")]))
       expect(r.status).toBe(200);
   });
+  it("fetchStop: a fresh ask passes every cache (memory, browser, CDN) and replaces the cached board", async () => {
+    let n = 0;
+    const f = vi.fn(async () => new Response(JSON.stringify({ stop: { id: "QA-FRESH" }, lines: [], arrivals: [], n: ++n }), { status: 200 }));
+    vi.stubGlobal("fetch", f);
+    await fetchStop("QA-FRESH");
+    await fetchStop("QA-FRESH");
+    expect(f).toHaveBeenCalledTimes(1);   // cached 15 s
+    const r = await fetchStop("QA-FRESH", true);
+    expect(f).toHaveBeenCalledTimes(2);
+    expect(String((f.mock.calls[1] as unknown[])[0])).toMatch(/\/v1\/stops\/QA-FRESH\?fresh=\d+$/);
+    expect((r.body as { n: number }).n).toBe(2);
+    expect(((await fetchStop("QA-FRESH")).body as { n: number }).n).toBe(2);   // the fresh copy is the cached one now
+  });
 });
+

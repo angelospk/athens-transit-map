@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { fetchLineStatic, fetchStop, peekStop } from "../api";
-  import { alertLinesAt, arrivalGroups, arrivalNote, boardLines, headTo, lineTowardAt, linesAt, linesToWarm, mineFirst, timeText, toward, twins, usualRows, scheduleRows, signCode, type ArrivalGroup, type ArrivalTime, type StopBoard } from "../stops";
+  import { alertLinesAt, arrivalGroups, arrivalNote, boardLines, headTo, lineTowardAt, linesAt, linesToWarm, mineFirst, timeText, trustBoard, EMPTY_RETRY_MS, toward, twins, usualRows, scheduleRows, signCode, type ArrivalGroup, type ArrivalTime, type StopBoard } from "../stops";
   import Bell from "./Bell.svelte";
   import type { AppState } from "../state.svelte";
   import type { FetchResult } from "../poller";
@@ -114,21 +114,25 @@
     if (!sid) return;
     const ac = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let busy = false, misses = 0;
+    let busy = false, misses = 0, empties = 0;
     now = app.serverMs();
-    board = boardOf(peekStop(sid));
+    const peeked = boardOf(peekStop(sid));
+    board = peeked && trustBoard(peeked, null, 0) ? peeked : null;   // an empty copy may be from before a restart
     const load = async () => {
       if (busy) return;
       clearTimeout(timer);
-      let quick = false;
+      let quick = false, unsure = false;
       if (document.visibilityState !== "hidden") {
         busy = true;
-        const r = await fetchStop(sid);
+        const r = await fetchStop(sid, empties > 0 && !board);   // a retry of an empty answer passes the caches
         busy = false;
         if (ac.signal.aborted) return;
         now = app.serverMs();
         const b = boardOf(r);
-        if (b) {
+        // An empty first answer is «not known yet» (stops.ts trustBoard): still «Φόρτωση», asked again soon.
+        unsure = !!b && !trustBoard(b, board, empties);
+        if (unsure) empties++;
+        else if (b) {
           board = b;
           // Loaded once per page (api.ts): a tapped bus then shows its stops ahead with no wait.
           for (const l of linesToWarm(b.arrivals)) void fetchLineStatic(l).catch(() => {});
@@ -138,7 +142,7 @@
         quick = !board && misses === 1 && r?.status === 0;   // a 429 or 5xx keeps the long wait
         failed = !b && !quick;
       }
-      timer = setTimeout(load, quick ? QUICK_RETRY_MS : REFRESH_MS);
+      timer = setTimeout(load, unsure ? EMPTY_RETRY_MS : quick ? QUICK_RETRY_MS : REFRESH_MS);
     };
     const shown = () => { if (document.visibilityState === "visible") load(); };
     load();
