@@ -2,6 +2,7 @@
 // opened from, when that direction serves it; else the nearest stop of the direction to the user, within
 // NEAR_M; else none. Also the small things the stop and line cards link to (the trip planner, the phone's map).
 import { distM, type Place, type Pt, type TripIndex } from "./trip";
+import type { StopArrival } from "./stops";
 
 export const NEAR_M = 1500;
 
@@ -22,6 +23,11 @@ export function lineStopFor(ix: TripIndex, line: string, variants: string[], fro
   }
   return best && best.m <= maxM ? { k: best.k, m: Math.round(best.m) } : null;
 }
+
+// A board's arrivals of one line in one direction (a row with no variant counts: the board may not know it). Taken
+// before arrivalGroups, which merges rows by headsign: two directions can share one at a stop.
+export const lineArrivals = (arrivals: StopArrival[], line: string, variants: string[]) =>
+  arrivals.filter(a => a.line === line && (!a.variant || variants.includes(a.variant)));
 
 // A stop as a trip planner place (TripPlanner takes it as an end), with every line through it.
 export function stopPlace(ix: TripIndex, k: number, label: string): Place {

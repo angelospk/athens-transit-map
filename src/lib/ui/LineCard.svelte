@@ -149,7 +149,7 @@
           {/each}
         </div>
       {/if}
-      {#if isBus && groups[dir]}
+      {#if isBus && groups.length === 2}
         <LineStop {app} line={nativeLine} variants={groups[dir].variants} toward={groups[dir].to} />
       {/if}
 

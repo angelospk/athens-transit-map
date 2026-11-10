@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hhmm, lineStopFor, stopPlace, walkDirectionsUrl } from "../src/lib/lineStop";
+import { hhmm, lineArrivals, lineStopFor, stopPlace, walkDirectionsUrl } from "../src/lib/lineStop";
 import type { TripIndex } from "../src/lib/trip";
 
 // Line 040, two directions: v1 runs stops 0 → 1 → 2, v2 runs 2 → 3. Stop 4 is on no variant of 040.
@@ -64,5 +64,14 @@ describe("hhmm", () => {
   it("is the Athens clock time, hours and minutes", () => {
     expect(hhmm(Date.UTC(2026, 10, 10, 21, 8, 40))).toBe("23:08");
     expect(hhmm(Date.UTC(2026, 6, 1, 6, 5))).toBe("09:05");   // summer time, +3
+  });
+});
+
+describe("lineArrivals", () => {
+  const a = (line: string, variant: string, headsign: string) =>
+    ({ line, variant, headsign, vehicle: "v", eta_s: 60, at: 0, delay_s: 0, position_at: 0 });
+  it("keeps only this line in the chosen direction, before rows of the same headsign are merged", () => {
+    const rows = [a("040", "v1", "ΣΥΝΤΑΓΜΑ"), a("040", "v2", "ΣΥΝΤΑΓΜΑ"), a("550", "w", "ΣΥΝΤΑΓΜΑ"), a("040", "", "ΣΥΝΤΑΓΜΑ")];
+    expect(lineArrivals(rows, "040", ["v1"]).map(r => r.variant)).toEqual(["v1", ""]);
   });
 });

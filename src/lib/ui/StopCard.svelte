@@ -198,7 +198,7 @@
       {/if}
       <button type="button" class="close" aria-label="Κλείσιμο" onclick={() => app.closeCards()}>×</button>
     </header>
-    {#if ix && i != null}
+    {#if ix && i != null && app.cityInfo.plan}
       <div class="acts">
         <button type="button" onclick={() => plan("to")}><Icon name="route" size={16} />Πώς πάω εκεί</button>
         <button type="button" onclick={() => plan("from")}><Icon name="area" size={16} />Ταξίδι από εδώ</button>

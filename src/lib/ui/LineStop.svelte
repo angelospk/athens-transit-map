@@ -4,9 +4,9 @@
   // a bell for this line at this stop and walking directions in the phone's map. Icons say what words used to.
   import { untrack } from "svelte";
   import { fetchStop, peekStop } from "../api";
-  import { alertLinesAt, arrivalGroups, timeText, usualRows, type StopBoard } from "../stops";
+  import { alertLinesAt, arrivalGroups, scheduleRows, timeText, usualRows, type StopBoard } from "../stops";
   import { busStopCard } from "../legacy";
-  import { lineStopFor, walkDirectionsUrl } from "../lineStop";
+  import { lineArrivals, lineStopFor, walkDirectionsUrl } from "../lineStop";
   import { distM } from "../trip";
   import { titleCase, walkMin } from "../nearby";
   import type { AppState } from "../state.svelte";
@@ -53,9 +53,11 @@
     return () => { alive = false; clearTimeout(timer); clearInterval(tick); };
   });
 
-  // This line's buses here in the chosen direction (a row with no variant counts: the board may not know it).
-  const group = $derived(board ? arrivalGroups(board.arrivals, now).find(g => g.line === line && (!g.variant || variants.includes(g.variant))) : undefined);
-  const usual = $derived(board && !group ? usualRows(board.usual, [], now).find(u => u.line === line) : undefined);
+  // This line's buses here in the chosen direction; with none, how often it usually passes (citybus.gr: the timetable).
+  const mine = $derived(board ? lineArrivals(board.arrivals, line, variants) : []);
+  const group = $derived(arrivalGroups(mine, now)[0]);
+  const usual = $derived(!board || group ? undefined : app.cityInfo.gtfsHost === "citybus.gr"
+    ? scheduleRows(mine, [], now)[0] : usualRows(board.usual, [], now).find(u => u.line === line));
   const first = $derived(group?.times[0]);
   const late = $derived(first && !first.est && first.late >= 2 ? first.late : 0);   // an estimate has no delay to tell
 
