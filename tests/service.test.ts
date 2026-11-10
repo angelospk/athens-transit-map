@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CITIES } from "../src/lib/cities";
 import { CITYBUS } from "../src/lib/citybus";
-import { muniGapNote, muniGaps, serviceNote, serviceTag } from "../src/lib/service";
+import { muniGapNote, muniGaps, serviceNote, serviceTag, stopSource } from "../src/lib/service";
 import type { MunicipalRoute } from "../src/lib/municipal";
 import type { MuniTimetable } from "../src/lib/muniTimes";
 
@@ -45,6 +45,19 @@ describe("serviceNote", () => {
   });
   it("nothing for live", () => {
     expect(serviceNote("live", "στο Ηράκλειο")).toBeNull();
+  });
+});
+
+describe("stopSource", () => {
+  it("a timetable-only city says the times are the timetable's, not live", () => {
+    expect(stopSource("citybus.gr", "timetable")).toBe("Από το πρόγραμμα του citybus.gr· εδώ τα λεωφορεία δεν στέλνουν θέση.");
+  });
+  it("the other citybus.gr cities: live arrivals, estimated positions", () => {
+    for (const s of ["live", "partial", "gaps"] as const)
+      expect(stopSource("citybus.gr", s)).toBe("Ζωντανά, από τις αφίξεις του citybus.gr· οι θέσεις είναι εκτιμήσεις.");
+  });
+  it("Athens and Thessaloniki: GPS", () => {
+    expect(stopSource("data.gov.gr", "live")).toBe("Ζωντανά, από το GPS των λεωφορείων.");
   });
 });
 

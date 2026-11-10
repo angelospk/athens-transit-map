@@ -73,6 +73,8 @@
 
   const cityAge = $derived(app.city ? Math.max(0, app.serverNow / 1000 - app.city.updated_at) : null);
   const cityMissing = $derived(app.cityState === "unknown");
+  // A citybus.gr city whose buses send no position (citybus.ts): no vehicles, no delays, only the timetable.
+  const timetableOnly = $derived(app.cityInfo.service === "timetable");
 
   // "040: μόνο → ΣΥΝΤΑΓΜΑ" for every line shown in one direction.
   const focused = $derived(Object.entries(app.focus).map(([line, variants]) => {
@@ -153,6 +155,9 @@
       <div class="muted">Διάλεξε έως 5 γραμμές για να δεις τα οχήματα ζωντανά.</div>
     {/if}
 
+    {#if timetableOnly}
+      <p class="ttonly"><b>Μόνο πρόγραμμα</b> Χωρίς οχήματα στον χάρτη. Πάτα μια στάση για τις ώρες.</p>
+    {:else}
     {#if app.selected.length || (app.cityOn && app.city)}
       <div class="stats">
         <div><b>{app.stats.vehicles}</b><span>οχήματα</span></div>
@@ -171,6 +176,7 @@
       <span><i class="none"></i>χωρίς δρομολόγιο</span>
       {#if app.ageMode !== "never"}<span><b class="age">24″</b>πριν από τόσο ήρθε η θέση</span>{/if}
     </div>
+    {/if}
     {#if app.trainsOn && app.cityInfo.rail}
       <!-- The marker shapes (B3): the colour of a bus is its delay; a train's is its line's. -->
       <div class="legend shapes">
@@ -397,6 +403,8 @@
   .sr { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   #panel-body { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
   .tools { display: flex; align-items: center; gap: 2px; }
+  .ttonly { margin: 8px 0 0; font-size: 12px; line-height: 1.4; }
+  .ttonly b { display: inline-block; margin-right: 4px; padding: 1px 6px; border-radius: 6px; background: var(--control); }
   .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted);
     white-space: nowrap; }
   .badge i { width: 8px; height: 8px; border-radius: 50%; background: var(--none); }

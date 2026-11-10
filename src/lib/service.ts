@@ -18,6 +18,13 @@ export function serviceNote(s: Service, inName: string): string | null {
   return null;
 }
 
+// The stop card's source line: a timetable-only city's times are the timetable, not live arrivals.
+export function stopSource(gtfsHost: string, s: Service): string {
+  if (gtfsHost !== "citybus.gr") return "Ζωντανά, από το GPS των λεωφορείων.";
+  if (s === "timetable") return "Από το πρόγραμμα του citybus.gr· εδώ τα λεωφορεία δεν στέλνουν θέση.";
+  return "Ζωντανά, από τις αφίξεις του citybus.gr· οι θέσεις είναι εκτιμήσεις.";
+}
+
 export type MuniGaps = { stops: boolean; times: boolean };
 
 // What a municipal route lacks: stops (OSM has none for it), times (no transcribed timetable of its municipality).

@@ -15,6 +15,7 @@
   import { busStopCard, legacyOf } from "../legacy";
   import { reportedStops } from "../stopfix";
   import StopFixBar from "./StopFixBar.svelte";
+  import { stopSource } from "../service";
 
   // The tapped bus stop, laid out as the phone app's: the user's lines first («Οι γραμμές μου | Όλες»), each
   // line and headsign with its next bus in big minutes, where it is and whether it runs late, the next ones,
@@ -250,7 +251,7 @@
           {/each}
         </div>
       {/if}
-      <p class="src">{app.cityInfo.gtfsHost === "citybus.gr" ? "Ζωντανά, από τις αφίξεις του citybus.gr· οι θέσεις είναι εκτιμήσεις." : "Ζωντανά, από το GPS των λεωφορείων."}{#if failed}{" "}Η τελευταία ενημέρωση απέτυχε.{/if}</p>
+      <p class="src">{stopSource(app.cityInfo.gtfsHost, app.cityInfo.service)}{#if failed}{" "}Η τελευταία ενημέρωση απέτυχε.{/if}</p>
     {:else if failed}
       <p>{id ? "Δεν φόρτωσαν οι αφίξεις. Ξαναδοκιμάζω σε 20″." : "Οι αφίξεις δεν είναι διαθέσιμες. Ανανέωσε τη σελίδα."}</p>
     {:else}
