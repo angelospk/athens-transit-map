@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchLines, fetchLineStatic, fetchV2Alerts, fetchV2Line, fetchV2LineVehicles, fetchV2Lines, fetchV2Run, fetchV2Stop, fetchV2Stops, getJSON, lineStaticUrl, lineUrl } from "../src/lib/api";
+import { fetchLines, fetchLineStatic, fetchV2Alerts, fetchV2Line, fetchV2LineVehicles, fetchV2Lines, fetchV2Run, fetchV2Stop, fetchV2Stops, getJSON, lineStaticUrl, lineUrl, stopDelay, stopTtl } from "../src/lib/api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -74,5 +74,20 @@ describe("api", () => {
     vi.stubGlobal("fetch", async (u: string) => new Response(JSON.stringify(bodies[u.split("/v2/")[1]]), { status: 200 }));
     for (const r of await Promise.all([fetchV2LineVehicles("qa:good"), fetchV2Line("qa:good"), fetchV2Stop("qa:good"), fetchV2Run("qa:good")]))
       expect(r.status).toBe(200);
+  });
+});
+
+// citybus (staseis-rt#136): a stale board comes with `refreshing`; the next ask must reach the server, not the 15 s cache.
+describe("stop board refreshing", () => {
+  it("a board that says refreshing is not kept; one that does not is", () => {
+    expect(stopTtl({ refreshing: true })).toBe(0);
+    expect(stopTtl({ refreshing: false })).toBe(15_000);
+    expect(stopTtl(null)).toBe(15_000);
+    expect(stopTtl(undefined)).toBe(15_000);
+  });
+  it("asks again soon at most 3 times in a row", () => {
+    let n = 0;
+    const delays = [true, true, true, true, false, true].map(r => { const d = stopDelay(r, n); n = d.quick; return d.ms; });
+    expect(delays).toEqual([2_000, 2_000, 2_000, 20_000, 20_000, 2_000]);
   });
 });

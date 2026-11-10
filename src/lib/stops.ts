@@ -31,6 +31,7 @@ export interface StopBoard {
   arrivals: StopArrival[];
   usual?: Usual[];   // rev 18; missing: an older server
   updated_at: number;
+  refreshing?: boolean;   // citybus: a stale board, a new one is on its way (staseis-rt#136)
 }
 
 export function busStopsFC(ix: TripIndex): GeoJSON.FeatureCollection<GeoJSON.Point> {

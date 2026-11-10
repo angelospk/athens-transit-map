@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { fetchLineStatic, fetchStop, peekStop } from "../api";
+  import { fetchLineStatic, fetchStop, peekStop, stopDelay } from "../api";
   import { alertLinesAt, arrivalGroups, arrivalNote, boardLines, headTo, lineTowardAt, linesAt, linesToWarm, mineFirst, timeText, toward, twins, usualRows, scheduleRows, signCode, type ArrivalGroup, type ArrivalTime, type StopBoard } from "../stops";
   import Bell from "./Bell.svelte";
   import type { AppState } from "../state.svelte";
@@ -114,13 +114,13 @@
     if (!sid) return;
     const ac = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let busy = false, misses = 0;
+    let busy = false, misses = 0, soon = 0;
     now = app.serverMs();
     board = boardOf(peekStop(sid));
     const load = async () => {
       if (busy) return;
       clearTimeout(timer);
-      let quick = false;
+      let quick = false, again = REFRESH_MS;
       if (document.visibilityState !== "hidden") {
         busy = true;
         const r = await fetchStop(sid);
@@ -137,8 +137,11 @@
         misses = b ? 0 : misses + 1;
         quick = !board && misses === 1 && r?.status === 0;   // a 429 or 5xx keeps the long wait
         failed = !b && !quick;
+        const d = stopDelay(!!b?.refreshing, soon);
+        soon = d.quick;
+        again = d.ms;
       }
-      timer = setTimeout(load, quick ? QUICK_RETRY_MS : REFRESH_MS);
+      timer = setTimeout(load, quick ? QUICK_RETRY_MS : again);
     };
     const shown = () => { if (document.visibilityState === "visible") load(); };
     load();

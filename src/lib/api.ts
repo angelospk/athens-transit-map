@@ -107,8 +107,13 @@ export async function fetchRailMotion(signal?: AbortSignal): Promise<FetchResult
 
 // A bus stop's lines and live arrivals (backend, cached 15 s), shared like the rail boards.
 export const stopUrl = (id: string) => `${API_BASE}/v1/stops/${encodeURIComponent(id)}`;
+// citybus (staseis-rt#136): a stale board comes at once with `refreshing`, a new one a moment later; so a
+// board that says so is not kept, and the card asks again in 2 s, at most 3 times in a row.
+export const stopTtl = (body: unknown) => ((body as { refreshing?: boolean } | null | undefined)?.refreshing ? 0 : 15_000);
+export const stopDelay = (refreshing: boolean, quick: number) =>
+  refreshing && quick < 3 ? { ms: 2_000, quick: quick + 1 } : { ms: 20_000, quick: 0 };
 export const fetchStop = (id: string) =>
-  railGet(stopUrl(id), 15_000, async () => (await import("./mock")).mockStop(id));
+  railGet(stopUrl(id), stopTtl(railCache.peek(stopUrl(id))?.body), async () => (await import("./mock")).mockStop(id));
 export const peekStop = (id: string) => railCache.peek(stopUrl(id));
 
 // The unified /v2 API (v2.ts) for the cards: a Line with its patterns, its vehicles now, a Stop board, a Run.
