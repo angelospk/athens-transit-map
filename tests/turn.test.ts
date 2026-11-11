@@ -45,3 +45,15 @@ describe("turn", () => {
     expect(ts.size).toBe(1);
   });
 });
+
+describe("headingAlong on a short leg", () => {
+  it("has no jump where two corners' windows would overlap (a 6 m leg)", () => {
+    const bearing = [0, 90, 180], cum = [0, 100, 106, 206];
+    let prev = headingAlong(bearing, cum, 90)!;
+    for (let s = 90.1; s <= 120; s += 0.1) {
+      const h = headingAlong(bearing, cum, s)!;
+      expect(Math.abs(((h - prev + 540) % 360) - 180)).toBeLessThan(10);
+      prev = h;
+    }
+  });
+});

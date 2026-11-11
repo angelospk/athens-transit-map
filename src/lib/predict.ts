@@ -83,18 +83,24 @@ export function pointAt(shape: [number, number][], s: number): LngLat {
   return pt(shape[shape.length - 1]);
 }
 
+// Each shape's leg bearings and starts, worked out once (a train asks every frame).
+const legsOf = new WeakMap<[number, number][], { bearing: number[]; at: number[] }>();
 export function headingAt(shape: [number, number][], s: number): number | null {
   // Through each corner the heading turns over a few metres (turn.ts), not in one jump at the vertex.
-  const bearing: number[] = [], at: number[] = [];
-  let walked = 0;
-  for (let i = 1; i < shape.length; i++) {
-    const a = pt(shape[i - 1]), b = pt(shape[i]), len = distanceM(a, b);
-    if (len > 0) { bearing.push(bearingDeg(a, b)); at.push(walked); }
-    walked += len;
+  let legs = legsOf.get(shape);
+  if (!legs) {
+    const bearing: number[] = [], at: number[] = [];
+    let walked = 0;
+    for (let i = 1; i < shape.length; i++) {
+      const a = pt(shape[i - 1]), b = pt(shape[i]), len = distanceM(a, b);
+      if (len > 0) { bearing.push(bearingDeg(a, b)); at.push(walked); }
+      walked += len;
+    }
+    at.push(walked);
+    legs = { bearing, at };
+    legsOf.set(shape, legs);
   }
-  if (!bearing.length) return null;
-  at.push(walked);
-  return headingAlong(bearing, at, s);
+  return legs.bearing.length ? headingAlong(legs.bearing, legs.at, s) : null;
 }
 
 export function shapeLength(shape: [number, number][]): number {

@@ -449,6 +449,9 @@ export class Mover {
     const dt = nowSec - this.last;
     this.last = nowSec;
     if (this.pending && this.plan && dt <= SNAP_S && dt >= 0) this.resolvePending(nowSec);
+    // A snap takes a pending plan at once: `p` below must be the plan it draws on.
+    const snap = dt > SNAP_S || dt < 0 || this.reduced || this.snapPending;
+    if (snap && this.pending) { this.plan = this.pending.plan; this.pending = null; }
     const p = this.plan;
     if (!p) return { pos: this.pos, fx: null, trail: null, alpha: 1 };
     const target = p.target(nowSec), s0 = this.s;
@@ -456,9 +459,8 @@ export class Mover {
     // Held behind the vehicle ahead (spacing): never forward past the cap, never backwards for it.
     const held = (x: number) => (this.cap != null && x > s0 && x > this.cap ? Math.max(s0, this.cap) : x);
     let fx: number | null = null, alpha = 1;
-    if (dt > SNAP_S || dt < 0 || this.reduced || this.snapPending) {
+    if (snap) {
       this.snapPending = false;
-      if (this.pending) { this.plan = this.pending.plan; this.pending = null; }
       this.s = this.plan!.target(nowSec);
       this.u = Math.max(0, this.plan!.target(nowSec + 1) - this.s);
       this.off = this.glide = this.trail = this.fade = null;

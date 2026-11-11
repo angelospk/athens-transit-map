@@ -26,8 +26,12 @@ export function headingAlong(bearing: number[], cum: number[], s: number, blend 
   const i = lo;
   let h = bearing[i];
   const toEnd = cum[i + 1] - s, fromStart = s - cum[i];
-  if (i < n - 1 && toEnd < blend) h = mixBearing(h, bearing[i + 1], 0.5 * (1 - toEnd / blend));
-  else if (i > 0 && fromStart < blend) h = mixBearing(bearing[i - 1], h, 0.5 + 0.5 * (fromStart / blend));
+  // Each corner's window is at most half of either leg beside it: two windows never overlap on a short leg.
+  const leg = (j: number) => cum[j + 1] - cum[j];
+  const bEnd = i < n - 1 ? Math.min(blend, leg(i) / 2, leg(i + 1) / 2) : 0;
+  const bStart = i > 0 ? Math.min(blend, leg(i - 1) / 2, leg(i) / 2) : 0;
+  if (bEnd > 0 && toEnd < bEnd) h = mixBearing(h, bearing[i + 1], 0.5 * (1 - toEnd / bEnd));
+  else if (bStart > 0 && fromStart < bStart) h = mixBearing(bearing[i - 1], h, 0.5 + 0.5 * (fromStart / bStart));
   return h;
 }
 
