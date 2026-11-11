@@ -8,8 +8,8 @@ export type LineStats = { line: string; fixes: number; vehicles: number; dist_m:
 type TripCount = { planned: number; run: number; partial: number; missed: number; unmeasured: number };
 // Where a day's (or a line's) scheduled trips come from (rt#99): OASA's daily schedule once the GTFS
 // has expired, else the GTFS. Missing on days before rt#99: "gtfs".
-export type ScheduleSource = "oasa_daily" | "gtfs" | "mixed";
-export type TripLine = TripCount & { line: string; missed_trips: string[] | null; schedule_source?: "oasa_daily" | "gtfs" };
+export type ScheduleSource = "oasa_daily" | "gtfs" | "mixed" | "citybus_timetable";
+export type TripLine = TripCount & { line: string; missed_trips: string[] | null; schedule_source?: "oasa_daily" | "gtfs" | "citybus_timetable" };
 export type TripStats = TripCount & { gtfs: string; gtfs_expired: boolean; min_coverage: number; by_line: TripLine[]; schedule_source?: ScheduleSource };
 export type DayStats = {
   version: number; date: string; tz: string; generated_at: number; first_fix: number; last_fix: number;
@@ -40,6 +40,10 @@ export function ranking(d: DayStats, n: number, minHours = MIN_LINE_HOURS) {
   const k = Math.min(n, Math.floor(all.length / 2));
   return { slow: all.slice(0, k), fast: all.slice(Math.max(all.length - n, k)).reverse(), eligible: all.length };
 }
+
+// A citybus.gr city's trips count against the citybus.gr timetable (staseis-rt#151). A bus with no
+// run code is matched to a run about 3 times in 4 (rt#149), so some runs that ran count as unseen.
+export const CITYBUS_PLAN_NOTE = "Τα δρομολόγια μετρούν με το ωράριο του citybus.gr. Λεωφορείο χωρίς κωδικό δρομολογίου ταιριάζει σε δρομολόγιο περίπου 3 φορές στις 4, άρα κάποια δρομολόγια που έγιναν μετρούν σαν να μη φάνηκαν.";
 
 export const MIN_LINE_TRIPS = 20; // measured trips before a line is ranked by missed trips
 

@@ -33,7 +33,7 @@ const citybus = Object.fromEntries(CITYBUS.map(c => [c.slug, {
   id: c.slug, name: c.name, center: c.center, zoom: c.zoom, radiusKm: c.radiusKm, ready: true, rail: false,
   agency: "ΚΤΕΛ", agencyThe: "Το ΚΤΕΛ", gtfsPage: "https://citybus.gr/", gtfsHost: "citybus.gr", ns: c.code, plan: false,
   inName: c.inName, box: { south: c.box[0], west: c.box[1], north: c.box[2], east: c.box[3] },
-  stats: false, alerts: true, telegram: true, service: c.service, hint: "Αστικό ΚΤΕΛ",
+  stats: c.service !== "timetable", alerts: true, telegram: true, service: c.service, hint: "Αστικό ΚΤΕΛ",
 } satisfies City])) as Record<CitybusSlug, City>;
 
 export const CITIES: Record<CityId, City> = {
@@ -49,8 +49,12 @@ export const CITIES: Record<CityId, City> = {
 };
 
 // Folder per city on the stats branch (rt .github/workflows/stats.yml); "" = v1 itself. A city not
-// listed has no stats (and `stats: false`).
-export const STATS_DIRS: Partial<Record<CityId, string>> = { athens: "", thessaloniki: "thessaloniki" };
+// listed has no stats (and `stats: false`). The citybus.gr cities are in v1/<slug>, those whose buses
+// send GPS only (staseis-rt#151).
+export const STATS_DIRS: Partial<Record<CityId, string>> = {
+  athens: "", thessaloniki: "thessaloniki",
+  ...Object.fromEntries(CITYBUS.filter(c => c.service !== "timetable").map(c => [c.slug, c.slug])),
+};
 
 // The picker's two big buttons; every other city is a chip under them.
 export const MAIN_CITIES: CityId[] = ["athens", "thessaloniki"];

@@ -2,7 +2,7 @@
   import { untrack } from "svelte";
   import { CITIES } from "../cities";
   import { PAGE_CITY } from "../config";
-  import { DATA_URL, gaps, hourly, latestDay, MIN_LINE_HOURS, ranking, tripShare, type DayStats } from "../stats";
+  import { CITYBUS_PLAN_NOTE, DATA_URL, gaps, hourly, latestDay, MIN_LINE_HOURS, ranking, tripShare, type DayStats } from "../stats";
   const city = CITIES[PAGE_CITY];
   // Trolleys run only in Athens.
   const fleet = city.id === "athens" ? "λεωφορεία και τρόλεϊ" : "λεωφορεία";
@@ -103,7 +103,7 @@
       {/if}
       {#if trips.unseen}<p class="note">{trips.unseen === 1 ? "1 γραμμή του προγράμματος δεν φάνηκε καθόλου και δεν μπαίνει" : `${nf(trips.unseen)} γραμμές του προγράμματος δεν φάνηκαν καθόλου και δεν μπαίνουν`} στη λίστα.</p>{/if}
       <p class="note">Ένα δρομολόγιο μετράει ως εκτελεσμένο όταν ένα όχημα κάλυψε τουλάχιστον το μισό της διαδρομής του, κοντά στην ώρα του. Όχημα χωρίς GPS φαίνεται σαν δρομολόγιο που δεν έγινε.
-        {#if trips.source !== "gtfs"}Η σύγκριση γίνεται με το ημερήσιο πρόγραμμα του ΟΑΣΑ.{/if}
+        {#if trips.source === "citybus_timetable"}{CITYBUS_PLAN_NOTE}{:else if trips.source !== "gtfs"}Η σύγκριση γίνεται με το ημερήσιο πρόγραμμα του ΟΑΣΑ.{/if}
         {#if trips.expired && trips.source === "mixed"}<span class="warn">{trips.gtfsLines === 1 ? "Για 1 γραμμή" : `Για ${nf(trips.gtfsLines)} γραμμές`} χωρίς ημερήσιο πρόγραμμα, η σύγκριση γίνεται με το ληγμένο επίσημο πρόγραμμα (GTFS), από την έκδοση {trips.gtfs}.</span>
         {:else if trips.expired}<span class="warn">Το επίσημο πρόγραμμα (GTFS) του {city.agency} έχει λήξει. Η σύγκριση γίνεται με το πρόγραμμα της ίδιας μέρας της εβδομάδας, από την έκδοση {trips.gtfs}.</span>{/if}</p>
     </section>

@@ -45,6 +45,7 @@ describe("Thessaloniki live (web#40)", () => {
     expect(statsBaseFor("athens", {})).toBe(raw);
     expect(statsBaseFor("thessaloniki", {})).toBe(`${raw}/thessaloniki`);
     expect(statsBaseFor("thessaloniki", { VITE_STATS_BASE: "http://x/v1/" })).toBe("http://x/v1/thessaloniki");
+    expect(statsBaseFor("patras", {})).toBe(`${raw}/patras`);
   });
 
   it("cityUrl: a city switch opens the city's home (web#47); the old city's lines and cards mean nothing there", () => {

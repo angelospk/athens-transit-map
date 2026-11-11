@@ -63,7 +63,10 @@ describe("cities", () => {
   it("a citybus.gr city: buses only, its code as id namespace, no planner, web push and Telegram alerts", () => {
     const p = CITIES.patras;
     expect([p.id, p.name, p.ns, p.ready, p.rail, p.plan, p.stats, p.alerts, p.telegram])
-      .toEqual(["patras", "Πάτρα", "pat", true, false, false, false, true, true]);
+      .toEqual(["patras", "Πάτρα", "pat", true, false, false, true, true, true]);
+    // Stats where buses send GPS (staseis-rt#151); a timetable-only city has none.
+    expect(STATS_DIRS.patras).toBe("patras");
+    expect([CITIES.drama.service, CITIES.drama.stats, "drama" in STATS_DIRS]).toEqual(["timetable", false, false]);
     for (const c of Object.values(CITIES)) expect([c.id, c.telegram]).toEqual([c.id, true]);   // the bot routes every city (web#56)
     expect(p.inName).toBe("στην Πάτρα");
     expect(CITIES.volos.inName).toBe("στον Βόλο");

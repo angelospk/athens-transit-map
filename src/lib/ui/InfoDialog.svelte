@@ -24,7 +24,7 @@
     { id: "terms", label: "Όροι" },
   ] as const;
   type Tab = (typeof ALL_TABS)[number]["id"];
-  // The daily stats exist for Athens and Thessaloniki only: elsewhere no stats tab.
+  // The daily stats exist where buses send GPS (city.stats): elsewhere no stats tab.
   const TABS = ALL_TABS.filter(t => t.id !== "stats" || city.stats);
   // Inside the stats tab: the newest day first, then the stored days together.
   const SUBS = [

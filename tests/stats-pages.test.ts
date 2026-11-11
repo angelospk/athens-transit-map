@@ -103,6 +103,17 @@ describe("cityStatsPage", () => {
     expect(mixed).toContain("Για 1 γραμμή");
     expect(withSource(undefined)).toContain("έχει λήξει");
   });
+  it("a citybus.gr city counts against the citybus.gr timetable, never OASA's (staseis-rt#151)", () => {
+    const patras = STATS_CITIES.find(c => c.id === "patras")!;
+    expect(patras.dir).toBe("patras");
+    const d = day("2026-11-12", { trips: true });
+    d.trips = { ...d.trips!, gtfs_expired: false, schedule_source: "citybus_timetable",
+      by_line: d.trips!.by_line.map(l => ({ ...l, schedule_source: "citybus_timetable" as const })) };
+    const page = cityStatsPage(patras, [d]);
+    expect(page).toContain("ωράριο του citybus.gr");
+    expect(page).not.toContain("ΟΑΣΑ");
+    expect(page).not.toContain("έχει λήξει");
+  });
 
   const ld = JSON.parse(html.match(/<script type="application\/ld\+json">(.*?)<\/script>/s)![1]);
 

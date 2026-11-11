@@ -7,7 +7,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { CITIES, STATS_DIRS, type CityId } from "../src/lib/cities";
 import {
-  byDayType, complete, gaps, hasDelays, hourBand, hourly, kmh, lineTrends, LONG_DAYS, MIN_DELAY_RUNS, MIN_LINE_HOURS,
+  byDayType, CITYBUS_PLAN_NOTE, complete, gaps, hasDelays, hourBand, hourly, kmh, lineTrends, LONG_DAYS, MIN_DELAY_RUNS, MIN_LINE_HOURS,
   ranking, slowLines, tripShare, validDay, type DayStats,
 } from "../src/lib/stats";
 import { escape, layout, mapLimit, SITE } from "./seo";
@@ -230,6 +230,7 @@ ${table("faster", ["Γραμμή", "Πριν", "Τώρα", "Αλλαγή"], tren
 // The plan the day's trips count against (rt#99): OASA's daily schedule, and the expired GTFS only
 // for the lines left on it (a day before rt#99 is all GTFS).
 function planNote(t: NonNullable<ReturnType<typeof tripShare>>): string {
+  if (t.source === "citybus_timetable") return `<p class="note">${CITYBUS_PLAN_NOTE}</p>\n`;
   const daily = t.source !== "gtfs" ? "Τα δρομολόγια μετρούν με το ημερήσιο πρόγραμμα του ΟΑΣΑ." : "";
   const old = !t.expired ? "" : t.source === "mixed"
     ? `${t.gtfsLines === 1 ? "Για 1 γραμμή" : `Για ${n(t.gtfsLines)} γραμμές`} χωρίς ημερήσιο πρόγραμμα μετρούν με το ληγμένο GTFS ${escape(t.gtfs)}.`
