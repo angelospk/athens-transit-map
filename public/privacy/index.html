@@ -26,7 +26,7 @@
   <nav><a href="/">← staseis.gr</a> · <a href="/terms/">Όροι χρήσης</a> · <a href="#en">English</a></nav>
 
   <h1>Πολιτική απορρήτου</h1>
-  <p class="meta">Τελευταία αλλαγή: 9 Νοεμβρίου 2026 · Εκδότης: Άγγελος Παπαμιχαήλ ·
+  <p class="meta">Τελευταία αλλαγή: 11 Νοεμβρίου 2026 · Εκδότης: Άγγελος Παπαμιχαήλ ·
     Επικοινωνία: <a href="https://github.com/angelospk/athens-transit-app/issues">GitHub issues</a></p>
 
   <p>Αυτή η πολιτική αφορά την εφαρμογή Στάσεις (Android, iOS) και τον χάρτη στο staseis.gr. Οι Στάσεις
@@ -36,7 +36,7 @@
   <ul>
     <li>Δεν έχουμε λογαριασμούς. Δεν ζητάμε όνομα, email ή τηλέφωνο.</li>
     <li>Η εφαρμογή δεν έχει διαφημίσεις, analytics ή tracking.</li>
-    <li>Η θέση σου <strong>δεν φεύγει από το κινητό</strong>. Η εφαρμογή τη χρησιμοποιεί για τις κοντινές
+    <li>Η ακριβής θέση σου <strong>δεν φεύγει από το κινητό</strong>. Η εφαρμογή τη χρησιμοποιεί για τις κοντινές
       στάσεις, την απόσταση ως τη στάση σου και τις ειδοποιήσεις. Δεν τη στέλνει σε κανέναν διακομιστή.</li>
     <li>Τα αγαπημένα, τα μέρη (π.χ. «Σπίτι», «Δουλειά») και οι ειδοποιήσεις σου μένουν μόνο στο κινητό.
       Σβήνονται όλα από τις Ρυθμίσεις → «Διαγραφή όλων των δεδομένων» ή όταν απεγκαταστήσεις την εφαρμογή.</li>
@@ -44,15 +44,21 @@
 
   <h2>Τι φεύγει από το κινητό</h2>
   <ul>
-    <li><strong>Αιτήματα για δεδομένα συγκοινωνιών</strong> (γραμμές, στάσεις, αφίξεις) προς τους διακομιστές
-      μας (<code>transit.haroldpoi.dev</code>, <code>bus.haroldpoi.dev</code>, <code>staseis.gr</code>) και
-      προς την Hellenic Train (<code>railway.gov.gr</code>). Δεν περιέχουν τη θέση σου ούτε στοιχεία σου. Οι
-      διακομιστές μπορεί να κρατούν για λίγες μέρες τεχνικά logs (διεύθυνση IP, ώρα) για ασφάλεια και
+    <li><strong>Αιτήματα για δεδομένα συγκοινωνιών</strong> (γραμμές, στάσεις, αφίξεις, στατιστικά) προς τους
+      διακομιστές μας (<code>transit.haroldpoi.dev</code>, <code>transit-thess.haroldpoi.dev</code>,
+      <code>bus.haroldpoi.dev</code>, <code>staseis.gr</code>), προς το GitHub, όπου είναι τα στατικά αρχεία
+      (<code>angelospk.github.io</code>, <code>raw.githubusercontent.com</code>), και προς την Hellenic Train
+      (<code>railway.gov.gr</code>). Δεν περιέχουν στοιχεία σου ούτε την ακριβή θέση σου, αλλά δείχνουν ποια
+      περιοχή του χάρτη κοιτάς: τα λεωφορεία έρχονται σε πλακίδια περίπου 5 × 5 χλμ., όπως και ο ίδιος ο
+      χάρτης, και η περιοχή αυτή συχνά είναι γύρω σου. Οι διακομιστές μπορεί να κρατούν για λίγες μέρες τεχνικά logs (διεύθυνση IP, ώρα) για ασφάλεια και
       διάγνωση σφαλμάτων.</li>
     <li><strong>Το κείμενο της αναζήτησης διευθύνσεων</strong> πηγαίνει στο Photon
       (<code>photon.komoot.io</code>, δεδομένα OpenStreetMap), για να βρεθεί η διεύθυνση. Η θέση σου δεν
       στέλνεται.</li>
-    <li><strong>Ο χάρτης</strong> φορτώνει πλακίδια από το OpenFreeMap (<code>tiles.openfreemap.org</code>).</li>
+    <li><strong>Ο χάρτης</strong> φορτώνει από το OpenFreeMap (<code>tiles.openfreemap.org</code>) πλακίδια για
+      την περιοχή που βλέπεις.</li>
+    <li><strong>Οι οδηγίες περπατήματος</strong> ως μια στάση ανοίγουν την εφαρμογή χαρτών του κινητού (Google
+      Maps ή Apple Maps) με τη θέση της στάσης. Μετά ισχύει η πολιτική της εφαρμογής χαρτών.</li>
   </ul>
   <p>Αυτοί οι τρίτοι έχουν τις δικές τους πολιτικές απορρήτου.</p>
 
@@ -69,9 +75,11 @@
 
   <h2>«Λάθος θέση στάσης;»</h2>
   <p>Στην εφαρμογή και στο web, αν πατήσεις «Λάθος θέση στάσης;» και στείλεις, φεύγουν: το σημείο του χάρτη
-    όπου έβαλες την πινέζα (όχι η θέση σου), η στάση και ένας τυχαίος κωδικός συσκευής. Πηγαίνουν σε ένα
-    φύλλο Google (μέσω Google Apps Script), όπου τα διαβάζουμε για να διορθώσουμε τη θέση της στάσης. Ο
-    κωδικός συσκευής σβήνεται από την εφαρμογή με το «Διαγραφή όλων των δεδομένων».</p>
+    όπου έβαλες την πινέζα (όχι η θέση σου), η στάση, ένας τυχαίος κωδικός συσκευής και η έκδοση της
+    εφαρμογής και του λειτουργικού (στο web, του browser και το μέγεθος του παραθύρου). Πηγαίνουν σε ένα φύλλο Google (μέσω Google Apps
+    Script), όπου τα διαβάζουμε για να διορθώσουμε τη θέση της στάσης. Ο κωδικός συσκευής σβήνεται από την
+    εφαρμογή με το «Διαγραφή όλων των δεδομένων». Αν θέλεις να σβήσουμε μια αναφορά σου, γράψε μας στα
+    GitHub issues.</p>
 
   <h2>Το bot στο Telegram</h2>
   <p>Αν το χρησιμοποιείς, το bot κρατά το αναγνωριστικό της συζήτησης, τις ειδοποιήσεις και τις στάσεις που
@@ -86,7 +94,7 @@
   </ul>
 
   <h2>Παιδιά</h2>
-  <p>Η εφαρμογή δεν απευθύνεται ειδικά σε παιδιά και δεν συλλέγει δεδομένα από κανέναν.</p>
+  <p>Η εφαρμογή δεν απευθύνεται ειδικά σε παιδιά. Δεν συλλέγει δεδομένα, εκτός από την αναφορά «Λάθος θέση στάσης;» που στέλνεις εσύ.</p>
 
   <h2>Αλλαγές</h2>
   <p>Αν αλλάξει αυτή η πολιτική, αλλάζει και η ημερομηνία στην αρχή.</p>
@@ -95,29 +103,36 @@
 
   <h1 id="en" lang="en">Privacy policy</h1>
   <div lang="en">
-    <p class="meta">Last updated: 9 November 2026 · Publisher: Angelos Papamichail ·
+    <p class="meta">Last updated: 11 November 2026 · Publisher: Angelos Papamichail ·
       Contact: <a href="https://github.com/angelospk/athens-transit-app/issues">GitHub issues</a></p>
     <p>This policy covers the Staseis app (Android, iOS) and the map at staseis.gr. Staseis is an unofficial
       app, not affiliated with OASA, STASY or Hellenic Train.</p>
     <ul>
       <li>No accounts. The app has no ads, no analytics and no tracking.</li>
-      <li>Your location <strong>stays on your phone</strong>. It is used for nearby stops, the distance to your
+      <li>Your exact location <strong>stays on your phone</strong>. It is used for nearby stops, the distance to your
         stop and alerts. It is never sent to any server.</li>
       <li>Favourites, places (e.g. "Home", "Work") and alerts are stored only on your phone. Settings →
         "Delete all data" removes them, and so does uninstalling the app.</li>
-      <li>The app requests transit data (lines, stops, arrivals) from our servers (<code>transit.haroldpoi.dev</code>,
-        <code>bus.haroldpoi.dev</code>, <code>staseis.gr</code>) and from Hellenic Train (<code>railway.gov.gr</code>).
-        These requests carry no location and no personal data. Servers may keep technical logs (IP address,
+      <li>The app requests transit data (lines, stops, arrivals, statistics) from our servers
+        (<code>transit.haroldpoi.dev</code>, <code>transit-thess.haroldpoi.dev</code>, <code>bus.haroldpoi.dev</code>,
+        <code>staseis.gr</code>), from GitHub, which hosts the static files (<code>angelospk.github.io</code>,
+        <code>raw.githubusercontent.com</code>), and from Hellenic Train (<code>railway.gov.gr</code>). These requests
+        carry no personal data and not your exact location, but they show which area of the map you look at:
+        buses load in tiles of about 5 × 5 km, like the map itself, and that area is often around you. Servers may keep technical logs (IP address,
         time) for a few days, for security and debugging.</li>
       <li>Address search text is sent to Photon (<code>photon.komoot.io</code>, OpenStreetMap data), without
-        your location. Map tiles load from OpenFreeMap (<code>tiles.openfreemap.org</code>).</li>
+        your location. Map tiles for the area you view load from OpenFreeMap (<code>tiles.openfreemap.org</code>).</li>
+      <li>Walking directions to a stop open your phone's map app (Google Maps or Apple Maps) with the stop's
+        position. After that, the map app's privacy policy applies.</li>
       <li>The website counts visits with Cloudflare Web Analytics: no cookies, no cross-site tracking, only
         totals. The map's favourites stay in your browser.</li>
       <li>A browser alert on the website sends your browser's push address and the alert's stop, line and bus to
         <code>push.haroldpoi.dev</code> (deleted when the alert ends or you cancel it).</li>
       <li>"Wrong stop position?" (app and website), only if you send it: the map point where you placed the pin
-        (not your location), the stop and a random device id go to a Google Sheet (via Google Apps Script), so
-        we can correct the stop. "Delete all data" in the app removes the device id from the phone.</li>
+        (not your location), the stop, a random device id and the app and OS version (on the website, the
+        browser and window size) go to a Google Sheet (via Google Apps Script), so we can correct the stop. "Delete all data" in
+        the app removes the device id from the phone. To have a report of yours deleted, write to us in GitHub
+        issues.</li>
       <li>The Telegram bot, if you use it, keeps the chat id and the alerts and stops you save there.
         <code>/stop</code> deletes the alerts; blocking the bot deletes everything.</li>
       <li>Permissions: location (only if you allow it), notifications (for the alerts you set), exact alarms
