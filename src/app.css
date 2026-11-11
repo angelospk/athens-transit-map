@@ -27,21 +27,28 @@ button, input { font: inherit; color: inherit; }
 /* Vehicle markers are MapLibre DOM markers, outside any component scope. The marker element is a
    plain wrapper (MapLibre owns its transform); .bus inside it is the visible pill. */
 .maplibregl-marker.sel { z-index: 2; }
-/* A detail line's vehicle: the line's colour (--c, --t from lineColors.ts) with its delay (--d) as a ring, held
-   apart by a white gap inside and a dark hairline outside, so it reads on both themes and over the speed layer. */
-.bus { position: relative; display: block; min-width: 34px; height: 22px; padding: 0 5px; border-radius: 11px; cursor: pointer;
-  font: 700 11px/18px system-ui, sans-serif; text-align: center; border: 2px solid #fff;
-  box-shadow: 0 0 0 3px var(--d), 0 0 0 4px rgba(0, 0, 0, .5), 0 1px 4px 3px rgba(0, 0, 0, .3); white-space: nowrap; }
+/* A detail line's vehicle: the city vehicle's shape (a disc with its mode's pictogram, the delay a dot on its shoulder),
+   in the line's colour (--c, --t from lineColors.ts), its line under it. A white edge so it reads on both themes. */
+.bus { position: relative; display: block; width: 30px; height: 30px; padding: 0; border-radius: 50%; cursor: pointer;
+  border: 2px solid #fff; box-sizing: border-box; box-shadow: 0 1px 4px 1px rgba(0, 0, 0, .35); }
+.bus .glyph { position: absolute; inset: 0; background: var(--t, #fff); pointer-events: none;
+  -webkit-mask: url("/icons/glyph-bus.png") center / 170% no-repeat; mask: url("/icons/glyph-bus.png") center / 170% no-repeat; }
+.bus .glyph.trolley { -webkit-mask-image: url("/icons/glyph-trolley.png"); mask-image: url("/icons/glyph-trolley.png"); }
+.bus::after { content: ""; position: absolute; top: -4px; right: -4px; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--d); border: 2px solid var(--bg); pointer-events: none; }
+.bus .num { position: absolute; top: calc(100% + 2px); left: 50%; transform: translateX(-50%); color: var(--fg);
+  font: 700 11px/13px system-ui, sans-serif; white-space: nowrap; pointer-events: none;
+  text-shadow: 0 0 2px var(--bg), 0 0 2px var(--bg), 0 0 3px var(--bg); }
 .bus .dir { position: absolute; left: 50%; top: 50%; width: 0; height: 0; margin: -4px 0 0 -4px; pointer-events: none;
   border: 4px solid transparent; border-top: 0; border-bottom: 7px solid var(--fg);
   filter: drop-shadow(0 0 1px var(--bg)) drop-shadow(0 0 1px var(--bg)); }
-.vm .age { position: absolute; top: calc(100% + 1px); left: 50%; transform: translateX(-50%); padding: 0 3px;
+.vm .age { position: absolute; top: 50%; left: calc(100% + 9px); transform: translateY(-50%); padding: 0 3px;
   border-radius: 6px; background: var(--panel); color: var(--fg); font: 600 10px/13px system-ui, sans-serif;
   box-shadow: 0 0 2px rgba(0, 0, 0, .35); pointer-events: none; font-variant-numeric: tabular-nums; }
 .bus.faded { border-style: dashed; opacity: .7; }
 .bus.stale { opacity: .45; }
 .vm.stale .age { color: var(--late2); }
-.bus.selected { outline: 3px solid var(--accent); outline-offset: 5px; z-index: 2; opacity: 1; }   /* a stale one too */
+.bus.selected { outline: 3px solid var(--accent); outline-offset: 3px; z-index: 2; opacity: 1; scale: 1.2; }   /* a stale one too */
 .bus:focus-visible { outline: 3px solid var(--accent); }
 .ontime { --d: var(--ontime); } .late1 { --d: var(--late1); } .late2 { --d: var(--late2); }
 .late3 { --d: var(--late3); } .none { --d: var(--none); }

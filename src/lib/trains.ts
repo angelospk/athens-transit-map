@@ -122,7 +122,7 @@ export function trainsFC(o: { stasy: StasyVehicle[]; suburban: SuburbanTrain[]; 
     features: [
       ...o.stasy.map(v => {
         const p = stasyPlace(v, o.nowS, o.tracks?.[v.line], o.motions?.[v.trip]);
-        return point(p.pos, { kind: "metro", id: v.trip, color: v.route_color, ...(p.h == null ? {} : { h: p.h }), stale: false,
+        return point(p.pos, { kind: "metro", glyph: v.line.startsWith("T") ? "tram" : "metro", id: v.trip, color: v.route_color, ...(p.h == null ? {} : { h: p.h }), stale: false,
           sel: isSel("metro", v.trip), est: true, side: sideOf(p.h) });
       }),
       ...o.suburban.flatMap(t => {
@@ -130,7 +130,7 @@ export function trainsFC(o: { stasy: StasyVehicle[]; suburban: SuburbanTrain[]; 
         if (!c || age > OLD_S) return [];
         // Still: the glide's place has no heading; without a glide, a train at 0 km/h keeps its last course, not used.
         const g = o.glide?.(t), h = g ? g.h : t.speed_kmh > 0 ? t.course : null;
-        return [point(g?.pos ?? [t.lon, t.lat], { kind: "suburban", id: t.train, color: c.color, ...(h == null ? {} : { h }),
+        return [point(g?.pos ?? [t.lon, t.lat], { kind: "suburban", glyph: "metro", id: t.train, color: c.color, ...(h == null ? {} : { h }),
           stale: age > STALE_S, sel: isSel("suburban", t.train), est: false, age: ageLabel(age), side: sideOf(h) })];
       }),
     ],

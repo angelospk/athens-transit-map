@@ -5,17 +5,17 @@
 </script>
 
 <ul>
-  <li><span class="s"><span class="bus late1" style:--c={PALETTE[0].bg} style:--t={PALETTE[0].fg}>040</span></span>
+  <li><span class="s"><span class="bus late1" style:--c={PALETTE[0].bg} style:--t={PALETTE[0].fg}><i class="glyph"></i><span class="num">040</span></span></span>
     <span>Όχημα γραμμής που ακολουθείς. Κάθε γραμμή έχει δικό της χρώμα, ίδιο στη διαδρομή και στο κουμπί της.
-      Το δαχτυλίδι γύρω του είναι η καθυστέρηση. Πάτα το για τις λεπτομέρειες.</span></li>
+      Η τελεία είναι η καθυστέρηση, το νούμερο από κάτω η γραμμή. Πάτα το για τις λεπτομέρειες.</span></li>
   <li><span class="s"><span class="pic"><img src="{import.meta.env.BASE_URL}icons/bus.png" alt="" /><i class="dot ontime"></i></span><span class="pic"><img src="{import.meta.env.BASE_URL}icons/trolley.png" alt="" /><i class="dot late3"></i></span></span>
     <span>Όχημα της πόλης: μπλε λεωφορείο, πορτοκαλί τρόλεϊ. Η τελεία είναι η καθυστέρηση: πράσινη στην ώρα του, κίτρινη,
       πορτοκαλί, κόκκινη όλο και πιο αργά, γκρι χωρίς δρομολόγιο. Πάτα το για να δεις ολόκληρη τη γραμμή του.</span></li>
-  <li><span class="s"><span class="bus ontime" style:--c={PALETTE[1].bg} style:--t={PALETTE[1].fg}>550<i class="dir" style="transform: translate(24px, 0) rotate(90deg)"></i></span></span>
+  <li><span class="s"><span class="bus ontime" style:--c={PALETTE[1].bg} style:--t={PALETTE[1].fg}><i class="glyph"></i><i class="dir" style="transform: translate(20px, 0) rotate(90deg)"></i></span></span>
     <span>Το βελάκι δείχνει προς πού κινείται. Λείπει όταν το όχημα στέκεται.</span></li>
   <li><span class="s"><span class="age">24″</span></span>
     <span>Πριν από τόσο ήρθε η τελευταία θέση GPS του οχήματος.</span></li>
-  <li><span class="s"><span class="bus none stale" style:--c={PALETTE[2].bg} style:--t={PALETTE[2].fg}>2</span></span>
+  <li><span class="s"><span class="bus none stale" style:--c={PALETTE[2].bg} style:--t={PALETTE[2].fg}><i class="glyph"></i></span></span>
     <span>Αχνό: δεν έστειλε θέση για πάνω από 1½ λεπτό. Η πραγματική θέση του μπορεί να είναι αλλού.</span></li>
   <li><span class="s"><i class="trail"></i></span>
     <span>Μπλε ίχνος: η νέα θέση ήταν πιο μπροστά· το όχημα πήγε ως εκεί και άφησε το δρόμο που έκανε.</span></li>

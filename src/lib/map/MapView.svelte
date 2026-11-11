@@ -29,7 +29,7 @@
   import SpeedLegend from "../ui/SpeedLegend.svelte";
   import { lightenDark } from "./basemap";
   import { Turners } from "../turn";
-  import { metroLogo, oasaLogo, stopSign, tramLogo } from "./mapIcons";
+  import { metroGlyph, metroLogo, oasaLogo, stopSign, tramGlyph, tramLogo } from "./mapIcons";
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
   import { STOPS_ZOOM, busStopsFC } from "../stops";
@@ -119,8 +119,8 @@
     d.heading = h;
     d.dir.hidden = h == null;
     if (h == null) return;
-    // Around the pill (an ellipse), pointing outwards.
-    const rx = d.width / 2 + 5, ry = 16, a = (h * Math.PI) / 180;
+    // Around the disc, pointing outwards.
+    const rx = d.width / 2 + 5, ry = rx, a = (h * Math.PI) / 180;
     d.dir.style.transform = `translate(${Math.sin(a) * rx}px, ${-Math.cos(a) * ry}px) rotate(${h}deg)`;
   }
 
@@ -181,19 +181,20 @@
     return g.getImageData(0, 0, c.width, c.height);
   }
 
-  // A rounded square of side k × 28 px, white on a 48 px transparent canvas, tinted by each layer (sdf): the marker
+  // A disc of diameter k × 28 px, white on a 48 px transparent canvas, tinted by each layer (sdf): the marker
   // of every train (B3). One canvas size for every part, so one icon-size and one icon-offset move them together.
-  function railImage(k: number): ImageData {
-    const c = document.createElement("canvas"), side = 28 * k, o = (48 - side) / 2;
+  const GLYPH_K = 1.1;   // the trains' glyph's icon-size, over the disc's
+  function discImage(k: number): ImageData {
+    const c = document.createElement("canvas");
     c.width = c.height = 48;
     const g = c.getContext("2d")!;
     g.fillStyle = "#fff";
-    g.beginPath(); g.roundRect(o, o, side, side, 7 * Math.min(1, k)); g.fill();
-    return g.getImageData(0, 0, c.width, c.height);
+    g.beginPath(); g.arc(24, 24, 14 * k, 0, Math.PI * 2); g.fill();
+    return g.getImageData(0, 0, 48, 48);
   }
 
   // Trains (metro and tram from the timetable, Proastiakos by GPS), over everything else, the size of a bus dot
-  // (B3): a rounded square in the line's colour, hollow (a white centre) when its place comes from the timetable.
+  // (B3): a disc in the line's colour with its mode's glyph (metro, tram; Proastiakos as metro), GreekCaptain's fork.
   // A moving train sits on the right-hand track of its line (`side`, B5). A GPS fix too old is faded, and its age
   // shows per «Ηλικία θέσης». Under them, the tapped train's line.
   function addTrainLayers(m: MlMap) {
@@ -203,14 +204,17 @@
     const fade = ["case", ["get", "stale"], 0.45, 1] as ExpressionSpecification;
     // The bus dot's diameter (5, 9, 20, 26 px at z10, 13, 14, 17) over the 16 px square (k = 1), times k.
     const size = (k: number) => byZoom([10, 0.31 * k, 13, 0.56 * k, 14, 1.25 * k, 17, 1.63 * k]);
-    const square = (id: string, k: number, color: unknown, filter?: unknown) => {
-      if (!m.hasImage(`rail-${k}`)) m.addImage(`rail-${k}`, railImage(k), { pixelRatio: 2, sdf: true });
+    // A disc of k × 28 px in a 48 px image, as the rail squares were: one icon-size and one icon-offset for every part.
+    const disc = (id: string, k: number, color: unknown, filter?: unknown) => {
+      if (!m.hasImage(`disc-${k}`)) m.addImage(`disc-${k}`, discImage(k), { pixelRatio: 2, sdf: true });
       m.addLayer({
       id, type: "symbol", source: "trains", ...(filter ? { filter: filter as ExpressionSpecification } : {}),
-      layout: { "icon-image": `rail-${k}`, "icon-size": size(1), "icon-offset": ["get", "off"] as ExpressionSpecification,
+      layout: { "icon-image": `disc-${k}`, "icon-size": size(1), "icon-offset": ["get", "off"] as ExpressionSpecification,
         "icon-allow-overlap": true, "icon-ignore-placement": true, visibility: vis },
       paint: { "icon-color": color as ExpressionSpecification, "icon-opacity": fade } });
     };
+    if (!m.hasImage("mode-glyph-metro")) m.addImage("mode-glyph-metro", metroGlyph(), { pixelRatio: 128 / 24 });
+    if (!m.hasImage("mode-glyph-tram")) m.addImage("mode-glyph-tram", tramGlyph(), { pixelRatio: 128 / 24 });
     m.addSource("train-route", { type: "geojson", data: EMPTY });
     m.addSource("trains", { type: "geojson", data: EMPTY });
     m.addLayer({ id: "train-route-casing", type: "line", source: "train-route", layout: { "line-join": "round", "line-cap": "round" },
@@ -222,10 +226,15 @@
           // The trains' own shift (TRACK_SHIFT × their icon-size), so each one sits on its track at every zoom.
           "line-offset": byZoom([10, 0.31 * TRACK_SHIFT * k, 13, 0.56 * TRACK_SHIFT * k, 14, 1.25 * TRACK_SHIFT * k, 17, 1.63 * TRACK_SHIFT * k]) } },
         "metro-station");
-    square("train-sel", 1.45, accent, ["get", "sel"]);
-    square("train-edge", 1.15, "#ffffff");
-    square("train-dot", 1, ["get", "color"]);
-    square("train-hole", 0.45, "#ffffff", ["get", "est"]);
+    disc("train-sel", 1.45, accent, ["get", "sel"]);
+    disc("train-edge", 1.15, "#ffffff");
+    disc("train-dot", 1, ["get", "color"]);
+    // The glyph (train-hole keeps its old id), GLYPH_K the disc's icon-size: about ¾ of the disc across; its offset
+    // (goff) is the disc's divided by GLYPH_K, so both land on the same track.
+    m.addLayer({ id: "train-hole", type: "symbol", source: "trains",
+      layout: { "icon-image": ["concat", "mode-glyph-", ["get", "glyph"]] as ExpressionSpecification, "icon-size": size(GLYPH_K),
+        "icon-offset": ["get", "goff"] as ExpressionSpecification, "icon-allow-overlap": true, "icon-ignore-placement": true, visibility: vis },
+      paint: { "icon-opacity": fade } });
     // The pointer turns with the heading, and its offset with it: in its own frame the right-hand track is +x.
     // Sized with the square (POINTER_K of it), so TRACK_SHIFT / POINTER_K of its pixels is the square's shift.
     m.addLayer({ id: "train-heading", type: "symbol", source: "trains", minzoom: 13, filter: ["has", "h"],
@@ -820,13 +829,18 @@
       ev.stopPropagation();
       app.open(busVehicleCard(e.line, e.id));
     };
+    // The same shape as a city vehicle (its mode's pictogram, the delay a dot on its shoulder), in the line's colour,
+    // its line under it.
+    const glyph = document.createElement("i");
+    glyph.className = app.lineInfo.get(e.line)?.kind === "trolley" ? "glyph trolley" : "glyph";
     const num = document.createElement("span");
+    num.className = "num";
     num.textContent = e.line;
     const dir = document.createElement("i");
     dir.className = "dir";
     const age = document.createElement("span");
     age.className = "age";
-    el.append(num, dir);
+    el.append(glyph, num, dir);
     el.setAttribute("aria-label", `Γραμμή ${e.line}, όχημα ${e.id}`);
     // The marker element only positions; the visible pill is the child. The age label is beside the
     // pill, not in it: a stale pill is faint, its age stays readable.
@@ -843,7 +857,7 @@
     return d;
   }
 
-  // A detail line's vehicle wears the line's colour; its delay is the ring (app.css).
+  // A detail line's vehicle wears the line's colour; its delay is the dot (app.css).
   function paint(el: HTMLElement, line: string) {
     const c = app.lineColor(line);
     el.style.setProperty("--c", c.bg);
@@ -1157,7 +1171,11 @@
       if (h != null) pr.h = h;
     }
     // icon-offset is in the image's pixels, times icon-size: TRACK_SHIFT of them land on the track's line-offset.
-    for (const f of fc.features) { const [x, y] = f.properties!.side as number[]; f.properties!.off = [x * TRACK_SHIFT, y * TRACK_SHIFT]; }
+    for (const f of fc.features) {
+      const [x, y] = f.properties!.side as number[];
+      f.properties!.off = [x * TRACK_SHIFT, y * TRACK_SHIFT];
+      f.properties!.goff = [(x * TRACK_SHIFT) / GLYPH_K, (y * TRACK_SHIFT) / GLYPH_K];
+    }
     (map!.getSource("trains") as GeoJSONSource).setData(fc);
   }
   let trainsWereEmpty = true;
