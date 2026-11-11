@@ -112,8 +112,11 @@ footer{max-width:40rem;margin:0 auto;padding:1rem;color:var(--dim);font-size:.85
 </style>`;
 
 // The app's own page is the shell of index.html with a page's head and content. The style is
-// scoped to .seo: the app around it must look exactly as it does on the map's own page.
+// scoped to .seo: the app around it must look exactly as it does on the map's own page. With
+// scripts on (index.html adds "js" to <html>) the text stays hidden: the map replaces it anyway, and
+// showing it first only made it flash.
 const SEO_STYLE = `<style>
+html.js .seo{display:none}
 .seo{color-scheme:light dark;--bg:#fff;--fg:#16181d;--dim:#5b6270;--card:#f3f5f9;--line:#dfe3ea;max-width:40rem;margin:0 auto;padding:1.25rem 1rem 3rem;font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--fg);background:var(--bg)}
 @media (prefers-color-scheme:dark){.seo{--bg:#14161a;--fg:#eceef2;--dim:#9aa2b1;--card:#1d2026;--line:#2b3038}}
 .seo *{box-sizing:border-box}

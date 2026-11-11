@@ -63,6 +63,13 @@ describe("appPage: the map's shell with a page's own head and content", () => {
     expect(html).toMatch(/<div id="app"><div class="seo">[\s\S]*<h1>Γεια<\/h1>[\s\S]*<\/div><\/div>/);
     expect(html).toContain('<script type="application/ld+json">{"@type":"BusStop"}</script>');
   });
+  it("hides the content from a visitor with scripts, so the text does not flash before the map", () => {
+    expect(html).toContain("html.js .seo{display:none}");
+    // index.html marks scripts on in its head, before the body is drawn.
+    const shell = readFileSync(join(__dirname, "..", "index.html"), "utf8");
+    const head = shell.slice(0, shell.indexOf("</head>"));
+    expect(head).toContain('document.documentElement.classList.add("js")');
+  });
   it("refuses a shell it cannot fill, so a deploy never ships pages without the map", () => {
     expect(() => appPage("<html><body></body></html>", { title: "a", description: "b", canonical: "c", body: "d" })).toThrow();
   });

@@ -22,7 +22,8 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <meta name="apple-mobile-web-app-title" content="Στάσεις">
-  <script>try{var t=JSON.parse(localStorage.getItem("theme"));if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
+  <!-- "js": the app will mount, so a prerendered page (scripts/seo.ts) hides its text instead of flashing it before the map. -->
+  <script>document.documentElement.classList.add("js");try{var t=JSON.parse(localStorage.getItem("theme"));if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
   <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin>
   <!-- The live API and the static line files (config.ts defaults): their TLS setup overlaps the script load. -->
   <link rel="preconnect" href="https://transit.haroldpoi.dev" crossorigin>
