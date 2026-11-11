@@ -113,10 +113,10 @@ button, input { font: inherit; color: inherit; }
   font: 600 11px/1.4 system-ui, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
 
-.maplibregl-ctrl-group button.details { width: auto; height: 24px; padding: 0 10px; font: 12px var(--font, inherit); color: #333; }
-/* «Λεπτομέρειες» shares the ⓘ row: same height and pill shape as the credits. */
-.maplibregl-ctrl-bottom-right > .details-ctl { clear: none; margin-top: 10px; border-radius: 12px; }
-.maplibregl-ctrl-bottom-right > .details-ctl button.details { border-radius: 12px; }
+/* The map's credits fold to a © mark, not MapLibre's "i" (the ⓘ map button opens the info sheet). */
+.maplibregl-ctrl-attrib-button { background-image: none; }
+.maplibregl-ctrl-attrib-button::before { content: "©"; display: block; color: #333; font: 700 15px/24px system-ui, sans-serif;
+  text-align: center; }
 .maplibregl-ctrl-group button.locate { display: grid; place-items: center; color: #333; }
 .locate .core { fill: none; }
 .locate[data-state="searching"] { animation: locating 1s ease-in-out infinite alternate; }

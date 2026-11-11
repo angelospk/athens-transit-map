@@ -410,6 +410,13 @@
       <circle cx="10" cy="10" r="8" /><path d="M7.8 7.9a2.3 2.3 0 1 1 3.3 2.1c-.7.4-1.1.8-1.1 1.6" /><circle cx="10" cy="14.2" r=".5" fill="currentColor" />
     </svg>
   </button>
+  <!-- The ⓘ sheet (sources, stats, news, feedback, terms). The map's credits have their own © mark, bottom right. -->
+  <button type="button" class="tool" aria-haspopup="dialog" aria-label="Λεπτομέρειες και πληροφορίες"
+    data-tip="Λεπτομέρειες: πηγές, στατιστικά, τι νέο, όροι" onclick={() => { pop = null; dispatchEvent(new CustomEvent("openinfo")); }}>
+    <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="10" cy="10" r="8" /><path d="M10 9v5" /><circle cx="10" cy="6.2" r=".5" fill="currentColor" />
+    </svg>
+  </button>
 </div>
 
 <style>

@@ -124,7 +124,7 @@
     d.dir.style.transform = `translate(${Math.sin(a) * rx}px, ${-Math.cos(a) * ry}px) rotate(${h}deg)`;
   }
 
-  const CREDITS_MS = 5000;   // the map's credits show this long, then fold to the ⓘ
+  const CREDITS_MS = 5000;   // the map's credits show this long, then fold to the ©
   const LANE_PX = 3;   // each direction drawn to the right of its travel direction (two lanes)
   const key = (line: string, id: string) => `${line}/${id}`;
 
@@ -896,12 +896,9 @@
     m.touchZoomRotate.disableRotation();
     m.addControl(new NavigationControl({ showCompass: false }), "top-right");
     m.addControl({ onAdd: () => locateCtl, onRemove: () => locateCtl.remove() }, "top-right");
-    m.addControl({ onAdd: () => infoCtl, onRemove: () => infoCtl.remove() }, "bottom-right");
-    // MapLibre puts a new bottom control above the others; after the credits it floats left of the ⓘ, on its row.
-    infoCtl.parentElement?.append(infoCtl);
-    // MapLibre shows the credits (ⓘ) open until the first drag: on a phone they cover the map. They fold after a few
-    // seconds instead; a tap on the ⓘ opens them again (#34: they must be seen first).
-    // A tap on the ⓘ before then is the user's choice: the timer stops.
+    // MapLibre shows the credits open until the first drag: on a phone they cover the map. They fold after a few
+    // seconds instead, to a © mark (app.css); a tap on the © opens them again (#34: they must be seen first).
+    // A tap on the © before then is the user's choice: the timer stops.
     m.once("load", () => {
       const t = setTimeout(() =>
         node.querySelector(".maplibregl-ctrl-attrib.maplibregl-compact-show")?.classList.remove("maplibregl-compact-show"), CREDITS_MS);
@@ -1459,18 +1456,6 @@
     locateBtn.setAttribute("aria-pressed", String(s !== "off" && s !== "denied"));
   });
 
-  // «Λεπτομέρειες» (a control left of the ⓘ, bottom right) opens the info sheet. The ⓘ stays MapLibre's: it shows the
-  // map's credits (open at first, closed after CREDITS_MS or the first drag), which the licences want visible (#34).
-  const infoCtl = document.createElement("div");
-  infoCtl.className = "maplibregl-ctrl maplibregl-ctrl-group details-ctl";
-  const infoBtn = document.createElement("button");
-  infoBtn.type = "button";
-  infoBtn.className = "details";
-  infoBtn.textContent = "Λεπτομέρειες";
-  infoBtn.setAttribute("aria-haspopup", "dialog");
-  infoBtn.onclick = () => void openInfo();
-  infoCtl.append(infoBtn);
-
   let infoOpen = $state(false);
   let infoTab = $state<"sources" | "stats" | "feedback" | "news" | "terms">("sources");
   let Info = $state.raw<typeof import("../ui/InfoDialog.svelte").default | null>(null);
@@ -1493,9 +1478,13 @@
     addEventListener("openfeedback", on);
     return () => removeEventListener("openfeedback", on);
   });
-  // «Τι νέο» and «Από πού έρχονται τα δεδομένα» in «Ρυθμίσεις» (Panel) open the ⓘ sheet on that tab.
+  // «Τι νέο» and «Από πού έρχονται τα δεδομένα» in «Ρυθμίσεις» (Panel) open the ⓘ sheet on that tab; the ⓘ map button
+  // (Panel, under the ?) sends no tab and opens it where it was last.
   $effect(() => {
-    const on = (e: Event) => { const t = (e as CustomEvent).detail; void openInfo(t === "news" ? "news" : "sources"); };
+    const on = (e: Event) => {
+      const t = (e as CustomEvent).detail;
+      void openInfo(t === "news" || t === "sources" ? t : undefined);
+    };
     addEventListener("openinfo", on);
     return () => removeEventListener("openinfo", on);
   });
