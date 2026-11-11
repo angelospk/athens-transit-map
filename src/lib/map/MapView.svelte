@@ -29,6 +29,7 @@
   import SpeedLegend from "../ui/SpeedLegend.svelte";
   import { lightenDark } from "./basemap";
   import { Turners } from "../turn";
+  import { metroLogo, oasaLogo, stopSign, tramLogo } from "./mapIcons";
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
   import { STOPS_ZOOM, busStopsFC } from "../stops";
@@ -241,25 +242,54 @@
   const ageFilter = (mode: AgeMode): FilterSpecification =>
     mode === "always" ? ["has", "age"] : mode === "old" ? ["all", ["has", "age"], ["get", "stale"]] : ["boolean", false];
 
+  // The map's icons (GreekCaptain's fork): a pictogram per vehicle mode (public/icons), the metro's and the tram's
+  // marks for their stations, the bus stop's sign (mapIcons.ts). The pictograms start loading with the module.
+  const ICONS = { "mode-bus": "bus", "mode-trolley": "trolley" } as const;
+  const iconImages = Object.fromEntries(Object.entries(ICONS).map(([name, file]) => {
+    const img = new Image();
+    img.src = `${import.meta.env.BASE_URL}icons/${file}.png`;
+    return [name, img.decode().then(() => img, () => null)];
+  })) as Record<keyof typeof ICONS, Promise<HTMLImageElement | null>>;
+  function addIcons(m: MlMap) {
+    for (const name of Object.keys(ICONS) as (keyof typeof ICONS)[])
+      void iconImages[name].then(img => { if (img && !m.hasImage(name)) { m.addImage(name, img, { pixelRatio: 2 }); m.triggerRepaint(); } });
+    if (!m.hasImage("mode-glyph-logo")) m.addImage("mode-glyph-logo", metroLogo(), { pixelRatio: 128 / 24 });
+    if (!m.hasImage("mode-glyph-tramlogo")) m.addImage("mode-glyph-tramlogo", tramLogo(), { pixelRatio: 128 / 24 });
+    // Only Athens's stops are OASA's: elsewhere the stop's tile has a plain dot. A city change redraws it (below).
+    const oasa = untrack(() => app.cityId) === "athens";
+    if (!m.hasImage("mode-stop")) m.addImage("mode-stop", stopSign(oasa), { pixelRatio: 128 / 48 });
+    void oasaLogo().then(img => { if (img && m.hasImage("mode-stop")) m.updateImage("mode-stop", stopSign(untrack(() => app.cityId) === "athens")); });
+  }
+  $effect(() => {
+    const oasa = app.cityId === "athens";
+    if (loaded && map?.hasImage("mode-stop")) map.updateImage("mode-stop", stopSign(oasa));
+  });
+
   // City layer: every live vehicle, drawn by the GPU (DOM markers would not cope with ~1500).
-  // Dots at city zoom, discs with the line number from zoom 14. Colours from app.css.
+  // Each is its mode's pictogram (bus blue, trolley orange), its delay a small dot on its shoulder (from zoom 12,
+  // where it can be told apart), its line under it from zoom 14. Colours from app.css.
   function addCityLayers(m: MlMap) {
     const css = getComputedStyle(document.documentElement);
     const color = (c: string) => css.getPropertyValue(`--${c}`).trim() || "#6c757d";
     m.addSource("city", { type: "geojson", data: EMPTY });
-    m.addLayer({ id: "city-dot", type: "circle", source: "city",
+    m.addLayer({ id: "city-dot", type: "symbol", source: "city",
+      layout: { "icon-image": ["match", ["get", "mode"], "trolley", "mode-trolley", "mode-bus"] as ExpressionSpecification,
+        "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.2, 13, 0.3, 14, 0.45, 17, 0.58],
+        "icon-allow-overlap": true, "icon-ignore-placement": true },
+      paint: { "icon-opacity-transition": { duration: 300 } } as never });
+    m.addLayer({ id: "city-delay", type: "circle", source: "city", minzoom: 12,
       paint: {
         "circle-color": ["match", ["get", "cls"], ...DELAY_CLASSES.slice(0, 4).flatMap(c => [c, color(c)]), color("none")],
-        "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 2.5, 13, 4.5, 14, 10, 17, 13],
-        "circle-stroke-color": "#ffffff",
-        "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 14, 1.5],
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 12, 2.5, 14, 3.5, 17, 4.5],
+        "circle-translate": ["interpolate", ["linear"], ["zoom"], 12, ["literal", [5, -5]], 14, ["literal", [8, -8]], 17, ["literal", [10, -10]]],
+        "circle-stroke-color": color("bg"), "circle-stroke-width": 1.5,
         "circle-opacity-transition": { duration: 300 }, "circle-stroke-opacity-transition": { duration: 300 },
       } as never });
     m.addLayer({ id: "city-label", type: "symbol", source: "city", minzoom: 14,
-      layout: { "text-field": ["get", "line"], "text-font": ["Noto Sans Bold"],
-        "text-size": ["case", [">", ["length", ["get", "line"]], 3], 8, 10],
+      layout: { "text-field": ["get", "line"], "text-font": ["Noto Sans Bold"], "text-size": 10, "text-offset": [0, 1.7],
         "text-allow-overlap": true, "text-ignore-placement": true },
-      paint: { "text-color": "#ffffff", "text-opacity-transition": { duration: 300 } } as never });
+      paint: { "text-color": color("fg"), "text-halo-color": color("bg"), "text-halo-width": 1.5,
+        "text-opacity-transition": { duration: 300 } } as never });
     // A pointer on each moving vehicle (heading `h`), from zoom 13, where the dots are big enough.
     m.addImage("city-pointer", pointerImage(), { pixelRatio: 2 });
     m.addLayer({ id: "city-heading", type: "symbol", source: "city", minzoom: 13, filter: ["has", "h"],
@@ -278,6 +308,7 @@
   function addMetroLayers(m: MlMap) {
     const sel = (a: unknown, b: unknown) => ["case", ["get", "sel"], a, b] as ExpressionSpecification;
     const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#3b5bdb";
+    const ring = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#ffffff";
     const byZoom = (stops: unknown[]) => ["interpolate", ["linear"], ["zoom"], ...stops] as ExpressionSpecification;
     m.addSource("metro", { type: "geojson", data: EMPTY });
     m.addLayer({ id: "metro-line", type: "line", source: "metro", filter: ["==", ["get", "kind"], "line"],
@@ -286,9 +317,13 @@
     const stationVis = app.trainsOn ? "visible" : "none";
     m.addLayer({ id: "metro-station", type: "circle", source: "metro", filter: ["==", ["get", "kind"], "station"], minzoom: RAIL_ZOOM,
       layout: { visibility: stationVis },
-      paint: { "circle-radius": byZoom([RAIL_ZOOM, sel(6, ["case", ["get", "hub"], 4, 3.5]), 17, sel(9, ["case", ["get", "hub"], 7, 6])]),
-        "circle-color": "#ffffff", "circle-stroke-color": sel(accent, ["case", ["get", "hub"], "#222222", ["get", "color"]]),
-        "circle-stroke-width": byZoom([RAIL_ZOOM, sel(3, 2), 17, sel(3.5, 2.5)]) } });
+      paint: { "circle-radius": byZoom([RAIL_ZOOM, sel(6, ["case", ["get", "hub"], 4, 3.5]), 14, sel(10, 9), 17, sel(16, 15)]),
+        "circle-color": ["case", ["get", "hub"], "#2b2f36", ["get", "color"]], "circle-stroke-color": sel(accent, ring),
+        "circle-stroke-width": byZoom([RAIL_ZOOM, sel(3, 1), 17, sel(3.5, 1.5)]) } });
+    // Close in, the station shows its mode's mark (metro or tram) on its disc.
+    m.addLayer({ id: "metro-station-glyph", type: "symbol", source: "metro", filter: ["==", ["get", "kind"], "station"], minzoom: 14,
+      layout: { visibility: stationVis, "icon-image": ["concat", "mode-glyph-", ["get", "glyph"]] as ExpressionSpecification,
+        "icon-size": byZoom([14, 0.8, 17, 1.25]), "icon-allow-overlap": true, "icon-ignore-placement": true } });
     m.addLayer({ id: "metro-label", type: "symbol", source: "metro", minzoom: RAIL_ZOOM + 1,
       filter: ["==", ["get", "kind"], "station"],
       layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Bold"], "text-size": 10,
@@ -420,12 +455,13 @@
   }
 
   function addLayers(m: MlMap) {
+    addIcons(m);
     addSpeed(m);
     addMunicipal(m);
     addMetroLayers(m);
     addSuburbanLayers(m);
     addCityLayers(m);
-    for (const id of ["metro-station", "metro-label", "suburban-station", "suburban-label"]) m.moveLayer(id);
+    for (const id of ["metro-station", "metro-station-glyph", "metro-label", "suburban-station", "suburban-label"]) m.moveLayer(id);
     addTrainLayers(m);
     // Trails of corrections (the route a vehicle glided along) and, with motion off, of moves to a
     // new fix. Always under the vehicle: city dots' trails under the dots, detailed lines' trails
@@ -467,9 +503,9 @@
     trail("trails-line", true, under);
     // Every bus and trolley stop, from STOPS_ZOOM: over the routes, under the vehicles. The tapped one ringed.
     m.addSource("bus-stops", { type: "geojson", data: app.stopIx ? busStopsFC(app.stopIx) : EMPTY });
-    m.addLayer({ id: "bus-stop", type: "circle", source: "bus-stops", minzoom: STOPS_ZOOM,
-      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], STOPS_ZOOM, 3.5, 17, 6], "circle-color": "#ffffff",
-        "circle-stroke-color": "#5f6368", "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], STOPS_ZOOM, 1.5, 17, 2] } }, under);
+    m.addLayer({ id: "bus-stop", type: "symbol", source: "bus-stops", minzoom: STOPS_ZOOM,
+      layout: { "icon-image": "mode-stop", "icon-size": ["interpolate", ["linear"], ["zoom"], STOPS_ZOOM, 0.3, 17, 0.46],
+        "icon-allow-overlap": true, "icon-ignore-placement": true } }, under);
     m.addLayer({ id: "bus-stop-selected", type: "circle", source: "bus-stops", filter: ["==", ["get", "i"], app.busStop ?? -1],
       paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 12, 6, 17, 11], "circle-opacity": 0,
         "circle-stroke-color": accent, "circle-stroke-width": 3 } });
@@ -717,7 +753,7 @@
       else {
         const h = turners.toward(e.key, headingOf(e, still), turnNow);
         features.push({ type: "Feature", geometry: { type: "Point", coordinates: pos },
-          properties: { line: e.line, id: e.id, cls: e.cls, stale: isStalePos(now - e.at), ...(h != null && { h }), ...(alpha < 1 && { fade: Math.round(alpha * 100) / 100 }) } });
+          properties: { line: e.line, id: e.id, cls: e.cls, mode: app.lineInfo.get(e.line)?.kind ?? "bus", stale: isStalePos(now - e.at), ...(h != null && { h }), ...(alpha < 1 && { fade: Math.round(alpha * 100) / 100 }) } });
       }
     }
     for (const [k, d] of doms) {
@@ -1080,7 +1116,7 @@
 
   $effect(() => {
     const vis = app.trainsOn ? "visible" : "none";
-    if (loaded) for (const id of ["train-sel", "train-edge", "train-dot", "train-hole", "train-heading", "train-age", "train-route", "train-route-2", "train-route-casing", "metro-station", "metro-label",
+    if (loaded) for (const id of ["train-sel", "train-edge", "train-dot", "train-hole", "train-heading", "train-age", "train-route", "train-route-2", "train-route-casing", "metro-station", "metro-station-glyph", "metro-label",
       "suburban-station", "suburban-label"]) map!.setLayoutProperty(id, "visibility", vis);
   });
 
@@ -1257,17 +1293,19 @@
     // «Κοντά σου» with nothing selected: the lines of the nearest stops stay, the others dim.
     const near = !s && app.nearFocus ? app.nearFocus : null;
     const opacity: ExpressionSpecification = ["*", ["case", sel, 1, o], near ? ["case", ["in", ["get", "line"], ["literal", near]], 1, 0.22] : 1, ["case", ["get", "stale"], 0.3, 1], ["coalesce", ["get", "fade"], 1]];
-    m.setPaintProperty("city-dot", "circle-opacity", opacity);
-    m.setPaintProperty("city-dot", "circle-stroke-opacity", opacity);
+    m.setPaintProperty("city-dot", "icon-opacity", opacity);
+    m.setPaintProperty("city-delay", "circle-opacity", opacity);
+    m.setPaintProperty("city-delay", "circle-stroke-opacity", opacity);
     m.setPaintProperty("city-label", "text-opacity", opacity);
     m.setPaintProperty("city-heading", "icon-opacity", opacity);
     const filter = s && app.others === "hide" ? sel : null;
     m.setFilter("city-dot", filter);
+    m.setFilter("city-delay", filter);
     m.setFilter("city-heading", filter ? ["all", ["has", "h"], filter] : ["has", "h"]);
     m.setFilter("city-label", filter);
     m.setFilter("city-selected", s?.kind === "vehicle" ? sel : ["boolean", false]);
     const vis = app.cityOn ? "visible" : "none";
-    for (const id of ["city-dot", "city-label", "city-heading", "city-selected"]) m.setLayoutProperty(id, "visibility", vis);
+    for (const id of ["city-dot", "city-delay", "city-label", "city-heading", "city-selected"]) m.setLayoutProperty(id, "visibility", vis);
   });
 
   $effect(() => {
