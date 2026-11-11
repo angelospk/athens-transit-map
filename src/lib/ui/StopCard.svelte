@@ -1,5 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { MediaQuery } from "svelte/reactivity";
+  import { bottomSheet, type Place } from "../sheetDrag";
   import { fetchLineStatic, fetchStop, peekStop, stopDelay } from "../api";
   import { alertLinesAt, arrivalGroups, arrivalNote, boardLines, headTo, lineTowardAt, linesAt, linesToWarm, mineFirst, timeText, toward, twins, usualRows, scheduleRows, signCode, type ArrivalGroup, type ArrivalTime, type StopBoard } from "../stops";
   import Bell from "./Bell.svelte";
@@ -19,6 +21,9 @@
   import { titleCase } from "../nearby";
   import { hhmm, stopPlace } from "../lineStop";
   import LineChip from "./LineChip.svelte";
+  // On a phone the card is a bottom sheet with three places (its header, half the screen, all of it): sheetDrag.ts.
+  const narrowSheet = new MediaQuery("(max-width: 719px)");
+  let sheetPlace = $state<Place>("half");
 
   // The tapped bus stop, laid out as the phone app's: the user's lines first («Οι γραμμές μου | Όλες»), each
   // line and headsign with its next bus in big minutes, where it is and whether it runs late, the next ones,
@@ -178,7 +183,10 @@
 {#if fixing}
   <StopFixBar {app} ondone={() => (sent = !!id && reportedStops().includes(id))} />
 {:else if stop || early}
-  <section class="card" aria-label="Στάση {name}">
+  <section class="card" class:peek={narrowSheet.current && sheetPlace === "peek"} aria-label="Στάση {name}"
+    use:bottomSheet={{ handle: "header", on: () => narrowSheet.current, key: id ?? name, onplace: p => (sheetPlace = p) }}>
+    <button type="button" class="grab" aria-expanded={!(narrowSheet.current && sheetPlace === "peek")}
+      aria-label={narrowSheet.current && sheetPlace === "peek" ? "Ανάπτυξη στάσης" : "Σύμπτυξη στάσης"}><span></span></button>
     <header>
       <Back {app} />
       <div class="t">
@@ -303,6 +311,8 @@
   .card { position: absolute; z-index: 6; left: 12px; bottom: 28px; width: 360px; padding: 12px 16px;
     background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
     backdrop-filter: blur(8px); max-height: calc(100dvh - 140px); overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; }
+  .grab { display: none; width: 100%; height: 14px; margin: -8px 0 2px; padding: 0; border: 0; background: none; cursor: grab; }
+  .grab span { display: block; width: 40px; height: 5px; margin: 0 auto; border-radius: 3px; background: var(--border); }
   header { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin-bottom: 10px; }
   .t { flex: 1; min-width: 0; }
   /* Under Back, the name gets a row of its own: Back and the buttons above, the full width for the name. */
@@ -385,7 +395,12 @@
   .close:hover { background: var(--control); }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   @media (max-width: 719px) {
-    .card { left: 0; right: 0; bottom: 0; width: auto; border-radius: 16px 16px 0 0; border-width: 1px 0 0;
-      padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); max-height: 55dvh; }
+    /* GreekCaptain's fork: it floats 8 px in, rounded all round; as tall as its content, at most the screen. */
+    .card { left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); width: auto; border-radius: 28px;
+      padding: 14px 16px calc(14px + var(--sheet-room, 0px));
+      max-height: calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+    .grab { display: block; }
+    header { touch-action: none; }
+    .card.peek > :not(header, .grab) { visibility: hidden; }
   }
 </style>

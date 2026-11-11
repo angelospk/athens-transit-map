@@ -9,12 +9,12 @@
 </script>
 
 <script lang="ts">
-  // The shell of the three cards (vehicle, line, rail stop): on a phone a bottom sheet, dragged down by its top
-  // it peeks (only the header shows), dragged up it opens; on a desktop a card at the map's left. The header
+  // The shell of the three cards (vehicle, line, rail stop): on a phone a bottom sheet with three places (its header,
+  // half the screen, all of it), dragged by its top (sheetDrag.ts); on a desktop a card at the map's left. The header
   // snippet holds the badge, the title and the freshness tag; the shell adds Back, the star and ×.
-  import { untrack, type Snippet } from "svelte";
+  import type { Snippet } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
-  import { clampDrag, settle, type SheetState } from "../sheet";
+  import { bottomSheet, type Place } from "../sheetDrag";
   import type { AppState } from "../state.svelte";
   import Back from "./Back.svelte";
   import Icon from "./Icon.svelte";
@@ -33,63 +33,18 @@
   const close = () => (onclose ?? (() => app.closeCards()))();
 
   const narrow = new MediaQuery("(max-width: 719px)");
-  let sheet = $state<SheetState>("open");
-  let drag = $state(0);   // px the finger has moved it from its place
-  let dragging = $state(false);
-  let grab: { id: number; y: number; from: SheetState; range: number; moved: boolean } | null = null;
-  let card: HTMLElement | undefined = $state();
-  let cardH = $state(0), topH = $state(0);
-  // How far it travels to peek: all but its padding (the bottom one holds the safe area) and its top.
-  function measure() {
-    if (!card) return 0;
-    const cs = getComputedStyle(card);
-    return Math.max(0, card.offsetHeight - topH - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom));
-  }
-  const range = $derived.by(() => { void cardH; void topH; return measure(); });
-  const shift = $derived(narrow.current ? (sheet === "peek" ? range : 0) + drag : 0);
-
-  $effect(() => {
-    void key;
-    // A finger still down on the old sheet must not move, or settle, the new one.
-    untrack(() => { sheet = "open"; drag = 0; dragging = false; grab = null; });
-  });
-
-  const flip = (s: SheetState): SheetState => (s === "open" ? "peek" : "open");
-
-  function down(e: PointerEvent) {
-    if (!narrow.current || e.button !== 0 || grab || (e.target as Element).closest("button:not(.grab)")) return;
-    grab = { id: e.pointerId, y: e.clientY, from: sheet, range: measure(), moved: false };
-    (e.currentTarget as Element).setPointerCapture(e.pointerId);
-  }
-  function move(e: PointerEvent) {
-    if (!grab || e.pointerId !== grab.id) return;
-    const dy = e.clientY - grab.y;
-    if (!grab.moved && Math.abs(dy) < 6) return;   // a tap is not a drag
-    grab.moved = true;
-    dragging = true;
-    drag = clampDrag(grab.from, dy, grab.range);
-  }
-  // Also on pointercancel and a lost capture, so the sheet never stays between its places.
-  function end(e: PointerEvent) {
-    if (!grab || e.pointerId !== grab.id) return;
-    const g = grab;
-    grab = null;
-    dragging = false;
-    sheet = g.moved ? settle(g.from, e.type === "pointerup" ? e.clientY - g.y : drag, g.range) : e.type === "pointerup" ? flip(g.from) : g.from;
-    drag = 0;
-  }
+  let place = $state<Place>("half");
+  const peek = $derived(narrow.current && place === "peek");
 </script>
 
 <svelte:window onkeydown={e => { if (e.key === "Escape" && closeOnEscape) close(); }} />
 
-<section class="card" class:dragging class:peek={narrow.current && sheet === "peek"} aria-label="Λεπτομέρειες" bind:this={card} bind:offsetHeight={cardH}
-  style:transform={shift ? `translateY(${shift}px)` : undefined}>
-  <!-- svelte-ignore a11y_no_static_element_interactions (the keyboard goes through the grab button) -->
-  <div class="top" bind:offsetHeight={topH} onpointerdown={down} onpointermove={move} onpointerup={end} onpointercancel={end}
-    onlostpointercapture={end}>
-    <!-- Pointer taps and drags are handled above; a click with no pointer (Enter, Space) comes here. -->
-    <button type="button" class="grab" aria-expanded={sheet === "open"} aria-controls="card-body"
-      aria-label={sheet === "open" ? "Σύμπτυξη λεπτομερειών" : "Ανάπτυξη λεπτομερειών"} onclick={e => { if (e.detail === 0) sheet = flip(sheet); }}><span></span></button>
+<section class="card" class:peek aria-label="Λεπτομέρειες"
+  use:bottomSheet={{ handle: ".top", scroll: ".body", on: () => narrow.current, key, onplace: p => (place = p) }}>
+  <div class="top">
+    <!-- Taps and drags are the sheet's (sheetDrag.ts); a click with no pointer (Enter, Space) steps it too. -->
+    <button type="button" class="grab" aria-expanded={!peek} aria-controls="card-body"
+      aria-label={peek ? "Ανάπτυξη λεπτομερειών" : "Σύμπτυξη λεπτομερειών"}><span></span></button>
     <header>
       <Back {app} />
       <div class="hd">{@render header()}</div>
@@ -100,7 +55,7 @@
     </header>
   </div>
 
-  <div class="body" id="card-body" inert={narrow.current && sheet === "peek"}>
+  <div class="body" id="card-body" inert={peek}>
     {@render children()}
   </div>
 </section>
@@ -134,9 +89,12 @@
   .star.on { color: #f59f00; }
   @media (prefers-reduced-motion: reduce) { .card { transition: none !important; } }
   @media (max-width: 719px) {
-    .card { left: 0; right: 0; bottom: 0; width: auto; border-radius: 16px 16px 0 0; border-width: 1px 0 0;
-      padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); transition: transform .22s ease; }
-    .card.dragging { transition: none; }
+    /* GreekCaptain's fork: it floats 8 px in, rounded all round; as tall as its content, at most the screen. */
+    .card { left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); width: auto; border-radius: 28px;
+      padding: 14px 16px 14px; display: flex; flex-direction: column; box-sizing: border-box;
+      max-height: calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+    .top { flex: none; }
+    .body { flex: 1 1 auto; min-height: 0; max-height: none; padding-bottom: var(--sheet-room, 0px); }
     .grab { display: block; }
   }
 </style>
