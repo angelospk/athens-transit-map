@@ -1,6 +1,7 @@
 // Daily network statistics from the backend (docs/API.md "Daily statistics" in athens-transit-rt),
 // read from its `stats` branch on GitHub so the home server does not serve them.
-import { STATS_BASE } from "./config";
+import { PAGE_CITY, STATS_BASE } from "./config";
+import { STATS_DIRS } from "./cities";
 
 export type HourStats = { h: number; fixes: number; vehicles: number; lines: number; dist_m: number; time_s: number };
 export type LineStats = { line: string; fixes: number; vehicles: number; dist_m: number; time_s: number };
@@ -23,7 +24,7 @@ export type StartDelays = { runs: number; by_line: LineDelay[] };
 export type Ranked = { line: string; kmh: number; km: number; hours: number };
 
 export const MIN_LINE_HOURS = 15; // vehicle-hours of speed samples before a line is ranked
-export const DATA_URL = "https://github.com/angelospk/athens-transit-rt/tree/stats/v1";
+export const DATA_URL = `https://github.com/angelospk/staseis-rt/tree/stats/v1${STATS_DIRS[PAGE_CITY] ? `/${STATS_DIRS[PAGE_CITY]}` : ""}`;
 
 export const kmh = (dist_m: number, time_s: number): number | null => (time_s > 0 ? (dist_m / time_s) * 3.6 : null);
 

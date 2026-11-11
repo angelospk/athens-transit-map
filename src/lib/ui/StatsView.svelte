@@ -1,6 +1,11 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { CITIES } from "../cities";
+  import { PAGE_CITY } from "../config";
   import { DATA_URL, gaps, hourly, latestDay, MIN_LINE_HOURS, ranking, tripShare, type DayStats } from "../stats";
+  const city = CITIES[PAGE_CITY];
+  // Trolleys run only in Athens.
+  const fleet = city.id === "athens" ? "λεωφορεία και τρόλεϊ" : "λεωφορεία";
 
   let data = $state<{ kind: "loading" } | { kind: "ok"; day: DayStats } | { kind: "none" } | { kind: "error" }>({ kind: "loading" });
 
@@ -81,7 +86,7 @@
 {:else if data.kind === "none" || !day}
   <p class="muted">Δεν υπάρχουν ακόμα στατιστικά. Η πρώτη μέρα γράφεται λίγες ώρες μετά τα μεσάνυχτα.</p>
 {:else}
-  <p class="lede">{dateText}: {nf(day.vehicles)} λεωφορεία και τρόλεϊ σε {nf(day.lines)} γραμμές.
+  <p class="lede">{dateText}: {nf(day.vehicles)} {fleet} σε {nf(day.lines)} γραμμές.
     {#if missingText}<br /><span class="warn">Μερική μέρα: χωρίς δεδομένα {missingText}.</span>{/if}</p>
 
   {#if trips}
@@ -100,7 +105,7 @@
       <p class="note">Ένα δρομολόγιο μετράει ως εκτελεσμένο όταν ένα όχημα κάλυψε τουλάχιστον το μισό της διαδρομής του, κοντά στην ώρα του. Όχημα χωρίς GPS φαίνεται σαν δρομολόγιο που δεν έγινε.
         {#if trips.source !== "gtfs"}Η σύγκριση γίνεται με το ημερήσιο πρόγραμμα του ΟΑΣΑ.{/if}
         {#if trips.expired && trips.source === "mixed"}<span class="warn">{trips.gtfsLines === 1 ? "Για 1 γραμμή" : `Για ${nf(trips.gtfsLines)} γραμμές`} χωρίς ημερήσιο πρόγραμμα, η σύγκριση γίνεται με το ληγμένο επίσημο πρόγραμμα (GTFS), από την έκδοση {trips.gtfs}.</span>
-        {:else if trips.expired}<span class="warn">Το επίσημο πρόγραμμα (GTFS) του ΟΑΣΑ έχει λήξει. Η σύγκριση γίνεται με το πρόγραμμα της ίδιας μέρας της εβδομάδας, από την έκδοση {trips.gtfs}.</span>{/if}</p>
+        {:else if trips.expired}<span class="warn">Το επίσημο πρόγραμμα (GTFS) του {city.agency} έχει λήξει. Η σύγκριση γίνεται με το πρόγραμμα της ίδιας μέρας της εβδομάδας, από την έκδοση {trips.gtfs}.</span>{/if}</p>
     </section>
   {/if}
 

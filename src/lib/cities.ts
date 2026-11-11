@@ -44,9 +44,13 @@ export const CITIES: Record<CityId, City> = {
   thessaloniki: { id: "thessaloniki", name: "Θεσσαλονίκη", center: [22.94, 40.63], zoom: 12, radiusKm: 40, ready: true, rail: false,
     agency: "ΟΣΕΘ", agencyThe: "Ο ΟΣΕΘ", gtfsPage: "https://data.gov.gr/dataset/42c9a7da-c86c-48b1-914c-f340e8bef00d", gtfsHost: "data.gov.gr",
     ns: "oasa", plan: true, inName: "στη Θεσσαλονίκη", box: { south: 40.3, west: 22.6, north: 41.0, east: 23.4 },
-    stats: false, alerts: true, telegram: true, service: "live", hint: "ΟΣΕΘ · λεωφορεία" },
+    stats: true, alerts: true, telegram: true, service: "live", hint: "ΟΣΕΘ · λεωφορεία" },
   ...citybus,
 };
+
+// Folder per city on the stats branch (rt .github/workflows/stats.yml); "" = v1 itself. A city not
+// listed has no stats (and `stats: false`).
+export const STATS_DIRS: Partial<Record<CityId, string>> = { athens: "", thessaloniki: "thessaloniki" };
 
 // The picker's two big buttons; every other city is a chip under them.
 export const MAIN_CITIES: CityId[] = ["athens", "thessaloniki"];

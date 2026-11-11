@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CITIES, DEFAULT_CITY, findCities, isCityId, nearestCity, initialCity } from "../src/lib/cities";
+import { CITIES, DEFAULT_CITY, STATS_DIRS, findCities, isCityId, nearestCity, initialCity } from "../src/lib/cities";
 
 describe("cities", () => {
   it("knows Athens, Thessaloniki and the 28 citybus.gr cities; Athens is the default and ready", () => {
@@ -14,14 +14,16 @@ describe("cities", () => {
     }
   });
 
-  it("each city names its operator; stats are Athens only, stop alerts and Telegram everywhere", () => {
+  it("each city names its operator; stats in Athens and Thessaloniki, stop alerts and Telegram everywhere", () => {
     expect(CITIES.athens.agency).toBe("ΟΑΣΑ");
     expect(CITIES.thessaloniki.agency).toBe("ΟΣΕΘ");   // OSETH is the authority; never «ΟΑΣΘ»
     expect(Object.values(CITIES).some(c => c.hint.includes("ΟΑΣΘ") || c.agency.includes("ΟΑΣΘ"))).toBe(false);
     expect(CITIES.athens.gtfsPage).toMatch(/^https:\/\/data\.gov\.gr\/dataset\//);
     expect(CITIES.thessaloniki.gtfsPage).toBe("https://data.gov.gr/dataset/42c9a7da-c86c-48b1-914c-f340e8bef00d");
     expect([CITIES.athens.stats, CITIES.athens.alerts]).toEqual([true, true]);
-    expect([CITIES.thessaloniki.stats, CITIES.thessaloniki.alerts]).toEqual([false, true]);
+    expect([CITIES.thessaloniki.stats, CITIES.thessaloniki.alerts]).toEqual([true, true]);
+    // A city has stats exactly when the stats branch has a folder for it.
+    for (const c of Object.values(CITIES)) expect(c.stats).toBe(c.id in STATS_DIRS);
     expect([CITIES.athens.telegram, CITIES.thessaloniki.telegram]).toEqual([true, true]);
   });
 

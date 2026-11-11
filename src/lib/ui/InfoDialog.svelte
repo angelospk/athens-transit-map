@@ -24,7 +24,7 @@
     { id: "terms", label: "Όροι" },
   ] as const;
   type Tab = (typeof ALL_TABS)[number]["id"];
-  // The daily stats are of Athens only: elsewhere no stats tab.
+  // The daily stats exist for Athens and Thessaloniki only: elsewhere no stats tab.
   const TABS = ALL_TABS.filter(t => t.id !== "stats" || city.stats);
   // Inside the stats tab: the newest day first, then the stored days together.
   const SUBS = [
@@ -111,7 +111,7 @@
       </div>
       <!-- Mounted only while shown, so each visit asks for the days again (cached for an hour). -->
       <div role="tabpanel" id="stats-panel-long" aria-labelledby="stats-tab-long" hidden={sub !== "long"}>
-        {#if open && tab === "stats" && sub === "long"}<LongTermView /><EtaAccuracy />{/if}
+        {#if open && tab === "stats" && sub === "long"}<LongTermView />{#if city.id === "athens"}<EtaAccuracy />{/if}{/if}
       </div>
     </div>
     {/if}

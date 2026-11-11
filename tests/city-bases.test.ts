@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CITIES } from "../src/lib/cities";
-import { basesFor, cityUrl, favKey, recentKey } from "../src/lib/cityBases";
+import { basesFor, cityUrl, favKey, recentKey, statsBaseFor } from "../src/lib/cityBases";
 
 describe("Thessaloniki live (web#40)", () => {
   it("Thessaloniki is ready; only Athens has rail (metro, tram, Proastiakos, municipal, OASA alerts)", () => {
@@ -38,6 +38,13 @@ describe("Thessaloniki live (web#40)", () => {
       api: "http://minipc:10449/her",
       static: "http://minipc:10449/her/static/v1",
     });
+  });
+
+  it("statsBaseFor: Athens reads v1 of the stats branch, Thessaloniki its own folder; the base may be overridden", () => {
+    const raw = "https://raw.githubusercontent.com/angelospk/staseis-rt/stats/v1";
+    expect(statsBaseFor("athens", {})).toBe(raw);
+    expect(statsBaseFor("thessaloniki", {})).toBe(`${raw}/thessaloniki`);
+    expect(statsBaseFor("thessaloniki", { VITE_STATS_BASE: "http://x/v1/" })).toBe("http://x/v1/thessaloniki");
   });
 
   it("cityUrl: a city switch opens the city's home (web#47); the old city's lines and cards mean nothing there", () => {

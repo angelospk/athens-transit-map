@@ -1,7 +1,7 @@
 // One city per page load: the service bases, the URL and the storage keys that belong to it.
 // A city switch reloads the page (state.svelte.ts), because caches and URLs are built once at load.
 
-import type { CityId } from "./cities";
+import { STATS_DIRS, type CityId } from "./cities";
 import { CITYBUS, CITYBUS_API } from "./citybus";
 
 export interface BasesEnv {
@@ -9,6 +9,7 @@ export interface BasesEnv {
   VITE_STATIC_BASE?: string;
   VITE_API_BASE_THESSALONIKI?: string;
   VITE_API_BASE_CITYBUS?: string;
+  VITE_STATS_BASE?: string;
 }
 
 export interface Bases { api: string; static: string }
@@ -32,6 +33,13 @@ export function basesFor(city: CityId, env: BasesEnv): Bases {
     return { api, static: `${api}/static/v1` };
   }
   return { api: strip(env.VITE_API_BASE || ATHENS.api), static: strip(env.VITE_STATIC_BASE || ATHENS.static) };
+}
+
+// The city's daily stats on the stats branch: Athens in v1 itself, Thessaloniki in v1/thessaloniki.
+const STATS_RAW = "https://raw.githubusercontent.com/angelospk/staseis-rt/stats/v1";
+export function statsBaseFor(city: CityId, env: BasesEnv): string {
+  const dir = STATS_DIRS[city];
+  return strip(env.VITE_STATS_BASE || STATS_RAW) + (dir ? `/${dir}` : "");
 }
 
 // A switch opens the new city's home (web#47): the old city's lines and cards mean nothing in the new one.

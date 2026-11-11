@@ -5,7 +5,7 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { CITIES, type CityId } from "../src/lib/cities";
+import { CITIES, STATS_DIRS, type CityId } from "../src/lib/cities";
 import {
   byDayType, complete, gaps, hasDelays, hourBand, hourly, kmh, lineTrends, LONG_DAYS, MIN_DELAY_RUNS, MIN_LINE_HOURS,
   ranking, slowLines, tripShare, validDay, type DayStats,
@@ -26,8 +26,7 @@ export interface StatsCity {
   dir: string; // the city's folder under v1/ on the stats branch; "" = v1 itself
 }
 
-// Folder per city on the stats branch (rt .github/workflows/stats.yml). A city not listed has no stats.
-const DIRS: Partial<Record<CityId, string>> = { athens: "", thessaloniki: "thessaloniki" };
+const DIRS = STATS_DIRS;
 
 export const STATS_CITIES: StatsCity[] = Object.values(CITIES).flatMap(c =>
   c.id in DIRS ? [{ id: c.id, name: c.name, agency: c.agency, center: c.center, dir: DIRS[c.id]! }] : []);
