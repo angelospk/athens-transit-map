@@ -57,6 +57,14 @@ button, input { font: inherit; color: inherit; }
 @media (pointer: coarse) {
   .maplibregl-ctrl-group button { width: 44px; height: 44px; }
 }
+/* A phone: the locate button round and glass, as the map's tools under it (Panel.svelte). */
+@media (pointer: coarse) and (max-width: 719px) {
+  .maplibregl-ctrl-top-right .maplibregl-ctrl-group:has(.locate) { border-radius: 50%; background: var(--panel);
+    -webkit-backdrop-filter: blur(16px) saturate(160%); backdrop-filter: blur(16px) saturate(160%);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .35), inset 0 0 0 1px var(--border); }
+  .maplibregl-ctrl-top-right .maplibregl-ctrl-group button.locate { border-radius: 50%; color: var(--fg); }
+  .maplibregl-ctrl-top-right .maplibregl-ctrl-group button.locate:hover { background: none; }
+}
 /* «Ηλικία θέσης» (B4): "old" shows only a stale marker's age (it says why the marker is pale), "never" none. */
 .ages-old .vm:not(.stale) .age, .ages-never .vm .age { display: none; }
 .filtered { display: none; }

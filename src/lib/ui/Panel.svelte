@@ -523,7 +523,15 @@
     .panel { max-width: calc(100% - 78px); }
   }
   @media (pointer: coarse) and (max-width: 719px) {
-    .rail { top: calc(64px + env(safe-area-inset-top)); }   /* the locate button only */
+    /* A phone (GreekCaptain's fork): each tool a round glass button of its own, 8 px apart, under the locate one. */
+    .rail { top: calc(62px + env(safe-area-inset-top)); gap: 8px; background: none; box-shadow: none; border-radius: 0; }
+    .rail .tool, .rail .tool:first-child, .rail .tool:last-child { border-radius: 50%; color: var(--fg); background: var(--panel);
+      -webkit-backdrop-filter: blur(16px) saturate(160%); backdrop-filter: blur(16px) saturate(160%);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, .35), inset 0 0 0 1px var(--border); }
+    .rail .tool + .tool { border-top: 0; }
+    .rail .tool:hover, .rail .tool.on { background: var(--panel); color: var(--accent); }
+    .rail .tool.on { box-shadow: 0 4px 14px rgba(0, 0, 0, .35), inset 0 0 0 2px var(--accent); }
+    .rail .tool.filtering::after, .rail .tool.pinned::after { top: 7px; right: 7px; }
     .panel, .popwrap { right: 64px; }
     .popwrap { top: calc(12px + env(safe-area-inset-top)); max-width: none; max-height: calc(100dvh - 24px - env(safe-area-inset-top)); }
     .panel.compact { max-width: calc(100% - 72px); }
