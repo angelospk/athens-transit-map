@@ -265,7 +265,7 @@
 
 <!-- The popover of a map button opens on the right, beside the buttons (on a phone over the panel). -->
 {#if pop}
-  <div class="popwrap" class:raised={pop === "layers" || pop === "help"}>
+  <div class="popwrap" class:raised={pop === "layers" || pop === "help"} class:page={pop === "layers" && narrow.current}>
     {#if pop === "trip"}
       {#if !app.cityInfo.plan}
         <div class="pop"><p class="hint">Οι οδηγίες (από εδώ ως εκεί) έρχονται σύντομα {app.cityInfo.inName}. Ως τότε, δες τις γραμμές και τις στάσεις στον χάρτη.</p></div>
@@ -287,88 +287,104 @@
         <HelpPop />
       </div>
     {:else if pop === "layers"}
-      <div class="pop" id="pop-layers" role="dialog" aria-label="Τι δείχνει ο χάρτης">
-        <h3>Τι δείχνει ο χάρτης</h3>
-        <section>
-          <label class="switch">
-            <input type="checkbox" checked={app.cityOn} disabled={cityMissing} onchange={e => app.setCityOn(e.currentTarget.checked)} />
-            <span><b>Λεωφορεία</b> <small>{#if cityMissing}(όχι ακόμα διαθέσιμο){:else if app.city}· {app.city.vehicles.length} τώρα{/if}</small><br />
-              <small>Όλα τα λεωφορεία και τρόλεϊ της πόλης. Οι γραμμές που διάλεξες μένουν πάντα.</small></span>
+      <!-- «Ρυθμίσεις» (GreekCaptain's fork, MapSettings): grouped rows, a switch or a value on the right. On a phone a
+           page of its own, with a back arrow; on a computer the popover beside the buttons. -->
+      <div class="pop set" id="pop-layers" role="dialog" aria-label="Ρυθμίσεις">
+        <div class="sethead">
+          {#if narrow.current}<button type="button" class="setback" aria-label="Πίσω στον χάρτη" onclick={() => { pop = null; void refocus("layers"); }}>‹</button>{/if}
+          <h3>Ρυθμίσεις</h3>
+        </div>
+
+        <h4>Εμφάνιση</h4>
+        <div class="group">
+          <div class="row">
+            <span class="txt"><span class="name">Θέμα χάρτη</span></span>
+            <div class="seg" role="radiogroup" aria-label="Θέμα">
+              {#each [["system", "Συσκευής"], ["light", "Φωτεινό"], ["dark", "Σκοτεινό"]] as const as [v, label] (v)}
+                <button type="button" role="radio" aria-checked={app.theme === v} onclick={() => app.setTheme(v)}>{label}</button>
+              {/each}
+            </div>
+          </div>
+        </div>
+
+        <h4>Τι δείχνει ο χάρτης</h4>
+        <div class="group">
+          <label class="row">
+            <span class="txt"><span class="name">Λεωφορεία {#if cityMissing}<small>· όχι ακόμα διαθέσιμο</small>{:else if app.city}<small>· {app.city.vehicles.length} τώρα</small>{/if}</span>
+              <small>όλα της πόλης· οι γραμμές σου μένουν πάντα</small></span>
+            <input type="checkbox" class="tog" checked={app.cityOn} disabled={cityMissing} onchange={e => app.setCityOn(e.currentTarget.checked)} />
           </label>
           {#if app.cityInfo.rail}
-          <label class="switch">
-            <input type="checkbox" checked={app.trainsOn} onchange={e => app.setTrainsOn(e.currentTarget.checked)} />
-            <span><b>Τρένα</b> <small>{#if app.trainsOn && (app.stasyTrains.length || app.suburbanTrains.length)}· {app.stasyTrains.length + app.suburbanTrains.length} τώρα{/if}</small><br />
-              <small>Μετρό, τραμ και Προαστιακός, με τους σταθμούς τους. Μετρό και τραμ κατά προσέγγιση από το πρόγραμμα· Προαστιακός με GPS.</small></span>
-          </label>
-          {/if}
-          {#if app.municipal}
-            <label class="switch">
-              <input type="checkbox" checked={app.municipalOn} onchange={e => app.setMunicipalOn(e.currentTarget.checked)} />
-              <span><b>Δημοτικά</b> <small>· {muniPlaces(app.municipal.routes).length} δήμοι</small><br />
-                <small>{muniPlaces(app.municipal.routes).join(", ")}. Ώρες από το πρόγραμμα του δήμου, όχι live. Βρίσκεις γραμμές, στάσεις και δήμους στην αναζήτηση.</small></span>
+            <label class="row">
+              <span class="txt"><span class="name">Μετρό, τραμ, τρένα {#if app.trainsOn && (app.stasyTrains.length || app.suburbanTrains.length)}<small>· {app.stasyTrains.length + app.suburbanTrains.length} τώρα</small>{/if}</span>
+                <small>μετρό και τραμ από το πρόγραμμα· Προαστιακός με GPS</small></span>
+              <input type="checkbox" class="tog" checked={app.trainsOn} onchange={e => app.setTrainsOn(e.currentTarget.checked)} />
             </label>
           {/if}
-        </section>
-        <section>
-          <h4>Θέμα χάρτη</h4>
-          <div class="seg" role="radiogroup" aria-label="Θέμα">
-            {#each [["system", "Συσκευής"], ["light", "Φωτεινό"], ["dark", "Σκοτεινό"]] as const as [v, label] (v)}
-              <button type="button" role="radio" aria-checked={app.theme === v} onclick={() => app.setTheme(v)}>{label}</button>
-            {/each}
-          </div>
-        </section>
-        <section>
-          <div class="field" role="radiogroup" aria-label="Τα άλλα λεωφορεία όταν πατάς ένα">
-            <span>Όταν πατάς ένα λεωφορείο, τα άλλα:</span>
+          {#if app.municipal}
+            {@const places = muniPlaces(app.municipal.routes)}
+            <label class="row">
+              <span class="txt"><span class="name">Δημοτικά λεωφορεία <small>· {places.length} δήμοι</small></span>
+                <small>από το πρόγραμμα του δήμου, όχι live</small>
+                <small class="list">{places.join(", ")}</small></span>
+              <input type="checkbox" class="tog" checked={app.municipalOn} onchange={e => app.setMunicipalOn(e.currentTarget.checked)} />
+            </label>
+          {/if}
+          <label class="row">
+            <span class="txt"><span class="name">Ταχύτητα στους δρόμους</span><small>τυπική, από τις θέσεις GPS· πάτα έναν δρόμο για km/h</small></span>
+            <input type="checkbox" class="tog" checked={app.speedOn} onchange={e => app.setSpeedOn(e.currentTarget.checked)} />
+          </label>
+          <div class="row col" role="radiogroup" aria-label="Τα άλλα λεωφορεία όταν πατάς ένα">
+            <span class="txt"><span class="name">Όταν πατάς ένα λεωφορείο</span><small>τι γίνεται με τα υπόλοιπα</small></span>
             <div class="seg">
               {#each [["normal", "Κανονικά"], ["dim", "Αχνά"], ["hide", "Κρυφά"]] as const as [v, label] (v)}
                 <button type="button" role="radio" aria-checked={app.others === v} onclick={() => app.setOthers(v)}>{label}</button>
               {/each}
             </div>
           </div>
-        </section>
-        <section>
-          <h4>Φίλτρα λεωφορείων <small>· κρύβουν όσα δεν ταιριάζουν</small></h4>
-          <label class="switch">
-            <input type="checkbox" checked={app.only.fresh} onchange={e => app.setOnly({ fresh: e.currentTarget.checked })} />
-            <span>Μόνο με πρόσφατη θέση<br /><small>Έστειλαν θέση τα τελευταία 1½ λεπτά.</small></span>
+          <label class="row">
+            <span class="txt"><span class="name">Μόνο με πρόσφατη θέση</span><small>έστειλαν θέση τα τελευταία 1½ λεπτά</small></span>
+            <input type="checkbox" class="tog" checked={app.only.fresh} onchange={e => app.setOnly({ fresh: e.currentTarget.checked })} />
           </label>
-          <label class="switch">
-            <input type="checkbox" checked={app.only.onTime} onchange={e => app.setOnly({ onTime: e.currentTarget.checked })} />
-            <span>Μόνο στην ώρα τους<br /><small>Έως 5 λεπτά καθυστέρηση.</small></span>
+          <label class="row">
+            <span class="txt"><span class="name">Μόνο όσα είναι στην ώρα τους</span><small>έως 5′ καθυστέρηση</small></span>
+            <input type="checkbox" class="tog" checked={app.only.onTime} onchange={e => app.setOnly({ onTime: e.currentTarget.checked })} />
           </label>
-        </section>
-        <section>
-          <h4>Κίνηση λεωφορείων</h4>
-          <label class="switch">
-            <input type="checkbox" checked={app.motion} onchange={e => app.setMotion(e.currentTarget.checked)} />
-            <span>Κίνηση ανάμεσα στις θέσεις<br /><small>Κλειστό: το όχημα μένει εκεί που έστειλε θέση.</small></span>
+          <label class="row">
+            <span class="txt"><span class="name">Ομαλή κίνηση</span><small>ανάμεσα στις θέσεις που στέλνουν· κλειστό: μένει εκεί που έστειλε</small></span>
+            <input type="checkbox" class="tog" checked={app.motion} onchange={e => app.setMotion(e.currentTarget.checked)} />
           </label>
-          <div class="agemode">
-            <span>Ηλικία θέσης <b class="age">24″</b><br /><small>Πριν πόσο έστειλε θέση (λεωφορεία, προαστιακός). Μετρό και τραμ: θέση από το πρόγραμμα, όχι GPS.</small></span>
-            <div class="seg" role="radiogroup" aria-label="Ηλικία θέσης">
+          <div class="row col" role="radiogroup" aria-label="Ηλικία θέσης">
+            <span class="txt"><span class="name">Ηλικία θέσης <b class="age">24″</b></span><small>πριν πόσο έστειλε θέση· μετρό και τραμ: από το πρόγραμμα</small></span>
+            <div class="seg">
               {#each [["never", "Ποτέ"], ["old", "Μόνο παλιές"], ["always", "Πάντα"]] as const as [m, t] (m)}
                 <button type="button" role="radio" aria-checked={app.ageMode === m} onclick={() => app.setAgeMode(m)}>{t}</button>
               {/each}
             </div>
           </div>
-          <details class="hint">
-            <summary>Πώς κινούνται</summary>
-            {app.cityInfo.id === "athens" ? "Ο ΟΑΣΑ στέλνει θέσεις κάθε 20–60″." : `${app.cityInfo.agencyThe} στέλνει θέσεις ανά διαστήματα.`} Όταν η νέα θέση είναι πολύ μπροστά, το όχημα πηγαίνει γρήγορα ως εκεί, πάνω
-            στον δρόμο, και αφήνει για λίγο μπλε ίχνος. Όταν είναι πίσω, γυρίζει αχνό πάνω στον δρόμο με γκρι διακεκομμένο
-            ίχνος: διόρθωση θέσης, όχι όπισθεν. Αχνό όχημα με πορτοκαλί ηλικία: δεν έστειλε θέση για πάνω από 1½ λεπτό, άρα μπορεί να είναι αλλού.
-            {#if oldest != null}<br /><span title="Ώρα δεδομένων {clock(oldest)}">Ενημέρωση γραμμών πριν {duration(Math.max(0, app.serverNow / 1000 - oldest))}.</span>{/if}
-            {#if cityAge != null && app.cityOn}<br /><span title="Ώρα δεδομένων {clock(app.city!.updated_at)}">Ενημέρωση πόλης πριν {duration(cityAge)}.</span>{/if}
+        </div>
+
+        <h4>Σχετικά</h4>
+        <div class="group">
+          <button type="button" class="row link" onclick={() => { pop = null; dispatchEvent(new CustomEvent("openinfo", { detail: "news" })); }}>
+            <span class="txt"><span class="name">Τι νέο</span></span><span class="val">v{__APP_VERSION__}</span><span class="chev" aria-hidden="true">›</span>
+          </button>
+          <button type="button" class="row link" onclick={() => { pop = null; dispatchEvent(new CustomEvent("openinfo", { detail: "sources" })); }}>
+            <span class="txt"><span class="name">Από πού έρχονται τα δεδομένα</span></span>
+            {#if cityAge != null && app.cityOn}<span class="val" title="Ώρα δεδομένων {clock(app.city!.updated_at)}">πριν {duration(cityAge)}</span>{/if}<span class="chev" aria-hidden="true">›</span>
+          </button>
+          <details class="row more">
+            <summary><span class="txt"><span class="name">Πώς κινούνται τα οχήματα</span></span><span class="chev" aria-hidden="true">›</span></summary>
+            <p>{app.cityInfo.id === "athens" ? "Ο ΟΑΣΑ στέλνει θέσεις κάθε 20–60″." : `${app.cityInfo.agencyThe} στέλνει θέσεις ανά διαστήματα.`} Ανάμεσα σε δύο θέσεις
+              το όχημα προχωρά πάνω στον δρόμο με την ταχύτητα που έχει συνήθως εκεί. Όταν η νέα θέση είναι μπροστά, πηγαίνει ως εκεί και
+              αφήνει για λίγο μπλε ίχνος. Όταν είναι πίσω, δεν κάνει όπισθεν: προχωρά πιο αργά ή περιμένει ώσπου να το φτάσει, ή σβήνει
+              και ξαναφαίνεται στη σωστή θέση. Αχνό όχημα: δεν έστειλε θέση για πάνω από 1½ λεπτό, άρα μπορεί να είναι αλλού.
+              {#if oldest != null}<br /><span title="Ώρα δεδομένων {clock(oldest)}">Ενημέρωση γραμμών πριν {duration(Math.max(0, app.serverNow / 1000 - oldest))}.</span>{/if}</p>
           </details>
-        </section>
-        <section>
-          <h4>Ταχύτητα λεωφορείων</h4>
-          <label class="switch">
-            <input type="checkbox" checked={app.speedOn} onchange={e => app.setSpeedOn(e.currentTarget.checked)} />
-            <span>Τυπική ταχύτητα ανά δρόμο<br /><small>Από στάση σε στάση, από τις θέσεις GPS. Πάτα ένα κομμάτι για km/h.</small></span>
-          </label>
-        </section>
+          <button type="button" class="row link" onclick={() => { pop = null; dispatchEvent(new Event("openfeedback")); }}>
+            <span class="txt"><span class="name">Γράψε μας</span></span><span class="chev" aria-hidden="true">›</span>
+          </button>
+        </div>
       </div>
     {/if}
   </div>
@@ -376,7 +392,7 @@
 
 <div class="rail" role="toolbar" aria-label="Εργαλεία χάρτη">
   <button type="button" class="tool" class:on={pop === "layers"} class:filtering={app.only.fresh || app.only.onTime} aria-expanded={pop === "layers"} aria-controls="pop-layers"
-    bind:this={layersButton} aria-label="Τι δείχνει ο χάρτης" data-tip="Τι δείχνει ο χάρτης: λεωφορεία, τρένα, θέμα, φίλτρα, ταχύτητα" onclick={() => toggle("layers")}>
+    bind:this={layersButton} aria-label="Ρυθμίσεις" data-tip="Ρυθμίσεις: τι δείχνει ο χάρτης, θέμα, φίλτρα, ταχύτητα" onclick={() => toggle("layers")}>
     <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
       <path d="M2 10S5 4.8 10 4.8 18 10 18 10 15 15.2 10 15.2 2 10 2 10z" /><circle cx="10" cy="10" r="2.5" />
     </svg>
@@ -422,9 +438,6 @@
   .favpill button:hover { background: var(--control); }
   @media (pointer: coarse) { .favpill { min-height: 44px; } .favpill button { min-height: 40px; min-width: 44px; } }
   .shapes svg { flex: none; margin-right: 4px; vertical-align: -1px; }
-  .agemode { margin: 6px 0; font-size: 13px; }
-  .agemode small { color: var(--muted); font-size: 11px; }
-  .agemode .seg { margin-top: 6px; }
   .favseg { display: flex; gap: 2px; margin-top: 8px; padding: 2px; border-radius: 10px; background: var(--control); }
   .favseg button { flex: 1; min-height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: inherit;
     font: inherit; font-size: 13px; cursor: pointer; }
@@ -463,7 +476,6 @@
     font-weight: 600; cursor: pointer; }
   .pop h3 { margin: 0 0 10px; font-size: 15px; }
   .pop h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
-  .pop section + section { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--border); }
   .pop .age { margin-right: 4px; padding: 0 4px; border-radius: 6px; background: var(--control); font-size: 11px;
     font-variant-numeric: tabular-nums; }
   .hint { color: var(--muted); font-size: 12px; }
@@ -500,7 +512,6 @@
     background: var(--accent); color: #fff; font-size: 14px; font-weight: 600; }
   .hit span { flex: 1; }
   .hit button { width: 30px; height: 28px; border: 0; border-radius: 8px; background: none; color: inherit; font-size: 18px; cursor: pointer; }
-  .pop h4 small { text-transform: none; letter-spacing: 0; font-weight: 400; }
   .pop details summary { cursor: pointer; margin-bottom: 4px; }
   .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 8px 0 0; font-size: 12px; }
   .legend .lead { color: var(--muted); }
@@ -535,5 +546,50 @@
     .panel, .popwrap { right: 64px; }
     .popwrap { top: calc(12px + env(safe-area-inset-top)); max-width: none; max-height: calc(100dvh - 24px - env(safe-area-inset-top)); }
     .panel.compact { max-width: calc(100% - 72px); }
+  }
+  /* «Ρυθμίσεις» (pop-layers): grouped rows as the fork's MapSettings. */
+  .set { padding: 12px; }
+  .set .sethead { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .set .sethead h3 { margin: 0; font-size: 17px; }
+  .setback { flex: none; width: 36px; height: 36px; margin-left: -6px; border: 0; border-radius: 10px; background: none; color: var(--fg);
+    font-size: 28px; line-height: 1; cursor: pointer; }
+  .setback:hover { background: var(--control); }
+  .set h4 { margin: 14px 4px 6px; text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 600; }
+  .set .group { border-radius: 12px; background: var(--control); overflow: hidden; }
+  .set .row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; margin: 0; padding: 8px 12px;
+    border: 0; background: none; color: var(--fg); font: inherit; font-size: 13px; text-align: left; box-sizing: border-box; cursor: pointer; }
+  .set .row + .row { border-top: 1px solid var(--border); }
+  .set .row.col { flex-direction: column; align-items: stretch; gap: 6px; cursor: default; }
+  .set .row.col .seg { margin: 0; background: var(--panel); }
+  .set .row.col .seg button[aria-checked="true"] { background: var(--control); }
+  .set .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .set .name { font-weight: 600; }
+  .set .name small { font-weight: 400; color: var(--muted); }
+  .set .txt > small { color: var(--muted); font-size: 11.5px; line-height: 1.3; }
+  .set .txt > small.list { margin-top: 2px; font-size: 11px; }
+  .set .val { flex: none; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .set .chev { flex: none; color: var(--muted); font-size: 18px; line-height: 1; }
+  .set .row.link:hover, .set summary:hover { background: var(--control-hover); }
+  .set .row > .seg:not(.col .seg) { flex: none; margin: 0; background: var(--panel); }
+  .set details.row { display: block; padding: 0; }
+  .set summary { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 8px 12px; list-style: none; cursor: pointer; box-sizing: border-box; }
+  .set summary::-webkit-details-marker { display: none; }
+  .set details[open] .chev { rotate: 90deg; }
+  .set details p { margin: 0; padding: 0 12px 10px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+  /* The switch at the right of its row (app.css draws .switch inputs; the same look here). */
+  .tog { appearance: none; flex: none; position: relative; width: 44px; height: 26px; margin: 0; border-radius: 13px;
+    background: var(--border); cursor: pointer; transition: background .15s; }
+  .tog::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .3); transition: transform .15s; }
+  .tog:checked { background: var(--accent); }
+  .tog:checked::after { transform: translateX(18px); }
+  .tog:disabled { opacity: .5; }
+  .tog:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .tog, .tog::after { transition: none; } }
+  /* A phone: «Ρυθμίσεις» is a page of its own, over the map and its buttons. */
+  @media (max-width: 719px) {
+    .popwrap.page { inset: 0 !important; z-index: 9; width: auto; max-width: none !important; max-height: none !important; }
+    .popwrap.page .pop { flex: 1; border: 0; border-radius: 0; box-shadow: none;
+      padding: calc(10px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom)); }
   }
 </style>

@@ -1457,7 +1457,7 @@
   let infoTab = $state<"sources" | "stats" | "feedback" | "news" | "terms">("sources");
   let Info = $state.raw<typeof import("../ui/InfoDialog.svelte").default | null>(null);
   let infoLoad: Promise<typeof import("../ui/InfoDialog.svelte").default> | null = null;
-  async function openInfo(tab?: "feedback") {
+  async function openInfo(tab?: "feedback" | "news" | "sources") {
     if (tab) infoTab = tab;
     infoLoad ??= import("../ui/InfoDialog.svelte").then(m => m.default);
     try {
@@ -1474,6 +1474,12 @@
     const on = () => void openInfo("feedback");
     addEventListener("openfeedback", on);
     return () => removeEventListener("openfeedback", on);
+  });
+  // «Τι νέο» and «Από πού έρχονται τα δεδομένα» in «Ρυθμίσεις» (Panel) open the ⓘ sheet on that tab.
+  $effect(() => {
+    const on = (e: Event) => { const t = (e as CustomEvent).detail; void openInfo(t === "news" ? "news" : "sources"); };
+    addEventListener("openinfo", on);
+    return () => removeEventListener("openinfo", on);
   });
 </script>
 
