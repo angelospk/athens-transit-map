@@ -162,7 +162,7 @@ export interface BottomSheet {
  *  its ends, iOS's band), let go it springs to the place it was heading for. A sheet at its most gets room at the foot
  *  of its scrolling part (--sheet-room) as large as the part off the screen, so all of it can still be scrolled to. */
 export function bottomSheet(node: HTMLElement, opts: BottomSheet) {
-  let o = opts, want: Place = "half", place: Place = "half", y = 0, start = 0, stop = () => {}, key = opts.key, busy = false;
+  let o = opts, want: Place = "half", place: Place = "half", y = 0, start = 0, stop = () => {}, key = opts.key;
   const half = () => Math.min((typeof innerHeight === "number" ? innerHeight : 844) * 0.55, 480);
   const head = () => {
     const hs = node.querySelectorAll<HTMLElement>(o.handle);
@@ -188,12 +188,11 @@ export function bottomSheet(node: HTMLElement, opts: BottomSheet) {
     const ps = places(), r = resolve(ps, p);
     settleAt(r);
     stop();
-    busy = true;
-    stop = springTo(y, ps[r] ?? 0, v, put, () => { busy = false; });
+    stop = springTo(y, ps[r] ?? 0, v, put);
   };
   const drag: SheetDrag = {
     ignore: "button:not(.grab), a, input, select",
-    start: () => { stop(); busy = true; start = y; },
+    start: () => { stop(); start = y; },
     move: dy => { const ps = places(); put(rubber(start + dy, 0, ps.peek ?? 0)); },
     end: (dy, v) => {
       const ps = places(), at = rubber(start + dy, 0, ps.peek ?? 0);
@@ -208,15 +207,15 @@ export function bottomSheet(node: HTMLElement, opts: BottomSheet) {
   const key0 = (e: MouseEvent) => { if (e.detail === 0 && o.on) drag.tap!(); };
   const bind = () => {
     while (bound.length) bound.pop()!.destroy();
-    if (!o.on) { stop(); busy = false; node.style.transform = ""; node.style.removeProperty("--sheet-room"); y = 0; settleAt("full"); return; }
+    if (!o.on) { stop(); node.style.transform = ""; node.style.removeProperty("--sheet-room"); y = 0; settleAt("full"); return; }
     for (const h of node.querySelectorAll<HTMLElement>(o.handle)) bound.push(sheetDrag(h, drag));
     const g = grab();
     if (g && !g.closest(o.handle)) bound.push(sheetDrag(g, drag));
   };
   // Content that grows or shrinks (a board loading): the sheet stays at the place it was left at.
-  // Not while a finger or the spring moves it (its own --sheet-room changes the size too).
+  // Its border box only: its own --sheet-room (padding) never changes it at its most.
   const ro = typeof ResizeObserver === "function" ? new ResizeObserver(() => {
-    if (!o.on || busy) return;
+    if (!o.on) return;
     const ps = places(), r = resolve(ps, want);
     settleAt(r);
     stop();
