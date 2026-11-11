@@ -40,11 +40,11 @@
 <svelte:window onkeydown={e => { if (e.key === "Escape" && closeOnEscape) close(); }} />
 
 <section class="card" class:peek aria-label="Λεπτομέρειες"
-  use:bottomSheet={{ handle: ".top", scroll: ".body", on: () => narrow.current, key, onplace: p => (place = p) }}>
+  use:bottomSheet={{ handle: ".top", scroll: ".body", on: narrow.current, key, onplace: p => (place = p) }}>
   <div class="top">
     <!-- Taps and drags are the sheet's (sheetDrag.ts); a click with no pointer (Enter, Space) steps it too. -->
     <button type="button" class="grab" aria-expanded={!peek} aria-controls="card-body"
-      aria-label={peek ? "Ανάπτυξη λεπτομερειών" : "Σύμπτυξη λεπτομερειών"}><span></span></button>
+      aria-label={narrow.current && place === "full" ? "Σύμπτυξη λεπτομερειών" : "Ανάπτυξη λεπτομερειών"}><span></span></button>
     <header>
       <Back {app} />
       <div class="hd">{@render header()}</div>

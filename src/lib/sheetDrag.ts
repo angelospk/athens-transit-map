@@ -14,6 +14,8 @@ const SLOP = 6;
 
 export function sheetDrag(node: HTMLElement, h: SheetDrag) {
   let y0 = 0, last = 0, lastT = 0, v = 0, moved = false, on = false;
+  let mm: ((e: MouseEvent) => void) | null = null, mu: ((e: MouseEvent) => void) | null = null;
+  const unmouse = () => { if (mm) removeEventListener("mousemove", mm); if (mu) removeEventListener("mouseup", mu); mm = mu = null; };
   const begin = (y: number) => { y0 = last = y; lastT = performance.now(); v = 0; moved = false; on = true; h.start(); };
   const step = (y: number) => {
     if (!on) return;
@@ -38,9 +40,10 @@ export function sheetDrag(node: HTMLElement, h: SheetDrag) {
   const te = (e: TouchEvent) => { if (on) { e.preventDefault(); finish(e.changedTouches[0]?.clientY ?? last); } };
   const md = (e: MouseEvent) => {
     if (e.button !== 0 || theirs(e)) return;
+    unmouse();
     begin(e.clientY);
-    const mm = (ev: MouseEvent) => step(ev.clientY);
-    const mu = (ev: MouseEvent) => { removeEventListener("mousemove", mm); removeEventListener("mouseup", mu); finish(ev.clientY); };
+    mm = ev => step(ev.clientY);
+    mu = ev => { unmouse(); finish(ev.clientY); };
     addEventListener("mousemove", mm);
     addEventListener("mouseup", mu);
   };
@@ -53,6 +56,8 @@ export function sheetDrag(node: HTMLElement, h: SheetDrag) {
   return {
     update(next: SheetDrag) { h = next; },
     destroy() {
+      unmouse();
+      on = false;   // a gesture under way ends with the sheet: no callback after
       node.removeEventListener("touchstart", ts);
       node.removeEventListener("touchmove", tm);
       node.removeEventListener("touchend", te);
@@ -148,7 +153,7 @@ export function nextPlace(place: Place, places: Places): Place {
 export interface BottomSheet {
   handle: string;                 // the parts that drag it (its header)
   scroll?: string;                // what scrolls inside it (default: the sheet itself)
-  on: () => boolean;              // a phone: else no places, no transform
+  on: boolean;                    // a phone: else no places, no transform (a value, so a change reaches update)
   key?: unknown;                  // a new key opens it at its default place
   onplace?: (p: Place) => void;
 }
@@ -157,7 +162,7 @@ export interface BottomSheet {
  *  its ends, iOS's band), let go it springs to the place it was heading for. A sheet at its most gets room at the foot
  *  of its scrolling part (--sheet-room) as large as the part off the screen, so all of it can still be scrolled to. */
 export function bottomSheet(node: HTMLElement, opts: BottomSheet) {
-  let o = opts, want: Place = "half", place: Place = "half", y = 0, start = 0, stop = () => {}, key = opts.key;
+  let o = opts, want: Place = "half", place: Place = "half", y = 0, start = 0, stop = () => {}, key = opts.key, busy = false;
   const half = () => Math.min((typeof innerHeight === "number" ? innerHeight : 844) * 0.55, 480);
   const head = () => {
     const hs = node.querySelectorAll<HTMLElement>(o.handle);
@@ -183,11 +188,12 @@ export function bottomSheet(node: HTMLElement, opts: BottomSheet) {
     const ps = places(), r = resolve(ps, p);
     settleAt(r);
     stop();
-    stop = springTo(y, ps[r] ?? 0, v, put);
+    busy = true;
+    stop = springTo(y, ps[r] ?? 0, v, put, () => { busy = false; });
   };
   const drag: SheetDrag = {
     ignore: "button:not(.grab), a, input, select",
-    start: () => { stop(); start = y; },
+    start: () => { stop(); busy = true; start = y; },
     move: dy => { const ps = places(); put(rubber(start + dy, 0, ps.peek ?? 0)); },
     end: (dy, v) => {
       const ps = places(), at = rubber(start + dy, 0, ps.peek ?? 0);
@@ -199,32 +205,33 @@ export function bottomSheet(node: HTMLElement, opts: BottomSheet) {
   };
   const bound: ReturnType<typeof sheetDrag>[] = [];
   const grab = () => node.querySelector<HTMLElement>(".grab");
-  const key0 = (e: MouseEvent) => { if (e.detail === 0 && o.on()) drag.tap!(); };
+  const key0 = (e: MouseEvent) => { if (e.detail === 0 && o.on) drag.tap!(); };
   const bind = () => {
     while (bound.length) bound.pop()!.destroy();
-    if (!o.on()) { stop(); node.style.transform = ""; node.style.removeProperty("--sheet-room"); y = 0; settleAt("full"); return; }
+    if (!o.on) { stop(); busy = false; node.style.transform = ""; node.style.removeProperty("--sheet-room"); y = 0; settleAt("full"); return; }
     for (const h of node.querySelectorAll<HTMLElement>(o.handle)) bound.push(sheetDrag(h, drag));
     const g = grab();
     if (g && !g.closest(o.handle)) bound.push(sheetDrag(g, drag));
   };
   // Content that grows or shrinks (a board loading): the sheet stays at the place it was left at.
+  // Not while a finger or the spring moves it (its own --sheet-room changes the size too).
   const ro = typeof ResizeObserver === "function" ? new ResizeObserver(() => {
-    if (!o.on()) return;
+    if (!o.on || busy) return;
     const ps = places(), r = resolve(ps, want);
     settleAt(r);
     stop();
     put(ps[r] ?? 0);
   }) : null;
-  ro?.observe(node);
+  ro?.observe(node, { box: "border-box" });
   node.addEventListener("click", e => { if ((e.target as Element | null)?.closest?.(".grab")) key0(e); });
   bind();
-  if (o.on()) { const ps = places(), r = resolve(ps, want); settleAt(r); put(ps[r] ?? 0); }
+  if (o.on) { const ps = places(), r = resolve(ps, want); settleAt(r); put(ps[r] ?? 0); }
   return {
     update(next: BottomSheet) {
-      const was = o.on();
+      const was = o.on;
       o = next;
-      if (next.key !== key) { key = next.key; want = "half"; if (o.on()) go(want); }
-      if (was !== o.on() || o.on()) bind();
+      if (next.key !== key) { key = next.key; want = "half"; if (o.on) go(want); }
+      if (was !== o.on || o.on) bind();
     },
     destroy() { stop(); ro?.disconnect(); while (bound.length) bound.pop()!.destroy(); },
   };

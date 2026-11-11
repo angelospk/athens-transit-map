@@ -184,9 +184,9 @@
   <StopFixBar {app} ondone={() => (sent = !!id && reportedStops().includes(id))} />
 {:else if stop || early}
   <section class="card" class:peek={narrowSheet.current && sheetPlace === "peek"} aria-label="Στάση {name}"
-    use:bottomSheet={{ handle: "header", on: () => narrowSheet.current, key: id ?? name, onplace: p => (sheetPlace = p) }}>
+    use:bottomSheet={{ handle: "header", on: narrowSheet.current, key: id ?? name, onplace: p => (sheetPlace = p) }}>
     <button type="button" class="grab" aria-expanded={!(narrowSheet.current && sheetPlace === "peek")}
-      aria-label={narrowSheet.current && sheetPlace === "peek" ? "Ανάπτυξη στάσης" : "Σύμπτυξη στάσης"}><span></span></button>
+      aria-label={narrowSheet.current && sheetPlace !== "full" ? "Ανάπτυξη στάσης" : "Σύμπτυξη στάσης"}><span></span></button>
     <header>
       <Back {app} />
       <div class="t">

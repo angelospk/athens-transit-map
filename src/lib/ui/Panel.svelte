@@ -39,6 +39,7 @@
     pop = pop === p ? null : p;
     if (pop === "help") void tick().then(() => document.getElementById("pop-help")?.focus());
     if (pop !== "layers") return;
+    if (narrow.current) void tick().then(() => document.getElementById("pop-layers")?.focus());   // a page over the map
     app.loadMetro();   // again, if the first load failed
     app.loadMunicipal();   // the «Δημοτικά» switch shows once its data is there
   };
@@ -289,7 +290,7 @@
     {:else if pop === "layers"}
       <!-- «Ρυθμίσεις» (GreekCaptain's fork, MapSettings): grouped rows, a switch or a value on the right. On a phone a
            page of its own, with a back arrow; on a computer the popover beside the buttons. -->
-      <div class="pop set" id="pop-layers" role="dialog" aria-label="Ρυθμίσεις">
+      <div class="pop set" id="pop-layers" role="dialog" tabindex="-1" aria-label="Ρυθμίσεις">
         <div class="sethead">
           {#if narrow.current}<button type="button" class="setback" aria-label="Πίσω στον χάρτη" onclick={() => { pop = null; void refocus("layers"); }}>‹</button>{/if}
           <h3>Ρυθμίσεις</h3>
@@ -390,7 +391,7 @@
   </div>
 {/if}
 
-<div class="rail" role="toolbar" aria-label="Εργαλεία χάρτη">
+<div class="rail" role="toolbar" aria-label="Εργαλεία χάρτη" inert={pop === "layers" && narrow.current}>
   <button type="button" class="tool" class:on={pop === "layers"} class:filtering={app.only.fresh || app.only.onTime} aria-expanded={pop === "layers"} aria-controls="pop-layers"
     bind:this={layersButton} aria-label="Ρυθμίσεις" data-tip="Ρυθμίσεις: τι δείχνει ο χάρτης, θέμα, φίλτρα, ταχύτητα" onclick={() => toggle("layers")}>
     <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
