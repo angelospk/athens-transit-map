@@ -36,7 +36,8 @@ button, input { font: inherit; color: inherit; }
 .bus .glyph.trolley { -webkit-mask-image: url("/icons/glyph-trolley.png"); mask-image: url("/icons/glyph-trolley.png"); }
 .bus::after { content: ""; position: absolute; top: -4px; right: -4px; width: 9px; height: 9px; border-radius: 50%;
   background: var(--d); border: 2px solid var(--bg); pointer-events: none; }
-.bus .num { position: absolute; top: calc(100% + 2px); left: 50%; transform: translateX(-50%); color: var(--fg);
+.bus .num { position: absolute; top: calc(100% + 11px);   /* under the pointer too, whichever way it points */
+  left: 50%; transform: translateX(-50%); color: var(--fg);
   font: 700 11px/13px system-ui, sans-serif; white-space: nowrap; pointer-events: none;
   text-shadow: 0 0 2px var(--bg), 0 0 2px var(--bg), 0 0 3px var(--bg); }
 .bus .dir { position: absolute; left: 50%; top: 50%; width: 0; height: 0; margin: -4px 0 0 -4px; pointer-events: none;
