@@ -34,7 +34,7 @@ describe("along_m (rev 20)", () => {
     const f = new Fleet();
     f.city([city(1000, T)], new Set(), T, routes(route));
     const p = stepTo(f, T, T + 150);
-    expect(p[0]).toBeGreaterThan(lonAt(2000));   // 0.85 x 10 m/s x 150 s ≈ 1275 m on, not stopped at 1800
+    expect(p[0]).toBeGreaterThan(lonAt(1850));   // 0.85 x 10 m/s x 150 s, on the careful clock (0.7 after 40 s) ≈ 890 m on, not stopped at 1800
   });
 
   it("stops at the end of path_beyond without the shape (the rev 4 rule)", () => {
@@ -63,9 +63,11 @@ describe("along_m (rev 20)", () => {
     const mv = f.entries.get("040/1")!.mover;
     const at = (t: number) => mv.plan!.target(t);
     // It stands at 1700 m for a while (a stop wait), then moves on.
-    const stood = [T + 40, T + 45].map(at);
-    expect(Math.abs(stood[0] - stood[1])).toBeLessThan(0.5);
-    expect(Math.abs(stood[0] - (at(T) + 300))).toBeLessThan(2);
+    let stoodAt: number | null = null;
+    for (let t = T + 30; t < T + 120 && stoodAt == null; t += 1) if (Math.abs(at(t + 5) - at(t)) < 0.5 && at(t) > at(T) + 100) stoodAt = t;
+    expect(stoodAt).not.toBeNull();
+    expect(Math.abs(at(stoodAt!) - (at(T) + 300))).toBeLessThan(2);
+    expect(at(T + 150)).toBeGreaterThan(at(T) + 310);   // then moves on
   });
 
   it("scales along_m by the client's length over length_m", () => {
@@ -83,7 +85,7 @@ describe("along_m (rev 20)", () => {
     r = route;
     f.city([city(1000, T)], new Set(), T + 10, of);   // the next refresh, same fix
     const p = stepTo(f, T + 10.05, T + 150);
-    expect(p[0]).toBeGreaterThan(lonAt(2000));
+    expect(p[0]).toBeGreaterThan(lonAt(1850));
   });
 
   it("ignores along_m that does not fit the shape or the fix (another GTFS)", () => {

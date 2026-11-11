@@ -3,6 +3,7 @@
 
 import { distanceM, type LngLat } from "./glide";
 import { bearingDeg } from "./heading";
+import { headingAlong } from "./turn";
 import { drive, NO_SPEED, walk } from "./motion";
 
 const NEAR_ROUTE_M = 150;    // farther than this, the shape says nothing about the vehicle
@@ -83,13 +84,17 @@ export function pointAt(shape: [number, number][], s: number): LngLat {
 }
 
 export function headingAt(shape: [number, number][], s: number): number | null {
+  // Through each corner the heading turns over a few metres (turn.ts), not in one jump at the vertex.
+  const bearing: number[] = [], at: number[] = [];
   let walked = 0;
   for (let i = 1; i < shape.length; i++) {
     const a = pt(shape[i - 1]), b = pt(shape[i]), len = distanceM(a, b);
+    if (len > 0) { bearing.push(bearingDeg(a, b)); at.push(walked); }
     walked += len;
-    if (len > 0 && (walked >= s || i === shape.length - 1)) return bearingDeg(a, b);
   }
-  return null;
+  if (!bearing.length) return null;
+  at.push(walked);
+  return headingAlong(bearing, at, s);
 }
 
 export function shapeLength(shape: [number, number][]): number {

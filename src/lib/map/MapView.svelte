@@ -28,6 +28,7 @@
   import type { AppState } from "../state.svelte";
   import SpeedLegend from "../ui/SpeedLegend.svelte";
   import { lightenDark } from "./basemap";
+  import { Turners } from "../turn";
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
   import { STOPS_ZOOM, busStopsFC } from "../stops";
@@ -113,7 +114,7 @@
   }
 
   function setHeading(d: Dom, h: number | null) {
-    if (h != null && d.heading != null && Math.abs(((h - d.heading + 540) % 360) - 180) < 2) return;
+    if (h != null && d.heading != null && Math.abs(((h - d.heading + 540) % 360) - 180) < 0.5) return;
     d.heading = h;
     d.dir.hidden = h == null;
     if (h == null) return;
@@ -429,16 +430,12 @@
     // Trails of corrections (the route a vehicle glided along) and, with motion off, of moves to a
     // new fix. Always under the vehicle: city dots' trails under the dots, detailed lines' trails
     // over the route lines (their vehicles are DOM markers, above the map).
-    // A correction back is drawn apart: thin, grey and dashed, so it does not read as the bus reversing.
     m.addSource("trails", { type: "geojson", data: EMPTY });
     const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#0071e3";
     const trail = (id: string, dom: boolean, before?: string) => {
       m.addLayer({ id, type: "line", source: "trails",
-        filter: ["all", ["==", ["get", "dom"], dom], ["!", ["to-boolean", ["get", "back"]]]], layout: { "line-join": "round", "line-cap": "round" },
+        filter: ["==", ["get", "dom"], dom], layout: { "line-join": "round", "line-cap": "round" },
         paint: { "line-color": accent, "line-width": 8, "line-opacity": ["*", 0.55, ["get", "alpha"]] } }, before);
-      m.addLayer({ id: `${id}-back`, type: "line", source: "trails",
-        filter: ["all", ["==", ["get", "dom"], dom], ["to-boolean", ["get", "back"]]], layout: { "line-join": "round" },
-        paint: { "line-color": "#80868b", "line-width": 3, "line-dasharray": [1.5, 1.5], "line-opacity": ["*", 0.9, ["get", "alpha"]] } }, before);
     };
     trail("trails-city", false, "city-dot");
     m.addImage("route-arrow", arrowImage(), { pixelRatio: 2 });
@@ -662,6 +659,9 @@
   // the tab is hidden. Off-screen city vehicles are not stepped: they snap when they come back.
   // With motion off, every vehicle is drawn at its last fix; a move to a new fix leaves a trail.
   let raf = 0, nextDue = 0, cityWasEmpty = true, trailsWereEmpty = true;
+  // Every vehicle's drawn heading turns toward its true one (turn.ts): no pointer or arrow snaps round.
+  const turners = new Turners();
+  const turnersTrain = new Set<string>();
   function frame() {
     raf = requestAnimationFrame(frame);
     const m = map;
@@ -676,6 +676,8 @@
       cull = p => p[0] < W || p[0] > E || p[1] < S || p[1] > N;
     }
     let fixing = false;
+    turners.busy = false;
+    const turnNow = t / 1000;
     const features: GeoJSON.Feature<GeoJSON.Point>[] = [];
     const trails: GeoJSON.Feature<GeoJSON.LineString>[] = [];
     const s = app.selection, selKey = s?.kind === "vehicle" ? `${s.line}/${s.id}` : null, only = app.only;
@@ -689,7 +691,7 @@
       if (!dom && (!app.cityOn || (cull && (still
         ? !moved && cull(e.pos)
         : !e.mover.fixing && cull(e.mover.pos) && cull(e.mover.targetPos(now) ?? e.mover.pos))))) continue;
-      let pos: LngLat, trail: { geom: LngLat[]; alpha: number } | null, back = false, rewind = false;
+      let pos: LngLat, trail: { geom: LngLat[]; alpha: number } | null, alpha = 1;
       if (still) {
         pos = e.pos;
         trail = moved && { geom: [moved.from, e.pos], alpha: 1 - (now - moved.at) / STILL_TRAIL_S };
@@ -698,24 +700,24 @@
         const r = e.mover.step(now);
         pos = r.pos;
         trail = r.trail;
-        back = r.back;
-        rewind = back && r.fx != null;   // gliding back: the dot is drawn faint
+        alpha = r.alpha;   // under 1 while it fades over to a place it cannot drive to (motion.ts)
         if (e.mover.fixing) fixing = true;
       }
       if (moved) fixing = true;
       // A trail is drawn like its vehicle: not for one filtered out, hidden or dimmed by a selection.
       const o = dom || !s || app.others === "normal" || e.key === selKey || (s.kind === "route" && e.line === s.line) ? 1 : app.others === "dim" ? 0.22 : 0;
       if (trail && shown && o && trail.geom.length > 1)
-        trails.push({ type: "Feature", geometry: { type: "LineString", coordinates: trail.geom }, properties: { alpha: trail.alpha * o, dom, ...(back && { back }) } });
+        trails.push({ type: "Feature", geometry: { type: "LineString", coordinates: trail.geom }, properties: { alpha: trail.alpha * o, dom } });
       if (dom) {
         const d = drawDom(e, pos, still);
         d.wrap.classList.toggle("filtered", !shown);
-        d.el.classList.toggle("rewind", rewind);
+        const fade = alpha < 1 ? String(Math.round(alpha * 100) / 100) : "";
+        if (d.el.style.opacity !== fade) d.el.style.opacity = fade;
       }
       else {
-        const h = headingOf(e, still);
+        const h = turners.toward(e.key, headingOf(e, still), turnNow);
         features.push({ type: "Feature", geometry: { type: "Point", coordinates: pos },
-          properties: { line: e.line, id: e.id, cls: e.cls, stale: isStalePos(now - e.at), ...(h != null && { h }), ...(rewind && { rewind }) } });
+          properties: { line: e.line, id: e.id, cls: e.cls, stale: isStalePos(now - e.at), ...(h != null && { h }), ...(alpha < 1 && { fade: Math.round(alpha * 100) / 100 }) } });
       }
     }
     for (const [k, d] of doms) {
@@ -744,6 +746,8 @@
     // Corrections and trails: 30 fps close up; zoomed out, where they are a few pixels and every frame
     // steps the whole city, 4 fps.
     // With motion off nothing steps: between fixes (a new one leaves a trail, fast again) once a second is enough.
+    if (turners.busy) fixing = true;   // a turn under way: smooth to its end
+    if (fleet.entries.size + 200 < turners.size) turners.keep([...fleet.entries.keys(), ...turnersTrain]);
     const idle = still ? 1000 : Math.min(1000, Math.max(16, (0.5 * mpp / 20) * 1000));
     nextDue = t + (fixing ? Math.min(idle, z >= 13 ? 33 : 250) : idle);
   }
@@ -768,7 +772,7 @@
       d.el.classList.add(cls);
     }
     d.el.classList.toggle("faded", fadedKeys.has(e.key));
-    setHeading(d, headingOf(e, still));
+    setHeading(d, turners.toward(e.key, headingOf(e, still), performance.now() / 1000));
     return d;
   }
 
@@ -1108,6 +1112,14 @@
     const now = app.serverMs();
     const fc = trainsFC({ stasy: app.stasyTrains, suburban: app.suburbanTrains, corridors: app.suburban?.corridors ?? {},
       nowS: now / 1000, sel: app.train, tracks, motions: app.stasyMotion, glide: t => glide.at(t.train, now) });
+    const tNow = performance.now() / 1000;
+    turnersTrain.clear();
+    for (const f of fc.features) {
+      const pr = f.properties!, key = `train/${pr.id}`;
+      turnersTrain.add(key);
+      const h = turners.toward(key, (pr.h as number | undefined) ?? null, tNow);
+      if (h != null) pr.h = h;
+    }
     // icon-offset is in the image's pixels, times icon-size: TRACK_SHIFT of them land on the track's line-offset.
     for (const f of fc.features) { const [x, y] = f.properties!.side as number[]; f.properties!.off = [x * TRACK_SHIFT, y * TRACK_SHIFT]; }
     (map!.getSource("trains") as GeoJSONSource).setData(fc);
@@ -1244,7 +1256,7 @@
     const o = !s || app.others === "normal" ? 1 : app.others === "dim" ? 0.22 : 1;
     // «Κοντά σου» with nothing selected: the lines of the nearest stops stay, the others dim.
     const near = !s && app.nearFocus ? app.nearFocus : null;
-    const opacity: ExpressionSpecification = ["*", ["case", sel, 1, o], near ? ["case", ["in", ["get", "line"], ["literal", near]], 1, 0.22] : 1, ["case", ["get", "stale"], 0.3, 1], ["case", ["to-boolean", ["get", "rewind"]], 0.5, 1]];
+    const opacity: ExpressionSpecification = ["*", ["case", sel, 1, o], near ? ["case", ["in", ["get", "line"], ["literal", near]], 1, 0.22] : 1, ["case", ["get", "stale"], 0.3, 1], ["coalesce", ["get", "fade"], 1]];
     m.setPaintProperty("city-dot", "circle-opacity", opacity);
     m.setPaintProperty("city-dot", "circle-stroke-opacity", opacity);
     m.setPaintProperty("city-label", "text-opacity", opacity);
