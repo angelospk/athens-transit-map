@@ -3,7 +3,7 @@
   // for a bus line, today's runs. The vehicles are asked again every 20 s while it is open.
   import { untrack } from "svelte";
   import { isBusId } from "../busNs";
-  import { fetchV2Line, fetchV2LineVehicles, peekV2Line, peekV2LineVehicles } from "../api";
+  import { fetchSchedule, fetchV2Line, fetchV2LineVehicles, peekV2Line, peekV2LineVehicles } from "../api";
   import { fmtDelay } from "../format";
   import { busVehicleCard } from "../legacy";
   import { directionGroups } from "../directions";
@@ -17,6 +17,8 @@
   import LineChip from "./LineChip.svelte";
   import LineStop from "./LineStop.svelte";
   import { titleCase } from "../nearby";
+  import { matchDirection, type Schedule } from "../timetable";
+  import { lineQuality, statsLineId, yesterdayDay, type QualityDay } from "../quality";
 
   let { app }: { app: AppState } = $props();
 
@@ -97,6 +99,32 @@
 
   $effect(() => { if (detail) untrack(() => app.retitle(label)); });
 
+  // «Χθες» pill (lib/quality.ts): yesterday's day file, fetched once for every card. A frequent line's
+  // headways are per direction of the stats (OASA Go/Come, GTFS direction_id), which only the timetable
+  // names: it is asked only for a line with headways, and its direction is matched on the headsign.
+  let qDay = $state.raw<QualityDay | null>(null);
+  $effect(() => {
+    if (!isBus || !cardId) return;   // asked again per card: a file written meanwhile shows (one fetch per hour at most)
+    let live = true;
+    void yesterdayDay().then(d => { if (live) qDay = d; });
+    return () => { live = false; };
+  });
+  const qLine = $derived(card ? statsLineId(app.cityId, card.id) : "");
+  const hasHeadways = $derived(Array.isArray(qDay?.headways?.by_line) && qDay.headways.by_line.some(h => h?.line === qLine));
+  let qSched = $state.raw<Schedule | null>(null);
+  $effect(() => {
+    const l = nativeLine;
+    qSched = null;
+    if (!hasHeadways || !l) return;
+    const ac = new AbortController();
+    void fetchSchedule(l, AbortSignal.any([ac.signal, AbortSignal.timeout(10_000)])).then(r => {
+      if (!ac.signal.aborted && r.status === 200 && Array.isArray((r.body as Schedule | null)?.directions)) qSched = r.body as Schedule;
+    });
+    return () => ac.abort();
+  });
+  const qDir = $derived(qSched && dirHeadsign ? matchDirection(qSched.directions, dirHeadsign)?.direction ?? null : null);
+  const quality = $derived(isBus ? lineQuality(qDay, qLine, qDir) : null);
+
   let showTimes = $state(false);
   const color = $derived(isBus ? app.lineColor(nativeLine) : { bg: detail?.line.color ?? "#3b5bdb", fg: detail?.line.text_color ?? "#ffffff" });
   const starred = $derived(!!card && app.isFavLine(card.id));
@@ -140,6 +168,9 @@
     {:else if !detail}
       <p class="muted">Φόρτωση…</p>
     {:else}
+      {#if quality}
+        <p class="quality {quality.level}"><span class="qdot" aria-hidden="true"></span><span><b>{quality.title}</b> · {quality.text}</span></p>
+      {/if}
       {#if !pair}
         <div class="dirs" role="group" aria-label="Κατεύθυνση">
           {#each labels as l, d (d)}
@@ -186,6 +217,12 @@
 {/if}
 
 <style>
+  /* The level shows in the dot and the tint; the words stay --fg for 4.5:1 in light and dark. */
+  .quality { --q: var(--ontime); display: flex; align-items: center; gap: 8px; margin: 0 0 8px; padding: 8px 12px; border-radius: 10px;
+    background: color-mix(in srgb, var(--q) 12%, transparent); color: var(--fg); font-size: 13px; line-height: 1.35; }
+  .quality.warn { --q: var(--late1); }
+  .quality.bad { --q: var(--late3); }
+  .qdot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--q); }
   .muted { margin: 4px 0; color: var(--muted); font-size: 12px; }
   .dirs { display: flex; gap: 2px; padding: 2px; border-radius: 10px; background: var(--control); }
   .dirs button { flex: 1; min-width: 0; min-height: 36px; padding: 4px 8px; border: 0; border-radius: 8px; background: none; color: inherit;
