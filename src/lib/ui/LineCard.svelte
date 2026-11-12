@@ -18,7 +18,8 @@
   import LineStop from "./LineStop.svelte";
   import { titleCase } from "../nearby";
   import { matchDirection, type Schedule } from "../timetable";
-  import { lineQuality, statsLineId, yesterdayDay, type QualityDay } from "../quality";
+  import { lineQuality, shownDay, statsLineId, type DayWord, type QualityDay } from "../quality";
+  import QualityPill from "./QualityPill.svelte";
 
   let { app }: { app: AppState } = $props();
 
@@ -80,8 +81,6 @@
   const labels = $derived<(string | null)[]>(groups.length === 2 ? groups.map(g => g.to) : dirLabels(patterns, detail?.stops));
   const dir = $derived<0 | 1>(card?.dir ?? (card?.pattern ? patterns.find(p => p.id === card.pattern)?.direction : undefined) ?? 0);
   const label = $derived(detail?.line.label ?? detail?.line.name ?? nativeLine);
-  // Two named directions: the header says «προς X» / «από Y» and one ⇅ turns it round; else the two buttons.
-  const pair = $derived(labels.length === 2 && labels[0] !== null && labels[1] !== null);
   // Names with accents (titleCase): its list comes with the stop index, so the names are drawn again when it lands.
   // A bus line asks for the index anyway: its card shows the rider's stop (LineStop).
   const tc = $derived.by(() => { void app.stopIx; return (x: string | null | undefined) => titleCase(x ?? ""); });
@@ -99,14 +98,15 @@
 
   $effect(() => { if (detail) untrack(() => app.retitle(label)); });
 
-  // «Χθες» pill (lib/quality.ts): yesterday's day file, fetched once for every card. A frequent line's
+  // Quality pill (lib/quality.ts): yesterday's day file (the day before's until it is written), fetched once for every card. A frequent line's
   // headways are per direction of the stats (OASA Go/Come, GTFS direction_id), which only the timetable
   // names: it is asked only for a line with headways, and its direction is matched on the headsign.
-  let qDay = $state.raw<QualityDay | null>(null);
+  let qShown = $state.raw<{ day: QualityDay; word: DayWord; date: string } | null>(null);
+  const qDay = $derived(qShown?.day ?? null);
   $effect(() => {
     if (!isBus || !cardId) return;   // asked again per card: a file written meanwhile shows (one fetch per hour at most)
     let live = true;
-    void yesterdayDay().then(d => { if (live) qDay = d; });
+    void shownDay().then(d => { if (live) qShown = d; });
     return () => { live = false; };
   });
   const qLine = $derived(card ? statsLineId(app.cityId, card.id) : "");
@@ -152,13 +152,7 @@
     {#snippet header()}
       {#if isBus}<LineChip {label} bg={color.bg} fg={color.fg} oasa={app.cityId === "athens"} />
       {:else}<span class="pill" style:--c={color.bg} style:--t={color.fg}>{label}</span>{/if}
-      {#if detail && pair}
-        <h2 class="to">προς {tc(labels[dir])}<small>από {tc(labels[dir === 0 ? 1 : 0])}</small></h2>
-        <button type="button" class="swap" aria-label="Η άλλη κατεύθυνση: προς {tc(labels[dir === 0 ? 1 : 0])}" title="Η άλλη κατεύθυνση"
-          onclick={() => pick(dir === 0 ? 1 : 0)}><Icon name="swap" size={18} /></button>
-      {:else}
-        <h2>{tc(detail?.line.name)}</h2>
-      {/if}
+      <h2 title={tc(detail?.line.name)}>{tc(detail?.line.name)}</h2>
     {/snippet}
     <DisruptionRows alerts={disruptions} />
     {#if missing}
@@ -168,18 +162,16 @@
     {:else if !detail}
       <p class="muted">Φόρτωση…</p>
     {:else}
-      {#if quality}
-        <p class="quality {quality.level}"><span class="qdot" aria-hidden="true"></span><span><b>{quality.title}</b> · {quality.text}</span></p>
+      {#if quality && qShown}
+        {#key card.id}<QualityPill q={quality} word={qShown.word} date={qShown.date} line={qLine} dir={qDir} />{/key}
       {/if}
-      {#if !pair}
-        <div class="dirs" role="group" aria-label="Κατεύθυνση">
-          {#each labels as l, d (d)}
-            {#if l !== null}
-              <button type="button" aria-pressed={dir === d} onclick={() => pick(d as 0 | 1)}>→ {tc(l)}</button>
-            {/if}
-          {/each}
-        </div>
-      {/if}
+      <div class="dirs" role="group" aria-label="Κατεύθυνση">
+        {#each labels as l, d (d)}
+          {#if l !== null}
+            <button type="button" aria-pressed={dir === d} title={tc(l)} onclick={() => pick(d as 0 | 1)}><svg class="arr" viewBox="0 0 12 12" width="13" height="13" aria-hidden="true"><path d="M1 6h9.2M6.5 2.3 10.2 6 6.5 9.7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg><span>{tc(l)}</span></button>
+          {/if}
+        {/each}
+      </div>
       {#if isBus && groups.length === 2}
         <LineStop {app} line={nativeLine} variants={groups[dir].variants} toward={groups[dir].to} />
       {/if}
@@ -217,16 +209,13 @@
 {/if}
 
 <style>
-  /* The level shows in the dot and the tint; the words stay --fg for 4.5:1 in light and dark. */
-  .quality { --q: var(--ontime); display: flex; align-items: center; gap: 8px; margin: 0 0 8px; padding: 8px 12px; border-radius: 10px;
-    background: color-mix(in srgb, var(--q) 12%, transparent); color: var(--fg); font-size: 13px; line-height: 1.35; }
-  .quality.warn { --q: var(--late1); }
-  .quality.bad { --q: var(--late3); }
-  .qdot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--q); }
   .muted { margin: 4px 0; color: var(--muted); font-size: 12px; }
   .dirs { display: flex; gap: 2px; padding: 2px; border-radius: 10px; background: var(--control); }
   .dirs button { flex: 1; min-width: 0; min-height: 36px; padding: 4px 8px; border: 0; border-radius: 8px; background: none; color: inherit;
     font: inherit; font-size: 13px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dirs button { display: flex; align-items: center; justify-content: center; gap: 5px; }
+  .dirs button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .arr { flex: none; }
   .dirs button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
   .sub { margin: 10px 0 2px; font-size: 12px; font-weight: 600; color: var(--muted); }
   .runs { list-style: none; margin: 0; padding: 0; }
@@ -234,12 +223,6 @@
     border-radius: 8px; background: none; color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
   .runs button:hover { background: var(--control); }
   .lab { flex: none; display: grid; place-items: center; width: 22px; color: var(--muted); }
-  h2.to { display: flex; flex-direction: column; min-width: 0; color: var(--fg); font-size: 16px; white-space: nowrap; }
-  h2.to small { overflow: hidden; text-overflow: ellipsis; }
-  h2.to small { color: var(--muted); font-size: 12px; font-weight: 500; }
-  .swap { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%;
-    background: var(--control); color: var(--fg); cursor: pointer; }
-  .swap:hover { background: var(--control-hover); color: var(--accent); }
   .next { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .delay { flex: none; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
   .chev { flex: none; color: var(--muted); }
