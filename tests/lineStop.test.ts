@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hhmm, lineArrivals, lineStopFor, stopPlace, walkDirectionsUrl } from "../src/lib/lineStop";
+import { hhmmss, lineArrivals, lineStopFor, stopPlace, walkDirectionsUrl } from "../src/lib/lineStop";
 import type { TripIndex } from "../src/lib/trip";
 
 // Line 040, two directions: v1 runs stops 0 → 1 → 2, v2 runs 2 → 3. Stop 4 is on no variant of 040.
@@ -60,10 +60,10 @@ describe("walkDirectionsUrl", () => {
   });
 });
 
-describe("hhmm", () => {
+describe("hhmmss", () => {
   it("is the Athens clock time, hours and minutes", () => {
-    expect(hhmm(Date.UTC(2026, 10, 10, 21, 8, 40))).toBe("23:08");
-    expect(hhmm(Date.UTC(2026, 6, 1, 6, 5))).toBe("09:05");   // summer time, +3
+    expect(hhmmss(Date.UTC(2026, 10, 10, 21, 8, 40))).toBe("23:08:40");
+    expect(hhmmss(Date.UTC(2026, 6, 1, 6, 5, 7))).toBe("09:05:07");   // summer time, +3
   });
 });
 

@@ -19,7 +19,7 @@
   import StopFixBar from "./StopFixBar.svelte";
   import { stopSource } from "../service";
   import { titleCase } from "../nearby";
-  import { hhmm, stopPlace } from "../lineStop";
+  import { hhmmss, stopPlace } from "../lineStop";
   import LineChip from "./LineChip.svelte";
   // On a phone the card is a bottom sheet with three places (its header, half the screen, all of it): sheetDrag.ts.
   const narrowSheet = new MediaQuery("(max-width: 719px)");
@@ -92,7 +92,7 @@
   }
   const REFRESH_MS = 20_000, QUICK_RETRY_MS = 2_000;
   let failed = $state(false);
-  let updated = $state<number | null>(null);   // server time of the last board that loaded: «ζωντανά · 23:08»
+  let updated = $state<number | null>(null);   // server time of the last board that loaded: «τελ. ενημέρωση: 23:08:40»
   let now = $state(Date.now());   // set from app.serverMs() when a stop opens
   const groups = $derived(board ? arrivalGroups(board.arrivals, now) : []);
   const split = $derived(mineFirst(groups, mine));
@@ -284,8 +284,8 @@
       {/if}
       {#if app.cityInfo.gtfsHost === "citybus.gr"}
         <p class="src">{stopSource(app.cityInfo.gtfsHost, app.cityInfo.service)}{#if failed}{" "}Η τελευταία ενημέρωση απέτυχε.{/if}</p>
-      {:else}
-        <p class="src live" class:stale={failed} title="Ανανεώνεται μόνο του κάθε 20″, από το GPS των λεωφορείων">{#if failed}Η τελευταία ενημέρωση απέτυχε{:else}<span class="dot" aria-hidden="true"></span>ζωντανά{/if}{#if updated}{` · ${hhmm(updated)}`}{/if}</p>
+      {:else if failed || updated}
+        <p class="src" class:stale={failed} title="Ανανεώνεται μόνο του κάθε 20″, από το GPS των λεωφορείων">{#if failed}Η τελευταία ενημέρωση απέτυχε{#if updated}{` · ${hhmmss(updated)}`}{/if}{:else if updated}τελ. ενημέρωση: {hhmmss(updated)}{/if}</p>
       {/if}
     {:else if failed}
       <p>{id ? "Δεν φόρτωσαν οι αφίξεις. Ξαναδοκιμάζω σε 20″." : "Οι αφίξεις δεν είναι διαθέσιμες. Ανανέωσε τη σελίδα."}</p>
@@ -382,8 +382,6 @@
     padding: 0 10px; border: 0; border-radius: 10px; background: var(--control); color: var(--fg); font: inherit; font-size: 13px;
     font-weight: 600; cursor: pointer; white-space: nowrap; }
   .acts button:hover { background: var(--control-hover); }
-  .src.live { display: flex; align-items: center; gap: 6px; }
-  .src .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ontime); }
   .src.stale { color: var(--late2); }
   header .bell { margin-top: -2px; }
   .starbtn { flex: none; width: 36px; height: 36px; margin: -4px -4px 0 0; border: 0; background: none; color: var(--muted); font-size: 20px;

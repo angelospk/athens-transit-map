@@ -40,6 +40,6 @@ export function stopPlace(ix: TripIndex, k: number, label: string): Place {
 export const walkDirectionsUrl = (lat: number, lon: number) =>
   `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${lat},${lon}`)}&travelmode=walking`;
 
-// «23:08»: the Athens clock, for «ζωντανά · 23:08».
-export const hhmm = (ms: number) =>
-  new Date(ms).toLocaleTimeString("el-GR", { timeZone: "Europe/Athens", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+// «23:08:40»: the Athens clock, for «τελ. ενημέρωση: 23:08:40».
+export const hhmmss = (ms: number) =>
+  new Date(ms).toLocaleTimeString("el-GR", { timeZone: "Europe/Athens", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
