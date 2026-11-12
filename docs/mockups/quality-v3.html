@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="el"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quality pill v3</title>
+<style>
+.app{--bg:#fff;--fg:#1d1d1f;--muted:#6e6e73;--border:#d2d2d7;--control:#f2f2f4;--control-hover:#e8e8ed;--accent:#0071e3;--ontime:#1a7f37;--late1:#a87c00;--late3:#c92a2a;--shadow:0 4px 16px rgba(0,0,0,.18)}
+.app.dark{--bg:#111113;--fg:#f5f5f7;--muted:#a1a1a6;--border:#3a3a3c;--control:#2c2c2e;--control-hover:#3a3a3c;--accent:#0a84ff;--ontime:#30a14e;--late1:#d4a72c;--late3:#f05252}
+*{box-sizing:border-box}body{margin:0}
+.bar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;font-size:13px}
+.seg{display:inline-flex;gap:2px;padding:2px;border-radius:10px;background:var(--secondary)}
+.seg button{border:0;background:none;color:var(--foreground);font:inherit;font-size:13px;padding:5px 11px;border-radius:8px;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--primary);color:var(--primary-foreground);font-weight:600}
+.cols{display:grid;grid-template-columns:repeat(2,minmax(0,360px));gap:16px}
+@media(max-width:640px){.cols{grid-template-columns:1fr}}
+.cap{font-size:12px;color:var(--muted-foreground);margin:0 0 6px}
+.app{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;color:var(--fg);background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:14px;box-shadow:var(--shadow);font-variant-numeric:tabular-nums}
+.head{display:flex;align-items:center;gap:10px}
+.chip{display:inline-flex;align-items:center;justify-content:center;min-width:40px;padding:5px 7px;border-radius:7px;background:var(--c);color:#fff;font-size:13px;font-weight:700}
+.head b.t{font-size:15px;color:var(--muted)}
+/* pill */
+.q{display:block;width:100%;margin-top:10px;padding:9px 12px;border:0;border-radius:10px;background:var(--control);color:inherit;font:inherit;text-align:left;cursor:pointer}
+.q:hover{background:var(--control-hover)}
+.q:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.row{display:flex;align-items:center;gap:9px;white-space:nowrap}
+.meter{display:inline-flex;align-items:flex-end;gap:2px;height:16px;flex:none}
+.meter i{width:5px;border-radius:1.5px;background:color-mix(in srgb,var(--muted) 35%,transparent)}
+.meter i:nth-child(1){height:6px}.meter i:nth-child(2){height:11px}.meter i:nth-child(3){height:16px}
+.meter i.on{background:var(--lv)}
+.k{color:var(--muted)}
+.v{font-weight:650}
+.v em{font-style:normal;color:var(--lv)}
+.chev{margin-left:auto;color:var(--muted);transition:transform .2s cubic-bezier(.2,.8,.2,1)}
+.q[aria-expanded=true] .chev{transform:rotate(90deg)}
+.more{display:grid;grid-template-rows:0fr;transition:grid-template-rows .25s cubic-bezier(.2,.8,.2,1)}
+.q[aria-expanded=true] .more{grid-template-rows:1fr}
+.more>div{overflow:hidden}
+.h{margin:12px 0 4px;font-size:12px;font-weight:600;color:var(--muted)}
+.stack{display:flex;height:14px;gap:2px;border-radius:3px;overflow:hidden}
+.stack i{display:block}
+.keys{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:5px}
+.keys span::before{content:"";display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;background:var(--c)}
+svg{display:block;width:100%;height:auto;overflow:visible}
+svg text{fill:var(--muted);font-size:10.5px}
+.note{font-size:12px;color:var(--muted);margin:8px 0 2px;white-space:normal}
+.dirs{margin-top:10px;padding:8px;border-radius:10px;background:var(--control);text-align:center;font-size:13px}
+.sub{margin:12px 0 2px;font-size:12px;font-weight:600;color:var(--muted)}
+</style></head><body>
+<div class="bar"><span class="seg" id="theme"><button data-v="light" aria-pressed="true">Φωτεινό</button><button data-v="dark" aria-pressed="false">Σκοτεινό</button></span></div>
+<div class="cols">
+  <div><p class="cap">Συχνή γραμμή (Αθήνα 040) · πάτα το πλαίσιο</p><div class="app" id="f"></div></div>
+  <div><p class="cap">Αραιή γραμμή (Πάτρα 601) · πάτα το πλαίσιο</p><div class="app" id="s"></div></div>
+</div>
+<script>
+const LV=[null,"var(--late3)","var(--late1)","var(--ontime)"];
+const meter=l=>`<span class="meter" style="--lv:${LV[l]}" aria-hidden="true">${[1,2,3].map(i=>`<i class="${i<=l?"on":""}"></i>`).join("")}</span>`;
+const DAYS=["Πα","Σα","Κυ","Δε","Τρ","Τε","Πε"];
+function bars(vals,ref,lv,fmt,max){const W=320,H=96,bw=W/vals.length;
+  return `<svg viewBox="0 -8 ${W} ${H+24}" role="img" aria-label="Τελευταίες 7 μέρες">
+  ${vals.map((v,i)=>{const h=v/max*H;return `<rect x="${i*bw+bw*.18}" y="${H-h}" width="${bw*.64}" height="${h}" rx="3" fill="${LV[lv(v)]}" opacity="${i===vals.length-1?1:.55}"/>
+   <text x="${i*bw+bw/2}" y="${H-h-4}" text-anchor="middle" style="fill:var(--fg);font-weight:${i===vals.length-1?700:400}">${fmt(v)}</text>
+   <text x="${i*bw+bw/2}" y="${H+14}" text-anchor="middle">${i===vals.length-1?"χθες":DAYS[i]}</text>`}).join("")}
+  <line x1="0" x2="${W}" y1="${H-ref/max*H}" y2="${H-ref/max*H}" stroke="var(--fg)" stroke-dasharray="3 3" opacity=".55"/>
+  <line x1="0" x2="${W}" y1="${H}" y2="${H}" stroke="var(--border)"/></svg>`}
+const head=(chip,c,t)=>`<div class="head"><span class="chip" style="--c:${c}">${chip}</span><b class="t">${t}</b></div>`;
+function toggle(b){b.setAttribute("aria-expanded",b.getAttribute("aria-expanded")!=="true")}
+// frequent
+const waits=[5.1,4.4,4.2,6.3,5.8,4.6,7.0],norm=4.5;
+const lvW=w=>{const r=w/norm;return r<=1.15?3:r<=1.3?2:1};
+f.innerHTML=head("040","#0b5ed7","προς Σύνταγμα")+`
+<button class="q" aria-expanded="true" onclick="toggle(this)">
+ <span class="row" style="--lv:${LV[1]}">${meter(1)}<span class="k">Χθες</span><span class="v">αναμονή <em>~7′</em> <span class="k">(κανονικά ~4½′)</span></span><span class="chev">›</span></span>
+ <span class="more"><div>
+  <p class="h">Μέση αναμονή στη στάση, τελευταίες 7 μέρες</p>
+  ${bars(waits,norm,lvW,v=>v.toFixed(1)+"′",8)}
+  <p class="note">Διακεκομμένη: η αναμονή αν τα λεωφορεία έρχονταν ομοιόμορφα (μισό headway). Χθες: 96 διελεύσεις 07–21, κάθε ~9′ κατά μέσο όρο· 4 στις 10 ήρθαν μαζί με άλλο ή μετά από μεγάλο κενό.</p>
+ </div></span>
+</button>
+<div class="dirs">→ Σύνταγμα</div><p class="sub">Οχήματα τώρα · 7</p>`;
+// sparse
+const share=[.78,.81,.86,.69,.74,.75,.71];
+const lvS=s=>s>=.8?3:s>=.7?2:1;
+s.innerHTML=head("601","#6f42c1","Πανεπιστήμιο Νοσοκομείο")+`
+<button class="q" aria-expanded="true" onclick="toggle(this)">
+ <span class="row">${meter(2)}<span class="k">Χθες</span><span class="v"><em style="--lv:${LV[2]}">7 στα 10</em> δρομολόγια στην ώρα</span><span class="chev">›</span></span>
+ <span class="more"><div>
+  <p class="h">Χθες, αναχώρηση από την αφετηρία (31 δρομολόγια)</p>
+  <div class="stack"><i style="flex:6;background:var(--late3)"></i><i style="flex:22;background:var(--ontime)"></i><i style="flex:3;background:var(--late1)"></i></div>
+  <div class="keys"><span style="--c:var(--late3)">νωρίτερα 6</span><span style="--c:var(--ontime)">στην ώρα 22</span><span style="--c:var(--late1)">πάνω από 5′ αργά 3</span></div>
+  <p class="h">Στην ώρα, τελευταίες 7 μέρες</p>
+  ${bars(share.map(x=>x*100),80,v=>lvS(v/100),v=>Math.round(v)+"%",100)}
+  <p class="note">«Στην ώρα»: 0 έως 5′ μετά το πρόγραμμα. Όποιο φεύγει νωρίτερα μετράει εκτός, γιατί όποιος έρχεται στην ώρα το χάνει. Διακεκομμένη: 80%.</p>
+ </div></span>
+</button>
+<div class="dirs">→ Ερμού - Πανεπιστήμιο</div><p class="sub">Οχήματα τώρα · 0</p>`;
+document.querySelectorAll("#theme button").forEach(b=>b.onclick=()=>{document.querySelectorAll("#theme button").forEach(x=>x.setAttribute("aria-pressed",x===b));[f,s].forEach(e=>e.classList.toggle("dark",b.dataset.v==="dark"))});
+</script></body></html>
