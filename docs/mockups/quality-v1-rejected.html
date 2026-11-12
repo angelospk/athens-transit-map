@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="el"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+/* T3 frame vars only for the outer controls; the two phones use the app's own tokens (src/app.css). */
+.app{--bg:#fff;--fg:#1d1d1f;--muted:#6e6e73;--panel:rgba(255,255,255,.96);--border:#d2d2d7;--ontime:#1a7f37;--late1:#a87c00;--late2:#d9480f;--late3:#c92a2a;--none:#6c757d;--control:#f2f2f4;--control-hover:#e8e8ed;--accent:#0071e3;--shadow:0 4px 16px rgba(0,0,0,.18)}
+.app.dark{--bg:#111113;--fg:#f5f5f7;--muted:#a1a1a6;--panel:rgba(28,28,30,.96);--border:#3a3a3c;--control:#2c2c2e;--control-hover:#3a3a3c;--accent:#0a84ff;--ontime:#30a14e;--late1:#d4a72c;--late2:#f0703a;--late3:#f05252}
+*{box-sizing:border-box}
+body{margin:0}
+.bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px;font-size:13px}
+.seg{display:inline-flex;gap:2px;padding:2px;border-radius:10px;background:var(--secondary)}
+.seg button{border:0;background:none;color:var(--foreground);font:inherit;font-size:13px;padding:5px 11px;border-radius:8px;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--primary);color:var(--primary-foreground);font-weight:600}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:640px){.cols{grid-template-columns:1fr}}
+.cap{font-size:12px;color:var(--muted-foreground);margin:0 0 6px}
+/* ---- app look ---- */
+.app{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;color:var(--fg);background:var(--bg);border:1px solid var(--border);border-radius:14px;padding:14px 14px 16px;box-shadow:var(--shadow);font-variant-numeric:tabular-nums}
+.app ::selection{background:color-mix(in srgb,var(--accent) 28%,transparent)}
+h2{margin:0;font-size:16px}
+h3{margin:0;font-size:14px}
+.sub{margin:12px 0 2px;font-size:12px;font-weight:600;color:var(--muted)}
+.lede,.read{color:var(--muted);font-size:13px;margin:2px 0 8px}
+.read b,.lede b{color:var(--fg)}
+.note{margin:8px 0 0;color:var(--muted);font-size:12px}
+section{margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
+.stack{display:flex;height:12px;border-radius:3px;overflow:hidden;gap:2px;margin:4px 0 4px}
+.stack i{display:block;height:100%}
+.keys{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11.5px;color:var(--muted)}
+.keys span::before{content:"";display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;background:var(--c)}
+ol{list-style:none;margin:6px 0 0;padding:0}
+li.r{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;min-height:38px;font-size:13px;border-radius:8px;padding:0 4px;margin:0 -4px;cursor:pointer}
+li.r:hover{background:var(--control)}
+li.r .t{min-width:0}
+li.r .t small{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+li.r .v{color:var(--fg);font-weight:600;font-size:13px;text-align:right}
+li.r .v small{display:block;color:var(--muted);font-weight:400;font-size:11px}
+.chip{display:inline-flex;align-items:center;justify-content:center;min-width:40px;padding:5px 7px;border-radius:7px;background:var(--c,#0b5ed7);color:#fff;font-size:13px;font-weight:700;line-height:1.15}
+.dir{color:var(--muted);font-size:11px;font-weight:500}
+/* line card */
+.head{display:flex;align-items:center;gap:10px}
+.head h2{display:flex;flex-direction:column;min-width:0;font-size:16px;white-space:nowrap}
+.head h2 small{color:var(--muted);font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis}
+.dirs{display:flex;gap:2px;padding:2px;border-radius:10px;background:var(--control);margin-top:10px}
+.dirs span{flex:1;text-align:center;min-height:32px;line-height:32px;border-radius:8px;font-size:13px}
+.dirs span.on{background:var(--accent);color:#fff;font-weight:600}
+.run{display:flex;align-items:center;gap:8px;min-height:34px;font-size:13px}
+.run .n{flex:1}.run .d{color:var(--muted);font-size:12px}
+.q{margin-top:4px;border:1px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer;background:none;width:100%;text-align:left;color:inherit;font:inherit}
+.q:hover{background:var(--control)}
+.q:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.q .top{display:flex;align-items:baseline;gap:8px}
+.q .big{font-size:15px;font-weight:650}
+.q .sm{color:var(--muted);font-size:12.5px;margin-top:2px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--c);flex:none;align-self:center}
+.scale{display:grid;grid-template-columns:repeat(6,1fr);gap:2px;margin-top:8px}
+.scale i{height:6px;border-radius:2px;background:var(--control)}
+.scale i.on{background:var(--c)}
+.week{display:flex;gap:4px;margin-top:8px;align-items:flex-end}
+.week div{flex:1;text-align:center;font-size:10.5px;color:var(--muted)}
+.week b{display:block;height:18px;border-radius:3px;background:var(--c);margin-bottom:3px}
+.more{display:none;margin-top:8px;font-size:12.5px;color:var(--muted)}
+.q[aria-expanded=true] .more{display:block}
+.chev{margin-left:auto;color:var(--muted)}
+.times{color:var(--accent);font-size:13px;margin-top:10px}
+.muted{color:var(--muted)}
+</style></head><body>
+
+<div class="bar">
+  <span class="seg" id="city"><button data-v="ath" aria-pressed="true">Αθήνα (συχνές)</button><button data-v="pat" aria-pressed="false">Πάτρα (citybus)</button></span>
+  <span class="seg" id="theme"><button data-v="light" aria-pressed="true">Φωτεινό</button><button data-v="dark" aria-pressed="false">Σκοτεινό</button></span>
+</div>
+<div class="cols">
+  <div><p class="cap">A · Στατιστικά δικτύου, νέα ενότητα</p><div class="app" id="A"></div></div>
+  <div><p class="cap">B · Κάρτα γραμμής, κάτω από «Οχήματα τώρα» (πάτησέ την)</p><div class="app" id="B"></div></div>
+</div>
+<p class="cap" style="margin-top:10px">Ενδεικτικά νούμερα. Χρώματα και γραμματοσειρά από το <code>src/app.css</code> της εφαρμογής.</p>
+
+<script>
+const BANDS=[["Σαν ρολόι","--ontime"],["Σχεδόν κανονικά","--ontime"],["Συχνά εκτός","--late1"],["Ακανόνιστα","--late1"],["Συχνή φάλαγγα","--late2"],["Σχεδόν όλα κολλημένα","--late3"]];
+const OTPB=p=>p>=95?["Σχεδόν πάντα στην ώρα","--ontime"]:p>=90?["Πολύ συχνά στην ώρα","--ontime"]:p>=80?["Συνήθως στην ώρα","--late1"]:p>=70?["Συχνά αργεί","--late2"]:["Αναξιόπιστη","--late3"];
+const ath={
+  n:34,wait:4.6,ideal:4.0,dist:[6,9,7,6,4,2],
+  worst:[["040","#0b5ed7","προς Σύνταγμα",4,7.0,4.5,"+2.5′","42%"],["550","#0b5ed7","προς Κηφισιά",4,6.1,4.0,"+2.1′","35%"],["608","#0b5ed7","προς Γαλάτσι",3,6.4,4.5,"+1.9′","27%"],["A1","#198754","προς Βούλα",3,6.2,4.6,"+1.6′","25%"]],
+};
+const pat={
+  otp:78,meas:528,runs:612,early:31,late:85,
+  freq:{lines:24,sparse:22},
+  worst:[["6","#6f42c1","Ζαρουχλέικα",61,"25 από 41"],["2","#d63384","Πανεπιστήμιο",66,"31 από 47"],["18","#fd7e14","Ρίο",69,"20 από 29"],["9","#20c997","Γηροκομείο",72,"18 από 25"]],
+};
+const v=s=>`var(${s})`;
+function A(c){
+  if(c==="ath"){const tot=ath.dist.reduce((a,b)=>a+b);
+    return `<h3>Ποιότητα εξυπηρέτησης</h3>
+<p class="read">Γραμμές που περνούν κάθε 10′ ή συχνότερα: <b>${ath.n}</b> κατευθύνσεις. Μέση αναμονή <b>${ath.wait.toFixed(1)}′</b>, ενώ με κανονικά δρομολόγια θα ήταν ${ath.ideal.toFixed(1)}′.</p>
+<div class="stack" role="img" aria-label="Κατανομή κανονικότητας">${ath.dist.map((n,i)=>`<i style="flex:${n};background:${v(BANDS[i][1])};opacity:${i%2?0.65:1}"></i>`).join("")}</div>
+<div class="keys">${ath.dist.map((n,i)=>`<span style="--c:${v(BANDS[i][1])}">${BANDS[i][0]} ${n}</span>`).join("")}</div>
+<p class="sub">Πού περίμενες περισσότερο</p>
+<ol>${ath.worst.map(w=>`<li class="r"><span class="chip" style="--c:${w[1]}">${w[0]}</span><span class="t">${BANDS[w[3]][0]}<small>${w[2]} · ${w[7]} εκτός ρυθμού</small></span><span class="v">${w[6]}<small>αναμονή ${w[4].toFixed(1)}′</small></span></li>`).join("")}</ol>
+<p class="note">Αναμονή για όποιον φτάνει στη στάση χωρίς να κοιτάξει ώρα, 07:00–21:00, στη μέση της διαδρομής. Οι κατηγορίες ακολουθούν το αμερικανικό εγχειρίδιο TCQSM (4η έκδ.).</p>`}
+  const on=pat.meas-pat.early-pat.late,b=OTPB(pat.otp);
+  return `<h3>Ποιότητα εξυπηρέτησης</h3>
+<p class="read">Αναχωρήσεις από την αφετηρία στην ώρα τους: <b>${pat.otp}%</b> (${on} από ${pat.meas} που μετρήθηκαν). <span style="color:${v(b[1])};font-weight:600">${b[0]}</span>.</p>
+<div class="stack" role="img" aria-label="Νωρίτερα, στην ώρα, αργότερα"><i style="flex:${pat.early};background:var(--late3)"></i><i style="flex:${on};background:var(--ontime)"></i><i style="flex:${pat.late};background:var(--late2)"></i></div>
+<div class="keys"><span style="--c:var(--late3)">Νωρίτερα ${pat.early}</span><span style="--c:var(--ontime)">Στην ώρα ${on}</span><span style="--c:var(--late2)">Πάνω από 5′ αργά ${pat.late}</span></div>
+<p class="sub">Γραμμές που αργούν πιο συχνά</p>
+<ol>${pat.worst.map(w=>`<li class="r"><span class="chip" style="--c:${w[1]}">${w[0]}</span><span class="t">${OTPB(w[3])[0]}<small>από ${w[2]} · ${w[4]} στην ώρα</small></span><span class="v">${w[3]}%</span></li>`).join("")}</ol>
+<p class="note">${pat.freq.sparse} από ${pat.freq.lines} γραμμές περνούν αραιότερα από κάθε 15′: εκεί μετράει η ώρα αναχώρησης, όχι η συχνότητα. «Στην ώρα» = 0 έως 5′ μετά το πρόγραμμα· όποιο φεύγει νωρίτερα μετράει ως χαμένο. Δεν μετρήθηκαν ${pat.runs-pat.meas} δρομολόγια χωρίς καθαρό σήμα στην αφετηρία.</p>`;
+}
+function B(c){
+  if(c==="ath"){const band=4,days=[2,4,3,4,5,1,4];
+    return `<div class="head"><span class="chip" style="--c:#0b5ed7">040</span><h2>προς Σύνταγμα<small>από Πειραιά</small></h2></div>
+<div class="dirs"><span class="on">→ Σύνταγμα</span><span>→ Πειραιάς</span></div>
+<p class="sub">Οχήματα τώρα · 7</p>
+<div class="run"><span class="n">Αγ. Παντελεήμων</span><span class="d">+3′</span></div>
+<div class="run"><span class="n">Αγ. Παντελεήμων</span><span class="d">+4′</span></div>
+<div class="run muted"><span class="n">…</span></div>
+<p class="sub">Χθες</p>
+<button class="q" aria-expanded="false" onclick="this.setAttribute('aria-expanded',this.getAttribute('aria-expanded')!=='true')">
+  <div class="top"><span class="dot" style="--c:${v(BANDS[band][1])}"></span><span class="big">${BANDS[band][0]}</span><span class="chev">›</span></div>
+  <div class="sm">Περίμενες κατά μέσο όρο <b style="color:var(--fg)">7′</b> αντί για 4½′. Συχνά έρχονται δύο μαζί.</div>
+  <div class="scale" aria-hidden="true">${BANDS.map((b2,i)=>`<i class="${i===band?"on":""}" style="--c:${v(b2[1])}"></i>`).join("")}</div>
+  <div class="more">Κάθε ~9′ κατά μέσο όρο · 42% των λεωφορείων ήρθαν κολλημένα με το προηγούμενο ή μετά από μεγάλο κενό · μετρήθηκαν 96 διελεύσεις, 07–21.
+    <div class="week">${days.map((d,i)=>`<div><b style="--c:${v(BANDS[d][1])}"></b>${["Πα","Σα","Κυ","Δε","Τρ","Τε","Πε"][i]}</div>`).join("")}</div>
+  </div>
+</button>
+<div class="times">Σήμερα · 214 δρομολόγια · επόμενο 15:40 ›</div>`}
+  const p=61,b=OTPB(p);
+  return `<div class="head"><span class="chip" style="--c:#6f42c1">6</span><h2>προς Ζαρουχλέικα<small>από Πλ. Γεωργίου</small></h2></div>
+<div class="dirs"><span class="on">→ Ζαρουχλέικα</span><span>→ Πλ. Γεωργίου</span></div>
+<p class="sub">Οχήματα τώρα · 2</p>
+<div class="run"><span class="n">Αγ. Ανδρέας</span><span class="d">+2′</span></div>
+<p class="sub">Χθες</p>
+<button class="q" aria-expanded="false" onclick="this.setAttribute('aria-expanded',this.getAttribute('aria-expanded')!=='true')">
+  <div class="top"><span class="dot" style="--c:${v(b[1])}"></span><span class="big">${p}% στην ώρα</span><span class="chev">›</span></div>
+  <div class="sm">${b[0]}. Περνά κάθε ~30′, οπότε κοίτα την ώρα πριν βγεις.</div>
+  <div class="more">Αναχωρήσεις από την αφετηρία: 25 στην ώρα, 3 νωρίτερα, 13 πάνω από 5′ αργά (41 μετρήθηκαν). Κάτω από 70% οι επιβάτες συνήθως τη θεωρούν αναξιόπιστη.
+    <div class="week">${[74,66,80,63,58,70,61].map((x,i)=>`<div><b style="--c:${v(OTPB(x)[1])};height:${6+x/100*16}px"></b>${["Πα","Σα","Κυ","Δε","Τρ","Τε","Πε"][i]}</div>`).join("")}</div>
+  </div>
+</button>
+<div class="times">Σήμερα · 31 δρομολόγια · επόμενο 15:45 ›</div>`;
+}
+let city="ath";
+function draw(){A_.innerHTML=A(city);B_.innerHTML=B(city)}
+const A_=document.getElementById("A"),B_=document.getElementById("B");
+function seg(id,fn){document.querySelectorAll(`#${id} button`).forEach(b=>b.onclick=()=>{document.querySelectorAll(`#${id} button`).forEach(x=>x.setAttribute("aria-pressed",x===b));fn(b.dataset.v)})}
+seg("city",x=>{city=x;draw()});
+seg("theme",x=>{[A_,B_].forEach(e=>e.classList.toggle("dark",x==="dark"))});
+draw();
+</script>
+</body></html>
