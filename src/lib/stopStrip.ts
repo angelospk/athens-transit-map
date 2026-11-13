@@ -1,7 +1,7 @@
 // The line card's stop strip: every stop of the shown direction, its vehicles between the stops, its slow
 // gaps (docs/mockups/line-strip-v1.html). Pure: no DOM, no fetch.
 import { cumulativeLL, project } from "./motion";
-import type { Segment } from "./liveQuality";
+import type { QualityLevel, Segment } from "./liveQuality";
 import { vehicleDir, type V2Pattern, type V2Vehicle } from "./v2";
 
 // The gap's words: how much slower than usual, and the two speeds in km/h.
@@ -10,6 +10,29 @@ export function gapText(s: { level: string; speed: number; usual_speed: number |
   const usual = typeof s.usual_speed === "number" && Number.isFinite(s.usual_speed)
     ? `, συνήθως ${Math.round(s.usual_speed * 3.6)}` : "";
   return `${how}: ${Math.round(s.speed * 3.6)} km/h${usual}`;
+}
+
+// Vehicles too close on the strip to tap apart become one icon («2 κολλητά»), drawn from its first item's y and
+// `step` pixels taller per further item: in y order, an item joins the cluster before it when it is less than
+// `near` pixels below that cluster's last item or its drawn bottom, whichever is lower.
+export function clusters<T>(items: T[], y: (t: T) => number, near = 22, step = 0): T[][] {
+  const out: T[][] = [];
+  let last = -Infinity;
+  for (const t of [...items].sort((p, q) => y(p) - y(q))) {
+    const c = out.at(-1);
+    if (c && y(t) - last < near) c.push(t); else out.push([t]);
+    const g = out.at(-1)!;
+    last = Math.max(y(t), y(g[0]) + (g.length - 1) * step);
+  }
+  return out;
+}
+
+// The worst level of a cluster, for its one ring.
+const RANK: Record<QualityLevel, number> = { unknown: 0, normal: 1, worse: 2, much_worse: 3 };
+export function worst(levels: (QualityLevel | undefined)[]): QualityLevel | undefined {
+  let w: QualityLevel | undefined;
+  for (const l of levels) if (l && (!w || RANK[l] > RANK[w])) w = l;
+  return w;
 }
 
 export interface Strip {

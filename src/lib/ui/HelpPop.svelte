@@ -4,7 +4,7 @@
   import { PALETTE } from "../lineColors";
 
   // live: the city has live quality levels (Athens, Thessaloniki; lib/liveQuality.ts), so a followed line's
-  // vehicles wear a ring and its slow segments a halo instead of the delay dot.
+  // vehicles wear a ring and its slow segments a halo instead of the delay dot; the city's vehicles show no dot.
   let { live = false }: { live?: boolean } = $props();
 </script>
 
@@ -19,9 +19,14 @@
       <span>Όχημα γραμμής που ακολουθείς. Κάθε γραμμή έχει δικό της χρώμα, ίδιο στη διαδρομή και στο κουμπί της.
         Η τελεία είναι η καθυστέρηση, το νούμερο από κάτω η γραμμή. Πάτα το για τις λεπτομέρειες.</span></li>
   {/if}
-  <li><span class="s"><span class="pic"><img src="{import.meta.env.BASE_URL}icons/bus.png" alt="" /><i class="dot ontime"></i></span><span class="pic"><img src="{import.meta.env.BASE_URL}icons/trolley.png" alt="" /><i class="dot late3"></i></span></span>
-    <span>Όχημα της πόλης: μπλε λεωφορείο, πορτοκαλί τρόλεϊ. Η τελεία είναι η καθυστέρηση: πράσινη στην ώρα του, κίτρινη,
-      πορτοκαλί, κόκκινη όλο και πιο αργά, γκρι χωρίς δρομολόγιο. Πάτα το για να δεις ολόκληρη τη γραμμή του.</span></li>
+  {#if live}
+    <li><span class="s"><span class="pic"><img src="{import.meta.env.BASE_URL}icons/bus.png" alt="" /></span><span class="pic"><img src="{import.meta.env.BASE_URL}icons/trolley.png" alt="" /></span></span>
+      <span>Όχημα της πόλης: μπλε λεωφορείο, πορτοκαλί τρόλεϊ. Πάτημα: ολόκληρη η γραμμή του, με το περίγραμμα σε κάθε όχημα.</span></li>
+  {:else}
+    <li><span class="s"><span class="pic"><img src="{import.meta.env.BASE_URL}icons/bus.png" alt="" /><i class="dot ontime"></i></span><span class="pic"><img src="{import.meta.env.BASE_URL}icons/trolley.png" alt="" /><i class="dot late3"></i></span></span>
+      <span>Όχημα της πόλης: μπλε λεωφορείο, πορτοκαλί τρόλεϊ. Η τελεία είναι η καθυστέρηση: πράσινη στην ώρα του, κίτρινη,
+        πορτοκαλί, κόκκινη όλο και πιο αργά, γκρι χωρίς δρομολόγιο. Πάτα το για να δεις ολόκληρη τη γραμμή του.</span></li>
+  {/if}
   <li><span class="s"><span class="bus ontime" class:ring={live} style:--c={PALETTE[1].bg} style:--t={PALETTE[1].fg}><i class="glyph"></i><i class="dir" style="transform: translate(20px, 0) rotate(90deg)"></i></span></span>
     <span>Το βελάκι δείχνει προς πού κινείται. Λείπει όταν το όχημα στέκεται.</span></li>
   <li><span class="s"><span class="age">24″</span></span>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gapText, stopStrip } from "../src/lib/stopStrip";
+import { clusters, gapText, stopStrip, worst } from "../src/lib/stopStrip";
 import type { Segment } from "../src/lib/liveQuality";
 import type { V2Pattern, V2Stop, V2Vehicle } from "../src/lib/v2";
 
@@ -110,5 +110,28 @@ describe("stopStrip: review cases, round 2", () => {
       shape: [...line(0, 0.02), ...line(0.02, 0).slice(1)] };
     const s = stopStrip([P], STOPS, [veh("oasa:1", 0.005, { next_stop: "oasa:A" })], [], 0)!;
     expect(Math.round(s.vehicles[0].at * 100) / 100).toBe(2.75);
+  });
+});
+
+describe("clusters: vehicles drawn as one «N κολλητά» icon", () => {
+  it("joins items whose y is within `near` of the item before, in y order", () => {
+    const ys = [100, 10, 30, 45, 200, 215];
+    expect(clusters(ys, y => y, 22)).toEqual([[10, 30, 45], [100], [200, 215]]);
+  });
+  it("a cluster grows down by `step` per item: an item close to its drawn bottom joins it", () => {
+    // 10 and 10 are drawn at 10 and 26; 40 is 14 below 26, so it joins; 70 is 38 below 42.
+    expect(clusters([10, 10, 40, 70], y => y, 22, 16)).toEqual([[10, 10, 40], [70]]);
+  });
+  it("nothing: nothing", () => {
+    expect(clusters([], (y: number) => y)).toEqual([]);
+  });
+});
+
+describe("worst: the ring of a cluster", () => {
+  it("much_worse over worse over normal over unknown; no level at all: undefined", () => {
+    expect(worst(["normal", "much_worse", "worse"])).toBe("much_worse");
+    expect(worst(["unknown", "normal"])).toBe("normal");
+    expect(worst(["unknown", undefined])).toBe("unknown");
+    expect(worst([undefined, undefined])).toBeUndefined();
   });
 });

@@ -5,7 +5,7 @@
   // vehicle's place is worked out, not measured.
   import { fmtDelay } from "../format";
   import { levelClass, vehiclePhrase } from "../liveQuality";
-  import type { Strip } from "../stopStrip";
+  import { clusters, worst, type Strip } from "../stopStrip";
   import type { V2Stop, V2Vehicle } from "../v2";
   import Icon from "./Icon.svelte";
 
@@ -32,25 +32,31 @@
   const said = (v: V2Vehicle) => vehiclePhrase(v.quality, v.delay_s)
     ?? (v.delay_s !== null ? { text: fmtDelay(v.delay_s), level: null } : null);
   const name = (id: string) => tc(stops[id]?.name ?? "");
-  // Vehicles close together (bunched, or at one stop): each icon one step right of the one above it, so every
-  // icon stays tappable; each phrase at least one line below the one above it.
+  // Vehicles too close to tap apart (bunched, or at one stop) are one taller icon, «N κολλητά», ringed with the
+  // worst level among them; a tap lists them. Each phrase at least one line below the one above it.
+  const BUS_H = 26, STEP_H = 16;
   const placed = $derived.by(() => {
-    let lastY = -Infinity, step = 0, lastTy = -Infinity;
-    return strip.vehicles.map(({ v, at }) => {
-      const y = yAt(at), p = said(v);
-      step = y - lastY < 22 ? step + 1 : 0;
-      lastY = y;
-      const ty = p ? Math.max(y, lastTy + 15) : y;
+    let lastTy = -Infinity;
+    return clusters(strip.vehicles.map(x => ({ ...x, y: yAt(x.at) })), x => x.y, 22, STEP_H).map(g => {
+      const n = g.length, y = g[0].y, h = BUS_H + (n - 1) * STEP_H, key = g[0].v.id;
+      const lvl = worst(g.map(x => x.v.quality?.level)), q = g.some(x => x.v.quality);
+      const p = n === 1 ? said(g[0].v) : { text: `${n} κολλητά`, level: q ? lvl ?? null : null };
+      const ty = p ? Math.max(y + (n - 1) * STEP_H / 2, lastTy + 15) : y;
       if (p) lastTy = ty;
-      return { v, at, y, x: 20 + step * 14, p, ty };
+      return { key, g, n, y, h, lvl, q, at: g[0].at, p, ty };
     });
   });
+  let open = $state<string | null>(null);
   // Phrases pushed down past the last stop row: room for them under the strip.
   const below = $derived(Math.max(0, ...placed.map(x => x.p ? x.ty + 9 - (centres.at(-1) ?? 0) - STOP_H / 2 : 0)));
   // The slow gaps with a vehicle's phrase on their row: their text stops short of it.
   const busy = $derived(new Set(strip.gaps.flatMap((g, i) =>
     g && placed.some(x => x.p && x.ty > centres[i] + 8 && x.ty < centres[i + 1] - 8) ? [i] : [])));
 </script>
+
+<svelte:window
+  onclick={e => { if (open && !(e.target as Element | null)?.closest?.(".menu, .veh.many")) open = null; }}
+  onkeydown={e => { if (open && e.key === "Escape") open = null; }} />
 
 <div class="strip" style:--c={color.bg} style:--t={color.fg} style:padding-bottom="{below}px">
   <ol aria-label="Οι στάσεις της κατεύθυνσης">
@@ -70,10 +76,30 @@
       {/if}
     {/each}
   </ol>
-  {#each placed as { v, at, y, x, p, ty } (v.id)}
-    <button type="button" class="veh {levelClass(v.quality?.level)}" class:ring={!!v.quality} style:top="{y}px" style:left="{x}px"
-      aria-label="Όχημα{v.label ? ` ${v.label}` : ''}, μετά τη στάση {name(strip.stops[Math.floor(at)])}{p ? `: ${p.text}` : ''}"
-      onclick={() => onvehicle(v)}><Icon name={isBus ? "bus" : "dot"} size={14} /></button>
+  {#each placed as { key, g, n, y, h, lvl, q, at, p, ty } (key)}
+    {@const after = name(strip.stops[Math.floor(at)])}
+    {#if n === 1}
+      {@const v = g[0].v}
+      <button type="button" class="veh {levelClass(lvl)}" class:ring={q} style:top="{y - BUS_H / 2}px"
+        aria-label="Όχημα{v.label ? ` ${v.label}` : ''}, μετά τη στάση {after}{p ? `: ${p.text}` : ''}"
+        onclick={() => onvehicle(v)}><Icon name={isBus ? "bus" : "dot"} size={14} /></button>
+    {:else}
+      <button type="button" class="veh many {levelClass(lvl)}" class:ring={q} style:top="{y - BUS_H / 2}px" style:height="{h}px"
+        aria-label="{n} οχήματα κολλητά, μετά τη στάση {after}" aria-expanded={open === key}
+        onclick={() => (open = open === key ? null : key)}>
+        {#each g as _, i (i)}<Icon name={isBus ? "bus" : "dot"} size={14} />{/each}</button>
+      {#if open === key}
+        <div class="menu" style:top="{y - BUS_H / 2 + h + 4}px">
+          {#each g as { v } (v.id)}
+            {@const s = said(v)}
+            <button type="button" onclick={() => { open = null; onvehicle(v); }}>
+              <span class="lbl">Όχημα{v.label ? ` ${v.label}` : ''}</span>
+              {#if s}<span class={s.level ? `lvt-${s.level}` : 'plain'}>{s.text}</span>{/if}
+            </button>
+          {/each}
+        </div>
+      {/if}
+    {/if}
     {#if p}<span class="say {p.level ? `lvt-${p.level}` : 'plain'}" style:top="{ty}px" aria-hidden="true">{p.text}</span>{/if}
   {/each}
 </div>
@@ -98,10 +124,18 @@
   .busy .why { padding-right: 84px; }
   .why { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* A vehicle: the map's marker, smaller, on the rail; its phrase on the right of the same height. */
-  .veh { position: absolute; left: 20px; width: 26px; height: 26px; padding: 0; transform: translate(-50%, -50%); z-index: 3;
-    display: grid; place-items: center; border-radius: 50%; border: 2px solid #fff; background: var(--c); color: var(--t); cursor: pointer;
+  .veh { position: absolute; left: 20px; width: 26px; height: 26px; padding: 0; transform: translateX(-50%); z-index: 3;
+    display: grid; place-items: center; border-radius: 13px; border: 2px solid #fff; background: var(--c); color: var(--t); cursor: pointer;
     box-shadow: 0 1px 4px rgba(0, 0, 0, .35); }
   .veh.ring { box-shadow: 0 0 0 2.5px var(--d), 0 1px 4px rgba(0, 0, 0, .35); }
+  .veh.many { display: flex; flex-direction: column; justify-content: space-evenly; align-items: center; padding: 3px 0; }
+  .menu { position: absolute; left: 40px; z-index: 5; display: grid; min-width: 200px; max-width: calc(100% - 48px);
+    padding: 4px; border-radius: 10px; background: var(--panel, var(--bg)); border: 1px solid var(--border);
+    box-shadow: var(--shadow); }
+  .menu button { display: flex; justify-content: space-between; gap: 12px; padding: 9px 10px; border: 0; border-radius: 7px;
+    background: none; color: inherit; font: inherit; font-size: 13.5px; text-align: left; cursor: pointer; }
+  .menu button:hover, .menu button:focus-visible { background: var(--control-hover); }
+  .menu .plain { color: var(--muted); }
   .veh:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .say { position: absolute; right: 0; transform: translateY(-50%); z-index: 3; padding: 0 0 0 6px; background: var(--panel, var(--bg));
     font-size: 12.5px; white-space: nowrap; pointer-events: none; }
