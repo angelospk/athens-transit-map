@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="el"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Line stop strip v1</title>
+<style>
+:root{--bg:#fff;--fg:#1d1d1f;--muted:#6e6e73;--border:#d2d2d7;--control:#f2f2f4;--accent:#0071e3;
+  --ontime:#1a7f37;--late1:#a87c00;--late3:#c92a2a;--none:#8e8e93;
+  --lvt-normal:#1a7f37;--lvt-worse:#8a6500;--lvt-much:#c92a2a;--c:#0b5ed7;--shadow:0 4px 16px rgba(0,0,0,.18)}
+.dark{--bg:#111113;--fg:#f5f5f7;--muted:#a1a1a6;--border:#3a3a3c;--control:#2c2c2e;--accent:#0a84ff;
+  --lvt-normal:#3fb95f;--lvt-worse:#d4a72c;--lvt-much:#ff6b6b}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+.bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;font-size:13px}
+.seg{display:inline-flex;flex-wrap:wrap;gap:2px;padding:2px;border-radius:10px;background:var(--secondary,#fff);box-shadow:0 0 0 1px var(--border,#d2d2d7)}
+.seg button{border:0;background:none;font:inherit;font-size:13px;padding:6px 11px;border-radius:8px;cursor:pointer;color:var(--foreground,#1d1d1f)}
+.seg button[aria-pressed=true]{background:var(--primary,#0071e3);color:var(--primary-foreground,#fff);font-weight:600}
+.wrap{display:grid;grid-template-columns:minmax(0,390px) minmax(0,1fr);gap:24px;align-items:start}
+@media(max-width:760px){.wrap{grid-template-columns:1fr}}
+.notes{font-size:13.5px;line-height:1.55;max-width:520px}
+.notes h3{margin:0 0 6px;font-size:15px}.notes ol{margin:0;padding-left:18px}.notes li{margin:0 0 8px}
+/* the phone card */
+.app{width:100%;max-width:390px;border-radius:22px;overflow:hidden;border:1px solid var(--border);background:var(--bg);color:var(--fg);box-shadow:var(--shadow);font-variant-numeric:tabular-nums}
+.sheet{padding:12px 14px 16px;max-height:760px;overflow:auto}
+.head{display:flex;align-items:center;gap:10px}
+.chip{display:inline-flex;align-items:center;justify-content:center;min-width:44px;padding:4px 8px;border-radius:7px;background:var(--c);color:#fff;font-weight:700}
+.head b{font-size:15px;color:var(--muted);font-weight:600}
+.q{display:flex;gap:6px;margin-top:10px;padding:9px 12px;border-radius:10px;background:var(--control);font-size:13px}
+.q .k{color:var(--muted)}.q b{font-weight:650}
+.dirs{display:grid;grid-template-columns:1fr 1fr;gap:2px;margin-top:10px;padding:2px;border-radius:10px;background:var(--control)}
+.dirs span{padding:8px;border-radius:8px;text-align:center;font-size:13px}.dirs span.on{background:var(--accent);color:#fff;font-weight:650}
+.sub{display:flex;justify-content:space-between;margin:14px 0 4px;font-size:12px;font-weight:600;color:var(--muted)}
+/* the strip: one row per stop; the rail runs down the left column */
+.strip{position:relative;list-style:none;margin:0;padding:0}
+.stop{position:relative;display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;min-height:30px;font-size:13.5px}
+.stop .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stop.end .nm{font-weight:650}
+.stop .dot{justify-self:center;width:11px;height:11px;border-radius:50%;background:var(--bg);border:2.5px solid var(--c);position:relative;z-index:2}
+.stop.end .dot{width:14px;height:14px;border-width:3px}
+.stop.mine .nm::after{content:"η στάση σου";margin-left:6px;padding:1px 6px;border-radius:6px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);font-size:11px;font-weight:600}
+/* a segment = the gap between two stop rows; its rail piece */
+.gap{position:relative;display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;min-height:14px}
+.gap .rail{justify-self:center;align-self:stretch;width:5px;margin:-8px 0;background:var(--c);border-radius:3px;position:relative;z-index:1}
+/* style A: halo behind the rail, as on the map */
+.halo .gap.worse .rail{box-shadow:0 0 0 4px var(--late1)}
+.halo .gap.much_worse .rail{box-shadow:0 0 0 4px var(--late3)}
+/* style B: the rail itself takes the colour */
+.paint .gap.worse .rail{background:var(--late1);width:7px}
+.paint .gap.much_worse .rail{background:var(--late3);width:7px}
+.gap .why{grid-column:2/4;font-size:12px;padding:1px 0}
+.gap.tall{min-height:34px}
+/* a vehicle: on the rail between two stops, its words on the right */
+.veh{position:absolute;left:22px;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:50%;background:var(--c);border:2px solid #fff;
+  display:grid;place-items:center;color:#fff;z-index:3;box-shadow:0 0 0 2.5px var(--lv),0 1px 4px rgba(0,0,0,.35);cursor:pointer;padding:0}
+.veh svg{width:14px;height:14px}
+.vtxt{position:absolute;right:0;transform:translateY(-50%);font-size:12.5px;font-weight:600;color:var(--lt);background:var(--bg);padding:0 0 0 6px;z-index:3;white-space:nowrap}
+.vtxt.u{font-weight:400}
+.lvt-normal{--lt:var(--lvt-normal)}.lvt-worse{--lt:var(--lvt-worse)}.lvt-much_worse{--lt:var(--lvt-much)}.lvt-unknown{--lt:var(--muted)}
+.why.lvt-worse,.why.lvt-much_worse{color:var(--lt)}
+.legend{margin-top:12px;font-size:12px;color:var(--muted)}
+</style></head><body>
+<div class="bar">
+  <span class="seg" id="style"><button data-v="halo" aria-pressed="true">Αργό τμήμα: περίγραμμα (όπως ο χάρτης)</button><button data-v="paint" aria-pressed="false">Αργό τμήμα: χρώμα στη γραμμή</button></span>
+  <span class="seg" id="why"><button data-v="1" aria-pressed="true">Με κείμενο στο αργό τμήμα</button><button data-v="0" aria-pressed="false">Χωρίς κείμενο</button></span>
+  <span class="seg" id="theme"><button data-v="light" aria-pressed="true">Φωτεινό</button><button data-v="dark" aria-pressed="false">Σκοτεινό</button></span>
+</div>
+<div class="wrap">
+  <div class="app" id="app"></div>
+  <div class="notes">
+    <h3>Κάρτα γραμμής: όλες οι στάσεις, με τα οχήματα πάνω τους (v1)</h3>
+    <ol>
+      <li><b>Μία κάθετη γραμμή</b> στο χρώμα της γραμμής, από την αφετηρία ως το τέρμα, με όλες τις στάσεις της κατεύθυνσης.</li>
+      <li><b>Τα οχήματα</b> κάθονται πάνω στη γραμμή, ανάμεσα στις στάσεις, εκεί που είναι τώρα (με το ίδιο περίγραμμα όπως στον χάρτη). Δεξιά η φράση: «12′ μετά», «κολλητά», «+7′».</li>
+      <li><b>Τα αργά τμήματα</b> (ανάμεσα σε δύο στάσεις) παίρνουν κίτρινο ή κόκκινο. Δύο τρόποι στα κουμπιά πάνω: περίγραμμα γύρω από τη γραμμή, όπως στον χάρτη, ή η ίδια η γραμμή βάφεται.</li>
+      <li>Αυτή η λωρίδα <b>αντικαθιστά τη λίστα «Οχήματα τώρα»</b>: ό,τι έλεγε η λίστα φαίνεται εδώ, μαζί με το πού.</li>
+      <li>Πάτημα σε όχημα: ο χάρτης πάει σε αυτό. Πάτημα σε στάση: η κάρτα της στάσης.</li>
+    </ol>
+    <p>Στάσεις: η πραγματική 040 προς Σύνταγμα. Οχήματα και αργά τμήματα: δείγμα.</p>
+  </div>
+</div>
+<script>
+const BUS='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="15" rx="3"/><path d="M5 11h14M8.5 21v-3M15.5 21v-3"/></svg>';
+const STOPS=["Πειραιάς","Κλεισόβης","Σκαλάκια","Γούβα","Σχολεία","Βρυώνη","Φιλελλήνων","Σκουζέ","Πλ. Τερψιθέας","Υπουργείο","Βενιζέλου","Ευαγγελίστρια","Τζαβέλλα","17η Στάση","Δέλτα","Τζιτζιφιές","Πεισιστράτου","Ιζόλα","Πυροσβεστική","Αγ. Ελεούσα","Κ.Ε.Α.Τ. Πρ. Οίκος Τυφλών","Σκρα","Πλ. Δαβάκη","Καλλιθέα","Αγ. Πάντες","Αγ. Πάντων","2η Αγ. Πάντων","1η Χαροκόπου","Παπασπύρου","Αγ. Σωστής","Πάντειος","Γέφυρα","Ολυμπιακή","Στ. Συγγρού-Φιξ","Μακρυγιάννη","Σύνταγμα"];
+// segment i = STOPS[i] -> STOPS[i+1]
+const SEG={6:["worse",14,19],7:["worse",12,18],15:["much_worse",7,19],16:["much_worse",6,17],31:["worse",15,22]};
+// vehicles: between stop i and i+1 at fraction f
+const VEH=[[0,0,"unknown","—"],[3,.4,"much_worse","12′ μετά"],[3,.75,"much_worse","κολλητά"],[9,.5,"normal","5′ μετά"],[14,.3,"worse","8′ μετά"],[20,.6,"normal","6′ μετά"],[27,.2,"normal","5′ μετά"],[33,.5,"much_worse","κολλητά"]];
+const LV={normal:"var(--ontime)",worse:"var(--late1)",much_worse:"var(--late3)",unknown:"var(--none)"};
+let style="halo",why=true,dark=false;
+function draw(){
+  const app=document.getElementById("app");app.className="app"+(dark?" dark":"");
+  let rows="";
+  STOPS.forEach((s,i)=>{
+    const end=i===0||i===STOPS.length-1;
+    rows+=`<li class="stop${end?" end":""}${i===12?" mine":""}" data-i="${i}"><span class="dot"></span><span class="nm">${s}</span></li>`;
+    if(i<STOPS.length-1){
+      const g=SEG[i],t=g&&why;
+      rows+=`<li class="gap ${g?g[0]:""}${t?" tall":""}" data-g="${i}"><span class="rail"></span>${t?`<span class="why lvt-${g[0]}">${g[0]==="much_worse"?"πολύ πιο αργά από συνήθως":"πιο αργά από συνήθως"}: ${g[1]} km/h (συνήθως ${g[2]})</span>`:""}</li>`;
+    }
+  });
+  app.innerHTML=`<div class="sheet">
+    <div class="head"><span class="chip">040</span><b>Πειραιάς - Σύνταγμα</b></div>
+    <div class="q"><span class="k">Χθες ·</span><b>αναμονή <span style="color:var(--lvt-much)">~7′</span> (κανονικά ~4½′)</b></div>
+    <div class="dirs"><span class="on">→ Σύνταγμα</span><span>→ Πειραιάς</span></div>
+    <div class="sub"><span>Στάσεις και οχήματα τώρα · ${VEH.length}</span><span>${STOPS.length} στάσεις</span></div>
+    <ul class="strip ${style}" id="strip">${rows}</ul>
+    <p class="legend">Σύγκριση με το συνηθισμένο αυτής της ώρας. Πάτημα σε όχημα: ο χάρτης πάει σε αυτό.</p></div>`;
+  const strip=document.getElementById("strip");
+  // place the vehicles between the centres of their two stop rows
+  const centre=i=>{const r=strip.querySelector(`.stop[data-i="${i}"] .dot`).getBoundingClientRect(),b=strip.getBoundingClientRect();return r.top+r.height/2-b.top};
+  for(const [i,f,l,t] of VEH){
+    const y=centre(i)+(centre(Math.min(i+1,STOPS.length-1))-centre(i))*f;
+    strip.insertAdjacentHTML("beforeend",`<button class="veh" style="top:${y}px;--lv:${LV[l]}" aria-label="Όχημα: ${t}">${BUS}</button><span class="vtxt lvt-${l}${l==="unknown"?" u":""}" style="top:${y}px">${t}</span>`);
+  }
+}
+function seg(id,fn){document.querySelectorAll(`#${id} button`).forEach(b=>b.onclick=()=>{document.querySelectorAll(`#${id} button`).forEach(x=>x.setAttribute("aria-pressed",x===b));fn(b.dataset.v);draw()})}
+seg("style",v=>style=v);seg("why",v=>why=v==="1");seg("theme",v=>dark=v==="dark");
+draw();
+</script></body></html>

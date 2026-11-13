@@ -6,9 +6,9 @@
   import { fetchSchedule, fetchV2Line, fetchV2LineVehicles, peekV2Line, peekV2LineVehicles } from "../api";
   import { fmtDelay } from "../format";
   import { vehiclePhrase } from "../liveQuality";
-  import { busVehicleCard } from "../legacy";
+  import { busStopCard, busVehicleCard } from "../legacy";
   import { directionGroups } from "../directions";
-  import { dirLabels, headsignName, lineVehicleRows, withDirections, type LineDetail, type V2Vehicle } from "../v2";
+  import { dirLabels, firstDir, headsignName, lineVehicleRows, withDirections, type LineDetail, type V2Vehicle } from "../v2";
   import type { AppState } from "../state.svelte";
   import CardSheet from "./CardSheet.svelte";
   import DisruptionRows from "./DisruptionRows.svelte";
@@ -21,6 +21,9 @@
   import { matchDirection, type Schedule } from "../timetable";
   import { lineQuality, shownDay, statsLineId, type DayWord, type QualityDay } from "../quality";
   import QualityPill from "./QualityPill.svelte";
+  import StopStrip from "./StopStrip.svelte";
+  import { stopStrip } from "../stopStrip";
+  import type { Segment } from "../liveQuality";
 
   let { app }: { app: AppState } = $props();
 
@@ -30,6 +33,7 @@
 
   let detail = $state.raw<LineDetail | null>(null);
   let vehicles = $state.raw<V2Vehicle[] | null>(null);
+  let segments = $state.raw<Segment[]>([]);   // slow gaps (rev 23, Athens and Thessaloniki), with the vehicles
   let failed = $state(false);
   let missing = $state(false);   // the backend does not know the line (404, a bad link): no more asking
   let vFailed = $state(false);
@@ -46,7 +50,9 @@
     untrack(() => {
       const d = peekV2Line(id), v = peekV2LineVehicles(id);
       detail = (d?.body as LineDetail | undefined) ?? null;
-      vehicles = v?.at && Date.now() - v.at < FRESH_MS ? (v.body as { vehicles?: V2Vehicle[] }).vehicles ?? [] : null;
+      const vb = v?.at && Date.now() - v.at < FRESH_MS ? v.body as { vehicles?: V2Vehicle[]; segments?: Segment[] } : null;
+      vehicles = vb ? vb.vehicles ?? [] : null;
+      segments = Array.isArray(vb?.segments) ? vb.segments : [];
       failed = false; missing = false; vFailed = false;
     });
     const load = async () => {
@@ -60,7 +66,11 @@
           }),
           fetchV2LineVehicles(id).then(r => {
             if (ac.signal.aborted) return;
-            if (r.status === 200 && r.body) vehicles = (r.body as { vehicles?: V2Vehicle[] }).vehicles ?? [];
+            if (r.status === 200 && r.body) {
+              const b = r.body as { vehicles?: V2Vehicle[]; segments?: Segment[] };
+              vehicles = b.vehicles ?? [];
+              segments = Array.isArray(b.segments) ? b.segments : [];
+            }
             // A failed load keeps the last vehicles while they are young; older ones are not «now» any more.
             else if (Date.now() - (peekV2LineVehicles(id)?.at ?? 0) >= FRESH_MS) vehicles = null;
             vFailed = vehicles === null;
@@ -80,7 +90,7 @@
   const groups = $derived(isBus && app.statics[nativeLine] ? directionGroups(app.statics[nativeLine]) : []);
   const patterns = $derived(withDirections(detail?.patterns ?? [], groups));
   const labels = $derived<(string | null)[]>(groups.length === 2 ? groups.map(g => g.to) : dirLabels(patterns, detail?.stops));
-  const dir = $derived<0 | 1>(card?.dir ?? (card?.pattern ? patterns.find(p => p.id === card.pattern)?.direction : undefined) ?? 0);
+  const dir = $derived<0 | 1>(card?.dir ?? (card?.pattern ? patterns.find(p => p.id === card.pattern)?.direction : undefined) ?? firstDir(labels));
   const label = $derived(detail?.line.label ?? detail?.line.name ?? nativeLine);
   // Names with accents (titleCase): its list comes with the stop index, so the names are drawn again when it lands.
   // A bus line asks for the index anyway: its card shows the rider's stop (LineStop).
@@ -89,6 +99,8 @@
   // With the /v1 directions, a vehicle's own (OASA: 0) direction is no better than its pattern's: its headsign decides.
   const own = $derived(patterns === detail?.patterns ? vehicles : vehicles?.map(v => ({ ...v, direction: null })));
   const rows = $derived(detail && own ? lineVehicleRows(own, patterns, detail.stops, dir) : null);
+  // Every stop of the direction with its vehicles on it (StopStrip); a vehicle that cannot be placed is listed under it.
+  const strip = $derived(detail ? stopStrip(patterns, detail.stops, own ?? [], segments, dir) : null);
 
   // The raw headsign of the direction's most common pattern: what the day's timetable is matched on.
   const dirHeadsign = $derived.by(() => {
@@ -178,9 +190,18 @@
       {/if}
 
       <h3 class="sub">Οχήματα τώρα{rows ? ` · ${rows.length}` : ""}</h3>
-      {#if rows?.length}
+      {#if strip}
+        {#if !rows?.length}
+          <p class="muted">{rows ? "Κανένα όχημα σε αυτή την κατεύθυνση τώρα." : vFailed ? "Δεν φόρτωσαν τα οχήματα. Νέα προσπάθεια σε λίγο." : "Φόρτωση…"}</p>
+        {/if}
+        <StopStrip {strip} stops={detail.stops} {color} {isBus} {tc} onvehicle={open}
+          onstop={isBus ? (id, name) => app.push(busStopCard(native(id), name)) : undefined} />
+      {/if}
+      {@const rest = strip ? (rows ?? []).filter(r => strip.elsewhere.includes(r.vehicle)) : rows ?? []}
+      {#if rest.length}
+        {#if strip}<h3 class="sub">Εκτός διαδρομής</h3>{/if}
         <ul class="runs" aria-live="polite" aria-label="Τα οχήματα της κατεύθυνσης">
-          {#each rows as r (r.id)}
+          {#each rest as r (r.id)}
             {@const ph = vehiclePhrase(r.vehicle.quality, r.delay_s)}
             <li><button type="button" onclick={() => open(r.vehicle)}>
               <span class="lab" title={r.label ? `Όχημα ${r.label}` : undefined}><Icon name={isBus ? "bus" : "dot"} size={16} /></span>
@@ -191,7 +212,7 @@
             </button></li>
           {/each}
         </ul>
-      {:else}
+      {:else if !strip}
         <p class="muted">{rows ? "Κανένα όχημα σε αυτή την κατεύθυνση τώρα." : vFailed ? "Δεν φόρτωσαν τα οχήματα. Νέα προσπάθεια σε λίγο." : "Φόρτωση…"}</p>
       {/if}
 
