@@ -27,34 +27,34 @@ const seg = (o: Partial<Segment>): Segment =>
 
 describe("stopStrip: the direction's longest pattern", () => {
   it("takes every stop of the longest pattern of the direction, in order", () => {
-    const s = stopStrip(PATS, [], [], 0)!;
+    const s = stopStrip(PATS, STOPS, [], [], 0)!;
     expect(s.pattern.id).toBe("oasa:1");
     expect(s.stops).toEqual(["oasa:A", "oasa:B", "oasa:C", "oasa:D"]);
     expect(s.gaps).toHaveLength(3);
-    expect(stopStrip(PATS, [], [], 1)!.stops[0]).toBe("oasa:D");
+    expect(stopStrip(PATS, STOPS, [], [], 1)!.stops[0]).toBe("oasa:D");
   });
   it("no pattern in that direction: null", () => {
-    expect(stopStrip([P0], [], [], 1)).toBeNull();
+    expect(stopStrip([P0], STOPS, [], [], 1)).toBeNull();
   });
 });
 
 describe("stopStrip: vehicles between stops", () => {
   it("places a vehicle by its position: stop index plus the fraction to the next stop", () => {
-    const s = stopStrip(PATS, [veh("oasa:7", 0.015), veh("oasa:8", 0.0025)], [], 0)!;
+    const s = stopStrip(PATS, STOPS, [veh("oasa:7", 0.015), veh("oasa:8", 0.0025)], [], 0)!;
     expect(s.vehicles.map(x => [x.v.id, Math.round(x.at * 100) / 100])).toEqual([["oasa:8", 0.25], ["oasa:7", 1.5]]);
     expect(s.elsewhere).toEqual([]);
   });
   it("keeps only the vehicles of the shown direction", () => {
-    const s = stopStrip(PATS, [veh("oasa:7", 0.015), veh("oasa:9", 0.015, { direction: 1, headsign: "A" })], [], 0)!;
+    const s = stopStrip(PATS, STOPS, [veh("oasa:7", 0.015), veh("oasa:9", 0.015, { direction: 1, headsign: "A" })], [], 0)!;
     expect(s.vehicles.map(x => x.v.id)).toEqual(["oasa:7"]);
   });
   it("at or before the first stop: 0; past the last: the last index", () => {
-    const s = stopStrip(PATS, [veh("oasa:1", -0.001), veh("oasa:2", 0.031)], [], 0)!;
+    const s = stopStrip(PATS, STOPS, [veh("oasa:1", -0.001), veh("oasa:2", 0.031)], [], 0)!;
     expect(s.vehicles.map(x => x.at)).toEqual([0, 3]);
   });
   it("far off the road (another shape): before its next stop; without one, listed apart", () => {
     const far = (id: string, next: string | null) => veh(id, 0.025, { position: { kind: "gps", lat: 0.01, lon: 0.025, bearing: null, at: 0 }, next_stop: next });
-    const s = stopStrip(PATS, [far("oasa:5", "oasa:C"), far("oasa:6", null), far("oasa:4", "oasa:Z")], [], 0)!;
+    const s = stopStrip(PATS, STOPS, [far("oasa:5", "oasa:C"), far("oasa:6", null), far("oasa:4", "oasa:Z")], [], 0)!;
     expect(s.vehicles.map(x => [x.v.id, x.at])).toEqual([["oasa:5", 1.5]]);
     expect(s.elsewhere.map(v => v.id)).toEqual(["oasa:6", "oasa:4"]);
   });
@@ -62,11 +62,11 @@ describe("stopStrip: vehicles between stops", () => {
 
 describe("stopStrip: slow gaps", () => {
   it("a worse or much_worse segment of any pattern colours the gap of the same two stops", () => {
-    const s = stopStrip(PATS, [], [seg({ pattern: "oasa:2" }), seg({ from: "oasa:C", to: "oasa:D", level: "much_worse", speed: 1.9, usual_speed: null })], 0)!;
+    const s = stopStrip(PATS, STOPS, [], [seg({ pattern: "oasa:2" }), seg({ from: "oasa:C", to: "oasa:D", level: "much_worse", speed: 1.9, usual_speed: null })], 0)!;
     expect(s.gaps).toEqual([null, { level: "worse", text: "πιο αργό: 14 km/h, συνήθως 19" }, { level: "much_worse", text: "πολύ πιο αργό: 7 km/h" }]);
   });
   it("normal and unknown segments, or a pair that is not next to each other here: nothing", () => {
-    const s = stopStrip(PATS, [], [seg({ level: "normal" }), seg({ from: "oasa:A", to: "oasa:B", level: "unknown" }), seg({ from: "oasa:A", to: "oasa:C" })], 0)!;
+    const s = stopStrip(PATS, STOPS, [], [seg({ level: "normal" }), seg({ from: "oasa:A", to: "oasa:B", level: "unknown" }), seg({ from: "oasa:A", to: "oasa:C" })], 0)!;
     expect(s.gaps).toEqual([null, null, null]);
   });
 });
