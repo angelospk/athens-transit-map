@@ -42,9 +42,12 @@
       lastY = y;
       const ty = p ? Math.max(y, lastTy + 15) : y;
       if (p) lastTy = ty;
-      return { v, at, y, x: 20 + Math.min(step, 4) * 14, p, ty };
+      return { v, at, y, x: 20 + step * 14, p, ty };
     });
   });
+  // The slow gaps with a vehicle's phrase on their row: their text stops short of it.
+  const busy = $derived(new Set(strip.gaps.flatMap((g, i) =>
+    g && placed.some(x => x.p && x.ty > centres[i] + 8 && x.ty < centres[i + 1] - 8) ? [i] : [])));
 </script>
 
 <div class="strip" style:--c={color.bg} style:--t={color.fg}>
@@ -58,7 +61,7 @@
       </li>
       {#if i < strip.gaps.length}
         {@const g = strip.gaps[i]}
-        <li class="gap {g?.level ?? ''}" class:text={!!g} aria-hidden={!g}>
+        <li class="gap {g?.level ?? ''}" class:text={!!g} class:busy={busy.has(i)} aria-hidden={!g}>
           <span class="rail"></span>
           {#if g}<span class="why lvt-{g.level}">{g.text}</span>{/if}
         </li>
@@ -90,6 +93,7 @@
   .rail { justify-self: center; align-self: stretch; width: 5px; margin: -15px 0; border-radius: 3px; background: var(--c); }
   .worse .rail { box-shadow: 0 0 0 4px var(--late1); position: relative; z-index: 1; }
   .much_worse .rail { box-shadow: 0 0 0 4px var(--late3); position: relative; z-index: 1; }
+  .busy .why { padding-right: 84px; }
   .why { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* A vehicle: the map's marker, smaller, on the rail; its phrase on the right of the same height. */
   .veh { position: absolute; left: 20px; width: 26px; height: 26px; padding: 0; transform: translate(-50%, -50%); z-index: 3;

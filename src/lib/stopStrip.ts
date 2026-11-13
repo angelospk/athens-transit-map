@@ -42,14 +42,23 @@ function along(p: V2Pattern, stops: Record<string, { lat: number; lon: number }>
   return r;
 }
 
-// The nearest point of the shape between lo and hi metres along it; of points almost as near, the first.
+// The nearest point of the shape between lo and hi metres along it (each leg cut to that range before the
+// projection); of points within 20 m of as near, the first.
 function within(a: Pick<Along, "geom" | "cum">, pt: [number, number], lo: number, hi: number): { s: number; off: number } {
-  const { geom, cum } = a;
-  let i0 = 0, i1 = geom.length - 1;
-  while (i0 < i1 && cum[i0 + 1] <= lo) i0++;
-  while (i1 > i0 + 1 && cum[i1 - 1] >= hi) i1--;
-  const p = project(geom.slice(i0, i1 + 1), cum.slice(i0, i1 + 1), pt, lo);
-  return { s: Math.max(lo, Math.min(hi, p.s)), off: p.off };
+  const { geom, cum } = a, kx = Math.cos(pt[1] * Math.PI / 180);
+  const hits: { s: number; off: number }[] = [];
+  for (let i = 1; i < geom.length; i++) {
+    const c0 = cum[i - 1], c1 = cum[i];
+    if (c1 < lo || c0 > hi) continue;
+    const g = geom[i - 1], h = geom[i], L = c1 - c0;
+    const ax = (g[0] - pt[0]) * kx, ay = g[1] - pt[1], dx = (h[0] - g[0]) * kx, dy = h[1] - g[1], len = dx * dx + dy * dy;
+    const t0 = L > 0 ? Math.max(0, (lo - c0) / L) : 0, t1 = L > 0 ? Math.min(1, (hi - c0) / L) : 0;
+    const t = len ? Math.max(t0, Math.min(t1, -(ax * dx + ay * dy) / len)) : t0;
+    hits.push({ s: c0 + t * L, off: Math.hypot(ax + t * dx, ay + t * dy) * 111_320 });
+  }
+  if (!hits.length) return { s: lo, off: Infinity };
+  const best = Math.min(...hits.map(x => x.off));
+  return hits.find(x => x.off <= best + 20)!;
 }
 
 // Where a vehicle is between the strip's stops: the index of the stop it has passed, plus its share of the
@@ -58,13 +67,14 @@ function within(a: Pick<Along, "geom" | "cum">, pt: [number, number], lo: number
 function place(v: V2Vehicle, a: Along, list: string[]): number | null {
   const pt: [number, number] = [v.position.lon, v.position.lat], off = a.at;
   let p: { s: number; off: number } | null = null;
-  const n = v.next_stop ? list.indexOf(v.next_stop) : -1;
-  if (n >= 0) {
+  // Every place of the next stop in the pattern (a loop passes its first stop again at the end): the nearest fit.
+  list.forEach((id, n) => {
+    if (id !== v.next_stop) return;
     let b = n - 1;
     while (b >= 0 && off[b] == null) b--;
     const q = within(a, pt, b >= 0 ? off[b]! : 0, off[n] ?? Infinity);
-    if (q.off <= 150) p = q;
-  }
+    if (q.off <= 150 && (!p || q.off < p.off)) p = q;
+  });
   p ??= project(a.geom, a.cum, pt);
   if (p.off > 150) return null;
   let k = -1;

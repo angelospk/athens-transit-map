@@ -94,3 +94,21 @@ describe("stopStrip: review cases", () => {
     expect(Math.round(s.vehicles[0].at * 100) / 100).toBe(1);
   });
 });
+
+describe("stopStrip: review cases, round 2", () => {
+  it("a long leg of the shape: a vehicle on the way back lands between the stops of the way back", () => {
+    // Shape with two legs only (out to 0.02, back to 0); stops out at 0, 0.01, turn 0.015, back at 0.01, 0.
+    const P: V2Pattern = { id: "oasa:11", headsign: "A", direction: 0, stops: ["oasa:A", "oasa:B", "oasa:T", "oasa:B2", "oasa:A2"],
+      shape: [[0, 0], [0, 0.02], [0, 0]] };
+    const S = { ...STOPS, "oasa:T": st("oasa:T", 0.015), "oasa:B2": st("oasa:B2", 0.01), "oasa:A2": st("oasa:A2", 0) };
+    const s = stopStrip([P], S, [veh("oasa:1", 0.0125, { next_stop: "oasa:B2" })], [], 0)!;
+    // T at 1650 m, the turn at 2200 m, B2 at 3300 m: the vehicle at 3025 m is 1375 of the 1650 m from T to B2.
+    expect(s.vehicles[0].at).toBeCloseTo(2 + 1375 / 1650, 2);
+  });
+  it("a stop that comes twice (a loop A → B → C → A): the vehicle takes the occurrence it is near on the shape", () => {
+    const P: V2Pattern = { id: "oasa:12", headsign: "A", direction: 0, stops: ["oasa:A", "oasa:B", "oasa:C", "oasa:A"],
+      shape: [...line(0, 0.02), ...line(0.02, 0).slice(1)] };
+    const s = stopStrip([P], STOPS, [veh("oasa:1", 0.005, { next_stop: "oasa:A" })], [], 0)!;
+    expect(Math.round(s.vehicles[0].at * 100) / 100).toBe(2.75);
+  });
+});
