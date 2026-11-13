@@ -3,6 +3,7 @@
 
 import { ageLabel } from "./format";
 import { fold } from "./search";
+import type { VehicleQuality } from "./liveQuality";
 
 export interface V2Line {
   id: string; mode: string; label: string | null; name: string; name_en: string | null;
@@ -29,6 +30,7 @@ export interface V2Vehicle {
   position: { kind: "gps" | "estimate"; lat: number; lon: number; bearing: number | null; at: number };
   delay_s: number | null; next_stop: string | null; motion: unknown; source: string;
   direction?: 0 | 1 | null;
+  quality?: VehicleQuality | null;   // rev 23: OASA buses and trolleys in Athens and Thessaloniki
 }
 
 export interface V2RunStop {

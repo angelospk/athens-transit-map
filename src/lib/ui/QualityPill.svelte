@@ -1,13 +1,18 @@
 <script lang="ts">
-  // The line card's quality pill (lib/quality.ts, docs/mockups/quality-v3.html): one line with a 3-bar level
-  // meter; a tap opens the day's detail and the last 7 days under it. The 7 day files are fetched only then.
+  // The line card's quality pill (lib/quality.ts, docs/mockups/quality-v3.html, step 4: docs/mockups/quality-step4-v3.html):
+  // one line whose number is coloured by its level (no meter); a tap opens the day's detail and the last 7 days under
+  // it. The 7 day files are fetched only then.
   import { slide } from "svelte/transition";
   import { MediaQuery } from "svelte/reactivity";
-  import { dayBars, dayFile, halfMin, lastDates, type DayWord, type Level, type Quality, type QualityDay } from "../quality";
+  import { dayBars, dayFile, halfMin, lastDates, onTimeWindow, type DayWord, type Level, type Quality, type QualityDay } from "../quality";
 
-  let { q, word, date, line, dir }: { q: Quality; word: DayWord; date: string; line: string; dir: number | null } = $props();
+  // limits: the day's on-time window of `origin_otp` (early_s, late_s; rt#178), for the note.
+  let { q, word, date, line, dir, limits }: { q: Quality; word: DayWord; date: string; line: string; dir: number | null;
+    limits?: { early_s?: number; late_s?: number } } = $props();
 
   const LV: Record<Level, string> = { 1: "var(--late3)", 2: "var(--late1)", 3: "var(--ontime)" };
+  const LVT: Record<Level, string> = { 1: "lvt-much_worse", 2: "lvt-worse", 3: "lvt-normal" };
+  const LVW: Record<Level, string> = { 1: "πολύ χειρότερα από το συνηθισμένο", 2: "λίγο χειρότερα από το συνηθισμένο", 3: "κανονικά" };
   const reduce = new MediaQuery("(prefers-reduced-motion: reduce)");
   let open = $state(false);
   let days = $state.raw<{ date: string; day: QualityDay | null }[] | null>(null);
@@ -35,10 +40,7 @@
 
 <div class="quality">
   <button type="button" class="q" aria-expanded={open} aria-controls="quality-more" onclick={() => (open = !open)}>
-    <span class="meter" style:--lv={LV[q.level]} aria-hidden="true">
-      {#each [1, 2, 3] as i (i)}<i class:on={i <= q.level}></i>{/each}
-    </span>
-    <span class="txt"><span class="k">{word} ·</span> <b>{q.text}</b><span class="sr">, επίπεδο {q.level} από 3</span></span>
+    <span class="txt"><span class="k">{word} ·</span> <b>{q.parts[0]}<span class={LVT[q.level]}>{q.parts[1]}</span>{q.parts[2]}</b><span class="sr">, {LVW[q.level]}</span></span>
     <span class="chev" class:up={open} aria-hidden="true">›</span>
   </button>
 
@@ -55,7 +57,7 @@
         <p class="keys">
           <span style:--c="var(--late3)">νωρίτερα {o.early}</span>
           <span style:--c="var(--ontime)">στην ώρα {o.on_time}</span>
-          <span style:--c="var(--late1)">πάνω από 5′ αργά {o.late}</span>
+          <span style:--c="var(--late1)">πιο αργά {o.late}</span>
         </p>
         <p class="h">Στην ώρα, τελευταίες 7 μέρες</p>
       {:else}
@@ -84,7 +86,7 @@
       {/if}
 
       {#if q.kind === "otp"}
-        <p class="note">«Στην ώρα»: 0 έως 5′ μετά το πρόγραμμα. Όποιο φεύγει νωρίτερα μετράει εκτός, γιατί όποιος έρχεται στην ώρα το χάνει. Διακεκομμένη: 80%.</p>
+        <p class="note">«Στην ώρα»: {onTimeWindow(limits)} από το πρόγραμμα. Όποιο φεύγει νωρίτερα από αυτό μετράει εκτός, γιατί όποιος έρχεται στην ώρα το χάνει. Διακεκομμένη: 80%.</p>
       {:else}
         {@const h = q.h}
         <p class="note">Διακεκομμένη: η αναμονή αν τα λεωφορεία έρχονταν ομοιόμορφα (μισό headway).
@@ -95,18 +97,12 @@
 </div>
 
 <style>
-  /* The level shows in the meter only; every word stays --fg or --muted for 4.5:1 in light and dark. */
+  /* The level shows in the colour of the number only (app.css .lvt-*, 4.5:1); the other words stay --fg or --muted. */
   .quality { margin: 0 0 8px; border-radius: 10px; background: var(--control); font-variant-numeric: tabular-nums; }
   .q { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 36px; padding: 8px 12px; border: 0; border-radius: 10px;
     background: none; color: var(--fg); font: inherit; font-size: 13px; line-height: 1.35; text-align: left; cursor: pointer; }
   .q:hover { box-shadow: inset 0 0 0 1px var(--border); }   /* not --control-hover: --muted on it is under 4.5:1 */
   .q:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .meter { flex: none; display: inline-flex; align-items: flex-end; gap: 2px; height: 16px; }
-  .meter i { width: 5px; border-radius: 1.5px; background: color-mix(in srgb, var(--muted) 35%, transparent); }
-  .meter i:nth-child(1) { height: 6px; }
-  .meter i:nth-child(2) { height: 11px; }
-  .meter i:nth-child(3) { height: 16px; }
-  .meter i.on { background: var(--lv); }
   .txt { flex: 1; min-width: 0; }
   .k { color: var(--muted); }
   .txt b { font-weight: 650; }

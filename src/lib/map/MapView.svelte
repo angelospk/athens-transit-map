@@ -23,7 +23,10 @@
   import { municipalFC } from "../municipal";
     import { stitch } from "../muniLine";
   import { resolveDark } from "../theme";
-  import { fetchLineStatic } from "../api";
+  import { fetchLineStatic, fetchV2LineVehicles } from "../api";
+  import { busId } from "../busNs";
+  import { titleCase } from "../nearby";
+  import { haloFC, hasLiveQuality, levelClass, levelsByKey, segmentText, type QualityLevel, type Segment, type VehicleQuality } from "../liveQuality";
   import type { LineStatic, Variant } from "../types";
   import type { AppState } from "../state.svelte";
   import SpeedLegend from "../ui/SpeedLegend.svelte";
@@ -79,6 +82,11 @@
   const doms = new Map<string, Dom>();
   let owned = new Set<string>();       // detailed lines with data: drawn as DOM markers
   let fadedKeys = new Set<string>();   // vehicles of an unknown direction under a direction focus
+  // Live quality (Athens, Thessaloniki; lib/liveQuality.ts): the detailed lines' vehicle levels by fleet key, and
+  // their slow segments, from /v2/lines/{id}/vehicles (the line card shares its cache).
+  const liveQ = $derived(hasLiveQuality(app.cityId));
+  let qLevels = new Map<string, QualityLevel>();
+  let qSegs = $state.raw(new Map<string, Segment[]>());
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
   const STILL_TRAIL_S = 1;   // motion off: the trail of a move to a new fix fades over this
 
@@ -490,6 +498,14 @@
     m.addSource("routes", { type: "geojson", data: EMPTY });
     m.addSource("highlight", { type: "geojson", data: EMPTY });
     m.addSource("stops", { type: "geojson", data: EMPTY });
+    // Slow segments (live quality): a wide halo under the route, yellow or red; the route keeps its colour.
+    m.addSource("halos", { type: "geojson", data: EMPTY });
+    const css = getComputedStyle(document.documentElement);
+    const tone = (c: string) => css.getPropertyValue(`--${c}`).trim();
+    m.addLayer({ id: "route-halo", type: "line", source: "halos",
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": ["match", ["get", "level"], "much_worse", tone("late3") || "#c92a2a", tone("late1") || "#a87c00"],
+        "line-width": 13, "line-opacity": 0.85, "line-offset": LANE_PX } }, under);
     m.addLayer({ id: "routes", type: "line", source: "routes",
       layout: { "line-join": "round", "line-cap": "round" },
       paint: { "line-color": ["get", "color"], "line-width": 4, "line-opacity": 0.6, "line-offset": LANE_PX } }, under);
@@ -811,7 +827,8 @@
     let d = doms.get(e.key);
     if (!d) d = makeDom(e, pos);
     d.marker.setLngLat(pos);
-    const cls = e.cls;
+    const cls = liveQ ? levelClass(qLevels.get(e.key)) : e.cls;
+    d.el.classList.toggle("ring", liveQ);
     if (!d.el.classList.contains(cls)) {
       d.el.classList.remove(...DELAY_CLASSES);
       d.el.classList.add(cls);
@@ -830,7 +847,7 @@
       app.open(busVehicleCard(e.line, e.id));
     };
     // The same shape as a city vehicle (its mode's pictogram, the delay a dot on its shoulder), in the line's colour,
-    // its line under it.
+    // its line under it. In Athens and Thessaloniki the live level is a ring round it instead of the dot (app.css).
     const glyph = document.createElement("i");
     glyph.className = app.lineInfo.get(e.line)?.kind === "trolley" ? "glyph trolley" : "glyph";
     const num = document.createElement("span");
@@ -1011,6 +1028,20 @@
         popup.remove();
         return openTrain(train);
       }
+      const halo = m.queryRenderedFeatures([[e.point.x - 6, e.point.y - 6], [e.point.x + 6, e.point.y + 6]], { layers: ["route-halo"] })[0];
+      if (halo) {
+        const p = halo.properties, el = document.createElement("div");
+        el.className = "segpop q";
+        const lv = p.level === "much_worse" ? "much_worse" : "worse";
+        // «Καλλιθέα → Φιξ · πιο αργά από συνήθως: 14 km/h (συνήθως 19)»: the stops bold, the level's words in its colour.
+        const t = segmentText({ level: lv, from: titleCase(String(p.from)), to: titleCase(String(p.to)), speed: Number(p.speed),
+          usual: p.usual == null ? null : Number(p.usual) });
+        const dot = t.indexOf(" · "), colon = t.indexOf(":", dot);
+        el.append(Object.assign(document.createElement("b"), { textContent: t.slice(0, dot) }), " · ",
+          Object.assign(document.createElement("span"), { className: `lvt-${lv}`, textContent: t.slice(dot + 3, colon) }), t.slice(colon));
+        popup.setLngLat(e.lngLat).setDOMContent(el).addTo(m);
+        return;
+      }
       const route = m.queryRenderedFeatures(e.point, { layers: ["routes-hit"] })[0];
       if (route) return app.open(routeCard(String(route.properties.line), String(route.properties.variant)));
       if (app.municipalOn) {
@@ -1033,7 +1064,7 @@
       }
       app.closeCards();
     });
-    for (const layer of ["routes-hit", "stops", "city-dot", "metro-station", "suburban-station", "speed", "train-dot", "municipal-hit", "municipal-stop"]) {
+    for (const layer of ["route-halo", "routes-hit", "stops", "city-dot", "metro-station", "suburban-station", "speed", "train-dot", "municipal-hit", "municipal-stop"]) {
       m.on("mouseenter", layer, () => (m.getCanvas().style.cursor = "pointer"));
       m.on("mouseleave", layer, () => (m.getCanvas().style.cursor = ""));
     }
@@ -1245,6 +1276,36 @@
 
   $effect(() => {
     if (loaded) (map!.getSource("routes") as GeoJSONSource).setData(routesFC(drawn));
+  });
+
+  $effect(() => {
+    if (loaded) (map!.getSource("halos") as GeoJSONSource).setData(liveQ ? haloFC(drawn, qSegs) : EMPTY);
+  });
+
+  // The detailed lines' live levels, every 20 s while the page is shown (Athens, Thessaloniki).
+  $effect(() => {
+    const lines = app.detailLines;
+    if (!liveQ || !lines.length) { qLevels = new Map(); qSegs = new Map(); return; }
+    let live = true, timer: ReturnType<typeof setTimeout> | undefined;
+    const load = async () => {
+      if (document.visibilityState !== "hidden") {
+        const got = await Promise.all(lines.map(l => fetchV2LineVehicles(busId(l)).then(r => ({ l, r }))));
+        if (!live) return;
+        const levels = new Map<string, QualityLevel>(), segs = new Map<string, Segment[]>();
+        for (const { l, r } of got) {
+          const b = r.status === 200 ? r.body as { vehicles?: { id: string; quality?: VehicleQuality | null }[]; segments?: Segment[] } | null : null;
+          if (!b) continue;
+          for (const [k, v] of levelsByKey(l, b.vehicles ?? [])) levels.set(k, v);
+          if (Array.isArray(b.segments)) segs.set(l, b.segments);
+        }
+        qLevels = levels;
+        qSegs = segs;
+        nextDue = 0;
+      }
+      if (live) timer = setTimeout(load, 20_000);
+    };
+    void load();
+    return () => { live = false; clearTimeout(timer); };
   });
 
   $effect(() => {
@@ -1508,6 +1569,7 @@
   @keyframes pin-drop { from { transform: translateY(-18px) scale(0.6); opacity: 0; } to { transform: none; opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { :global(.stop-pin.drop svg) { animation: none; } }
   :global(.segpop b) { font-size: 15px; }
+  :global(.segpop.q b) { font-size: inherit; }
   :global(.segpop div) { font-size: 12px; }
   .nogl { position: absolute; inset: auto 16px 16px; padding: 12px 14px; border-radius: 12px;
     background: var(--warn-bg); box-shadow: var(--shadow); }

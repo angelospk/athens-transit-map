@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { dayBars, halfMin, lastDates, lineQuality, pickDay, statsLineId, yesterday, type QualityDay } from "../src/lib/quality";
+import { dayBars, halfMin, lastDates, lineQuality, onTimeWindow, pickDay, statsLineId, yesterday, type QualityDay } from "../src/lib/quality";
 
 const hw = (cv_h: number, wait_min = 6.4, mean_headway_s = 480, dir = 0, line = "040") =>
   ({ line, dir, n: 90, mean_headway_s, median_headway_s: 450, cv_h, wait_min, ewt_min: 1, off_headway_share: 0.2, los: "D" });
@@ -68,6 +68,35 @@ describe("lineQuality: sparse line (origin_otp, per line)", () => {
   it("no share, no pill; the direction does not matter", () => {
     expect(q(undefined)).toBeNull();
     expect(lineQuality(day({ origin_otp: { by_line: [otp(0.9)] } }), "pat:601", null)?.level).toBe(3);
+  });
+});
+
+describe("lineQuality: the coloured part of the text", () => {
+  it("wait: the minutes; the rest stays plain", () => {
+    const q = lineQuality(day({ headways: { by_line: [hw(0.75, 7.0, 540)] } }), "040", 0);
+    expect(q?.parts).toEqual(["αναμονή ", "~7′", " (κανονικά ~4½′)"]);
+    expect(q?.parts.join("")).toBe(q?.text);
+  });
+  it("otp: «N στα 10»", () => {
+    const q = lineQuality(day({ origin_otp: { by_line: [otp(0.72)] } }), "pat:601", 0);
+    expect(q?.parts).toEqual(["", "7 στα 10", " δρομολόγια στην ώρα"]);
+  });
+});
+
+describe("onTimeWindow (rt#178, web#73)", () => {
+  it("reads early_s and late_s of the day file", () => {
+    expect(onTimeWindow({ early_s: 60, late_s: 300 })).toBe("από 1′ νωρίτερα έως 5′ αργότερα");
+  });
+  it("an old day without early_s: from the scheduled time", () => {
+    expect(onTimeWindow({ late_s: 300 })).toBe("από την ώρα του έως 5′ αργότερα");
+    expect(onTimeWindow({ early_s: 0, late_s: 300 })).toBe("από την ώρα του έως 5′ αργότερα");
+    expect(onTimeWindow(undefined)).toBe("από την ώρα του έως 5′ αργότερα");
+  });
+  it("seconds that are not whole minutes keep one decimal", () => {
+    expect(onTimeWindow({ early_s: 90, late_s: 300 })).toBe("από 1,5′ νωρίτερα έως 5′ αργότερα");
+  });
+  it("ignores values that are not numbers", () => {
+    expect(onTimeWindow({ early_s: "60" as never, late_s: -1 })).toBe("από την ώρα του έως 5′ αργότερα");
   });
 });
 

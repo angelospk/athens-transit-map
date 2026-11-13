@@ -5,6 +5,7 @@
   import { isBusId } from "../busNs";
   import { fetchSchedule, fetchV2Line, fetchV2LineVehicles, peekV2Line, peekV2LineVehicles } from "../api";
   import { fmtDelay } from "../format";
+  import { vehiclePhrase } from "../liveQuality";
   import { busVehicleCard } from "../legacy";
   import { directionGroups } from "../directions";
   import { dirLabels, headsignName, lineVehicleRows, withDirections, type LineDetail, type V2Vehicle } from "../v2";
@@ -163,7 +164,7 @@
       <p class="muted">Φόρτωση…</p>
     {:else}
       {#if quality && qShown}
-        {#key card.id}<QualityPill q={quality} word={qShown.word} date={qShown.date} line={qLine} dir={qDir} />{/key}
+        {#key card.id}<QualityPill q={quality} word={qShown.word} date={qShown.date} line={qLine} dir={qDir} limits={qDay?.origin_otp} />{/key}
       {/if}
       <div class="dirs" role="group" aria-label="Κατεύθυνση">
         {#each labels as l, d (d)}
@@ -180,10 +181,12 @@
       {#if rows?.length}
         <ul class="runs" aria-live="polite" aria-label="Τα οχήματα της κατεύθυνσης">
           {#each rows as r (r.id)}
+            {@const ph = vehiclePhrase(r.vehicle.quality, r.delay_s)}
             <li><button type="button" onclick={() => open(r.vehicle)}>
               <span class="lab" title={r.label ? `Όχημα ${r.label}` : undefined}><Icon name={isBus ? "bus" : "dot"} size={16} /></span>
               <span class="next">{r.next ? tc(r.next) : "—"}</span>
-              {#if r.delay_s !== null}<span class="delay">{fmtDelay(r.delay_s)}</span>{/if}
+              {#if ph}<span class="lvq lvt-{ph.level}">{ph.text}</span>
+              {:else if r.delay_s !== null}<span class="delay">{fmtDelay(r.delay_s)}</span>{/if}
               <span aria-hidden="true" class="chev">›</span>
             </button></li>
           {/each}
@@ -225,6 +228,7 @@
   .lab { flex: none; display: grid; place-items: center; width: 22px; color: var(--muted); }
   .next { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .delay { flex: none; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .lvq { flex: none; font-size: 13px; font-variant-numeric: tabular-nums; }   /* colour: the level (app.css .lvt-*) */
   .chev { flex: none; color: var(--muted); }
   .times { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; margin-top: 8px; padding: 0;
     border: 0; background: none; color: var(--accent); font-size: 13px; cursor: pointer; }
