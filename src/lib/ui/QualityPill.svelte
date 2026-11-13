@@ -13,7 +13,6 @@
   const LV: Record<Level, string> = { 1: "var(--late3)", 2: "var(--late1)", 3: "var(--ontime)" };
   const LVT: Record<Level, string> = { 1: "lvt-much_worse", 2: "lvt-worse", 3: "lvt-normal" };
   const LVW: Record<Level, string> = { 1: "πολύ χειρότερα από το συνηθισμένο", 2: "λίγο χειρότερα από το συνηθισμένο", 3: "κανονικά" };
-  const lateMin = $derived(Math.round((typeof limits?.late_s === "number" && limits.late_s >= 0 ? limits.late_s : 300) / 60));
   const reduce = new MediaQuery("(prefers-reduced-motion: reduce)");
   let open = $state(false);
   let days = $state.raw<{ date: string; day: QualityDay | null }[] | null>(null);
@@ -58,7 +57,7 @@
         <p class="keys">
           <span style:--c="var(--late3)">νωρίτερα {o.early}</span>
           <span style:--c="var(--ontime)">στην ώρα {o.on_time}</span>
-          <span style:--c="var(--late1)">πάνω από {lateMin}′ αργά {o.late}</span>
+          <span style:--c="var(--late1)">πιο αργά {o.late}</span>
         </p>
         <p class="h">Στην ώρα, τελευταίες 7 μέρες</p>
       {:else}
@@ -87,7 +86,7 @@
       {/if}
 
       {#if q.kind === "otp"}
-        <p class="note">«Στην ώρα»: {onTimeWindow(limits)} από το πρόγραμμα. Όποιο φεύγει νωρίτερα μετράει εκτός, γιατί όποιος έρχεται στην ώρα το χάνει. Διακεκομμένη: 80%.</p>
+        <p class="note">«Στην ώρα»: {onTimeWindow(limits)} από το πρόγραμμα. Όποιο φεύγει νωρίτερα από αυτό μετράει εκτός, γιατί όποιος έρχεται στην ώρα το χάνει. Διακεκομμένη: 80%.</p>
       {:else}
         {@const h = q.h}
         <p class="note">Διακεκομμένη: η αναμονή αν τα λεωφορεία έρχονταν ομοιόμορφα (μισό headway).

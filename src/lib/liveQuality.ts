@@ -4,6 +4,7 @@
 import type { FeatureCollection, LineString } from "geojson";
 import { cumulativeLL, project, subLine } from "./motion";
 import type { DrawnLine } from "./map/layers";
+import type { Stop, Variant } from "./types";
 
 export type QualityLevel = "normal" | "worse" | "much_worse" | "unknown";
 
@@ -82,6 +83,26 @@ export interface HaloProperties {
   usual: number | null;
 }
 
+// A variant's shape and where each of its stops is along it, by the stop's place in the pattern (a loop passes
+// a stop twice): each projected near the one before it, so a street passed twice takes the right pass. Worked
+// out once per variant (a line is polled every 20 s; its static data does not change).
+type Along = { geom: [number, number][]; cum: number[]; at: (number | null)[] };
+const alongOf = new WeakMap<Variant, Along>();
+function along(v: Variant, stops: Record<string, Stop>): Along {
+  let r = alongOf.get(v);
+  if (r) return r;
+  const geom = v.shape.map(flip), cum = cumulativeLL(geom);
+  let hint: number | undefined;
+  const at = v.stops.map(id => {
+    const st = stops[id];
+    if (!st) { hint = undefined; return null; }
+    hint = project(geom, cum, [st.lon, st.lat], hint).s;
+    return hint;
+  });
+  alongOf.set(v, (r = { geom, cum, at }));
+  return r;
+}
+
 // The slow segments of the drawn lines as a halo under the route: only worse and much_worse, cut from
 // stop to stop. A segment of a pattern that is not drawn, or of stops that do not follow each other in
 // it, gets none; the same stop pair of two patterns is drawn once.
@@ -103,21 +124,9 @@ export function haloFC(lines: DrawnLine[], segs: Map<string, Segment[]>): Featur
       if (i < 0) continue;
       const a = l.data.stops[from], b = l.data.stops[to];
       if (!a || !b) continue;
-      const geom = v.shape.map(flip);
-      const cum = cumulativeLL(geom);
-      // The stops in the pattern's order, each projected near the point of the one before it (a route
-      // that passes the same street twice would otherwise take the wrong pass).
-      const at = new Map<string, number>();
-      let hint: number | undefined;
-      for (const id of v.stops) {
-        const st = l.data.stops[id];
-        if (!st) { hint = undefined; continue; }
-        const p = project(geom, cum, [st.lon, st.lat], hint);
-        at.set(id, p.s);
-        hint = p.s;
-      }
-      const sFrom = at.get(from), sTo = at.get(to);
-      if (sFrom === undefined || sTo === undefined) continue;
+      const { geom, cum, at } = along(v, l.data.stops);
+      const sFrom = at[i], sTo = at[i + 1];
+      if (sFrom == null || sTo == null) continue;
       const coords = subLine(geom, cum, sFrom, sTo);
       if (coords.length < 2) continue;
       seen.add(pair);

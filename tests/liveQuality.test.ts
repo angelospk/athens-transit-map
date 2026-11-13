@@ -109,6 +109,17 @@ describe("haloFC", () => {
   it("stops that do not follow each other in the pattern give no halo", () => {
     expect(haloFC([line({ "5512": ["A", "B", "C"] })], new Map([["040", [seg({ from: "oasa:A", to: "oasa:C" })]]])).features).toHaveLength(0);
   });
+  it("a loop that passes a stop twice cuts the pair at its own pass", () => {
+    // A (0,0) → B (0,0.01) → C (0.01,0.01) → A again, round a triangle.
+    const l: DrawnLine = { id: "040", color: "#123456", data: { id: "040",
+      stops: { A: { name: "A", lat: 0, lon: 0 }, B: { name: "B", lat: 0, lon: 0.01 }, C: { name: "C", lat: 0.01, lon: 0.01 } },
+      variants: { "5512": { headsign: "", direction: 0, stops: ["A", "B", "C", "A"],
+        shape: [[0, 0], [0, 0.005], [0, 0.01], [0.005, 0.01], [0.01, 0.01], [0.005, 0.005], [0, 0]] } } } };
+    const c = haloFC([l], new Map([["040", [seg({})]]])).features[0].geometry.coordinates;
+    expect(c[0]).toEqual([0, 0]);
+    expect(c[c.length - 1]).toEqual([0.01, 0]);
+    expect(c.every(([, lat]) => lat === 0)).toBe(true);
+  });
   it("the same stop pair of two patterns is drawn once", () => {
     const l = line({ "5512": ["A", "B", "C"], "5535": ["A", "B"] });
     const fc = haloFC([l], new Map([["040", [seg({}), seg({ pattern: "oasa:5535" })]]]));
