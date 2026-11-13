@@ -47,18 +47,23 @@
     });
   });
   let open = $state<string | null>(null);
-  // Phrases pushed down past the last stop row: room for them under the strip.
-  const below = $derived(Math.max(0, ...placed.map(x => x.p ? x.ty + 9 - (centres.at(-1) ?? 0) - STOP_H / 2 : 0)));
+  // A poll that splits or moves the open cluster closes its list (no list opening again later by itself).
+  $effect(() => { if (open && !placed.some(c => c.key === open && c.n > 1)) open = null; });
+  // Phrases pushed down, or a tall icon, past the last stop row: room for them under the strip.
+  const below = $derived(Math.max(0, ...placed.map(x =>
+    Math.max(x.p ? x.ty + 9 : 0, x.y - BUS_H / 2 + x.h + 2) - (centres.at(-1) ?? 0) - STOP_H / 2)));
   // The slow gaps with a vehicle's phrase on their row: their text stops short of it.
   const busy = $derived(new Set(strip.gaps.flatMap((g, i) =>
     g && placed.some(x => x.p && x.ty > centres[i] + 8 && x.ty < centres[i + 1] - 8) ? [i] : [])));
 </script>
 
 <svelte:window
-  onclick={e => { if (open && !(e.target as Element | null)?.closest?.(".menu, .veh.many")) open = null; }}
-  onkeydown={e => { if (open && e.key === "Escape") open = null; }} />
+  onclick={e => { if (open && !(e.target as Element | null)?.closest?.(".menu, .veh.many")) open = null; }} />
 
-<div class="strip" style:--c={color.bg} style:--t={color.fg} style:padding-bottom="{below}px">
+<!-- Escape closes the open list only, not the card round it. -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="strip" style:--c={color.bg} style:--t={color.fg} style:padding-bottom="{below}px"
+  onkeydown={e => { if (open && e.key === "Escape") { e.stopPropagation(); open = null; } }}>
   <ol aria-label="Οι στάσεις της κατεύθυνσης">
     {#each strip.stops as id, i (i)}
       {@const end = i === 0 || i === strip.stops.length - 1}
