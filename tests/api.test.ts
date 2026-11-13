@@ -64,6 +64,16 @@ describe("api", () => {
       fetchV2Line("qa:arr"), fetchV2Stop("qa:arr")]))
       expect(r.status).toBe(503);
   });
+  it("a /v2 body of a source that is warming_up is a 503, also with a well-formed empty list (not cached as good)", async () => {
+    const warm = { sources: [{ id: "pat", state: "warming_up", updated_at: null }] };
+    const bodies: Record<string, unknown> = {
+      "lines/qa%3Aw/vehicles": { ...warm, vehicles: [] },
+      "lines": { ...warm, lines: [] },
+      "stops": { ...warm, stops: [] },
+    };
+    vi.stubGlobal("fetch", async (u: string) => new Response(JSON.stringify(bodies[u.split("/v2/")[1]]), { status: 200 }));
+    for (const r of await Promise.all([fetchV2LineVehicles("qa:w"), fetchV2Lines(), fetchV2Stops()])) expect(r.status).toBe(503);
+  });
   it("accepts well-formed /v2 answers", async () => {
     const bodies: Record<string, unknown> = {
       "lines/qa%3Agood/vehicles": { vehicles: [] },
