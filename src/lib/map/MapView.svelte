@@ -24,6 +24,7 @@
     import { stitch } from "../muniLine";
   import { resolveDark } from "../theme";
   import { fetchLineStatic, fetchV2LineVehicles } from "../api";
+  import { refreshHeld, type Held } from "../held";
   import { busId } from "../busNs";
   import { titleCase } from "../nearby";
   import { haloFC, hasLiveQuality, levelClass, levelsByKey, segmentText, type QualityLevel, type Segment, type VehicleQuality } from "../liveQuality";
@@ -1287,16 +1288,23 @@
     const lines = app.detailLines;
     if (!liveQ || !lines.length) { qLevels = new Map(); qSegs = new Map(); return; }
     let live = true, timer: ReturnType<typeof setTimeout> | undefined;
+    // A line whose refresh fails keeps its last levels for up to HELD_MAX_MS (held.ts), not an empty ring.
+    const parseQ = (b: unknown) => {
+      const o = b as { vehicles?: { id: string; quality?: VehicleQuality | null }[]; segments?: Segment[] } | null;
+      return o && Array.isArray(o.vehicles) ? { vehicles: o.vehicles, segments: Array.isArray(o.segments) ? o.segments : null } : null;
+    };
+    const heldQ = new Map<string, Held<NonNullable<ReturnType<typeof parseQ>>>>();
     const load = async () => {
       if (document.visibilityState !== "hidden") {
         const got = await Promise.all(lines.map(l => fetchV2LineVehicles(busId(l)).then(r => ({ l, r }))));
         if (!live) return;
         const levels = new Map<string, QualityLevel>(), segs = new Map<string, Segment[]>();
         for (const { l, r } of got) {
-          const b = r.status === 200 ? r.body as { vehicles?: { id: string; quality?: VehicleQuality | null }[]; segments?: Segment[] } | null : null;
-          if (!b) continue;
-          for (const [k, v] of levelsByKey(l, b.vehicles ?? [])) levels.set(k, v);
-          if (Array.isArray(b.segments)) segs.set(l, b.segments);
+          const h = refreshHeld(heldQ.get(l) ?? null, r, parseQ, r.at ?? Date.now());
+          if (h) heldQ.set(l, h); else heldQ.delete(l);
+          if (!h) continue;
+          for (const [k, v] of levelsByKey(l, h.value.vehicles)) levels.set(k, v);
+          if (h.value.segments) segs.set(l, h.value.segments);
         }
         qLevels = levels;
         qSegs = segs;

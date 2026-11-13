@@ -5,6 +5,7 @@
   import { isBusId } from "../busNs";
   import { fetchSchedule, fetchV2Line, fetchV2LineVehicles, peekV2Line, peekV2LineVehicles } from "../api";
   import { fmtDelay } from "../format";
+  import { HELD_MAX_MS, heldNote, refreshHeld, type Held } from "../held";
   import { vehiclePhrase } from "../liveQuality";
   import { busStopCard, busVehicleCard } from "../legacy";
   import { directionGroups } from "../directions";
@@ -32,17 +33,25 @@
   const native = (id: string) => id.slice(id.indexOf(":") + 1);
 
   let detail = $state.raw<LineDetail | null>(null);
-  let vehicles = $state.raw<V2Vehicle[] | null>(null);
+  // The vehicles now (and the slow gaps, rev 23, Athens and Thessaloniki), as the last good answer: a refresh that
+  // fails or says warming_up keeps them for up to HELD_MAX_MS (held.ts), with a note.
+  type VehiclesNow = { vehicles: V2Vehicle[]; segments: Segment[] };
+  const parseNow = (b: unknown): VehiclesNow | null => {
+    const o = b as { vehicles?: unknown; segments?: unknown } | null;
+    return o && Array.isArray(o.vehicles) ? { vehicles: o.vehicles as V2Vehicle[], segments: Array.isArray(o.segments) ? o.segments as Segment[] : [] } : null;
+  };
+  let held = $state.raw<Held<VehiclesNow> | null>(null);
+  const vehicles = $derived(held?.value.vehicles ?? null);
+  const segments = $derived(held?.value.segments ?? []);
+  const note = $derived(heldNote(held, (void app.serverNow, Date.now())));   // serverNow ticks every second
   let stripList = $state(false);   // the strip's list of bunched vehicles is open: Escape closes it, not the card
-  let segments = $state.raw<Segment[]>([]);   // slow gaps (rev 23, Athens and Thessaloniki), with the vehicles
   let failed = $state(false);
   let missing = $state(false);   // the backend does not know the line (404, a bad link): no more asking
   let vFailed = $state(false);
-  const FRESH_MS = 120_000;   // the age up to which the last vehicles still show
   const cardId = $derived(card?.id);
 
-  // Back on a line seen a moment ago: its last data shows at once (vehicles up to 2 min old), then a new load.
-  // The two loads are apart, so the patterns never wait for the vehicles; a failed load keeps what is shown.
+  // Back on a line seen a moment ago: its last data shows at once (vehicles up to 10 min old, with the note),
+  // then a new load. The two loads are apart, so the patterns never wait for the vehicles.
   $effect(() => {
     const id = cardId;
     if (!id) return;
@@ -51,9 +60,8 @@
     untrack(() => {
       const d = peekV2Line(id), v = peekV2LineVehicles(id);
       detail = (d?.body as LineDetail | undefined) ?? null;
-      const vb = v?.at && Date.now() - v.at < FRESH_MS ? v.body as { vehicles?: V2Vehicle[]; segments?: Segment[] } : null;
-      vehicles = vb ? vb.vehicles ?? [] : null;
-      segments = Array.isArray(vb?.segments) ? vb.segments : [];
+      const now = parseNow(v?.body);
+      held = v?.at && now && Date.now() - v.at < HELD_MAX_MS ? { value: now, at: v.at, failed: false } : null;
       failed = false; missing = false; vFailed = false;
     });
     const load = async () => {
@@ -67,14 +75,8 @@
           }),
           fetchV2LineVehicles(id).then(r => {
             if (ac.signal.aborted) return;
-            if (r.status === 200 && r.body) {
-              const b = r.body as { vehicles?: V2Vehicle[]; segments?: Segment[] };
-              vehicles = b.vehicles ?? [];
-              segments = Array.isArray(b.segments) ? b.segments : [];
-            }
-            // A failed load keeps the last vehicles while they are young; older ones are not «now» any more.
-            else if (Date.now() - (peekV2LineVehicles(id)?.at ?? 0) >= FRESH_MS) { vehicles = null; segments = []; }
-            vFailed = vehicles === null;
+            held = refreshHeld(held, r, parseNow, r.at ?? Date.now());
+            vFailed = held === null;
           }),
         ]);
         if (ac.signal.aborted) return;
@@ -191,6 +193,7 @@
       {/if}
 
       <h3 class="sub">Οχήματα τώρα{rows ? ` · ${rows.length}` : ""}</h3>
+      {#if note}<p class="muted note" role="status">{note}</p>{/if}
       {#if strip}
         {#if !rows?.length}
           <p class="muted">{rows ? "Κανένα όχημα σε αυτή την κατεύθυνση τώρα." : vFailed ? "Δεν φόρτωσαν τα οχήματα. Νέα προσπάθεια σε λίγο." : "Φόρτωση…"}</p>
