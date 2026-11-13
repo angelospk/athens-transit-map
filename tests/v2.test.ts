@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  dirLabels, dirOf, freshness, timesNote, headsignName, lineVehicleRows, withDirections, nextStops, stopRows, vehicleDir,
+  dirLabels, dirOf, firstDir, freshness, timesNote, headsignName, lineVehicleRows, withDirections, nextStops, stopRows, vehicleDir,
   type V2Arrival, type V2Pattern, type V2Run, type V2Stop, type V2Vehicle,
 } from "../src/lib/v2";
 
@@ -143,5 +143,14 @@ describe("timesNote", () => {
     expect(timesNote([{ live: false }, { live: false }])).toBe("πρόγραμμα");
     expect(timesNote([{ live: true }])).toBe("ζωντανά");
     expect(timesNote([])).toBeNull();
+  });
+});
+
+describe("firstDir", () => {
+  it("the first direction that has a label: a line with only direction 1 opens on 1", () => {
+    expect(firstDir(["Α", "Β"])).toBe(0);
+    expect(firstDir([null, "Β"])).toBe(1);
+    expect(firstDir(["Α", null])).toBe(0);
+    expect(firstDir([null, null])).toBe(0);
   });
 });
