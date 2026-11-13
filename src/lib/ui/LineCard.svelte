@@ -61,7 +61,8 @@
       const d = peekV2Line(id), v = peekV2LineVehicles(id);
       detail = (d?.body as LineDetail | undefined) ?? null;
       const now = parseNow(v?.body);
-      held = v?.at && now && Date.now() - v.at < HELD_MAX_MS ? { value: now, at: v.at, failed: false } : null;
+      // Older than a refresh cycle: it shows its age (the note) until the new load answers.
+      held = v?.at && now && Date.now() - v.at < HELD_MAX_MS ? { value: now, at: v.at, failed: Date.now() - v.at > 30_000 } : null;
       failed = false; missing = false; vFailed = false;
     });
     const load = async () => {

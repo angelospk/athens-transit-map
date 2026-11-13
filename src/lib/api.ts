@@ -1,6 +1,7 @@
 // Network access. With VITE_MOCK=1 every call is answered by mock.ts (left out of prod builds).
 
 import { API_BASE, STATIC_BASE } from "./config";
+import { isWarmingBody } from "./held";
 import type { FetchResult } from "./poller";
 import { SwrCache } from "./swr";
 import { scheduleUrl } from "./timetable";
@@ -118,14 +119,14 @@ export const peekStop = (id: string) => railCache.peek(stopUrl(id));
 
 // The unified /v2 API (v2.ts) for the cards: a Line with its patterns, its vehicles now, a Stop board, a Run.
 // A body without its main field (a source still warming up: `line: null`), or with a field of the wrong type,
-// counts as a 503, so it is not cached and no card maps over a string. No mock: with VITE_MOCK=1 they answer
+// counts as a 503 (so does a body whose source says warming_up, held.ts), so it is not cached and no card maps over a string. No mock: with VITE_MOCK=1 they answer
 // as offline (status 0).
 const v2Get = (path: string, ttl: number, ok: (b: Record<string, unknown>) => boolean) => {
   const url = `${API_BASE}/v2/${path}`;
   return railCache.get(url, ttl, async () => {
     if (import.meta.env.VITE_MOCK === "1") return { status: 0, body: null };
     const r = await getJSON(url, AbortSignal.timeout(10_000));
-    return r.status === 200 && !(isObj(r.body) && ok(r.body)) ? { ...r, status: 503 } : r;
+    return r.status === 200 && !(isObj(r.body) && ok(r.body) && !isWarmingBody(r.body)) ? { ...r, status: 503 } : r;
   });
 };
 const enc = encodeURIComponent;

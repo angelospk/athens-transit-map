@@ -1283,17 +1283,19 @@
     if (loaded) (map!.getSource("halos") as GeoJSONSource).setData(liveQ ? haloFC(drawn, qSegs) : EMPTY);
   });
 
+  // A line whose refresh fails keeps its last levels for up to HELD_MAX_MS (held.ts), not an empty ring. Kept
+  // across the effect below, which restarts whenever the set of detailed lines changes.
+  const parseQ = (b: unknown) => {
+    const o = b as { vehicles?: { id: string; quality?: VehicleQuality | null }[]; segments?: Segment[] } | null;
+    return o && Array.isArray(o.vehicles) ? { vehicles: o.vehicles, segments: Array.isArray(o.segments) ? o.segments : null } : null;
+  };
+  const heldQ = new Map<string, Held<NonNullable<ReturnType<typeof parseQ>>>>();
   // The detailed lines' live levels, every 20 s while the page is shown (Athens, Thessaloniki).
   $effect(() => {
     const lines = app.detailLines;
     if (!liveQ || !lines.length) { qLevels = new Map(); qSegs = new Map(); return; }
     let live = true, timer: ReturnType<typeof setTimeout> | undefined;
-    // A line whose refresh fails keeps its last levels for up to HELD_MAX_MS (held.ts), not an empty ring.
-    const parseQ = (b: unknown) => {
-      const o = b as { vehicles?: { id: string; quality?: VehicleQuality | null }[]; segments?: Segment[] } | null;
-      return o && Array.isArray(o.vehicles) ? { vehicles: o.vehicles, segments: Array.isArray(o.segments) ? o.segments : null } : null;
-    };
-    const heldQ = new Map<string, Held<NonNullable<ReturnType<typeof parseQ>>>>();
+    for (const l of heldQ.keys()) if (!lines.includes(l)) heldQ.delete(l);   // a line taken off the map
     const load = async () => {
       if (document.visibilityState !== "hidden") {
         const got = await Promise.all(lines.map(l => fetchV2LineVehicles(busId(l)).then(r => ({ l, r }))));
