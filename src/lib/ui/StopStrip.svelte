@@ -45,12 +45,14 @@
       return { v, at, y, x: 20 + step * 14, p, ty };
     });
   });
+  // Phrases pushed down past the last stop row: room for them under the strip.
+  const below = $derived(Math.max(0, ...placed.map(x => x.p ? x.ty + 9 - (centres.at(-1) ?? 0) - STOP_H / 2 : 0)));
   // The slow gaps with a vehicle's phrase on their row: their text stops short of it.
   const busy = $derived(new Set(strip.gaps.flatMap((g, i) =>
     g && placed.some(x => x.p && x.ty > centres[i] + 8 && x.ty < centres[i + 1] - 8) ? [i] : [])));
 </script>
 
-<div class="strip" style:--c={color.bg} style:--t={color.fg}>
+<div class="strip" style:--c={color.bg} style:--t={color.fg} style:padding-bottom="{below}px">
   <ol aria-label="Οι στάσεις της κατεύθυνσης">
     {#each strip.stops as id, i (i)}
       {@const end = i === 0 || i === strip.stops.length - 1}
