@@ -21,40 +21,60 @@ export interface Strip {
 }
 
 // A pattern's shape [lon, lat] and where each of its stops is along it, by the stop's place in the pattern:
-// each projected near the one before it, so a street passed twice takes the right pass. Worked out once
-// per pattern (a line card rebuilds on every poll; its static data does not change).
+// each projected on the shape after the stop before it, so a street passed twice (out and back, a loop)
+// keeps the stops in order. Worked out once per pattern (a line card rebuilds on every poll; its static data
+// does not change).
 type Along = { geom: [number, number][]; cum: number[]; at: (number | null)[] };
 const alongOf = new WeakMap<V2Pattern, Along>();
 function along(p: V2Pattern, stops: Record<string, { lat: number; lon: number }>): Along {
   let r = alongOf.get(p);
   if (r) return r;
   const geom = p.shape.map(([lat, lon]): [number, number] => [lon, lat]), cum = cumulativeLL(geom);
-  let hint: number | undefined;
-  const at = p.stops.map(id => {
+  r = { geom, cum, at: [] };
+  let lo = 0;
+  for (const id of p.stops) {
     const st = stops[id];
-    if (!st) { hint = undefined; return null; }
-    hint = project(geom, cum, [st.lon, st.lat], hint).s;
-    return hint;
-  });
-  alongOf.set(p, (r = { geom, cum, at }));
+    if (!st) { r.at.push(null); continue; }
+    lo = within(r, [st.lon, st.lat], lo, Infinity).s;
+    r.at.push(lo);
+  }
+  alongOf.set(p, r);
   return r;
 }
 
+// The nearest point of the shape between lo and hi metres along it; of points almost as near, the first.
+function within(a: Pick<Along, "geom" | "cum">, pt: [number, number], lo: number, hi: number): { s: number; off: number } {
+  const { geom, cum } = a;
+  let i0 = 0, i1 = geom.length - 1;
+  while (i0 < i1 && cum[i0 + 1] <= lo) i0++;
+  while (i1 > i0 + 1 && cum[i1 - 1] >= hi) i1--;
+  const p = project(geom.slice(i0, i1 + 1), cum.slice(i0, i1 + 1), pt, lo);
+  return { s: Math.max(lo, Math.min(hi, p.s)), off: p.off };
+}
+
 // Where a vehicle is between the strip's stops: the index of the stop it has passed, plus its share of the
-// way to the next one. A vehicle too far off the shape is placed by its next stop, half a stop before it.
-function place(v: V2Vehicle, a: Along): number | null {
-  const p = project(a.geom, a.cum, [v.position.lon, v.position.lat]);
+// way to the next stop that has a place. A vehicle with a next stop is first looked for on the piece of shape
+// up to that stop (the right pass of a street passed twice). Too far off the shape: null.
+function place(v: V2Vehicle, a: Along, list: string[]): number | null {
+  const pt: [number, number] = [v.position.lon, v.position.lat], off = a.at;
+  let p: { s: number; off: number } | null = null;
+  const n = v.next_stop ? list.indexOf(v.next_stop) : -1;
+  if (n >= 0) {
+    let b = n - 1;
+    while (b >= 0 && off[b] == null) b--;
+    const q = within(a, pt, b >= 0 ? off[b]! : 0, off[n] ?? Infinity);
+    if (q.off <= 150) p = q;
+  }
+  p ??= project(a.geom, a.cum, pt);
   if (p.off > 150) return null;
-  const off = a.at;
   let k = -1;
   for (let i = 0; i < off.length; i++) { const x = off[i]; if (x != null && x <= p.s) k = i; }
   if (k < 0) return 0;                             // before the first stop
-  if (k === off.length - 1) return k;              // at or past the last
   let j = k + 1;
   while (j < off.length && off[j] == null) j++;
-  if (j >= off.length) return k;
+  if (j >= off.length) return k;                   // at or past the last
   const d = off[j]! - off[k]!;
-  const at = k + (d > 0 ? (p.s - off[k]!) / d : 0);
+  const at = k + (d > 0 ? (j - k) * (p.s - off[k]!) / d : 0);
   return Math.max(k, Math.min(j, at));
 }
 
@@ -75,7 +95,7 @@ export function stopStrip(
   const keep = vehicles.filter(v => { const d = vehicleDir(v, patterns); return d === null || d === dir; });
   const shown: { v: V2Vehicle; at: number }[] = [], elsewhere: V2Vehicle[] = [];
   for (const v of keep) {
-    let at = place(v, a);
+    let at = place(v, a, list);
     if (at == null) {
       const k = v.next_stop ? list.indexOf(v.next_stop) : -1;
       if (k < 0) { elsewhere.push(v); continue; }

@@ -78,3 +78,19 @@ describe("gapText", () => {
     expect(gapText({ level: "worse", speed: 3.9, usual_speed: null })).toBe("πιο αργό: 14 km/h");
   });
 });
+
+describe("stopStrip: review cases", () => {
+  // Out and back on one road: A → B → C → B' → A' (B' and A' at the same places as B and A).
+  const LOOP: V2Pattern = { id: "oasa:9", headsign: "A", direction: 0, stops: ["oasa:A", "oasa:B", "oasa:C", "oasa:B2", "oasa:A2"],
+    shape: [...line(0, 0.02), ...line(0.02, 0).slice(1)] };
+  const S2 = { ...STOPS, "oasa:B2": st("oasa:B2", 0.01), "oasa:A2": st("oasa:A2", 0) };
+  it("stops of an out-and-back pattern keep their order along it", () => {
+    const s = stopStrip([LOOP], S2, [veh("oasa:1", 0.015, { next_stop: "oasa:C" }), veh("oasa:2", 0.015, { next_stop: "oasa:B2" })], [], 0)!;
+    expect(s.vehicles.map(x => [x.v.id, Math.round(x.at * 100) / 100])).toEqual([["oasa:1", 1.5], ["oasa:2", 2.5]]);
+  });
+  it("a stop without coordinates: the fraction spans every row it skips", () => {
+    const { "oasa:B": _, ...noB } = STOPS;
+    const s = stopStrip([{ ...P0 }], noB, [veh("oasa:7", 0.01)], [], 0)!;
+    expect(Math.round(s.vehicles[0].at * 100) / 100).toBe(1);
+  });
+});

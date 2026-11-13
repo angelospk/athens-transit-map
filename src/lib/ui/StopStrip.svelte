@@ -32,6 +32,19 @@
   const said = (v: V2Vehicle) => vehiclePhrase(v.quality, v.delay_s)
     ?? (v.delay_s !== null ? { text: fmtDelay(v.delay_s), level: null } : null);
   const name = (id: string) => tc(stops[id]?.name ?? "");
+  // Vehicles close together (bunched, or at one stop): each icon one step right of the one above it, so every
+  // icon stays tappable; each phrase at least one line below the one above it.
+  const placed = $derived.by(() => {
+    let lastY = -Infinity, step = 0, lastTy = -Infinity;
+    return strip.vehicles.map(({ v, at }) => {
+      const y = yAt(at), p = said(v);
+      step = y - lastY < 22 ? step + 1 : 0;
+      lastY = y;
+      const ty = p ? Math.max(y, lastTy + 15) : y;
+      if (p) lastTy = ty;
+      return { v, at, y, x: 20 + Math.min(step, 4) * 14, p, ty };
+    });
+  });
 </script>
 
 <div class="strip" style:--c={color.bg} style:--t={color.fg}>
@@ -52,13 +65,11 @@
       {/if}
     {/each}
   </ol>
-  {#each strip.vehicles as { v, at } (v.id)}
-    {@const p = said(v)}
-    {@const y = yAt(at)}
-    <button type="button" class="veh {levelClass(v.quality?.level)}" class:ring={!!v.quality} style:top="{y}px"
+  {#each placed as { v, at, y, x, p, ty } (v.id)}
+    <button type="button" class="veh {levelClass(v.quality?.level)}" class:ring={!!v.quality} style:top="{y}px" style:left="{x}px"
       aria-label="Όχημα{v.label ? ` ${v.label}` : ''}, μετά τη στάση {name(strip.stops[Math.floor(at)])}{p ? `: ${p.text}` : ''}"
       onclick={() => onvehicle(v)}><Icon name={isBus ? "bus" : "dot"} size={14} /></button>
-    {#if p}<span class="say {p.level ? `lvt-${p.level}` : 'plain'}" style:top="{y}px" aria-hidden="true">{p.text}</span>{/if}
+    {#if p}<span class="say {p.level ? `lvt-${p.level}` : 'plain'}" style:top="{ty}px" aria-hidden="true">{p.text}</span>{/if}
   {/each}
 </div>
 

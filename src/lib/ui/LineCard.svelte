@@ -72,7 +72,7 @@
               segments = Array.isArray(b.segments) ? b.segments : [];
             }
             // A failed load keeps the last vehicles while they are young; older ones are not «now» any more.
-            else if (Date.now() - (peekV2LineVehicles(id)?.at ?? 0) >= FRESH_MS) vehicles = null;
+            else if (Date.now() - (peekV2LineVehicles(id)?.at ?? 0) >= FRESH_MS) { vehicles = null; segments = []; }
             vFailed = vehicles === null;
           }),
         ]);
