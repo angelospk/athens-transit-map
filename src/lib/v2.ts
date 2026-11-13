@@ -77,6 +77,10 @@ export function vehicleDir(v: V2Vehicle, patterns: V2Pattern[]): 0 | 1 | null {
   return v.direction === 0 || v.direction === 1 ? v.direction : dirOf(patterns, v.headsign);
 }
 
+// The direction a card opens on without one asked: 0, unless only direction 1 has patterns (some citybus.gr lines).
+export const firstDir = (labels: [string | null, string | null] | (string | null)[]): 0 | 1 =>
+  labels[0] === null && labels[1] != null ? 1 : 0;
+
 // Per direction: the headsign with the most patterns (tie: the longer pattern).
 export function dirLabels(patterns: V2Pattern[], stops?: Stops): [string | null, string | null] {
   const label = (d: 0 | 1) => {

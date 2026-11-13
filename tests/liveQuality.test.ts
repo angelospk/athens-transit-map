@@ -134,11 +134,11 @@ describe("haloFC", () => {
 describe("segmentText", () => {
   it("names the stops and the speeds in km/h", () => {
     expect(segmentText({ level: "worse", from: "Καλλιθέα", to: "Φιξ", speed: 3.9, usual: 5.3 }))
-      .toBe("Καλλιθέα → Φιξ · πιο αργά από συνήθως: 14 km/h (συνήθως 19)");
+      .toBe("Καλλιθέα → Φιξ · πιο αργό: 14 km/h, συνήθως 19");
     expect(segmentText({ level: "much_worse", from: "Α", to: "Β", speed: 1.9, usual: 5 }))
-      .toBe("Α → Β · πολύ πιο αργά από συνήθως: 7 km/h (συνήθως 18)");
+      .toBe("Α → Β · πολύ πιο αργό: 7 km/h, συνήθως 18");
   });
-  it("without a usual speed, no brackets", () => {
-    expect(segmentText({ level: "worse", from: "Α", to: "Β", speed: 3.9, usual: null })).toBe("Α → Β · πιο αργά από συνήθως: 14 km/h");
+  it("without a usual speed, no usual", () => {
+    expect(segmentText({ level: "worse", from: "Α", to: "Β", speed: 3.9, usual: null })).toBe("Α → Β · πιο αργό: 14 km/h");
   });
 });

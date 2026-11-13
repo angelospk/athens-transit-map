@@ -5,6 +5,7 @@ import type { FeatureCollection, LineString } from "geojson";
 import { cumulativeLL, project, subLine } from "./motion";
 import type { DrawnLine } from "./map/layers";
 import type { Stop, Variant } from "./types";
+import { gapText } from "./stopStrip";
 
 export type QualityLevel = "normal" | "worse" | "much_worse" | "unknown";
 
@@ -142,8 +143,5 @@ export function haloFC(lines: DrawnLine[], segs: Map<string, Segment[]>): Featur
 
 // The segment's words: the stops, how much slower than usual, and the two speeds in km/h.
 export function segmentText(p: { level: string; from: string; to: string; speed: number; usual: number | null }): string {
-  const kmh = Math.round(p.speed * 3.6);
-  const how = p.level === "much_worse" ? "πολύ πιο αργά από συνήθως" : "πιο αργά από συνήθως";
-  const usual = typeof p.usual === "number" ? ` (συνήθως ${Math.round(p.usual * 3.6)})` : "";
-  return `${p.from} → ${p.to} · ${how}: ${kmh} km/h${usual}`;
+  return `${p.from} → ${p.to} · ${gapText({ level: p.level, speed: p.speed, usual_speed: p.usual })}`;
 }

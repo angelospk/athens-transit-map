@@ -1381,7 +1381,10 @@
     m.setFilter("city-label", filter);
     m.setFilter("city-selected", s?.kind === "vehicle" ? sel : ["boolean", false]);
     const vis = app.cityOn ? "visible" : "none";
-    for (const id of ["city-dot", "city-delay", "city-label", "city-heading", "city-selected"]) m.setLayoutProperty(id, "visibility", vis);
+    for (const id of ["city-dot", "city-label", "city-heading", "city-selected"]) m.setLayoutProperty(id, "visibility", vis);
+    // Athens, Thessaloniki: colour on a vehicle means its live level (the ring), and the tiles carry no level, so the
+    // city layer shows no delay dot there (rt issue for a level in the tiles).
+    m.setLayoutProperty("city-delay", "visibility", app.cityOn && !liveQ ? "visible" : "none");
   });
 
   $effect(() => {
