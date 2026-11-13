@@ -1289,7 +1289,7 @@
     let live = true, timer: ReturnType<typeof setTimeout> | undefined;
     const load = async () => {
       if (document.visibilityState !== "hidden") {
-        const got = await Promise.all(lines.map(l => fetchV2LineVehicles(busId(l)).then(r => ({ l, r }), () => ({ l, r: { status: 0, body: null } }))));
+        const got = await Promise.all(lines.map(l => fetchV2LineVehicles(busId(l)).then(r => ({ l, r }))));
         if (!live) return;
         const levels = new Map<string, QualityLevel>(), segs = new Map<string, Segment[]>();
         for (const { l, r } of got) {
