@@ -3,6 +3,8 @@
   --ontime: #1a7f37; --late1: #a87c00; --late2: #d9480f; --late3: #c92a2a; --none: #6c757d; --warn-bg: #fff3cd;
   --control: #f2f2f4; --control-hover: #e8e8ed; --accent: #0071e3;
   --shadow: 0 4px 16px rgba(0, 0, 0, .18);
+  /* Live quality level as text colour (normal, worse, much worse): 4.5:1 on --bg and --control. */
+  --lvt-normal: #1a7f37; --lvt-worse: #8a6500; --lvt-much: #c92a2a;
   color-scheme: light dark;
 }
 /* Dark: the device's setting, unless the page is marked light; or the page is marked dark (lib/theme.ts).
@@ -11,6 +13,7 @@
   :root:not([data-theme="light"]) {
     --bg: #111113; --fg: #f5f5f7; --muted: #a1a1a6; --panel: rgba(28, 28, 30, .96); --border: #3a3a3c;
     --warn-bg: #4a3b00; --control: #2c2c2e; --control-hover: #3a3a3c; --accent: #0a84ff;
+    --lvt-normal: #30a14e; --lvt-worse: #d4a72c; --lvt-much: #f05252;
   }
 }
 :root[data-theme="light"] { color-scheme: light; }
@@ -18,6 +21,7 @@
   color-scheme: dark;
   --bg: #111113; --fg: #f5f5f7; --muted: #a1a1a6; --panel: rgba(28, 28, 30, .96); --border: #3a3a3c;
   --warn-bg: #4a3b00; --control: #2c2c2e; --control-hover: #3a3a3c; --accent: #0a84ff;
+  --lvt-normal: #30a14e; --lvt-worse: #d4a72c; --lvt-much: #f05252;
 }
 * { box-sizing: border-box; }
 html, body, #app { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg);
@@ -36,6 +40,9 @@ button, input { font: inherit; color: inherit; }
 .bus .glyph.trolley { -webkit-mask-image: url("/icons/glyph-trolley.png"); mask-image: url("/icons/glyph-trolley.png"); }
 .bus::after { content: ""; position: absolute; top: -4px; right: -4px; width: 9px; height: 9px; border-radius: 50%;
   background: var(--d); border: 2px solid var(--bg); pointer-events: none; }
+/* Athens and Thessaloniki (lib/liveQuality.ts): the live level is a ring outside the white edge, not the delay dot. */
+.bus.ring { box-shadow: 0 0 0 2.5px var(--d), 0 1px 5px 2px rgba(0, 0, 0, .3); }
+.bus.ring::after { display: none; }
 .bus .num { position: absolute; top: calc(100% + 11px);   /* under the pointer too, whichever way it points */
   left: 50%; transform: translateX(-50%); color: var(--fg);
   font: 700 11px/13px system-ui, sans-serif; white-space: nowrap; pointer-events: none;
@@ -55,6 +62,9 @@ button, input { font: inherit; color: inherit; }
 .late3 { --d: var(--late3); } .none { --d: var(--none); }
 .ontime, .late1, .late2, .late3, .none { background: var(--d); }
 .bus.bus { background: var(--c, var(--d)); color: var(--t, #fff); }
+/* A live level as text (line card, segment popup): the colour says the level, no icon. */
+.lvt-normal { color: var(--lvt-normal); font-weight: 600; } .lvt-worse { color: var(--lvt-worse); font-weight: 600; }
+.lvt-much_worse { color: var(--lvt-much); font-weight: 600; } .lvt-unknown { color: var(--muted); }
 
 .maplibregl-popup-content { background: var(--panel); color: var(--fg); font-size: 13px; padding: 6px 10px; border-radius: 8px; }
 .maplibregl-popup-tip { border-top-color: var(--panel) !important; border-bottom-color: var(--panel) !important; }

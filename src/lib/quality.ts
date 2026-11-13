@@ -14,12 +14,13 @@ export type LineOtp = { line: string; measured: number; on_time: number; early: 
 // The parts of a day file (rt docs/API.md "Daily statistics") the pill reads.
 export type QualityDay = {
   headways?: { from_h?: number; to_h?: number; by_line: Headway[] };
-  origin_otp?: { by_line: LineOtp[] };
+  origin_otp?: { by_line: LineOtp[]; early_s?: number; late_s?: number };   // rev 23: the on-time window
 };
 
+// `parts`: the text split so the number can carry the level's colour; parts.join("") === text.
 export type Quality =
-  | { kind: "wait"; level: Level; text: string; h: Headway; from_h: number | null; to_h: number | null }
-  | { kind: "otp"; level: Level; text: string; o: LineOtp };
+  | { kind: "wait"; level: Level; text: string; parts: [string, string, string]; h: Headway; from_h: number | null; to_h: number | null }
+  | { kind: "otp"; level: Level; text: string; parts: [string, string, string]; o: LineOtp };
 
 export const MIN_OTP_RUNS = 5;   // measured runs of a line before its on-time share is shown
 
@@ -38,6 +39,22 @@ export const otpLevel = (share: number): Level => {
   return pct >= 80 ? 3 : pct >= 70 ? 2 : 1;
 };
 
+// Minutes of a window: «5», or one decimal with a comma («1,5»).
+const minutes = (s: number): string => {
+  const m = Math.round(s / 6) / 10;   // one decimal of a minute
+  return String(m).replace(".", ",");
+};
+
+// The on-time window of `origin_otp` (rt#178): a run is on time from early_s before to late_s after its
+// scheduled time. An old day file has neither: from the scheduled time to 5 minutes after.
+export function onTimeWindow(o: { early_s?: number; late_s?: number } | undefined): string {
+  const late = num(o?.late_s) ? o!.late_s! : 300;
+  const early = num(o?.early_s) ? o!.early_s! : 0;
+  return early > 0
+    ? `από ${minutes(early)}′ νωρίτερα έως ${minutes(late)}′ αργότερα`
+    : `από την ώρα του έως ${minutes(late)}′ αργότερα`;
+}
+
 // dir: the stats direction of the shown direction (0 Go / 1 Come in Athens, GTFS direction_id in
 // Thessaloniki), null when it is not known; the on-time share is per line and does not need it.
 export function lineQuality(day: QualityDay | null, line: string, dir: number | null): Quality | null {
@@ -47,12 +64,14 @@ export function lineQuality(day: QualityDay | null, line: string, dir: number | 
     const level = waitLevel(h.cv_h);
     const usual = level === 3 ? "" : ` (κανονικά ~${halfMin(h.mean_headway_s / 2 / 60)}′)`;
     const from = day.headways?.from_h, to = day.headways?.to_h;
-    return { kind: "wait", level, text: `αναμονή ~${halfMin(h.wait_min)}′${usual}`, h,
+    const min = `~${halfMin(h.wait_min)}′`;
+    return { kind: "wait", level, text: `αναμονή ${min}${usual}`, parts: ["αναμονή ", min, usual], h,
       from_h: num(from) ? from : null, to_h: num(to) ? to : null };
   }
   const o = list<LineOtp>(day.origin_otp).find(x => x?.line === line);
   if (o && num(o.measured) && o.measured >= MIN_OTP_RUNS && num(o.share) && o.share <= 1) {
-    return { kind: "otp", level: otpLevel(o.share), text: `${Math.round(o.share * 10)} στα 10 δρομολόγια στην ώρα`, o };
+    const n = `${Math.round(o.share * 10)} στα 10`;
+    return { kind: "otp", level: otpLevel(o.share), text: `${n} δρομολόγια στην ώρα`, parts: ["", n, " δρομολόγια στην ώρα"], o };
   }
   return null;
 }

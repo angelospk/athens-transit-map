@@ -7,6 +7,7 @@
     import { STALE_S, type AppState } from "../state.svelte";
   import Bell from "./Bell.svelte";
   import HelpPop from "./HelpPop.svelte";
+  import { hasLiveQuality } from "../liveQuality";
   import Icon from "./Icon.svelte";
   import LinePicker from "./LinePicker.svelte";
   import StatusBanner from "./StatusBanner.svelte";
@@ -285,7 +286,7 @@
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" /></svg>
           Δώσε feedback ή πες μας ένα πρόβλημα
         </button>
-        <HelpPop />
+        <HelpPop live={hasLiveQuality(app.cityId)} />
       </div>
     {:else if pop === "layers"}
       <!-- «Ρυθμίσεις» (GreekCaptain's fork, MapSettings): grouped rows, a switch or a value on the right. On a phone a
