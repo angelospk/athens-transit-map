@@ -33,6 +33,7 @@
 
   let detail = $state.raw<LineDetail | null>(null);
   let vehicles = $state.raw<V2Vehicle[] | null>(null);
+  let stripList = $state(false);   // the strip's list of bunched vehicles is open: Escape closes it, not the card
   let segments = $state.raw<Segment[]>([]);   // slow gaps (rev 23, Athens and Thessaloniki), with the vehicles
   let failed = $state(false);
   let missing = $state(false);   // the backend does not know the line (404, a bad link): no more asking
@@ -160,7 +161,7 @@
 </script>
 
 {#if card}
-  <CardSheet {app} key={card.id} starred={starred} starLabel={starred ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
+  <CardSheet {app} key={card.id} closeOnEscape={!stripList} starred={starred} starLabel={starred ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
     onstar={() => app.toggleFavLine({ id: card.id, label })}>
     {#snippet header()}
       {#if isBus}<LineChip {label} bg={color.bg} fg={color.fg} oasa={app.cityId === "athens"} />
@@ -194,7 +195,7 @@
         {#if !rows?.length}
           <p class="muted">{rows ? "Κανένα όχημα σε αυτή την κατεύθυνση τώρα." : vFailed ? "Δεν φόρτωσαν τα οχήματα. Νέα προσπάθεια σε λίγο." : "Φόρτωση…"}</p>
         {/if}
-        <StopStrip {strip} stops={detail.stops} {color} {isBus} {tc} onvehicle={open}
+        <StopStrip bind:listOpen={stripList} {strip} stops={detail.stops} {color} {isBus} {tc} onvehicle={open}
           onstop={isBus ? (id, name) => app.push(busStopCard(native(id), name)) : undefined} />
       {/if}
       {@const rest = strip ? (rows ?? []).filter(r => strip.elsewhere.includes(r.vehicle)) : rows ?? []}

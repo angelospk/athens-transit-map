@@ -9,9 +9,10 @@
   import type { V2Stop, V2Vehicle } from "../v2";
   import Icon from "./Icon.svelte";
 
-  let { strip, stops, color, isBus, tc, onvehicle, onstop }: {
+  let { strip, stops, color, isBus, tc, onvehicle, onstop, listOpen = $bindable(false) }: {
     strip: Strip; stops: Record<string, V2Stop>; color: { bg: string; fg: string }; isBus: boolean;
     tc: (s: string | null | undefined) => string; onvehicle: (v: V2Vehicle) => void; onstop?: (id: string, name: string) => void;
+    listOpen?: boolean;   // the list of a bunched cluster is open (the card then leaves Escape to it)
   } = $props();
 
   const STOP_H = 30, GAP_H = 12, GAP_TEXT_H = 26;
@@ -49,6 +50,7 @@
   let open = $state<string | null>(null);
   // A poll that splits or moves the open cluster closes its list (no list opening again later by itself).
   $effect(() => { if (open && !placed.some(c => c.key === open && c.n > 1)) open = null; });
+  $effect(() => { listOpen = open !== null; });
   // Phrases pushed down, or a tall icon, past the last stop row: room for them under the strip.
   const below = $derived(Math.max(0, ...placed.map(x =>
     Math.max(x.p ? x.ty + 9 : 0, x.y - BUS_H / 2 + x.h + 2) - (centres.at(-1) ?? 0) - STOP_H / 2)));
@@ -58,12 +60,10 @@
 </script>
 
 <svelte:window
-  onclick={e => { if (open && !(e.target as Element | null)?.closest?.(".menu, .veh.many")) open = null; }} />
+  onclick={e => { if (open && !(e.target as Element | null)?.closest?.(".menu, .veh.many")) open = null; }}
+  onkeydown={e => { if (open && e.key === "Escape") open = null; }} />
 
-<!-- Escape closes the open list only, not the card round it. -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="strip" style:--c={color.bg} style:--t={color.fg} style:padding-bottom="{below}px"
-  onkeydown={e => { if (open && e.key === "Escape") { e.stopPropagation(); open = null; } }}>
+<div class="strip" style:--c={color.bg} style:--t={color.fg} style:padding-bottom="{below}px">
   <ol aria-label="Οι στάσεις της κατεύθυνσης">
     {#each strip.stops as id, i (i)}
       {@const end = i === 0 || i === strip.stops.length - 1}
