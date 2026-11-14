@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths-ignore: ['docs/**', '**/*.md', 'LICENSE'] # the site does not use them
   workflow_dispatch:
-  # The stats pages (/{city}/stats/, web#48) are built from the stats branch of athens-transit-rt,
+  # The stats pages (/{city}/stats/, web#48) are built from the stats branch of staseis-rt,
   # which gets the new day between about 11:00 and 16:00 UTC (its cron runs late): rebuild after.
   schedule:
     - cron: "30 12 * * *"

@@ -4,25 +4,25 @@
 
 Before you show service quality (line, vehicle or segment colours; headways, OTP, frequency), read
 `docs/QUALITY.md` in the backend repo (https://github.com/angelospk/staseis-rt/blob/main/docs/QUALITY.md,
-locally `~/athens-transit-rt/docs/QUALITY.md`). It holds the agreed design and the status per city.
+locally `~/athens-transit-rt/docs/QUALITY.md` (the folder keeps its old name)). It holds the agreed design and the status per city.
 Update it when the display changes.
 
 ## Task board
 
-All work on Athens Transit (backend `athens-transit-rt`, app `athens-transit-app`, web
-`athens-transit-map`) is tracked on one GitHub board:
+All work on Staseis (backend `staseis-rt`, app `athens-transit-app`, web
+`staseis-map`) is tracked on one GitHub board:
 https://github.com/users/angelospk/projects/3. Issues live in the repo they change. Use
 `track` (`~/.local/bin/track` on the mini PC) or `gh` directly. Repo keys: `rt`, `app`, `web`.
 
 ### When work needs an issue or a PR
 
-Backend (`athens-transit-rt`): every change goes through an issue, a PR and a review. It is
+Backend (`staseis-rt`): every change goes through an issue, a PR and a review. It is
 the data source for the app and the web, and a merge to `main` deploys it (about 10 minutes,
 with a restart). Ask Harold before a merge. Raise the load on OASA in small steps only.
 
-App and web (`athens-transit-app`, `athens-transit-map`): the UI still changes often, so
+App and web (`athens-transit-app`, `staseis-map`): the UI still changes often, so
 commit straight to `main` after the tests, the typecheck and the build pass. In the web, a
-push to `main` deploys bus.haroldpoi.dev. Open an issue only when:
+push to `main` deploys staseis.gr. Open an issue only when:
 
 - the work will not be finished in this session (a bug or an idea to keep);
 - a person must act (a deploy, a test on a phone, a decision);

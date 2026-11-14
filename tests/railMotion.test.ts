@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import cases from "./fixtures/motion-cases.json";
 import { knotMetres, lineTrains, railMotions, runIds, stasyPlace, trainsFC, type StasyVehicle } from "../src/lib/trains";
 
-// The backend's client rule for /v2 motion.knots (athens-transit-rt docs/fixtures/v2/motion-cases.json).
+// The backend's client rule for /v2 motion.knots (staseis-rt docs/fixtures/v2/motion-cases.json).
 describe("knotMetres", () => {
   for (const c of cases.cases)
     it(c.name, () => {

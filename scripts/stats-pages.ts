@@ -1,6 +1,6 @@
 // Static network statistics pages, one per city: /{city}/stats/ with the newest day, the last
 // weeks compared, and every day as CSV (the full JSON stays on the stats branch of
-// athens-transit-rt). Plain HTML and a schema.org Dataset, so other sites and search engines
+// staseis-rt). Plain HTML and a schema.org Dataset, so other sites and search engines
 // read the figures without running the app. Run from scripts/seo.ts after `vite build` (web#48).
 
 import { mkdir, writeFile } from "node:fs/promises";
@@ -15,8 +15,8 @@ import { escape, layout, mapLimit, SITE } from "./seo";
 export const LICENSE_URL = "https://creativecommons.org/licenses/by/4.0/";
 // The public stats branch: the links on the pages point here, whatever the build read from.
 export const RAW_BASE = "https://raw.githubusercontent.com/angelospk/staseis-rt/stats/v1";
-const BRANCH_URL = "https://github.com/angelospk/athens-transit-rt/tree/stats/v1";
-const METHOD_URL = "https://github.com/angelospk/athens-transit-rt/blob/main/docs/API.md";
+const BRANCH_URL = "https://github.com/angelospk/staseis-rt/tree/stats/v1";
+const METHOD_URL = "https://github.com/angelospk/staseis-rt/blob/main/docs/API.md";
 
 export interface StatsCity {
   id: CityId;
@@ -141,7 +141,7 @@ function dataset(c: StatsCity, days: DayStats[], latest: DayStats) {
     isAccessibleForFree: true,
     license: LICENSE_URL,
     creator: { "@type": "Organization", name: "Στάσεις", url: SITE },
-    isBasedOn: "https://github.com/angelospk/athens-transit-rt",
+    isBasedOn: "https://github.com/angelospk/staseis-rt",
     keywords: ["συγκοινωνίες", "λεωφορεία", c.agency, c.name, "GPS", "ταχύτητα", "public transport"],
     temporalCoverage: `${days[0].date}/${latest.date}`,
     ...(Number.isNaN(modified.getTime()) ? {} : { dateModified: modified.toISOString() }),

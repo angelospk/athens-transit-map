@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "athens-transit-map",
+      "name": "staseis-map",
       "dependencies": {
         "maplibre-gl": "^6.12.0",
       },

@@ -446,7 +446,7 @@ if (isMain) {
     };
   };
   const legacy = process.env.SEO_LEGACY !== "0";
-  // The stats pages (web#48) read the stats branch of athens-transit-rt on GitHub.
+  // The stats pages (web#48) read the stats branch of staseis-rt on GitHub.
   const { buildStats } = await import("./stats-pages");
   const statsBase = (process.env.VITE_STATS_BASE || "https://raw.githubusercontent.com/angelospk/staseis-rt/stats/v1").replace(/\/+$/, "");
   const getText = async (url: string) => {

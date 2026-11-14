@@ -22,4 +22,4 @@ export const STATS_BASE = statsBaseFor(PAGE_CITY, import.meta.env);
 
 // The promo video (played in the README on GitHub), linked from the "no connection to the server" banner.
 // An empty VITE_DEMO_VIDEO_URL does not turn it off; set it to a different URL to change it.
-export const DEMO_VIDEO_URL: string = import.meta.env.VITE_DEMO_VIDEO_URL || "https://github.com/angelospk/athens-transit-map#readme";
+export const DEMO_VIDEO_URL: string = import.meta.env.VITE_DEMO_VIDEO_URL || "https://github.com/angelospk/staseis-map#readme";

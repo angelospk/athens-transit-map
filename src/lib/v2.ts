@@ -1,4 +1,4 @@
-// Types and pure helpers for the unified /v2 API (athens-transit-rt docs/CONTRACT.md, "Unified API /v2"):
+// Types and pure helpers for the unified /v2 API (staseis-rt docs/CONTRACT.md, "Unified API /v2"):
 // headsign names, directions, stop-card rows, vehicle-card stops and position freshness.
 
 import { ageLabel } from "./format";

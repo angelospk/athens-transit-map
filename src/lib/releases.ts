@@ -1,7 +1,7 @@
 // «Τι νέο» in the ⓘ sheet: the web's GitHub Releases, written in Greek for users. Read from the
 // browser (60 unauthenticated requests per hour per IP, plenty for one sheet).
-export const RELEASES_URL = "https://api.github.com/repos/angelospk/athens-transit-map/releases?per_page=5";
-export const RELEASES_PAGE = "https://github.com/angelospk/athens-transit-map/releases";
+export const RELEASES_URL = "https://api.github.com/repos/angelospk/staseis-map/releases?per_page=5";
+export const RELEASES_PAGE = "https://github.com/angelospk/staseis-map/releases";
 
 export interface Release { tag: string; title: string; date: string; url: string; notes: string[] }
 

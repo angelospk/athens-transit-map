@@ -3,7 +3,7 @@ import { API_DOCS, BACKEND_REPO, GTFS_PAGE, TILE_CREDITS } from "../src/lib/sour
 
 describe("data sources", () => {
   it("links to the backend repo and the OASA GTFS dataset", () => {
-    expect(BACKEND_REPO).toBe("https://github.com/angelospk/athens-transit-rt");
+    expect(BACKEND_REPO).toBe("https://github.com/angelospk/staseis-rt");
     expect(GTFS_PAGE).toBe("https://data.gov.gr/dataset/fb049bb1-aea6-4443-95fa-8b941dd6a057");
   });
 

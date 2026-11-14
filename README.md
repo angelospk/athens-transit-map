@@ -1,7 +1,7 @@
-# athens-transit-map
+# staseis-map
 
-**Live map:** https://bus.haroldpoi.dev · **Public API (no key), docs with try-it:**
-[bus.haroldpoi.dev/api](https://bus.haroldpoi.dev/api) (OpenAPI 3.1, base URL `https://transit.haroldpoi.dev`)
+**Live map:** https://staseis.gr · **Public API (no key), docs with try-it:**
+[staseis.gr/api](https://staseis.gr/api) (OpenAPI 3.1, base URL `https://transit.haroldpoi.dev`)
 
 https://github.com/user-attachments/assets/7949d8bc-1fb0-4a36-8a2c-bae249b19fcb
 
@@ -14,7 +14,7 @@ map where you could see every bus of the city at once and follow your own lines.
 **What I built**, beyond the upstream project
 ([foivospro/athens-gtfs-realtime](https://github.com/foivospro/athens-gtfs-realtime), whose matching ideas and viewer I started from):
 
-- A Go backend ([athens-transit-rt](https://github.com/angelospk/athens-transit-rt)) that polls every active
+- A Go backend ([staseis-rt](https://github.com/angelospk/staseis-rt)) that polls every active
   route under one request budget, matches vehicles to scheduled trips and serves a keyless JSON API,
   including map tiles of all ~1,500 live vehicles.
 - This map (Svelte 5, MapLibre): the whole city live, up to 5 followed lines, each in its own colourblind-safe
@@ -42,14 +42,14 @@ Try the API ([full reference](https://angelospk.github.io/staseis-rt/)): [`/v1/s
 
 Ζωντανός χάρτης με τα λεωφορεία και τα τρόλεϊ του ΟΑΣΑ: **https://bus.haroldpoi.dev**
 
-A live map of Athens (OASA) buses and trolleys. Every live vehicle of the city is on the map, coloured
+The web map of [staseis.gr](https://staseis.gr): live buses and trolleys of Athens (OASA) and Thessaloniki, with more Greek cities being added. Every live vehicle of the city is on the map, coloured
 by delay; click one to see its line and trip. Pick up to 5 lines to follow them in detail; each line gets its own
 colour (Okabe-Ito, colourblind-safe) on its route, vehicles, card and chip, and each vehicle shows its delay as a ring. Click a vehicle for its delay, trip, next stop and GPS age; click a route
 for its direction and stops. The chosen lines stay in the URL, so links can be shared
-(`https://bus.haroldpoi.dev/?l=040,Α1`).
+(`https://staseis.gr/?l=040,Α1`).
 
 This is the frontend. Data comes from the backend
-[`angelospk/athens-transit-rt`](https://github.com/angelospk/athens-transit-rt). The interface between
+[`angelospk/staseis-rt`](https://github.com/angelospk/staseis-rt). The interface between
 the two is fixed in [`docs/CONTRACT.md`](docs/CONTRACT.md); the backend owns it.
 The Android app (Flutter) lives in
 [`angelospk/athens-transit-app`](https://github.com/angelospk/athens-transit-app); it reads the same API and
@@ -179,7 +179,7 @@ so the app never adds cache-busting parameters. The rules, from the contract
 
 The app needs server time for pacing and for the "πριν N" ages when the device clock is wrong
 (`ClockOffset`). It estimates the offset from `updated_at` / `next_update_at`
-and, when the API exposes it ([backend issue #3](https://github.com/angelospk/athens-transit-rt/issues/3)),
+and, when the API exposes it ([backend issue #3](https://github.com/angelospk/staseis-rt/issues/3)),
 the HTTP `Date` header as a lower bound (cached copies keep an old `Date`). It trusts the client clock unless the responses
 prove otherwise, follows measured clock jumps, and clamps waits to the line's update interval so a
 wrong clock cannot stop polling. Known gaps: without `Date`, if the feed has stopped, a new tab can show a

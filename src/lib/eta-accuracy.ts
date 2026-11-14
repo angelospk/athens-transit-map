@@ -1,7 +1,7 @@
 // «Ακρίβεια» in the ⓘ sheet (web#27): how close our arrival times came to the real passes last
 // week. lab/eta/publish.sh writes the file each week to the `eta` branch of this repo.
 
-export const ETA_ACCURACY_URL = "https://raw.githubusercontent.com/angelospk/athens-transit-map/eta/v1/latest.json";
+export const ETA_ACCURACY_URL = "https://raw.githubusercontent.com/angelospk/staseis-map/eta/v1/latest.json";
 
 // Fewer predictions than this in a bucket say nothing a user can rely on.
 const MIN_N = 500;

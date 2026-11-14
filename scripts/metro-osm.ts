@@ -18,7 +18,7 @@ out geom;`;
 async function overpass() {
   if (existsSync(url)) return JSON.parse(readFileSync(url, "utf8"));
   const r = await fetch(url, { method: "POST", body: new URLSearchParams({ data: query }),
-    headers: { "User-Agent": "athens-transit-map (github.com/angelospk/athens-transit-map)", Accept: "application/json" } });
+    headers: { "User-Agent": "staseis-map (github.com/angelospk/staseis-map)", Accept: "application/json" } });
   if (!r.ok) throw new Error(`Overpass: HTTP ${r.status} (busy mirrors often answer on a second try)`);
   return r.json();
 }

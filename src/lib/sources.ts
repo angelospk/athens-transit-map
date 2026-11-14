@@ -1,5 +1,5 @@
 // Where the data on the map comes from (the info sheet links to these).
-export const BACKEND_REPO = "https://github.com/angelospk/athens-transit-rt";
+export const BACKEND_REPO = "https://github.com/angelospk/staseis-rt";
 // The public API reference (OpenAPI + try-it); public/api/index.html redirects bus.haroldpoi.dev/api here.
 export const API_DOCS = "https://angelospk.github.io/staseis-rt/";
 export const GTFS_PAGE = "https://data.gov.gr/dataset/fb049bb1-aea6-4443-95fa-8b941dd6a057";
@@ -11,4 +11,4 @@ export const TILE_CREDITS = [
   { text: "© OpenMapTiles", href: "https://www.openmaptiles.org/" },
   { lead: "Δεδομένα από ", text: "OpenStreetMap", href: "https://www.openstreetmap.org/copyright" },
 ];
-export const FRONTEND_REPO = "https://github.com/angelospk/athens-transit-map";
+export const FRONTEND_REPO = "https://github.com/angelospk/staseis-map";

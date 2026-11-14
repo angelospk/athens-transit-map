@@ -1,4 +1,4 @@
-// Service disruptions from /v2/alerts (athens-transit-rt docs/CONTRACT.md, rev 13): OASA notices and strikes.
+// Service disruptions from /v2/alerts (staseis-rt docs/CONTRACT.md, rev 13): OASA notices and strikes.
 // Pure: which alert applies to a line, a stop or the map today. (Not alerts.ts: those are the user's arrival alerts.)
 
 import { fold } from "./search";

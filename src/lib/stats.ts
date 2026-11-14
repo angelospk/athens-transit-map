@@ -1,4 +1,4 @@
-// Daily network statistics from the backend (docs/API.md "Daily statistics" in athens-transit-rt),
+// Daily network statistics from the backend (docs/API.md "Daily statistics" in staseis-rt),
 // read from its `stats` branch on GitHub so the home server does not serve them.
 import { PAGE_CITY, STATS_BASE } from "./config";
 import { STATS_DIRS } from "./cities";
