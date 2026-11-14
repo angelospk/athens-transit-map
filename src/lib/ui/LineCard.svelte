@@ -167,7 +167,7 @@
   <CardSheet {app} key={card.id} closeOnEscape={!stripList} starred={starred} starLabel={starred ? "Αφαίρεση από τις αγαπημένες" : "Προσθήκη στις αγαπημένες"}
     onstar={() => app.toggleFavLine({ id: card.id, label })}>
     {#snippet header()}
-      {#if isBus}<LineChip {label} bg={color.bg} fg={color.fg} oasa={app.cityId === "athens"} />
+      {#if isBus}<LineChip {label} bg={color.bg} fg={color.fg} />
       {:else}<span class="pill" style:--c={color.bg} style:--t={color.fg}>{label}</span>{/if}
       <h2 title={tc(detail?.line.name)}>{tc(detail?.line.name)}</h2>
     {/snippet}

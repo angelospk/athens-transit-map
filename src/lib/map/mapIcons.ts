@@ -65,28 +65,13 @@ export function tramLogo(): ImageData {
   return data(c);
 }
 
-// A bus stop: OASA's «α» on a white tile (a shadow under it, so it reads on the dark map and the light one). The
-// logo (public/icons/oasa.png) loads once; until it has, a plain blue dot on the tile stands in, and MapView swaps
-// the image when it comes (oasaLogo). Other cities keep the dot.
-let logo: HTMLImageElement | null = null;
-let logoP: Promise<HTMLImageElement | null> | null = null;
-export function oasaLogo(base = import.meta.env?.BASE_URL ?? "/"): Promise<HTMLImageElement | null> {
-  return (logoP ??= new Promise(ok => {
-    if (typeof Image === "undefined") { ok(null); return; }
-    const img = new Image();
-    img.onload = () => { logo = img; ok(img); };
-    img.onerror = () => ok(null);
-    img.src = `${base}icons/oasa.png`;
-  }));
-}
-// Only Athens's stops are OASA's (`oasa`); elsewhere the tile has the plain dot.
-export function stopSign(oasa: boolean): ImageData {
+// A bus stop: a blue dot on a white tile (a shadow under it, so it reads on the dark map and the light one).
+export function stopSign(): ImageData {
   const [c, g] = canvas();
   g.shadowColor = "rgba(0,0,0,.35)"; g.shadowBlur = 10; g.shadowOffsetY = 4;
   g.fillStyle = "#ffffff";
   g.beginPath(); g.roundRect(20, 16, 88, 88, 24); g.fill();
   g.shadowColor = "transparent";
-  if (oasa && logo) g.drawImage(logo, 33, 29, 62, 62);
-  else { g.fillStyle = "#00498f"; g.beginPath(); g.arc(64, 60, 22, 0, Math.PI * 2); g.fill(); }
+  g.fillStyle = "#00498f"; g.beginPath(); g.arc(64, 60, 22, 0, Math.PI * 2); g.fill();
   return data(c);
 }

@@ -33,7 +33,7 @@
   import SpeedLegend from "../ui/SpeedLegend.svelte";
   import { lightenDark } from "./basemap";
   import { Turners } from "../turn";
-  import { metroGlyph, metroLogo, oasaLogo, stopSign, tramGlyph, tramLogo } from "./mapIcons";
+  import { metroGlyph, metroLogo, stopSign, tramGlyph, tramLogo } from "./mapIcons";
   import { Fleet, routeGeom, type FleetEntry, type RouteGeom } from "./fleet";
   import { bounds, routesFC, stopsFC, variantFC, type DrawnLine } from "./layers";
   import { STOPS_ZOOM, busStopsFC } from "../stops";
@@ -273,15 +273,8 @@
       void iconImages[name].then(img => { if (img && !m.hasImage(name)) { m.addImage(name, img, { pixelRatio: 2 }); m.triggerRepaint(); } });
     if (!m.hasImage("mode-glyph-logo")) m.addImage("mode-glyph-logo", metroLogo(), { pixelRatio: 128 / 24 });
     if (!m.hasImage("mode-glyph-tramlogo")) m.addImage("mode-glyph-tramlogo", tramLogo(), { pixelRatio: 128 / 24 });
-    // Only Athens's stops are OASA's: elsewhere the stop's tile has a plain dot. A city change redraws it (below).
-    const oasa = untrack(() => app.cityId) === "athens";
-    if (!m.hasImage("mode-stop")) m.addImage("mode-stop", stopSign(oasa), { pixelRatio: 128 / 48 });
-    void oasaLogo().then(img => { if (img && m.hasImage("mode-stop")) m.updateImage("mode-stop", stopSign(untrack(() => app.cityId) === "athens")); });
+    if (!m.hasImage("mode-stop")) m.addImage("mode-stop", stopSign(), { pixelRatio: 128 / 48 });
   }
-  $effect(() => {
-    const oasa = app.cityId === "athens";
-    if (loaded && map?.hasImage("mode-stop")) map.updateImage("mode-stop", stopSign(oasa));
-  });
 
   // City layer: every live vehicle, drawn by the GPU (DOM markers would not cope with ~1500).
   // Each is its mode's pictogram (bus blue, trolley orange), its delay a small dot on its shoulder (from zoom 12,

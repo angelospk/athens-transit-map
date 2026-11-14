@@ -177,7 +177,7 @@
 {/snippet}
 {#snippet chip(line: string)}
   {@const c = app.lineColor(line)}
-  <LineChip label={line} bg={c.bg} fg={c.fg} oasa={app.cityId === "athens"} />
+  <LineChip label={line} bg={c.bg} fg={c.fg} />
 {/snippet}
 
 {#if fixing}
@@ -278,7 +278,7 @@
             {@const c = app.lineColor(l.line)}
             {@const to = ix && i != null ? lineTowardAt(ix, l.line, i) : null}
             <button type="button" class="q" aria-label="Γραμμή {l.line}{to ? ` προς ${titleCase(to)}` : ""}"
-              onclick={() => app.openLineAt(l.line, l.variants)}><LineChip label={l.line} bg={c.bg} fg={c.fg} oasa={app.cityId === "athens"} />{#if to}<span class="qto">→ {titleCase(to)}</span>{/if}</button>
+              onclick={() => app.openLineAt(l.line, l.variants)}><LineChip label={l.line} bg={c.bg} fg={c.fg} />{#if to}<span class="qto">→ {titleCase(to)}</span>{/if}</button>
           {/each}
         </div>
       {/if}

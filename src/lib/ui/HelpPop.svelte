@@ -43,7 +43,7 @@
   {/if}
   <li><span class="s"><i class="stop"></i></span>
     <span>Στάση της γραμμής που διάλεξες. Πάτα την για το όνομά της.</span></li>
-  <li><span class="s"><span class="sign"><img src="{import.meta.env.BASE_URL}icons/oasa.png" alt="" /></span></span>
+  <li><span class="s"><span class="sign"><i class="pin"></i></span></span>
     <span>Στάση λεωφορείου. Πάτα την για τις αφίξεις.</span></li>
   <li><span class="s"><i class="station"></i></span>
     <span>Σταθμός μετρό, ΗΣΑΠ ή τραμ. Από κοντά δείχνει το σήμα του μετρό ή του τραμ. Πάτα τον για τις γραμμές του.</span></li>
@@ -64,7 +64,7 @@
   .dot { display: block; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--bg); }
   .sign { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; background: #fff;
     box-shadow: 0 1px 3px rgba(0, 0, 0, .35); }
-  .sign img { width: 14px; height: 14px; display: block; }
+  .sign .pin { width: 10px; height: 10px; border-radius: 50%; background: #00498f; display: block; }
   .age { padding: 0 4px; border-radius: 6px; background: var(--control); font: 600 10px/16px system-ui, sans-serif;
     font-variant-numeric: tabular-nums; }
   .trail { display: block; width: 40px; height: 8px; border-radius: 4px; background: var(--accent); opacity: .55; }
